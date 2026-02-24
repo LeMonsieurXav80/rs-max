@@ -39,4 +39,11 @@ return [
         'api_key' => env('OPENAI_API_KEY'),
     ],
 
+    'facebook' => [
+        'client_id' => env('FACEBOOK_APP_ID'),
+        'client_secret' => env('FACEBOOK_APP_SECRET'),
+        'config_id' => env('FACEBOOK_CONFIG_ID'),
+        'api_version' => 'v21.0',
+    ],
+
 ];

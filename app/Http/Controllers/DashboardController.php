@@ -20,19 +20,21 @@ class DashboardController extends Controller
 
         // Build base queries - admin sees all, regular user sees own data
         $postQuery = Post::query();
-        $accountQuery = SocialAccount::query();
 
         if (! $isAdmin) {
             $postQuery->where('user_id', $user->id);
-            $accountQuery->where('user_id', $user->id);
         }
+
+        $activeAccountsCount = $isAdmin
+            ? SocialAccount::where('is_active', true)->count()
+            : $user->activeSocialAccounts()->count();
 
         // Stats
         $scheduledCount = (clone $postQuery)->where('status', 'scheduled')->count();
         $publishedCount = (clone $postQuery)->where('status', 'published')->count();
         $failedCount = (clone $postQuery)->where('status', 'failed')->count();
         $draftCount = (clone $postQuery)->where('status', 'draft')->count();
-        $activeAccountsCount = (clone $accountQuery)->where('is_active', true)->count();
+        // $activeAccountsCount already computed above
 
         // Next 5 scheduled posts (upcoming)
         $upcomingPosts = (clone $postQuery)

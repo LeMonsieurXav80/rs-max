@@ -1,9 +1,12 @@
 <?php
 
 use App\Http\Controllers\DashboardController;
+use App\Http\Controllers\FacebookOAuthController;
 use App\Http\Controllers\MediaController;
+use App\Http\Controllers\PlatformController;
 use App\Http\Controllers\PostController;
 use App\Http\Controllers\ProfileController;
+use App\Http\Controllers\PublishController;
 use App\Http\Controllers\SocialAccountController;
 use Illuminate\Support\Facades\Route;
 
@@ -22,6 +25,35 @@ Route::middleware(['auth', 'verified'])->group(function () {
     Route::resource('accounts', SocialAccountController::class)->except(['show']);
     Route::patch('accounts/{account}/toggle', [SocialAccountController::class, 'toggleActive'])
         ->name('accounts.toggle');
+
+    // Facebook/Instagram OAuth flow
+    Route::get('auth/facebook/redirect', [FacebookOAuthController::class, 'redirect'])->name('facebook.redirect');
+    Route::get('auth/facebook/callback', [FacebookOAuthController::class, 'callback'])->name('facebook.callback');
+    Route::get('auth/facebook/select', [FacebookOAuthController::class, 'select'])->name('facebook.select');
+    Route::post('auth/facebook/connect', [FacebookOAuthController::class, 'connect'])->name('facebook.connect');
+
+    // Platforms management (one page per platform)
+    Route::get('platforms/facebook', [PlatformController::class, 'facebook'])->name('platforms.facebook');
+    Route::get('platforms/telegram', [PlatformController::class, 'telegram'])->name('platforms.telegram');
+    Route::get('platforms/twitter', [PlatformController::class, 'twitter'])->name('platforms.twitter');
+    Route::post('platforms/telegram/validate-bot', [PlatformController::class, 'validateTelegramBot'])->name('platforms.telegram.validateBot');
+    Route::post('platforms/telegram/register-bot', [PlatformController::class, 'registerTelegramBot'])->name('platforms.telegram.registerBot');
+    Route::post('platforms/telegram/add-channel', [PlatformController::class, 'addTelegramChannel'])->name('platforms.telegram.addChannel');
+    Route::delete('platforms/telegram/bot', [PlatformController::class, 'destroyTelegramBot'])->name('platforms.telegram.destroyBot');
+    Route::post('platforms/twitter/add-account', [PlatformController::class, 'addTwitterAccount'])->name('platforms.twitter.addAccount');
+    Route::post('platforms/twitter/validate-account', [PlatformController::class, 'validateTwitterAccount'])->name('platforms.twitter.validateAccount');
+    Route::delete('platforms/account/{account}', [PlatformController::class, 'destroyAccount'])->name('platforms.destroyAccount');
+
+    // Manual publishing (test without scheduling)
+    Route::post('posts/{post}/publish', [PublishController::class, 'publishAll'])->name('posts.publish');
+    Route::post('posts/platform/{postPlatform}/publish', [PublishController::class, 'publishOne'])->name('posts.publishOne');
+    Route::post('posts/platform/{postPlatform}/reset', [PublishController::class, 'resetOne'])->name('posts.resetOne');
+
+    // Media library
+    Route::get('media', [MediaController::class, 'index'])->name('media.index');
+    Route::post('media/upload', [MediaController::class, 'upload'])->name('media.upload');
+    Route::get('media/list', [MediaController::class, 'list'])->name('media.list');
+    Route::delete('media/{filename}', [MediaController::class, 'destroy'])->name('media.destroy');
 });
 
 Route::middleware('auth')->group(function () {
@@ -30,7 +62,10 @@ Route::middleware('auth')->group(function () {
     Route::delete('/profile', [ProfileController::class, 'destroy'])->name('profile.destroy');
 });
 
-// Media: auth OR signed URL (for external platform APIs)
-Route::get('/media/{filename}', [MediaController::class, 'show'])->name('media.show');
+// Media file serving: auth OR signed URL (for external platform APIs)
+// Must come after the auth group so media/upload and media/list are matched first
+Route::get('/media/{filename}', [MediaController::class, 'show'])
+    ->where('filename', '[^/]+\.[a-zA-Z0-9]+')
+    ->name('media.show');
 
 require __DIR__.'/auth.php';

@@ -151,7 +151,7 @@
                                             </span>
                                             {{-- Platform icons --}}
                                             <div class="flex items-center gap-0.5 flex-shrink-0">
-                                                @foreach($post->postPlatforms->take(3) as $pp)
+                                                @foreach($post->postPlatforms as $pp)
                                                     <x-platform-icon :platform="$pp->platform->slug" size="sm" />
                                                 @endforeach
                                             </div>

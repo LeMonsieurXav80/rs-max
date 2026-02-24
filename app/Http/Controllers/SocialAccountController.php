@@ -13,16 +13,16 @@ class SocialAccountController extends Controller
 {
     /**
      * Display a list of social accounts grouped by platform.
-     * Admin sees all accounts; regular user sees only their own.
+     * Admin sees all accounts; regular user sees only their linked accounts.
      */
     public function index(Request $request): View
     {
         $user = $request->user();
 
-        $query = SocialAccount::with('platform', 'user');
-
-        if (! $user->is_admin) {
-            $query->where('user_id', $user->id);
+        if ($user->is_admin) {
+            $query = SocialAccount::with('platform', 'users');
+        } else {
+            $query = $user->socialAccounts()->with('platform', 'users');
         }
 
         $accounts = $query->orderBy('platform_id')
@@ -75,19 +75,47 @@ class SocialAccountController extends Controller
             }
         }
 
-        SocialAccount::create([
-            'user_id'      => $user->id,
-            'platform_id'  => $validated['platform_id'],
-            'name'         => $validated['name'],
-            'credentials'  => $credentials,
-            'language'     => $validated['language'] ?? $user->default_language ?? 'fr',
-            'branding'     => $validated['branding'] ?? null,
-            'show_branding' => $validated['show_branding'] ?? false,
-            'is_active'    => true,
-        ]);
+        // Extract platform_account_id based on platform
+        $idFieldMap = ['facebook' => 'page_id', 'instagram' => 'account_id', 'telegram' => 'chat_id'];
+        $idField = $idFieldMap[$platform->slug] ?? null;
+        $platformAccountId = ($idField && isset($credentials[$idField])) ? $credentials[$idField] : null;
+
+        // Check for existing account with same platform + platform_account_id
+        $account = null;
+        if ($platformAccountId) {
+            $account = SocialAccount::where('platform_id', $platform->id)
+                ->where('platform_account_id', $platformAccountId)
+                ->first();
+        }
+
+        if ($account) {
+            $account->update([
+                'name' => $validated['name'],
+                'credentials' => $credentials,
+                'language' => $validated['language'] ?? $account->language,
+                'branding' => $validated['branding'] ?? $account->branding,
+                'show_branding' => $validated['show_branding'] ?? $account->show_branding,
+            ]);
+        } else {
+            $account = SocialAccount::create([
+                'platform_id'  => $validated['platform_id'],
+                'platform_account_id' => $platformAccountId,
+                'name'         => $validated['name'],
+                'credentials'  => $credentials,
+                'language'     => $validated['language'] ?? $user->default_language ?? 'fr',
+                'branding'     => $validated['branding'] ?? null,
+                'show_branding' => $validated['show_branding'] ?? false,
+                'is_active'    => true,
+            ]);
+        }
+
+        // Link to current user
+        if (! $account->users()->where('user_id', $user->id)->exists()) {
+            $account->users()->attach($user->id);
+        }
 
         return redirect()->route('accounts.index')
-            ->with('success', 'Social account added successfully.');
+            ->with('success', 'Compte social ajouté avec succès.');
     }
 
     /**
@@ -97,8 +125,7 @@ class SocialAccountController extends Controller
     {
         $account = SocialAccount::with('platform')->findOrFail($id);
 
-        // Regular users can only edit their own accounts
-        if (! $request->user()->is_admin && $account->user_id !== $request->user()->id) {
+        if (! $this->userCanAccess($request->user(), $account)) {
             abort(403, 'Unauthorized.');
         }
 
@@ -116,8 +143,7 @@ class SocialAccountController extends Controller
     {
         $account = SocialAccount::findOrFail($id);
 
-        // Regular users can only update their own accounts
-        if (! $request->user()->is_admin && $account->user_id !== $request->user()->id) {
+        if (! $this->userCanAccess($request->user(), $account)) {
             abort(403, 'Unauthorized.');
         }
 
@@ -156,7 +182,7 @@ class SocialAccountController extends Controller
         ]);
 
         return redirect()->route('accounts.index')
-            ->with('success', 'Social account updated successfully.');
+            ->with('success', 'Compte social mis à jour.');
     }
 
     /**
@@ -166,8 +192,7 @@ class SocialAccountController extends Controller
     {
         $account = SocialAccount::findOrFail($id);
 
-        // Regular users can only delete their own accounts
-        if (! $request->user()->is_admin && $account->user_id !== $request->user()->id) {
+        if (! $this->userCanAccess($request->user(), $account)) {
             abort(403, 'Unauthorized.');
         }
 
@@ -178,26 +203,24 @@ class SocialAccountController extends Controller
 
         if ($activePosts > 0) {
             return back()->withErrors([
-                'account' => 'Cannot delete this account because it has posts that are pending or currently being published.',
+                'account' => 'Impossible de supprimer ce compte car il a des publications en attente.',
             ]);
         }
 
         $account->delete();
 
         return redirect()->route('accounts.index')
-            ->with('success', 'Social account deleted successfully.');
+            ->with('success', 'Compte social supprimé.');
     }
 
     /**
      * Toggle the is_active status of the specified social account.
-     * Returns JSON for AJAX requests.
      */
     public function toggleActive(Request $request, int $id): JsonResponse
     {
         $account = SocialAccount::findOrFail($id);
 
-        // Regular users can only toggle their own accounts
-        if (! $request->user()->is_admin && $account->user_id !== $request->user()->id) {
+        if (! $this->userCanAccess($request->user(), $account)) {
             return response()->json(['error' => 'Unauthorized.'], 403);
         }
 
@@ -208,8 +231,13 @@ class SocialAccountController extends Controller
             'success'   => true,
             'is_active' => $account->is_active,
             'message'   => $account->is_active
-                ? 'Account activated successfully.'
-                : 'Account deactivated successfully.',
+                ? 'Compte activé.'
+                : 'Compte désactivé.',
         ]);
+    }
+
+    private function userCanAccess($user, SocialAccount $account): bool
+    {
+        return $user->is_admin || $account->users()->where('user_id', $user->id)->exists();
     }
 }

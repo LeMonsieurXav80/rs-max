@@ -4,6 +4,7 @@ namespace App\Models;
 
 // use Illuminate\Contracts\Auth\MustVerifyEmail;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
+use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
@@ -41,9 +42,9 @@ class User extends Authenticatable
         ];
     }
 
-    public function socialAccounts(): HasMany
+    public function socialAccounts(): BelongsToMany
     {
-        return $this->hasMany(SocialAccount::class);
+        return $this->belongsToMany(SocialAccount::class)->withTimestamps();
     }
 
     public function posts(): HasMany
@@ -51,7 +52,7 @@ class User extends Authenticatable
         return $this->hasMany(Post::class);
     }
 
-    public function activeSocialAccounts(): HasMany
+    public function activeSocialAccounts(): BelongsToMany
     {
         return $this->socialAccounts()->where('is_active', true);
     }

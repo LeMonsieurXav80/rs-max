@@ -125,12 +125,12 @@ class TwitterAdapter implements PlatformAdapterInterface
 
     /**
      * Download a media file from the given URL and upload it to Twitter via v1.1.
+     * Uses chunked upload for videos, simple upload for images.
      *
      * @return string|null  The media_id_string on success, null on failure.
      */
     private function uploadMedia(string $mediaUrl): ?string
     {
-        // Download the file to a temporary location.
         $tempFile = tempnam(sys_get_temp_dir(), 'tw_media_');
 
         try {
@@ -142,33 +142,199 @@ class TwitterAdapter implements PlatformAdapterInterface
                 return null;
             }
 
-            $authHeader = $this->buildOAuthHeader('POST', self::MEDIA_UPLOAD_URL, []);
+            $mimeType = $downloadResponse->header('Content-Type') ?? mime_content_type($tempFile) ?? 'application/octet-stream';
+            $isVideo = str_starts_with($mimeType, 'video/');
 
-            $response = Http::withHeaders([
-                'Authorization' => $authHeader,
-            ])->attach(
-                'media', file_get_contents($tempFile), basename($mediaUrl)
-            )->post(self::MEDIA_UPLOAD_URL);
-
-            $body = $response->json();
-
-            if ($response->successful() && isset($body['media_id_string'])) {
-                return $body['media_id_string'];
+            if ($isVideo) {
+                return $this->chunkedUpload($tempFile, $mimeType);
             }
 
-            Log::error('TwitterAdapter: media upload failed', [
-                'status' => $response->status(),
-                'body' => $body,
-            ]);
-
-            return null;
+            return $this->simpleUpload($tempFile, basename($mediaUrl));
 
         } finally {
-            // Clean up the temporary file.
             if (file_exists($tempFile)) {
                 @unlink($tempFile);
             }
         }
+    }
+
+    /**
+     * Simple (non-chunked) media upload for images.
+     */
+    private function simpleUpload(string $filePath, string $filename): ?string
+    {
+        $authHeader = $this->buildOAuthHeader('POST', self::MEDIA_UPLOAD_URL, []);
+
+        $response = Http::withHeaders([
+            'Authorization' => $authHeader,
+        ])->attach(
+            'media', file_get_contents($filePath), $filename
+        )->post(self::MEDIA_UPLOAD_URL);
+
+        $body = $response->json();
+
+        if ($response->successful() && isset($body['media_id_string'])) {
+            return $body['media_id_string'];
+        }
+
+        Log::error('TwitterAdapter: simple media upload failed', [
+            'status' => $response->status(),
+            'body' => $body,
+        ]);
+
+        return null;
+    }
+
+    /**
+     * Chunked media upload for videos (INIT -> APPEND -> FINALIZE -> poll STATUS).
+     */
+    private function chunkedUpload(string $filePath, string $mimeType): ?string
+    {
+        $fileSize = filesize($filePath);
+
+        // Step 1: INIT
+        $initParams = [
+            'command' => 'INIT',
+            'total_bytes' => (string) $fileSize,
+            'media_type' => $mimeType,
+            'media_category' => 'tweet_video',
+        ];
+
+        $authHeader = $this->buildOAuthHeader('POST', self::MEDIA_UPLOAD_URL, $initParams);
+
+        $initResponse = Http::asForm()->withHeaders([
+            'Authorization' => $authHeader,
+        ])->post(self::MEDIA_UPLOAD_URL, $initParams);
+
+        $initBody = $initResponse->json();
+
+        if (! $initResponse->successful() || ! isset($initBody['media_id_string'])) {
+            Log::error('TwitterAdapter: chunked INIT failed', ['body' => $initBody]);
+
+            return null;
+        }
+
+        $mediaId = $initBody['media_id_string'];
+
+        // Step 2: APPEND (upload in 5MB chunks)
+        $chunkSize = 5 * 1024 * 1024; // 5MB
+        $handle = fopen($filePath, 'rb');
+        $segmentIndex = 0;
+
+        while (! feof($handle)) {
+            $chunk = fread($handle, $chunkSize);
+
+            $appendParams = [
+                'command' => 'APPEND',
+                'media_id' => $mediaId,
+                'segment_index' => (string) $segmentIndex,
+            ];
+
+            $authHeader = $this->buildOAuthHeader('POST', self::MEDIA_UPLOAD_URL, $appendParams);
+
+            $appendResponse = Http::withHeaders([
+                'Authorization' => $authHeader,
+            ])->attach(
+                'media_data', $chunk, 'chunk'
+            )->post(self::MEDIA_UPLOAD_URL . '?' . http_build_query($appendParams));
+
+            if (! $appendResponse->successful() && $appendResponse->status() !== 204) {
+                Log::error('TwitterAdapter: chunked APPEND failed', [
+                    'segment' => $segmentIndex,
+                    'status' => $appendResponse->status(),
+                    'body' => $appendResponse->json(),
+                ]);
+                fclose($handle);
+
+                return null;
+            }
+
+            $segmentIndex++;
+        }
+
+        fclose($handle);
+
+        // Step 3: FINALIZE
+        $finalizeParams = [
+            'command' => 'FINALIZE',
+            'media_id' => $mediaId,
+        ];
+
+        $authHeader = $this->buildOAuthHeader('POST', self::MEDIA_UPLOAD_URL, $finalizeParams);
+
+        $finalizeResponse = Http::asForm()->withHeaders([
+            'Authorization' => $authHeader,
+        ])->post(self::MEDIA_UPLOAD_URL, $finalizeParams);
+
+        $finalizeBody = $finalizeResponse->json();
+
+        if (! $finalizeResponse->successful()) {
+            Log::error('TwitterAdapter: chunked FINALIZE failed', ['body' => $finalizeBody]);
+
+            return null;
+        }
+
+        // Step 4: Poll STATUS if processing_info is present
+        if (isset($finalizeBody['processing_info'])) {
+            $processed = $this->pollMediaStatus($mediaId);
+
+            if (! $processed) {
+                Log::error('TwitterAdapter: video processing timed out', ['media_id' => $mediaId]);
+
+                return null;
+            }
+        }
+
+        return $mediaId;
+    }
+
+    /**
+     * Poll the media upload status until processing is complete.
+     */
+    private function pollMediaStatus(string $mediaId): bool
+    {
+        $maxAttempts = 30;
+
+        for ($i = 0; $i < $maxAttempts; $i++) {
+            $statusParams = [
+                'command' => 'STATUS',
+                'media_id' => $mediaId,
+            ];
+
+            $authHeader = $this->buildOAuthHeader('GET', self::MEDIA_UPLOAD_URL, $statusParams);
+
+            $response = Http::withHeaders([
+                'Authorization' => $authHeader,
+            ])->get(self::MEDIA_UPLOAD_URL, $statusParams);
+
+            $body = $response->json();
+            $processingInfo = $body['processing_info'] ?? null;
+
+            if (! $processingInfo) {
+                return true; // No processing info means it's done
+            }
+
+            $state = $processingInfo['state'] ?? '';
+
+            if ($state === 'succeeded') {
+                return true;
+            }
+
+            if ($state === 'failed') {
+                Log::error('TwitterAdapter: video processing failed', [
+                    'media_id' => $mediaId,
+                    'error' => $processingInfo['error'] ?? null,
+                ]);
+
+                return false;
+            }
+
+            // Wait the recommended time (or 5 seconds)
+            $waitSeconds = $processingInfo['check_after_secs'] ?? 5;
+            sleep($waitSeconds);
+        }
+
+        return false;
     }
 
     // -------------------------------------------------------------------------

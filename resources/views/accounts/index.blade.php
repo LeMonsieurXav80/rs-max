@@ -3,12 +3,14 @@
 @section('title', 'Comptes sociaux')
 
 @section('actions')
-    <a href="{{ route('accounts.create') }}" class="inline-flex items-center gap-2 px-4 py-2 bg-indigo-600 text-white text-sm font-medium rounded-xl hover:bg-indigo-700 transition-colors shadow-sm">
-        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2">
-            <path stroke-linecap="round" stroke-linejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
-        </svg>
-        Ajouter un compte
-    </a>
+    <div class="flex items-center gap-3">
+        <a href="{{ route('accounts.create') }}" class="inline-flex items-center gap-2 px-4 py-2 bg-indigo-600 text-white text-sm font-medium rounded-xl hover:bg-indigo-700 transition-colors shadow-sm">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
+            </svg>
+            Ajouter un compte
+        </a>
+    </div>
 @endsection
 
 @section('content')
@@ -55,38 +57,54 @@
                                     x-data="{ active: {{ $account->is_active ? 'true' : 'false' }}, toggling: false }"
                                 >
                                     <div class="flex items-start justify-between gap-4">
-                                        {{-- Account info --}}
-                                        <div class="min-w-0 flex-1">
-                                            <h3 class="text-sm font-semibold text-gray-900 truncate">{{ $account->user->name ?? 'Inconnu' }}</h3>
-                                            <p class="text-xs text-gray-400 mt-0.5">{{ $account->name }}</p>
-
-                                            <div class="flex items-center gap-2 mt-2">
-                                                {{-- Language badge --}}
-                                                <span class="inline-flex items-center px-2 py-0.5 rounded-md text-xs font-medium bg-gray-100 text-gray-600 uppercase">
-                                                    {{ $account->language ?? 'fr' }}
-                                                </span>
-
-                                                {{-- Active/Inactive badge --}}
-                                                <span
-                                                    x-show="active"
-                                                    class="inline-flex items-center px-2 py-0.5 rounded-md text-xs font-medium bg-green-50 text-green-700"
+                                        {{-- Profile picture + Account info --}}
+                                        <div class="flex items-start gap-3 min-w-0 flex-1">
+                                            @if($account->profile_picture_url)
+                                                <img
+                                                    src="{{ $account->profile_picture_url }}"
+                                                    alt="{{ $account->name }}"
+                                                    class="w-10 h-10 rounded-xl object-cover flex-shrink-0"
                                                 >
-                                                    Actif
-                                                </span>
-                                                <span
-                                                    x-show="!active"
-                                                    class="inline-flex items-center px-2 py-0.5 rounded-md text-xs font-medium bg-gray-100 text-gray-500"
-                                                >
-                                                    Inactif
-                                                </span>
-                                            </div>
-
-                                            {{-- Last used --}}
-                                            @if($account->last_used_at)
-                                                <p class="text-xs text-gray-400 mt-1">
-                                                    Dernier usage : {{ $account->last_used_at->diffForHumans() }}
-                                                </p>
+                                            @else
+                                                <div class="w-10 h-10 rounded-xl bg-gray-100 flex items-center justify-center flex-shrink-0">
+                                                    <span class="text-sm font-bold text-gray-400">{{ strtoupper(substr($account->name, 0, 1)) }}</span>
+                                                </div>
                                             @endif
+
+                                            <div class="min-w-0 flex-1">
+                                                <h3 class="text-sm font-semibold text-gray-900 truncate">{{ $account->name }}</h3>
+                                                @if($account->platform_account_id)
+                                                    <p class="text-xs text-gray-400 mt-0.5">ID: {{ $account->platform_account_id }}</p>
+                                                @endif
+
+                                                <div class="flex items-center gap-2 mt-2">
+                                                    {{-- Language badge --}}
+                                                    <span class="inline-flex items-center px-2 py-0.5 rounded-md text-xs font-medium bg-gray-100 text-gray-600 uppercase">
+                                                        {{ $account->language ?? 'fr' }}
+                                                    </span>
+
+                                                    {{-- Active/Inactive badge --}}
+                                                    <span
+                                                        x-show="active"
+                                                        class="inline-flex items-center px-2 py-0.5 rounded-md text-xs font-medium bg-green-50 text-green-700"
+                                                    >
+                                                        Actif
+                                                    </span>
+                                                    <span
+                                                        x-show="!active"
+                                                        class="inline-flex items-center px-2 py-0.5 rounded-md text-xs font-medium bg-gray-100 text-gray-500"
+                                                    >
+                                                        Inactif
+                                                    </span>
+                                                </div>
+
+                                                {{-- Last used --}}
+                                                @if($account->last_used_at)
+                                                    <p class="text-xs text-gray-400 mt-1">
+                                                        Dernier usage : {{ $account->last_used_at->diffForHumans() }}
+                                                    </p>
+                                                @endif
+                                            </div>
                                         </div>
 
                                         {{-- Toggle switch --}}

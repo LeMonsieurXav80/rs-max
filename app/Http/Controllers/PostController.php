@@ -69,11 +69,19 @@ class PostController extends Controller
     {
         $user = $request->user();
 
-        // Get user's active social accounts grouped by platform
-        $accounts = $user->activeSocialAccounts()
-            ->with('platform')
-            ->get()
-            ->groupBy(fn (SocialAccount $account) => $account->platform->name);
+        // Admin sees all active accounts, regular user sees only their own
+        if ($user->is_admin) {
+            $accounts = SocialAccount::with('platform')
+                ->where('is_active', true)
+                ->orderBy('name')
+                ->get()
+                ->groupBy(fn (SocialAccount $account) => $account->platform->slug);
+        } else {
+            $accounts = $user->activeSocialAccounts()
+                ->with('platform')
+                ->get()
+                ->groupBy(fn (SocialAccount $account) => $account->platform->slug);
+        }
 
         $platforms = Platform::where('is_active', true)->get();
 
@@ -91,7 +99,7 @@ class PostController extends Controller
             'hashtags'          => 'nullable|string|max:1000',
             'auto_translate'    => 'nullable|boolean',
             'media'             => 'nullable|array',
-            'media.*'           => 'nullable|string|max:500',
+            'media.*'           => 'nullable|string|max:2000',
             'link_url'          => 'nullable|url|max:2048',
             'telegram_channel'  => 'nullable|string|max:255',
             'status'            => 'required|in:draft,scheduled',
@@ -103,13 +111,13 @@ class PostController extends Controller
 
         $user = $request->user();
 
-        // Verify all selected accounts belong to the user (unless admin)
+        // Verify all selected accounts are accessible to the user (unless admin)
         $accountIds = $validated['accounts'];
-        $accountsQuery = SocialAccount::whereIn('id', $accountIds);
-        if (! $user->is_admin) {
-            $accountsQuery->where('user_id', $user->id);
+        if ($user->is_admin) {
+            $validAccounts = SocialAccount::whereIn('id', $accountIds)->get();
+        } else {
+            $validAccounts = $user->socialAccounts()->whereIn('social_accounts.id', $accountIds)->get();
         }
-        $validAccounts = $accountsQuery->get();
 
         if ($validAccounts->count() !== count($accountIds)) {
             return back()->withErrors(['accounts' => 'One or more selected accounts are invalid.'])->withInput();
@@ -125,6 +133,19 @@ class PostController extends Controller
                 $scheduledAt = now();
             }
 
+            // Decode media JSON strings into arrays
+            $media = null;
+            if (! empty($validated['media'])) {
+                $media = array_values(array_filter(array_map(function ($item) {
+                    $decoded = is_string($item) ? json_decode($item, true) : $item;
+
+                    return is_array($decoded) && isset($decoded['url']) ? $decoded : null;
+                }, $validated['media'])));
+                if (empty($media)) {
+                    $media = null;
+                }
+            }
+
             // Create the post
             $post = Post::create([
                 'user_id'          => $user->id,
@@ -132,7 +153,7 @@ class PostController extends Controller
                 'content_en'       => $validated['content_en'] ?? null,
                 'hashtags'         => $validated['hashtags'] ?? null,
                 'auto_translate'   => $validated['auto_translate'] ?? false,
-                'media'            => $validated['media'] ?? null,
+                'media'            => $media,
                 'link_url'         => $validated['link_url'] ?? null,
                 'telegram_channel' => $validated['telegram_channel'] ?? null,
                 'status'           => $status,
@@ -188,13 +209,19 @@ class PostController extends Controller
 
         $user = $request->user();
 
-        // Get user's active social accounts grouped by platform
-        // For admin editing another user's post, load that user's accounts
-        $postOwner = $post->user;
-        $accounts = $postOwner->activeSocialAccounts()
-            ->with('platform')
-            ->get()
-            ->groupBy(fn (SocialAccount $account) => $account->platform->name);
+        // Admin sees all active accounts, regular user sees only their own
+        if ($user->is_admin) {
+            $accounts = SocialAccount::with('platform')
+                ->where('is_active', true)
+                ->orderBy('name')
+                ->get()
+                ->groupBy(fn (SocialAccount $account) => $account->platform->slug);
+        } else {
+            $accounts = $user->activeSocialAccounts()
+                ->with('platform')
+                ->get()
+                ->groupBy(fn (SocialAccount $account) => $account->platform->slug);
+        }
 
         $platforms = Platform::where('is_active', true)->get();
 
@@ -227,7 +254,7 @@ class PostController extends Controller
             'hashtags'          => 'nullable|string|max:1000',
             'auto_translate'    => 'nullable|boolean',
             'media'             => 'nullable|array',
-            'media.*'           => 'nullable|string|max:500',
+            'media.*'           => 'nullable|string|max:2000',
             'link_url'          => 'nullable|url|max:2048',
             'telegram_channel'  => 'nullable|string|max:255',
             'status'            => 'required|in:draft,scheduled',
@@ -239,13 +266,13 @@ class PostController extends Controller
 
         $user = $request->user();
 
-        // Verify all selected accounts belong to the post owner (unless admin)
+        // Verify all selected accounts are accessible to the user (unless admin)
         $accountIds = $validated['accounts'];
-        $accountsQuery = SocialAccount::whereIn('id', $accountIds);
-        if (! $user->is_admin) {
-            $accountsQuery->where('user_id', $user->id);
+        if ($user->is_admin) {
+            $validAccounts = SocialAccount::whereIn('id', $accountIds)->get();
+        } else {
+            $validAccounts = $user->socialAccounts()->whereIn('social_accounts.id', $accountIds)->get();
         }
-        $validAccounts = $accountsQuery->get();
 
         if ($validAccounts->count() !== count($accountIds)) {
             return back()->withErrors(['accounts' => 'One or more selected accounts are invalid.'])->withInput();
@@ -261,13 +288,26 @@ class PostController extends Controller
                 $scheduledAt = now();
             }
 
+            // Decode media JSON strings into arrays
+            $media = null;
+            if (! empty($validated['media'])) {
+                $media = array_values(array_filter(array_map(function ($item) {
+                    $decoded = is_string($item) ? json_decode($item, true) : $item;
+
+                    return is_array($decoded) && isset($decoded['url']) ? $decoded : null;
+                }, $validated['media'])));
+                if (empty($media)) {
+                    $media = null;
+                }
+            }
+
             // Update the post
             $post->update([
                 'content_fr'       => $validated['content_fr'],
                 'content_en'       => $validated['content_en'] ?? null,
                 'hashtags'         => $validated['hashtags'] ?? null,
                 'auto_translate'   => $validated['auto_translate'] ?? false,
-                'media'            => $validated['media'] ?? null,
+                'media'            => $media,
                 'link_url'         => $validated['link_url'] ?? null,
                 'telegram_channel' => $validated['telegram_channel'] ?? null,
                 'status'           => $status,

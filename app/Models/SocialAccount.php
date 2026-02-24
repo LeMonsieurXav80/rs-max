@@ -4,14 +4,16 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class SocialAccount extends Model
 {
     protected $fillable = [
-        'user_id',
         'platform_id',
+        'platform_account_id',
         'name',
+        'profile_picture_url',
         'credentials',
         'language',
         'branding',
@@ -30,9 +32,9 @@ class SocialAccount extends Model
         ];
     }
 
-    public function user(): BelongsTo
+    public function users(): BelongsToMany
     {
-        return $this->belongsTo(User::class);
+        return $this->belongsToMany(User::class)->withTimestamps();
     }
 
     public function platform(): BelongsTo
