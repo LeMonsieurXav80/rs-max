@@ -1,0 +1,238 @@
+@extends('layouts.app')
+
+@section('title', 'Détail du post')
+
+@section('actions')
+    <div class="flex items-center gap-3">
+        <a href="{{ route('posts.edit', $post) }}"
+           class="inline-flex items-center gap-2 px-4 py-2 bg-white text-gray-700 text-sm font-medium rounded-xl hover:bg-gray-50 transition-colors border border-gray-200 shadow-sm">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1.5">
+                <path stroke-linecap="round" stroke-linejoin="round" d="m16.862 4.487 1.687-1.688a1.875 1.875 0 1 1 2.652 2.652L10.582 16.07a4.5 4.5 0 0 1-1.897 1.13L6 18l.8-2.685a4.5 4.5 0 0 1 1.13-1.897l8.932-8.931Zm0 0L19.5 7.125M18 14v4.75A2.25 2.25 0 0 1 15.75 21H5.25A2.25 2.25 0 0 1 3 18.75V8.25A2.25 2.25 0 0 1 5.25 6H10" />
+            </svg>
+            Modifier
+        </a>
+
+        <form method="POST" action="{{ route('posts.destroy', $post) }}" onsubmit="return confirm('Supprimer cette publication ? Cette action est irréversible.')">
+            @csrf
+            @method('DELETE')
+            <button type="submit"
+                    class="inline-flex items-center gap-2 px-4 py-2 bg-white text-red-600 text-sm font-medium rounded-xl hover:bg-red-50 transition-colors border border-red-200 shadow-sm">
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1.5">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="m14.74 9-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 0 1-2.244 2.077H8.084a2.25 2.25 0 0 1-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 0 0-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 0 1 3.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 0 0-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 0 0-7.5 0" />
+                </svg>
+                Supprimer
+            </button>
+        </form>
+    </div>
+@endsection
+
+@section('content')
+    {{-- Back link --}}
+    <div class="mb-6">
+        <a href="{{ route('posts.index') }}" class="inline-flex items-center gap-1.5 text-sm text-gray-500 hover:text-gray-700 transition-colors">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1.5">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M10.5 19.5 3 12m0 0 7.5-7.5M3 12h18" />
+            </svg>
+            Retour aux publications
+        </a>
+    </div>
+
+    <div class="max-w-4xl space-y-6">
+        {{-- Card 1: Post details --}}
+        <div class="bg-white rounded-2xl shadow-sm border border-gray-100 p-6 lg:p-8">
+            {{-- Status + dates header --}}
+            <div class="flex flex-wrap items-center gap-3 mb-6">
+                <x-status-badge :status="$post->status" />
+                @if($post->user)
+                    <span class="text-xs text-gray-400">par {{ $post->user->name }}</span>
+                @endif
+            </div>
+
+            <div class="space-y-6">
+                {{-- Contenu français --}}
+                <div>
+                    <h3 class="text-sm font-medium text-gray-500 mb-2">Contenu français</h3>
+                    <div class="text-sm text-gray-900 whitespace-pre-line bg-gray-50 rounded-xl p-4 leading-relaxed">{{ $post->content_fr }}</div>
+                </div>
+
+                {{-- Contenu anglais --}}
+                @if($post->content_en)
+                    <div>
+                        <h3 class="text-sm font-medium text-gray-500 mb-2">Contenu anglais</h3>
+                        <div class="text-sm text-gray-900 whitespace-pre-line bg-gray-50 rounded-xl p-4 leading-relaxed">{{ $post->content_en }}</div>
+                    </div>
+                @endif
+
+                {{-- Hashtags --}}
+                @if($post->hashtags)
+                    <div>
+                        <h3 class="text-sm font-medium text-gray-500 mb-2">Hashtags</h3>
+                        <p class="text-sm text-indigo-600">{{ $post->hashtags }}</p>
+                    </div>
+                @endif
+
+                {{-- Médias --}}
+                @if($post->media && count($post->media) > 0)
+                    <div>
+                        <h3 class="text-sm font-medium text-gray-500 mb-3">Médias ({{ count($post->media) }})</h3>
+                        <div class="grid grid-cols-2 sm:grid-cols-3 gap-3">
+                            @foreach($post->media as $item)
+                                @php
+                                    $url = is_string($item) ? $item : ($item['url'] ?? '');
+                                    $mime = is_string($item) ? 'image/jpeg' : ($item['mimetype'] ?? 'image/jpeg');
+                                    $title = is_string($item) ? basename($url) : ($item['title'] ?? basename($url));
+                                    $isVideo = str_starts_with($mime, 'video/');
+                                @endphp
+
+                                @if($isVideo)
+                                    <div class="relative rounded-xl overflow-hidden border border-gray-200 bg-gray-900 aspect-video">
+                                        <video class="w-full h-full object-cover" preload="metadata">
+                                            <source src="{{ $url }}" type="{{ $mime }}">
+                                        </video>
+                                        <a href="{{ $url }}" target="_blank" rel="noopener noreferrer"
+                                           class="absolute inset-0 flex items-center justify-center bg-black/30 hover:bg-black/40 transition-colors">
+                                            <div class="w-10 h-10 rounded-full bg-white/90 flex items-center justify-center">
+                                                <svg class="w-5 h-5 text-gray-800 ml-0.5" fill="currentColor" viewBox="0 0 24 24">
+                                                    <path d="M8 5v14l11-7z"/>
+                                                </svg>
+                                            </div>
+                                        </a>
+                                        <span class="absolute bottom-1.5 left-1.5 px-1.5 py-0.5 bg-black/60 text-white text-xs rounded">{{ strtoupper(pathinfo($title, PATHINFO_EXTENSION) ?: 'MP4') }}</span>
+                                    </div>
+                                @else
+                                    <a href="{{ $url }}" target="_blank" rel="noopener noreferrer"
+                                       class="block rounded-xl overflow-hidden border border-gray-200 hover:border-indigo-300 transition-colors aspect-square">
+                                        <img src="{{ $url }}" alt="{{ $title }}" class="w-full h-full object-cover" loading="lazy">
+                                    </a>
+                                @endif
+                            @endforeach
+                        </div>
+                    </div>
+                @endif
+
+                {{-- Lien URL --}}
+                @if($post->link_url)
+                    <div>
+                        <h3 class="text-sm font-medium text-gray-500 mb-2">URL du lien</h3>
+                        <a href="{{ $post->link_url }}" target="_blank" rel="noopener noreferrer"
+                           class="inline-flex items-center gap-2 text-sm text-indigo-600 hover:text-indigo-700 transition-colors">
+                            <svg class="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1.5">
+                                <path stroke-linecap="round" stroke-linejoin="round" d="M13.19 8.688a4.5 4.5 0 0 1 1.242 7.244l-4.5 4.5a4.5 4.5 0 0 1-6.364-6.364l1.757-1.757m13.35-.622 1.757-1.757a4.5 4.5 0 0 0-6.364-6.364l-4.5 4.5a4.5 4.5 0 0 0 1.242 7.244" />
+                            </svg>
+                            {{ $post->link_url }}
+                        </a>
+                    </div>
+                @endif
+
+                {{-- Dates --}}
+                <div class="pt-6 border-t border-gray-100">
+                    <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                        <div>
+                            <h4 class="text-xs font-medium text-gray-400 uppercase tracking-wider mb-1">Créé le</h4>
+                            <p class="text-sm text-gray-700">{{ $post->created_at->format('d/m/Y H:i') }}</p>
+                        </div>
+                        @if($post->scheduled_at)
+                            <div>
+                                <h4 class="text-xs font-medium text-gray-400 uppercase tracking-wider mb-1">Programmé pour</h4>
+                                <p class="text-sm text-gray-700">{{ $post->scheduled_at->format('d/m/Y H:i') }}</p>
+                            </div>
+                        @endif
+                        @if($post->published_at)
+                            <div>
+                                <h4 class="text-xs font-medium text-gray-400 uppercase tracking-wider mb-1">Publié le</h4>
+                                <p class="text-sm text-gray-700">{{ $post->published_at->format('d/m/Y H:i') }}</p>
+                            </div>
+                        @endif
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        {{-- Card 2: Plateformes --}}
+        <div class="bg-white rounded-2xl shadow-sm border border-gray-100">
+            <div class="px-6 lg:px-8 py-5 border-b border-gray-100">
+                <h2 class="text-base font-semibold text-gray-900">Plateformes</h2>
+            </div>
+
+            <div class="divide-y divide-gray-100">
+                @forelse($post->postPlatforms as $pp)
+                    <div class="px-6 lg:px-8 py-5">
+                        <div class="flex items-start justify-between gap-4">
+                            {{-- Platform info --}}
+                            <div class="flex items-start gap-3 min-w-0">
+                                <x-platform-icon :platform="$pp->platform->slug" size="md" />
+                                <div class="min-w-0">
+                                    <p class="text-sm font-medium text-gray-900">{{ $pp->socialAccount->name ?? $pp->platform->name }}</p>
+                                    <p class="text-xs text-gray-400 mt-0.5">{{ $pp->platform->name }}</p>
+                                </div>
+                            </div>
+
+                            {{-- Status --}}
+                            <div class="flex-shrink-0 text-right">
+                                @php
+                                    $ppStatusColors = [
+                                        'pending'    => 'bg-gray-400',
+                                        'publishing' => 'bg-yellow-400',
+                                        'published'  => 'bg-green-400',
+                                        'failed'     => 'bg-red-400',
+                                    ];
+                                    $ppStatusLabels = [
+                                        'pending'    => 'En attente',
+                                        'publishing' => 'En cours',
+                                        'published'  => 'Publié',
+                                        'failed'     => 'Erreur',
+                                    ];
+                                    $dotColor = $ppStatusColors[$pp->status] ?? 'bg-gray-400';
+                                    $statusLabel = $ppStatusLabels[$pp->status] ?? ucfirst($pp->status);
+                                @endphp
+
+                                <div class="flex items-center gap-2">
+                                    <span class="inline-block w-2 h-2 rounded-full {{ $dotColor }}"></span>
+                                    <span class="text-sm text-gray-700">{{ $statusLabel }}</span>
+                                </div>
+
+                                @if($pp->published_at)
+                                    <p class="text-xs text-gray-400 mt-1">{{ $pp->published_at->format('d/m/Y H:i') }}</p>
+                                @endif
+                            </div>
+                        </div>
+
+                        {{-- Error message --}}
+                        @if($pp->status === 'failed' && $pp->error_message)
+                            <div class="mt-3 ml-9 p-3 bg-red-50 rounded-xl border border-red-100">
+                                <p class="text-xs text-red-700">{{ $pp->error_message }}</p>
+                            </div>
+                        @endif
+
+                        {{-- Logs --}}
+                        @if($pp->logs->count())
+                            <div class="mt-3 ml-9 space-y-1">
+                                @foreach($pp->logs->sortByDesc('created_at') as $log)
+                                    <div class="flex items-center gap-2 text-xs text-gray-400">
+                                        <span class="font-medium text-gray-500">{{ $log->action }}</span>
+                                        <span>&middot;</span>
+                                        <span>{{ $log->created_at->format('d/m/Y H:i:s') }}</span>
+                                        @if($log->details)
+                                            <span>&middot;</span>
+                                            <span class="truncate max-w-xs">
+                                                @if(is_array($log->details))
+                                                    {{ json_encode($log->details, JSON_UNESCAPED_UNICODE) }}
+                                                @else
+                                                    {{ $log->details }}
+                                                @endif
+                                            </span>
+                                        @endif
+                                    </div>
+                                @endforeach
+                            </div>
+                        @endif
+                    </div>
+                @empty
+                    <div class="px-6 lg:px-8 py-8 text-center">
+                        <p class="text-sm text-gray-400">Aucune plateforme associée</p>
+                    </div>
+                @endforelse
+            </div>
+        </div>
+    </div>
+@endsection

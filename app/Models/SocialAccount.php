@@ -13,6 +13,9 @@ class SocialAccount extends Model
         'platform_id',
         'name',
         'credentials',
+        'language',
+        'branding',
+        'show_branding',
         'is_active',
         'last_used_at',
     ];
@@ -22,6 +25,7 @@ class SocialAccount extends Model
         return [
             'credentials' => 'encrypted:array',
             'is_active' => 'boolean',
+            'show_branding' => 'boolean',
             'last_used_at' => 'datetime',
         ];
     }

@@ -18,7 +18,10 @@ class PlatformSeeder extends Seeder
                 'auth_type' => 'oauth',
                 'config' => json_encode([
                     'api_version' => 'v21.0',
-                    'permissions' => ['pages_manage_posts', 'pages_read_engagement'],
+                    'credential_fields' => [
+                        ['key' => 'page_id', 'label' => 'Page ID', 'type' => 'text'],
+                        ['key' => 'access_token', 'label' => 'Access Token', 'type' => 'password'],
+                    ],
                 ]),
             ],
             [
@@ -29,6 +32,12 @@ class PlatformSeeder extends Seeder
                 'auth_type' => 'oauth',
                 'config' => json_encode([
                     'api_version' => 'v2',
+                    'credential_fields' => [
+                        ['key' => 'api_key', 'label' => 'API Key', 'type' => 'password'],
+                        ['key' => 'api_secret', 'label' => 'API Secret', 'type' => 'password'],
+                        ['key' => 'access_token', 'label' => 'Access Token', 'type' => 'password'],
+                        ['key' => 'access_token_secret', 'label' => 'Access Token Secret', 'type' => 'password'],
+                    ],
                 ]),
             ],
             [
@@ -39,7 +48,10 @@ class PlatformSeeder extends Seeder
                 'auth_type' => 'oauth',
                 'config' => json_encode([
                     'api_version' => 'v21.0',
-                    'requires_facebook' => true,
+                    'credential_fields' => [
+                        ['key' => 'account_id', 'label' => 'Account ID', 'type' => 'text'],
+                        ['key' => 'access_token', 'label' => 'Access Token', 'type' => 'password'],
+                    ],
                 ]),
             ],
             [
@@ -50,6 +62,10 @@ class PlatformSeeder extends Seeder
                 'auth_type' => 'bot_token',
                 'config' => json_encode([
                     'api_base' => 'https://api.telegram.org',
+                    'credential_fields' => [
+                        ['key' => 'bot_token', 'label' => 'Bot Token', 'type' => 'password'],
+                        ['key' => 'chat_id', 'label' => 'Chat ID', 'type' => 'text'],
+                    ],
                 ]),
             ],
         ];

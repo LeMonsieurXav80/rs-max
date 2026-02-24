@@ -10,10 +10,13 @@ class Post extends Model
 {
     protected $fillable = [
         'user_id',
-        'title',
-        'content',
-        'media_urls',
+        'content_fr',
+        'content_en',
+        'hashtags',
+        'auto_translate',
+        'media',
         'link_url',
+        'telegram_channel',
         'status',
         'scheduled_at',
         'published_at',
@@ -22,7 +25,8 @@ class Post extends Model
     protected function casts(): array
     {
         return [
-            'media_urls' => 'array',
+            'media' => 'array',
+            'auto_translate' => 'boolean',
             'scheduled_at' => 'datetime',
             'published_at' => 'datetime',
         ];
@@ -46,5 +50,22 @@ class Post extends Model
     public function scopeReadyToPublish($query)
     {
         return $query->scheduled()->where('scheduled_at', '<=', now());
+    }
+
+    public function getContentPreviewAttribute(): string
+    {
+        return \Illuminate\Support\Str::limit($this->content_fr, 100);
+    }
+
+    public function getStatusColorAttribute(): string
+    {
+        return match ($this->status) {
+            'draft' => 'gray',
+            'scheduled' => 'blue',
+            'publishing' => 'yellow',
+            'published' => 'green',
+            'failed' => 'red',
+            default => 'gray',
+        };
     }
 }
