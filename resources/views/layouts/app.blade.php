@@ -261,5 +261,8 @@
                 @endif
             </div>
         </div>
+
+        {{-- Custom scripts from child views --}}
+        @stack('scripts')
     </body>
 </html>
