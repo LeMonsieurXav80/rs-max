@@ -26,6 +26,16 @@ class PlatformController extends Controller
     }
 
     /**
+     * Threads configuration page.
+     */
+    public function threads(Request $request): View
+    {
+        $accounts = $this->accountsForSlugs($request, ['threads']);
+
+        return view('platforms.threads', compact('accounts'));
+    }
+
+    /**
      * Telegram configuration page.
      * Accounts grouped by bot_token, with bot records separated from channels.
      */
@@ -457,6 +467,7 @@ class PlatformController extends Controller
         $account->delete();
 
         $route = match ($slug) {
+            'threads' => 'platforms.threads',
             'telegram' => 'platforms.telegram',
             'twitter' => 'platforms.twitter',
             default => 'platforms.facebook',

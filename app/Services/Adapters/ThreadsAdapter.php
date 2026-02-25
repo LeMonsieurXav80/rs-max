@@ -6,61 +6,41 @@ use App\Models\SocialAccount;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 
-class InstagramAdapter implements PlatformAdapterInterface
+class ThreadsAdapter implements PlatformAdapterInterface
 {
-    private const API_BASE = 'https://graph.facebook.com/v21.0';
+    private const API_BASE = 'https://graph.threads.net/v1.0';
 
-    /**
-     * Maximum number of polling attempts when waiting for a video container
-     * to finish processing (status_code === 'FINISHED').
-     */
     private const VIDEO_POLL_MAX_ATTEMPTS = 30;
 
-    /**
-     * Seconds to wait between polling attempts for video processing.
-     */
     private const VIDEO_POLL_INTERVAL = 5;
 
-    /**
-     * Publish content to Instagram via the Container-based Graph API.
-     *
-     * @param  SocialAccount  $account  Credentials: account_id, access_token.
-     * @param  string  $content  The caption text.
-     * @param  array|null  $media  Optional media items (each with url, mimetype, size, title).
-     * @return array{success: bool, external_id: string|null, error: string|null}
-     */
     public function publish(SocialAccount $account, string $content, ?array $media = null, ?array $options = null): array
     {
         try {
             $credentials = $account->credentials;
-            $accountId = $credentials['account_id'];
+            $userId = $credentials['user_id'];
             $accessToken = $credentials['access_token'];
-            $locationId = $options['location_id'] ?? null;
 
-            // Instagram requires at least one media item.
+            // No media — text-only post.
             if (empty($media)) {
-                return [
-                    'success' => false,
-                    'external_id' => null,
-                    'error' => 'Instagram requires at least one image or video to publish.',
-                ];
+                return $this->publishTextPost($userId, $accessToken, $content, $options);
             }
 
             // Single image.
             if (count($media) === 1 && $this->isImage($media[0]['mimetype'])) {
-                return $this->publishSingleImage($accountId, $accessToken, $content, $media[0]['url'], $locationId);
+                return $this->publishSingleImage($userId, $accessToken, $content, $media[0]['url'], $options);
             }
 
-            // Single video (published as a Reel).
+            // Single video.
             if (count($media) === 1 && $this->isVideo($media[0]['mimetype'])) {
-                return $this->publishSingleVideo($accountId, $accessToken, $content, $media[0]['url'], $locationId);
+                return $this->publishSingleVideo($userId, $accessToken, $content, $media[0]['url'], $options);
             }
 
-            // Multiple media items -- carousel.
-            return $this->publishCarousel($accountId, $accessToken, $content, $media, $locationId);
+            // Multiple media — carousel.
+            return $this->publishCarousel($userId, $accessToken, $content, $media, $options);
 
         } catch (\Throwable $e) {
-            Log::error('InstagramAdapter: publish failed', [
+            Log::error('ThreadsAdapter: publish failed', [
                 'account_id' => $account->id,
                 'error' => $e->getMessage(),
             ]);
@@ -74,105 +54,99 @@ class InstagramAdapter implements PlatformAdapterInterface
     }
 
     // -------------------------------------------------------------------------
-    //  Single Image
+    //  Text-only
     // -------------------------------------------------------------------------
 
-    /**
-     * Publish a single image post.
-     *
-     * 1. Create an image container.
-     * 2. Publish the container.
-     */
-    private function publishSingleImage(string $accountId, string $accessToken, string $caption, string $imageUrl, ?string $locationId = null): array
+    private function publishTextPost(string $userId, string $accessToken, string $text, ?array $options): array
     {
-        // Step 1 -- create the media container.
         $params = [
-            'image_url' => $imageUrl,
-            'caption' => $caption,
+            'text' => $text,
+            'media_type' => 'TEXT',
             'access_token' => $accessToken,
         ];
 
-        if ($locationId) {
-            $params['location_id'] = $locationId;
+        $this->addLocationParams($params, $options);
+
+        $container = Http::post(self::API_BASE . "/{$userId}/threads", $params);
+        $containerId = $this->extractId($container, 'text container creation');
+
+        if ($containerId === null) {
+            return $this->errorFromResponse($container, 'Failed to create text container');
         }
 
-        $container = Http::post(self::API_BASE . "/{$accountId}/media", $params);
+        return $this->publishContainer($userId, $accessToken, $containerId);
+    }
 
+    // -------------------------------------------------------------------------
+    //  Single Image
+    // -------------------------------------------------------------------------
+
+    private function publishSingleImage(string $userId, string $accessToken, string $text, string $imageUrl, ?array $options): array
+    {
+        $params = [
+            'text' => $text,
+            'image_url' => $imageUrl,
+            'media_type' => 'IMAGE',
+            'access_token' => $accessToken,
+        ];
+
+        $this->addLocationParams($params, $options);
+
+        $container = Http::post(self::API_BASE . "/{$userId}/threads", $params);
         $containerId = $this->extractId($container, 'image container creation');
 
         if ($containerId === null) {
             return $this->errorFromResponse($container, 'Failed to create image container');
         }
 
-        // Step 2 -- publish.
-        return $this->publishContainer($accountId, $accessToken, $containerId);
+        return $this->publishContainer($userId, $accessToken, $containerId);
     }
 
     // -------------------------------------------------------------------------
-    //  Single Video (Reel)
+    //  Single Video
     // -------------------------------------------------------------------------
 
-    /**
-     * Publish a single video as a Reel.
-     *
-     * 1. Create a video container (media_type=REELS).
-     * 2. Poll until the container is FINISHED.
-     * 3. Publish the container.
-     */
-    private function publishSingleVideo(string $accountId, string $accessToken, string $caption, string $videoUrl, ?string $locationId = null): array
+    private function publishSingleVideo(string $userId, string $accessToken, string $text, string $videoUrl, ?array $options): array
     {
-        // Step 1 -- create the video container.
         $params = [
+            'text' => $text,
             'video_url' => $videoUrl,
-            'caption' => $caption,
-            'media_type' => 'REELS',
+            'media_type' => 'VIDEO',
             'access_token' => $accessToken,
         ];
 
-        if ($locationId) {
-            $params['location_id'] = $locationId;
-        }
+        $this->addLocationParams($params, $options);
 
-        $container = Http::post(self::API_BASE . "/{$accountId}/media", $params);
-
+        $container = Http::post(self::API_BASE . "/{$userId}/threads", $params);
         $containerId = $this->extractId($container, 'video container creation');
 
         if ($containerId === null) {
             return $this->errorFromResponse($container, 'Failed to create video container');
         }
 
-        // Step 2 -- poll until processing is complete.
+        // Poll until processing is complete.
         $ready = $this->waitForProcessing($containerId, $accessToken);
 
         if (! $ready) {
             return [
                 'success' => false,
                 'external_id' => null,
-                'error' => 'Video processing timed out. The container did not reach FINISHED status.',
+                'error' => 'Video processing timed out.',
             ];
         }
 
-        // Step 3 -- publish.
-        return $this->publishContainer($accountId, $accessToken, $containerId);
+        return $this->publishContainer($userId, $accessToken, $containerId);
     }
 
     // -------------------------------------------------------------------------
     //  Carousel
     // -------------------------------------------------------------------------
 
-    /**
-     * Publish a carousel post with multiple images and/or videos.
-     *
-     * 1. Create a container for each child item (is_carousel_item=true).
-     * 2. Wait for any video containers to finish processing.
-     * 3. Create the carousel container referencing all children.
-     * 4. Publish the carousel container.
-     */
-    private function publishCarousel(string $accountId, string $accessToken, string $caption, array $media, ?string $locationId = null): array
+    private function publishCarousel(string $userId, string $accessToken, string $text, array $media, ?array $options): array
     {
         $childIds = [];
 
-        // Step 1 -- create child containers.
+        // Create child containers.
         foreach ($media as $item) {
             $params = [
                 'is_carousel_item' => 'true',
@@ -183,19 +157,20 @@ class InstagramAdapter implements PlatformAdapterInterface
 
             if ($isVideo) {
                 $params['video_url'] = $item['url'];
-                $params['media_type'] = 'REELS';
+                $params['media_type'] = 'VIDEO';
             } else {
                 $params['image_url'] = $item['url'];
+                $params['media_type'] = 'IMAGE';
             }
 
-            $response = Http::post(self::API_BASE . "/{$accountId}/media", $params);
+            $response = Http::post(self::API_BASE . "/{$userId}/threads", $params);
             $childId = $this->extractId($response, 'carousel child creation');
 
             if ($childId === null) {
                 return $this->errorFromResponse($response, 'Failed to create carousel child container');
             }
 
-            // If this child is a video, wait for it to finish processing.
+            // Wait for video processing.
             if ($isVideo) {
                 $ready = $this->waitForProcessing($childId, $accessToken);
 
@@ -211,40 +186,33 @@ class InstagramAdapter implements PlatformAdapterInterface
             $childIds[] = $childId;
         }
 
-        // Step 2 -- create the carousel container.
+        // Create the carousel container.
         $carouselParams = [
             'media_type' => 'CAROUSEL',
             'children' => implode(',', $childIds),
-            'caption' => $caption,
+            'text' => $text,
             'access_token' => $accessToken,
         ];
 
-        if ($locationId) {
-            $carouselParams['location_id'] = $locationId;
-        }
+        $this->addLocationParams($carouselParams, $options);
 
-        $carouselResponse = Http::post(self::API_BASE . "/{$accountId}/media", $carouselParams);
-
+        $carouselResponse = Http::post(self::API_BASE . "/{$userId}/threads", $carouselParams);
         $carouselId = $this->extractId($carouselResponse, 'carousel container creation');
 
         if ($carouselId === null) {
             return $this->errorFromResponse($carouselResponse, 'Failed to create carousel container');
         }
 
-        // Step 3 -- publish.
-        return $this->publishContainer($accountId, $accessToken, $carouselId);
+        return $this->publishContainer($userId, $accessToken, $carouselId);
     }
 
     // -------------------------------------------------------------------------
     //  Helpers
     // -------------------------------------------------------------------------
 
-    /**
-     * Publish a previously-created media container.
-     */
-    private function publishContainer(string $accountId, string $accessToken, string $creationId): array
+    private function publishContainer(string $userId, string $accessToken, string $creationId): array
     {
-        $response = Http::post(self::API_BASE . "/{$accountId}/media_publish", [
+        $response = Http::post(self::API_BASE . "/{$userId}/threads_publish", [
             'creation_id' => $creationId,
             'access_token' => $accessToken,
         ]);
@@ -259,9 +227,9 @@ class InstagramAdapter implements PlatformAdapterInterface
             ];
         }
 
-        $error = $body['error']['message'] ?? 'Unknown error during media_publish';
+        $error = $body['error']['message'] ?? 'Unknown error during threads_publish';
 
-        Log::error('InstagramAdapter: media_publish failed', [
+        Log::error('ThreadsAdapter: threads_publish failed', [
             'creation_id' => $creationId,
             'error' => $error,
         ]);
@@ -273,27 +241,24 @@ class InstagramAdapter implements PlatformAdapterInterface
         ];
     }
 
-    /**
-     * Poll the status of a media container until it reaches FINISHED or we time out.
-     */
     private function waitForProcessing(string $containerId, string $accessToken): bool
     {
         for ($attempt = 0; $attempt < self::VIDEO_POLL_MAX_ATTEMPTS; $attempt++) {
             sleep(self::VIDEO_POLL_INTERVAL);
 
             $response = Http::get(self::API_BASE . "/{$containerId}", [
-                'fields' => 'status_code',
+                'fields' => 'status',
                 'access_token' => $accessToken,
             ]);
 
-            $status = $response->json('status_code');
+            $status = $response->json('status');
 
             if ($status === 'FINISHED') {
                 return true;
             }
 
             if ($status === 'ERROR') {
-                Log::error('InstagramAdapter: container processing returned ERROR', [
+                Log::error('ThreadsAdapter: container processing returned ERROR', [
                     'container_id' => $containerId,
                 ]);
 
@@ -304,9 +269,13 @@ class InstagramAdapter implements PlatformAdapterInterface
         return false;
     }
 
-    /**
-     * Extract the 'id' field from a Graph API response.
-     */
+    private function addLocationParams(array &$params, ?array $options): void
+    {
+        if (! empty($options['location_id'])) {
+            $params['location_id'] = $options['location_id'];
+        }
+    }
+
     private function extractId(\Illuminate\Http\Client\Response $response, string $context): ?string
     {
         $body = $response->json();
@@ -315,7 +284,7 @@ class InstagramAdapter implements PlatformAdapterInterface
             return (string) $body['id'];
         }
 
-        Log::error("InstagramAdapter: {$context} failed", [
+        Log::error("ThreadsAdapter: {$context} failed", [
             'status' => $response->status(),
             'body' => $body,
         ]);
@@ -323,9 +292,6 @@ class InstagramAdapter implements PlatformAdapterInterface
         return null;
     }
 
-    /**
-     * Build a standard error return from a failed HTTP response.
-     */
     private function errorFromResponse(\Illuminate\Http\Client\Response $response, string $fallback): array
     {
         $body = $response->json();
@@ -338,17 +304,11 @@ class InstagramAdapter implements PlatformAdapterInterface
         ];
     }
 
-    /**
-     * Determine whether a MIME type represents an image.
-     */
     private function isImage(string $mimetype): bool
     {
         return str_starts_with($mimetype, 'image/');
     }
 
-    /**
-     * Determine whether a MIME type represents a video.
-     */
     private function isVideo(string $mimetype): bool
     {
         return str_starts_with($mimetype, 'video/');

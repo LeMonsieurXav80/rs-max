@@ -9,6 +9,7 @@ use App\Services\Adapters\FacebookAdapter;
 use App\Services\Adapters\InstagramAdapter;
 use App\Services\Adapters\PlatformAdapterInterface;
 use App\Services\Adapters\TelegramAdapter;
+use App\Services\Adapters\ThreadsAdapter;
 use App\Services\Adapters\TwitterAdapter;
 use App\Services\PublishingService;
 use Illuminate\Http\JsonResponse;
@@ -81,7 +82,8 @@ class PublishController extends Controller
         ]);
 
         // Publish synchronously
-        $result = $adapter->publish($account, $content, $media);
+        $options = $this->buildOptions($post);
+        $result = $adapter->publish($account, $content, $media, $options);
 
         if ($result['success']) {
             $postPlatform->update([
@@ -159,6 +161,7 @@ class PublishController extends Controller
 
         $media = $this->resolveMediaUrls($post->media);
         $post->update(['status' => 'publishing']);
+        $options = $this->buildOptions($post);
 
         $results = [];
 
@@ -182,7 +185,7 @@ class PublishController extends Controller
                 'details' => ['platform' => $platform->slug, 'account' => $account->name, 'manual' => true],
             ]);
 
-            $result = $adapter->publish($account, $content, $media);
+            $result = $adapter->publish($account, $content, $media, $options);
 
             if ($result['success']) {
                 $pp->update([
@@ -260,9 +263,22 @@ class PublishController extends Controller
             'telegram' => new TelegramAdapter(),
             'facebook' => new FacebookAdapter(),
             'instagram' => new InstagramAdapter(),
+            'threads' => new ThreadsAdapter(),
             'twitter' => new TwitterAdapter(),
             default => null,
         };
+    }
+
+    private function buildOptions(Post $post): ?array
+    {
+        $options = [];
+
+        if ($post->location_id) {
+            $options['location_id'] = $post->location_id;
+            $options['location_name'] = $post->location_name;
+        }
+
+        return ! empty($options) ? $options : null;
     }
 
     private function resolveMediaUrls(?array $media): ?array

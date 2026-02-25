@@ -18,33 +18,34 @@ class FacebookAdapter implements PlatformAdapterInterface
      * @param  array|null  $media  Optional media items (each with url, mimetype, size, title).
      * @return array{success: bool, external_id: string|null, error: string|null}
      */
-    public function publish(SocialAccount $account, string $content, ?array $media = null): array
+    public function publish(SocialAccount $account, string $content, ?array $media = null, ?array $options = null): array
     {
         try {
             $credentials = $account->credentials;
             $pageId = $credentials['page_id'];
             $accessToken = $credentials['access_token'];
+            $placeId = $options['location_id'] ?? null;
 
             // No media -- text-only post (optionally with a link).
             if (empty($media)) {
-                return $this->publishTextPost($pageId, $accessToken, $content);
+                return $this->publishTextPost($pageId, $accessToken, $content, $placeId);
             }
 
             // Single image.
             if (count($media) === 1 && $this->isImage($media[0]['mimetype'])) {
-                return $this->publishSinglePhoto($pageId, $accessToken, $content, $media[0]['url']);
+                return $this->publishSinglePhoto($pageId, $accessToken, $content, $media[0]['url'], $placeId);
             }
 
             // Single video.
             if (count($media) === 1 && $this->isVideo($media[0]['mimetype'])) {
-                return $this->publishSingleVideo($pageId, $accessToken, $content, $media[0]['url']);
+                return $this->publishSingleVideo($pageId, $accessToken, $content, $media[0]['url'], $placeId);
             }
 
             // Multiple images -- unpublished photo upload then multi-photo post.
             $images = array_filter($media, fn ($item) => $this->isImage($item['mimetype']));
 
             if (count($images) === count($media)) {
-                return $this->publishMultiPhoto($pageId, $accessToken, $content, $images);
+                return $this->publishMultiPhoto($pageId, $accessToken, $content, $images, $placeId);
             }
 
             // Fallback: mixed media -- publish each individually isn't well-supported,
@@ -52,10 +53,10 @@ class FacebookAdapter implements PlatformAdapterInterface
             $first = $media[0];
 
             if ($this->isVideo($first['mimetype'])) {
-                return $this->publishSingleVideo($pageId, $accessToken, $content, $first['url']);
+                return $this->publishSingleVideo($pageId, $accessToken, $content, $first['url'], $placeId);
             }
 
-            return $this->publishSinglePhoto($pageId, $accessToken, $content, $first['url']);
+            return $this->publishSinglePhoto($pageId, $accessToken, $content, $first['url'], $placeId);
 
         } catch (\Throwable $e) {
             Log::error('FacebookAdapter: publish failed', [
@@ -74,12 +75,16 @@ class FacebookAdapter implements PlatformAdapterInterface
     /**
      * Post a text-only (or text + link) update to the Page feed.
      */
-    private function publishTextPost(string $pageId, string $accessToken, string $content): array
+    private function publishTextPost(string $pageId, string $accessToken, string $content, ?string $placeId = null): array
     {
         $params = [
             'message' => $content,
             'access_token' => $accessToken,
         ];
+
+        if ($placeId) {
+            $params['place'] = $placeId;
+        }
 
         // If the content contains a URL, extract it and pass as `link` for a rich preview.
         $link = $this->extractLink($content);
@@ -95,13 +100,19 @@ class FacebookAdapter implements PlatformAdapterInterface
     /**
      * Publish a single photo with a message.
      */
-    private function publishSinglePhoto(string $pageId, string $accessToken, string $content, string $imageUrl): array
+    private function publishSinglePhoto(string $pageId, string $accessToken, string $content, string $imageUrl, ?string $placeId = null): array
     {
-        $response = Http::post(self::API_BASE . "/{$pageId}/photos", [
+        $params = [
             'url' => $imageUrl,
             'message' => $content,
             'access_token' => $accessToken,
-        ]);
+        ];
+
+        if ($placeId) {
+            $params['place'] = $placeId;
+        }
+
+        $response = Http::post(self::API_BASE . "/{$pageId}/photos", $params);
 
         return $this->parseResponse($response);
     }
@@ -109,13 +120,19 @@ class FacebookAdapter implements PlatformAdapterInterface
     /**
      * Publish a single video with a description.
      */
-    private function publishSingleVideo(string $pageId, string $accessToken, string $content, string $videoUrl): array
+    private function publishSingleVideo(string $pageId, string $accessToken, string $content, string $videoUrl, ?string $placeId = null): array
     {
-        $response = Http::post(self::API_BASE . "/{$pageId}/videos", [
+        $params = [
             'file_url' => $videoUrl,
             'description' => $content,
             'access_token' => $accessToken,
-        ]);
+        ];
+
+        if ($placeId) {
+            $params['place'] = $placeId;
+        }
+
+        $response = Http::post(self::API_BASE . "/{$pageId}/videos", $params);
 
         return $this->parseResponse($response);
     }
@@ -126,7 +143,7 @@ class FacebookAdapter implements PlatformAdapterInterface
      * 1. Upload each photo as unpublished.
      * 2. Create a feed post referencing all photo IDs.
      */
-    private function publishMultiPhoto(string $pageId, string $accessToken, string $content, array $images): array
+    private function publishMultiPhoto(string $pageId, string $accessToken, string $content, array $images, ?string $placeId = null): array
     {
         $photoIds = [];
 
@@ -162,6 +179,10 @@ class FacebookAdapter implements PlatformAdapterInterface
             'message' => $content,
             'access_token' => $accessToken,
         ];
+
+        if ($placeId) {
+            $params['place'] = $placeId;
+        }
 
         foreach ($photoIds as $index => $photoId) {
             $params["attached_media[{$index}]"] = json_encode(['media_fbid' => $photoId]);

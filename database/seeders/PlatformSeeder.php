@@ -68,6 +68,20 @@ class PlatformSeeder extends Seeder
                     ],
                 ]),
             ],
+            [
+                'slug' => 'threads',
+                'name' => 'Threads',
+                'description' => 'Publications sur Threads (Meta)',
+                'color' => '#000000',
+                'auth_type' => 'oauth',
+                'config' => json_encode([
+                    'api_version' => 'v1.0',
+                    'credential_fields' => [
+                        ['key' => 'user_id', 'label' => 'User ID', 'type' => 'text'],
+                        ['key' => 'access_token', 'label' => 'Access Token', 'type' => 'password'],
+                    ],
+                ]),
+            ],
         ];
 
         foreach ($platforms as $platform) {

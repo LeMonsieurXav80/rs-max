@@ -16,7 +16,7 @@ class TelegramAdapter implements PlatformAdapterInterface
      * @param  array|null  $media  Optional media items (each with url, mimetype, size, title).
      * @return array{success: bool, external_id: string|null, error: string|null}
      */
-    public function publish(SocialAccount $account, string $content, ?array $media = null): array
+    public function publish(SocialAccount $account, string $content, ?array $media = null, ?array $options = null): array
     {
         try {
             $credentials = $account->credentials;

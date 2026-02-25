@@ -157,6 +157,20 @@
                     </div>
                 @endif
 
+                {{-- Location --}}
+                @if($post->location_name)
+                    <div>
+                        <h3 class="text-sm font-medium text-gray-500 mb-2">Localisation</h3>
+                        <div class="inline-flex items-center gap-2 text-sm text-gray-700">
+                            <svg class="w-4 h-4 text-indigo-500 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1.5">
+                                <path stroke-linecap="round" stroke-linejoin="round" d="M15 10.5a3 3 0 1 1-6 0 3 3 0 0 1 6 0Z" />
+                                <path stroke-linecap="round" stroke-linejoin="round" d="M19.5 10.5c0 7.142-7.5 11.25-7.5 11.25S4.5 17.642 4.5 10.5a7.5 7.5 0 1 1 15 0Z" />
+                            </svg>
+                            {{ $post->location_name }}
+                        </div>
+                    </div>
+                @endif
+
                 {{-- Dates --}}
                 <div class="pt-6 border-t border-gray-100">
                     <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">

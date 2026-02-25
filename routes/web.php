@@ -2,6 +2,7 @@
 
 use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\FacebookOAuthController;
+use App\Http\Controllers\LocationController;
 use App\Http\Controllers\MediaController;
 use App\Http\Controllers\PlatformController;
 use App\Http\Controllers\PostController;
@@ -9,6 +10,7 @@ use App\Http\Controllers\ProfileController;
 use App\Http\Controllers\PublishController;
 use App\Http\Controllers\SettingsController;
 use App\Http\Controllers\SocialAccountController;
+use App\Http\Controllers\ThreadsOAuthController;
 use Illuminate\Support\Facades\Route;
 
 Route::get('/', function () {
@@ -33,8 +35,13 @@ Route::middleware(['auth', 'verified'])->group(function () {
     Route::get('auth/facebook/select', [FacebookOAuthController::class, 'select'])->name('facebook.select');
     Route::post('auth/facebook/connect', [FacebookOAuthController::class, 'connect'])->name('facebook.connect');
 
+    // Threads OAuth flow
+    Route::get('auth/threads/redirect', [ThreadsOAuthController::class, 'redirect'])->name('threads.redirect');
+    Route::get('auth/threads/callback', [ThreadsOAuthController::class, 'callback'])->name('threads.callback');
+
     // Platforms management (one page per platform)
     Route::get('platforms/facebook', [PlatformController::class, 'facebook'])->name('platforms.facebook');
+    Route::get('platforms/threads', [PlatformController::class, 'threads'])->name('platforms.threads');
     Route::get('platforms/telegram', [PlatformController::class, 'telegram'])->name('platforms.telegram');
     Route::get('platforms/twitter', [PlatformController::class, 'twitter'])->name('platforms.twitter');
     Route::post('platforms/telegram/validate-bot', [PlatformController::class, 'validateTelegramBot'])->name('platforms.telegram.validateBot');
@@ -56,6 +63,9 @@ Route::middleware(['auth', 'verified'])->group(function () {
     // Settings (admin only)
     Route::get('settings', [SettingsController::class, 'index'])->name('settings.index');
     Route::patch('settings', [SettingsController::class, 'update'])->name('settings.update');
+
+    // Location search (Facebook Places API)
+    Route::get('api/locations/search', [LocationController::class, 'search'])->name('locations.search');
 
     // Media library
     Route::get('media', [MediaController::class, 'index'])->name('media.index');

@@ -16,6 +16,8 @@ class Post extends Model
         'auto_translate',
         'media',
         'link_url',
+        'location_name',
+        'location_id',
         'telegram_channel',
         'status',
         'scheduled_at',

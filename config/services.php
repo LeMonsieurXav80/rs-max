@@ -46,4 +46,10 @@ return [
         'api_version' => 'v21.0',
     ],
 
+    'threads' => [
+        'client_id' => env('THREADS_APP_ID'),
+        'client_secret' => env('THREADS_APP_SECRET'),
+        'api_version' => 'v1.0',
+    ],
+
 ];

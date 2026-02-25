@@ -169,10 +169,11 @@
                         $platformLabels = [
                             'facebook' => 'Facebook',
                             'instagram' => 'Instagram',
+                            'threads' => 'Threads',
                             'twitter' => 'Twitter / X',
                             'telegram' => 'Telegram',
                         ];
-                        $platformOrder = ['facebook', 'instagram', 'twitter', 'telegram'];
+                        $platformOrder = ['facebook', 'instagram', 'threads', 'twitter', 'telegram'];
                     @endphp
 
                     @foreach($platformOrder as $slug)
@@ -383,6 +384,105 @@
                 @error('link_url')
                     <p class="mt-1.5 text-sm text-red-600">{{ $message }}</p>
                 @enderror
+            </div>
+
+            {{-- Location --}}
+            <div class="mt-6" x-data="{
+                locationQuery: '',
+                locationName: '{{ old('location_name', $post->location_name ?? '') }}',
+                locationId: '{{ old('location_id', $post->location_id ?? '') }}',
+                locationResults: [],
+                locationLoading: false,
+                locationOpen: false,
+                locationTimeout: null,
+                searchLocation() {
+                    if (this.locationQuery.length < 2) { this.locationResults = []; this.locationOpen = false; return; }
+                    clearTimeout(this.locationTimeout);
+                    this.locationTimeout = setTimeout(async () => {
+                        this.locationLoading = true;
+                        try {
+                            let url = '{{ route('locations.search') }}?q=' + encodeURIComponent(this.locationQuery);
+                            const resp = await fetch(url, { headers: { 'Accept': 'application/json' } });
+                            this.locationResults = await resp.json();
+                            this.locationOpen = this.locationResults.length > 0;
+                        } catch(e) { this.locationResults = []; }
+                        this.locationLoading = false;
+                    }, 300);
+                },
+                selectLocation(place) {
+                    this.locationName = place.name;
+                    this.locationId = place.id;
+                    this.locationQuery = '';
+                    this.locationOpen = false;
+                    this.locationResults = [];
+                },
+                clearLocation() {
+                    this.locationName = '';
+                    this.locationId = '';
+                    this.locationQuery = '';
+                    this.locationResults = [];
+                    this.locationOpen = false;
+                }
+            }">
+                <label class="block text-sm font-medium text-gray-700 mb-2">
+                    Localisation
+                </label>
+
+                {{-- Selected location display --}}
+                <div x-show="locationName" x-cloak class="flex items-center gap-2 mb-2 px-3 py-2 bg-indigo-50 border border-indigo-200 rounded-xl">
+                    <svg class="w-4 h-4 text-indigo-500 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1.5">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M15 10.5a3 3 0 1 1-6 0 3 3 0 0 1 6 0Z" />
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M19.5 10.5c0 7.142-7.5 11.25-7.5 11.25S4.5 17.642 4.5 10.5a7.5 7.5 0 1 1 15 0Z" />
+                    </svg>
+                    <span class="text-sm text-indigo-700 font-medium" x-text="locationName"></span>
+                    <button type="button" @click="clearLocation()" class="ml-auto text-indigo-400 hover:text-indigo-600">
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2">
+                            <path stroke-linecap="round" stroke-linejoin="round" d="M6 18 18 6M6 6l12 12" />
+                        </svg>
+                    </button>
+                </div>
+
+                {{-- Search input --}}
+                <div x-show="!locationName" class="relative">
+                    <input
+                        type="text"
+                        x-model="locationQuery"
+                        @input="searchLocation()"
+                        @focus="if (locationResults.length) locationOpen = true"
+                        @click.away="locationOpen = false"
+                        class="w-full rounded-xl border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 text-sm placeholder-gray-400 transition-colors pl-9"
+                        placeholder="Rechercher un lieu..."
+                    >
+                    <svg class="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1.5">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M15 10.5a3 3 0 1 1-6 0 3 3 0 0 1 6 0Z" />
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M19.5 10.5c0 7.142-7.5 11.25-7.5 11.25S4.5 17.642 4.5 10.5a7.5 7.5 0 1 1 15 0Z" />
+                    </svg>
+                    <svg x-show="locationLoading" class="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 animate-spin" fill="none" viewBox="0 0 24 24">
+                        <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                        <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path>
+                    </svg>
+
+                    {{-- Dropdown results --}}
+                    <div x-show="locationOpen" x-cloak class="absolute z-20 mt-1 w-full bg-white border border-gray-200 rounded-xl shadow-lg max-h-48 overflow-y-auto">
+                        <template x-for="place in locationResults" :key="place.id">
+                            <button type="button" @click="selectLocation(place)"
+                                class="w-full text-left px-4 py-2.5 hover:bg-indigo-50 transition-colors flex items-start gap-2 border-b border-gray-50 last:border-0">
+                                <svg class="w-4 h-4 text-gray-400 mt-0.5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1.5">
+                                    <path stroke-linecap="round" stroke-linejoin="round" d="M15 10.5a3 3 0 1 1-6 0 3 3 0 0 1 6 0Z" />
+                                    <path stroke-linecap="round" stroke-linejoin="round" d="M19.5 10.5c0 7.142-7.5 11.25-7.5 11.25S4.5 17.642 4.5 10.5a7.5 7.5 0 1 1 15 0Z" />
+                                </svg>
+                                <div class="min-w-0">
+                                    <p class="text-sm font-medium text-gray-900" x-text="place.name"></p>
+                                    <p class="text-xs text-gray-400" x-text="[place.city, place.country].filter(Boolean).join(', ')"></p>
+                                </div>
+                            </button>
+                        </template>
+                    </div>
+                </div>
+
+                <input type="hidden" name="location_name" :value="locationName">
+                <input type="hidden" name="location_id" :value="locationId">
+                <p class="mt-1.5 text-xs text-gray-400">Facebook, Instagram et Threads uniquement</p>
             </div>
         </div>
 
