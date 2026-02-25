@@ -134,16 +134,27 @@ class TwitterAdapter implements PlatformAdapterInterface
         $tempFile = tempnam(sys_get_temp_dir(), 'tw_media_');
 
         try {
+            Log::info('TwitterAdapter: downloading media', ['url' => $mediaUrl]);
             $downloadResponse = Http::withOptions(['sink' => $tempFile])->get($mediaUrl);
 
             if (! $downloadResponse->successful()) {
-                Log::error('TwitterAdapter: failed to download media', ['url' => $mediaUrl]);
+                Log::error('TwitterAdapter: failed to download media', [
+                    'url' => $mediaUrl,
+                    'status' => $downloadResponse->status(),
+                ]);
 
                 return null;
             }
 
+            $fileSize = filesize($tempFile);
             $mimeType = $downloadResponse->header('Content-Type') ?? mime_content_type($tempFile) ?? 'application/octet-stream';
             $isVideo = str_starts_with($mimeType, 'video/');
+
+            Log::info('TwitterAdapter: media downloaded', [
+                'size' => $fileSize,
+                'mime' => $mimeType,
+                'is_video' => $isVideo,
+            ]);
 
             if ($isVideo) {
                 return $this->chunkedUpload($tempFile, $mimeType);
@@ -192,6 +203,11 @@ class TwitterAdapter implements PlatformAdapterInterface
     {
         $fileSize = filesize($filePath);
 
+        Log::info('TwitterAdapter: starting chunked upload', [
+            'size' => $fileSize,
+            'mime' => $mimeType,
+        ]);
+
         // Step 1: INIT
         $initParams = [
             'command' => 'INIT',
@@ -209,12 +225,17 @@ class TwitterAdapter implements PlatformAdapterInterface
         $initBody = $initResponse->json();
 
         if (! $initResponse->successful() || ! isset($initBody['media_id_string'])) {
-            Log::error('TwitterAdapter: chunked INIT failed', ['body' => $initBody]);
+            Log::error('TwitterAdapter: chunked INIT failed', [
+                'status' => $initResponse->status(),
+                'body' => $initBody,
+            ]);
 
             return null;
         }
 
         $mediaId = $initBody['media_id_string'];
+
+        Log::info('TwitterAdapter: INIT successful', ['media_id' => $mediaId]);
 
         // Step 2: APPEND (upload in 5MB chunks)
         $chunkSize = 5 * 1024 * 1024; // 5MB
