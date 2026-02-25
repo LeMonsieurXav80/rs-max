@@ -239,10 +239,19 @@
 
                 {{-- Footer with git version --}}
                 @php
-                    $gitCommit = trim(exec('git rev-parse --short HEAD 2>/dev/null'));
-                    $gitDate = trim(exec('git log -1 --format=%ci 2>/dev/null'));
+                    // Try reading from files first (production), fallback to exec (local dev)
+                    $versionFile = storage_path('app/git-version.txt');
+                    $dateFile = storage_path('app/git-date.txt');
+
+                    $gitCommit = file_exists($versionFile)
+                        ? trim(file_get_contents($versionFile))
+                        : trim(exec('git rev-parse --short HEAD 2>/dev/null'));
+
+                    $gitDate = file_exists($dateFile)
+                        ? trim(file_get_contents($dateFile))
+                        : trim(exec('git log -1 --format=%ci 2>/dev/null'));
                 @endphp
-                @if($gitCommit)
+                @if($gitCommit && $gitCommit !== 'unknown')
                     <footer class="px-6 lg:px-8 pb-4">
                         <p class="text-xs text-gray-400 text-right">
                             v. {{ $gitCommit }}

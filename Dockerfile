@@ -41,6 +41,10 @@ WORKDIR /var/www/html
 # Copy application files
 COPY . .
 
+# Capture git commit info for version display
+RUN git rev-parse --short HEAD > storage/app/git-version.txt 2>/dev/null || echo "unknown" > storage/app/git-version.txt
+RUN git log -1 --format=%ci > storage/app/git-date.txt 2>/dev/null || echo "" > storage/app/git-date.txt
+
 # Install PHP dependencies
 RUN composer install --no-dev --optimize-autoloader --no-interaction
 
