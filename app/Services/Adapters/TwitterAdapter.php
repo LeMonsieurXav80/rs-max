@@ -249,17 +249,17 @@ class TwitterAdapter implements PlatformAdapterInterface
                 'command' => 'APPEND',
                 'media_id' => $mediaId,
                 'segment_index' => (string) $segmentIndex,
+                'media' => base64_encode($chunk),
             ];
 
-            // Build URL with query parameters (Twitter expects params in URL for APPEND)
-            $appendUrl = self::MEDIA_UPLOAD_URL . '?' . http_build_query($appendParams);
+            // For multipart/form-data, OAuth signature includes ONLY oauth_* params
+            // So we sign with empty params and send data via form-urlencoded instead
             $authHeader = $this->buildOAuthHeader('POST', self::MEDIA_UPLOAD_URL, $appendParams);
 
-            // Send media as multipart binary (file attachment)
-            $appendResponse = Http::withHeaders([
+            // Use form-urlencoded instead of multipart (more reliable with OAuth 1.0a)
+            $appendResponse = Http::asForm()->withHeaders([
                 'Authorization' => $authHeader,
-            ])->attach('media', $chunk, 'chunk')
-                ->post($appendUrl);
+            ])->post(self::MEDIA_UPLOAD_URL, $appendParams);
 
             if (! $appendResponse->successful() && $appendResponse->status() !== 204) {
                 Log::error('TwitterAdapter: chunked APPEND failed', [
