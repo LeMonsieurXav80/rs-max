@@ -8,6 +8,10 @@ return new class extends Migration
 {
     public function up(): void
     {
+        if (Schema::hasColumn('users', 'default_accounts')) {
+            return;
+        }
+
         Schema::table('users', function (Blueprint $table) {
             $table->json('default_accounts')->nullable()->after('is_admin');
         });
