@@ -25,6 +25,8 @@ services:
       CACHE_STORE: database
       QUEUE_CONNECTION: database
       BCRYPT_ROUNDS: 12
+    volumes:
+      - media_data:/var/www/html/storage/app/private/media
     depends_on:
       database:
         condition: service_healthy
@@ -55,3 +57,4 @@ services:
 
 volumes:
   mysql_data:
+  media_data:

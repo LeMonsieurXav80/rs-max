@@ -11,6 +11,7 @@ chown www-data:www-data /var/log/php/error.log
 # Ensure storage directories exist with correct permissions
 mkdir -p /var/www/html/storage/framework/{sessions,views,cache}
 mkdir -p /var/www/html/storage/logs
+mkdir -p /var/www/html/storage/app/private/media
 mkdir -p /var/www/html/bootstrap/cache
 chown -R www-data:www-data /var/www/html/storage /var/www/html/bootstrap/cache
 chmod -R 775 /var/www/html/storage /var/www/html/bootstrap/cache
@@ -28,7 +29,8 @@ for var in APP_NAME APP_ENV APP_DEBUG APP_URL APP_KEY \
            DB_CONNECTION DB_HOST DB_PORT DB_DATABASE DB_USERNAME DB_PASSWORD \
            MAIL_MAILER MAIL_HOST MAIL_PORT MAIL_USERNAME MAIL_PASSWORD \
            MAIL_FROM_ADDRESS MAIL_FROM_NAME \
-           SESSION_DRIVER CACHE_STORE QUEUE_CONNECTION; do
+           SESSION_DRIVER CACHE_STORE QUEUE_CONNECTION \
+           FACEBOOK_APP_ID FACEBOOK_APP_SECRET FACEBOOK_CONFIG_ID; do
     val=$(eval echo \$$var)
     if [ -n "$val" ]; then
         # Remove existing line and append new value
