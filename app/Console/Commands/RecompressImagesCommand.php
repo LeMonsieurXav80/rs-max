@@ -28,7 +28,13 @@ class RecompressImagesCommand extends Command
         }
         $this->newLine();
 
-        $files = glob($mediaPath . '/*.{jpg,jpeg,png}', GLOB_BRACE);
+        $files = array_merge(
+            glob($mediaPath . '/*.jpg'),
+            glob($mediaPath . '/*.jpeg'),
+            glob($mediaPath . '/*.png'),
+            glob($mediaPath . '/*.JPG'),
+            glob($mediaPath . '/*.JPEG'),
+        );
         $totalBefore = 0;
         $totalAfter = 0;
         $processed = 0;
