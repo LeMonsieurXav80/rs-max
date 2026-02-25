@@ -343,21 +343,30 @@
                                     $url = is_string($item) ? $item : ($item['url'] ?? '');
                                     $mime = is_string($item) ? 'image/jpeg' : ($item['mimetype'] ?? 'image/jpeg');
                                     $title = is_string($item) ? basename($url) : ($item['title'] ?? basename($url));
+                                    $size = is_string($item) ? null : ($item['size'] ?? null);
                                     $isVideo = str_starts_with($mime, 'video/');
                                 @endphp
 
-                                @if($isVideo)
-                                    <div class="rounded-xl overflow-hidden border border-gray-200 bg-gray-900">
-                                        <video class="w-full" controls preload="metadata">
-                                            <source src="{{ $url }}" type="{{ $mime }}">
-                                        </video>
+                                <div>
+                                    @if($isVideo)
+                                        <div class="rounded-xl overflow-hidden border border-gray-200 bg-gray-900">
+                                            <video class="w-full" controls preload="metadata">
+                                                <source src="{{ $url }}" type="{{ $mime }}">
+                                            </video>
+                                        </div>
+                                    @else
+                                        <a href="{{ $url }}" target="_blank" rel="noopener noreferrer"
+                                           class="block rounded-xl overflow-hidden border border-gray-200 hover:border-indigo-300 transition-colors">
+                                            <img src="{{ $url }}" alt="{{ $title }}" class="w-full object-cover" loading="lazy">
+                                        </a>
+                                    @endif
+                                    <div class="mt-1.5 flex items-center justify-between text-xs text-gray-400 px-1">
+                                        <span class="truncate" title="{{ $title }}">{{ $title }}</span>
+                                        @if($size)
+                                            <span class="flex-shrink-0 ml-2">{{ number_format($size / 1048576, 1) }} Mo</span>
+                                        @endif
                                     </div>
-                                @else
-                                    <a href="{{ $url }}" target="_blank" rel="noopener noreferrer"
-                                       class="block rounded-xl overflow-hidden border border-gray-200 hover:border-indigo-300 transition-colors">
-                                        <img src="{{ $url }}" alt="{{ $title }}" class="w-full object-cover" loading="lazy">
-                                    </a>
-                                @endif
+                                </div>
                             @endforeach
                         </div>
                     </div>

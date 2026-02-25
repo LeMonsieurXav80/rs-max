@@ -1,7 +1,8 @@
 @extends('layouts.app')
 
-@section('title')
-    Dashboard
+@section('title', 'Dashboard')
+
+@section('title_extra')
     @if($isAdmin)
         <span class="ml-2 inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-indigo-100 text-indigo-700">Admin</span>
     @endif

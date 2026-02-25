@@ -106,6 +106,7 @@ class TelegramAdapter implements PlatformAdapterInterface
             'video' => $videoUrl,
             'caption' => $caption,
             'parse_mode' => 'HTML',
+            'supports_streaming' => true,
         ]);
 
         return $this->parseResponse($response);

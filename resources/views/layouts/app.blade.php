@@ -201,7 +201,7 @@
                                     <path stroke-linecap="round" stroke-linejoin="round" d="M3.75 6.75h16.5M3.75 12h16.5m-16.5 5.25h16.5" />
                                 </svg>
                             </button>
-                            <h1 class="text-lg font-semibold text-gray-900">@yield('title', 'Dashboard')</h1>
+                            <h1 class="text-lg font-semibold text-gray-900">@yield('title', 'Dashboard')@yield('title_extra')</h1>
                         </div>
                         <div class="flex items-center gap-3">
                             @yield('actions')
