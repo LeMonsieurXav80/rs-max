@@ -2,6 +2,7 @@
 
 use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\FacebookOAuthController;
+use App\Http\Controllers\HashtagController;
 use App\Http\Controllers\LocationController;
 use App\Http\Controllers\MediaController;
 use App\Http\Controllers\PlatformController;
@@ -66,6 +67,9 @@ Route::middleware(['auth', 'verified'])->group(function () {
 
     // Location search (Facebook Places API)
     Route::get('api/locations/search', [LocationController::class, 'search'])->name('locations.search');
+
+    // Hashtags (most used)
+    Route::get('api/hashtags', [HashtagController::class, 'index'])->name('hashtags.index');
 
     // Media library
     Route::get('media', [MediaController::class, 'index'])->name('media.index');

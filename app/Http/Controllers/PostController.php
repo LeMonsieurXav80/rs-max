@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Models\Hashtag;
 use App\Models\Platform;
 use App\Models\Post;
 use App\Models\PostPlatform;
@@ -198,6 +199,11 @@ class PostController extends Controller
             return $post;
         });
 
+        // Record hashtag usage
+        if (! empty($validated['hashtags'])) {
+            $this->recordHashtagsUsage($user->id, $validated['hashtags']);
+        }
+
         // Return JSON for publish-now AJAX requests
         if ($publishNow && $request->expectsJson()) {
             $post->load('postPlatforms.socialAccount.platform');
@@ -376,6 +382,11 @@ class PostController extends Controller
             }
         });
 
+        // Record hashtag usage
+        if (! empty($validated['hashtags'])) {
+            $this->recordHashtagsUsage($user->id, $validated['hashtags']);
+        }
+
         return redirect()->route('posts.show', $post->id)
             ->with('success', 'Post updated successfully.');
     }
@@ -412,5 +423,18 @@ class PostController extends Controller
 
         return redirect()->route('posts.index')
             ->with('success', 'Post deleted successfully.');
+    }
+
+    /**
+     * Parse and record hashtag usage for the user
+     */
+    private function recordHashtagsUsage(int $userId, string $hashtagsString): void
+    {
+        // Parse hashtags string (can be space or comma separated)
+        $hashtags = preg_split('/[\s,]+/', $hashtagsString, -1, PREG_SPLIT_NO_EMPTY);
+
+        foreach ($hashtags as $tag) {
+            Hashtag::recordUsage($userId, $tag);
+        }
     }
 }

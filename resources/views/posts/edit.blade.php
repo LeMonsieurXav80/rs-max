@@ -511,22 +511,61 @@
                     @enderror
                 </div>
 
-                {{-- Hashtags --}}
-                <div>
-                    <label for="hashtags" class="block text-sm font-medium text-gray-700 mb-2">
+                {{-- Hashtags with tag input --}}
+                <div x-data="hashtagInput('{{ old('hashtags', $post->hashtags) }}')" x-init="init()">
+                    <label class="block text-sm font-medium text-gray-700 mb-2">
                         Hashtags
                     </label>
-                    <input
-                        type="text"
-                        id="hashtags"
-                        name="hashtags"
-                        value="{{ old('hashtags', $post->hashtags) }}"
-                        class="w-full rounded-xl border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 text-sm placeholder-gray-400 transition-colors"
-                        placeholder="#marketing #socialmedia #growth"
-                    >
+
+                    {{-- Tags display + input --}}
+                    <div @click="$refs.input.focus()" class="w-full min-h-[42px] rounded-xl border border-gray-300 shadow-sm focus-within:border-indigo-500 focus-within:ring-1 focus-within:ring-indigo-500 p-2 flex flex-wrap gap-2 items-center cursor-text transition-colors">
+                        {{-- Existing tags as badges --}}
+                        <template x-for="(tag, index) in tags" :key="index">
+                            <span class="inline-flex items-center gap-1.5 px-3 py-1 bg-indigo-100 text-indigo-700 rounded-full text-sm font-medium">
+                                <span x-text="'#' + tag"></span>
+                                <button type="button" @click.stop="removeTag(index)" class="hover:text-indigo-900 transition-colors">
+                                    <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2.5">
+                                        <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" />
+                                    </svg>
+                                </button>
+                            </span>
+                        </template>
+
+                        {{-- Input field --}}
+                        <input
+                            x-ref="input"
+                            type="text"
+                            x-model="inputValue"
+                            @keydown.enter.prevent="addTag"
+                            @keydown.comma.prevent="addTag"
+                            @keydown.space="handleSpace"
+                            @keydown.backspace="handleBackspace"
+                            class="flex-1 min-w-[120px] border-0 focus:ring-0 p-0 text-sm placeholder-gray-400"
+                            placeholder="Tapez un hashtag puis Entrée ou ,"
+                        >
+                    </div>
+
+                    {{-- Hidden input for form submission --}}
+                    <input type="hidden" name="hashtags" :value="tags.join(' ')">
+
                     @error('hashtags')
                         <p class="mt-1.5 text-sm text-red-600">{{ $message }}</p>
                     @enderror
+
+                    {{-- Suggestions --}}
+                    <div x-show="suggestions.length > 0" class="mt-3">
+                        <p class="text-xs font-medium text-gray-500 mb-2">Hashtags fréquents :</p>
+                        <div class="flex flex-wrap gap-2">
+                            <template x-for="suggestion in suggestions" :key="suggestion">
+                                <button
+                                    type="button"
+                                    @click="addSuggestion(suggestion)"
+                                    class="inline-flex items-center px-3 py-1 bg-gray-100 hover:bg-indigo-100 text-gray-700 hover:text-indigo-700 rounded-full text-sm font-medium transition-colors"
+                                    x-text="'#' + suggestion"
+                                ></button>
+                            </template>
+                        </div>
+                    </div>
                 </div>
 
                 {{-- Traduction automatique --}}
@@ -629,3 +668,68 @@
         </div>
     </form>
 @endsection
+
+@push('scripts')
+<script>
+function hashtagInput(initialValue = '') {
+    return {
+        tags: [],
+        inputValue: '',
+        suggestions: [],
+
+        init() {
+            // Load initial tags from parameter or old() value
+            const value = initialValue || '{{ old("hashtags") }}';
+            if (value) {
+                this.tags = value.split(/[\s,]+/).filter(t => t).map(t => t.replace(/^#/, '').toLowerCase());
+            }
+
+            // Fetch most used hashtags
+            fetch('/api/hashtags')
+                .then(res => res.json())
+                .then(data => {
+                    this.suggestions = data.filter(s => !this.tags.includes(s));
+                })
+                .catch(err => console.error('Failed to load hashtag suggestions:', err));
+        },
+
+        addTag() {
+            const value = this.inputValue.trim().replace(/^#/, '').toLowerCase();
+            if (value && !this.tags.includes(value)) {
+                this.tags.push(value);
+                this.suggestions = this.suggestions.filter(s => s !== value);
+            }
+            this.inputValue = '';
+        },
+
+        addSuggestion(tag) {
+            if (!this.tags.includes(tag)) {
+                this.tags.push(tag);
+                this.suggestions = this.suggestions.filter(s => s !== tag);
+            }
+        },
+
+        removeTag(index) {
+            const removed = this.tags.splice(index, 1)[0];
+            // Re-add to suggestions if not already there
+            if (!this.suggestions.includes(removed)) {
+                this.suggestions.unshift(removed);
+            }
+        },
+
+        handleSpace(event) {
+            if (this.inputValue.trim()) {
+                event.preventDefault();
+                this.addTag();
+            }
+        },
+
+        handleBackspace() {
+            if (this.inputValue === '' && this.tags.length > 0) {
+                this.tags.pop();
+            }
+        }
+    }
+}
+</script>
+@endpush
