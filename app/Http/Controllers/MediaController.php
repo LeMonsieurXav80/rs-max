@@ -18,14 +18,19 @@ class MediaController extends Controller
         return (int) Setting::get('image_max_dimension', 2048);
     }
 
-    private function jpegQuality(): int
+    private function imageTargetMinKb(): int
     {
-        return (int) Setting::get('image_jpeg_quality', 82);
+        return (int) Setting::get('image_target_min_kb', 200);
     }
 
-    private function pngQuality(): int
+    private function imageTargetMaxKb(): int
     {
-        return (int) Setting::get('image_png_quality', 8);
+        return (int) Setting::get('image_target_max_kb', 500);
+    }
+
+    private function imageMinQuality(): int
+    {
+        return (int) Setting::get('image_min_quality', 60);
     }
 
     /**
@@ -343,24 +348,68 @@ class MediaController extends Controller
 
         $outputMime = $mimeType;
         if ($mimeType === 'image/png' && ! $this->hasTransparency($image)) {
-            // Convert opaque PNG to JPEG for smaller file size
             $filename = preg_replace('/\.png$/i', '.jpg', $filename);
             $storagePath = Storage::disk('local')->path("media/{$filename}");
             $outputMime = 'image/jpeg';
         }
 
-        $jpegQ = $this->jpegQuality();
-        $pngQ = $this->pngQuality();
+        $targetMinBytes = $this->imageTargetMinKb() * 1024;
+        $targetMaxBytes = $this->imageTargetMaxKb() * 1024;
+        $minQuality = $this->imageMinQuality();
 
-        $saved = match ($outputMime) {
-            'image/jpeg' => imagejpeg($image, $storagePath, $jpegQ),
-            'image/png' => imagepng($image, $storagePath, $pngQ),
-            'image/gif' => imagegif($image, $storagePath),
-            'image/webp' => imagewebp($image, $storagePath, $jpegQ),
-            default => imagejpeg($image, $storagePath, $jpegQ),
-        };
+        if ($outputMime === 'image/png') {
+            imagepng($image, $storagePath, 8);
+            imagedestroy($image);
+            $saved = true;
+        } elseif ($outputMime === 'image/gif') {
+            imagegif($image, $storagePath);
+            imagedestroy($image);
+            $saved = true;
+        } else {
+            // JPEG/WebP: adaptive compression between target min and max
+            $saveFunc = $outputMime === 'image/webp' ? 'imagewebp' : 'imagejpeg';
 
-        imagedestroy($image);
+            // First pass at max quality (90%)
+            $saveFunc($image, $storagePath, 90);
+            $fileSize = filesize($storagePath);
+
+            if ($fileSize <= $targetMaxBytes) {
+                // Already under max target — keep at 90%
+                imagedestroy($image);
+                $saved = true;
+            } else {
+                // Binary search for the right quality between minQuality and 85
+                $low = $minQuality;
+                $high = 85;
+                $bestQuality = $minQuality;
+
+                while ($low <= $high) {
+                    $mid = (int) (($low + $high) / 2);
+                    $saveFunc($image, $storagePath, $mid);
+                    clearstatcache(true, $storagePath);
+                    $fileSize = filesize($storagePath);
+
+                    if ($fileSize <= $targetMaxBytes && $fileSize >= $targetMinBytes) {
+                        // In the sweet spot
+                        $bestQuality = $mid;
+                        break;
+                    } elseif ($fileSize > $targetMaxBytes) {
+                        // Too big, lower quality
+                        $high = $mid - 1;
+                        $bestQuality = $mid;
+                    } else {
+                        // Too small, raise quality
+                        $low = $mid + 1;
+                        $bestQuality = $mid;
+                    }
+                }
+
+                // Final save at best quality found
+                $saveFunc($image, $storagePath, $bestQuality);
+                imagedestroy($image);
+                $saved = true;
+            }
+        }
 
         if (! $saved) {
             return ['success' => false, 'error' => 'Erreur lors de la compression de l\'image.'];

@@ -15,11 +15,7 @@
             </div>
         @endif
 
-        <form method="POST" action="{{ route('settings.update') }}" class="space-y-6"
-              x-data="{
-                  jpegQuality: {{ $settings['image_jpeg_quality'] }},
-                  pngQuality: {{ $settings['image_png_quality'] }}
-              }">
+        <form method="POST" action="{{ route('settings.update') }}" class="space-y-6">
             @csrf
             @method('patch')
 
@@ -31,43 +27,44 @@
                     </svg>
                     <h2 class="text-base font-semibold text-gray-900">Compression d'images</h2>
                 </div>
-                <p class="text-sm text-gray-500 mb-5">Paramètres appliqués lors de l'upload des images.</p>
+                <p class="text-sm text-gray-500 mb-5">L'algorithme ajuste automatiquement la qualité pour atteindre le poids cible, sans descendre en dessous de la qualité minimale.</p>
 
                 <div class="grid grid-cols-1 sm:grid-cols-2 gap-5">
-                    {{-- JPEG quality slider --}}
-                    <div class="sm:col-span-2">
-                        <label for="image_jpeg_quality" class="block text-sm font-medium text-gray-700 mb-2">
-                            Qualité JPEG : <span class="text-indigo-600 font-semibold" x-text="jpegQuality + '%'"></span>
-                        </label>
-                        <input type="range" id="image_jpeg_quality" name="image_jpeg_quality"
-                               min="50" max="100" step="1"
-                               x-model="jpegQuality"
-                               class="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer accent-indigo-600">
-                        <div class="flex justify-between text-xs text-gray-400 mt-1">
-                            <span>50% (léger)</span>
-                            <span>82% (recommandé)</span>
-                            <span>100% (max)</span>
-                        </div>
-                        @error('image_jpeg_quality')
+                    {{-- Target min size --}}
+                    <div>
+                        <label for="image_target_min_kb" class="block text-sm font-medium text-gray-700 mb-1">Poids min par image (KB)</label>
+                        <input type="number" id="image_target_min_kb" name="image_target_min_kb"
+                               value="{{ old('image_target_min_kb', $settings['image_target_min_kb']) }}"
+                               min="50" max="500" step="50"
+                               class="w-full rounded-xl border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 text-sm">
+                        <p class="text-xs text-gray-400 mt-1">En dessous, l'algo garde la qualité haute. Recommandé : 200 KB</p>
+                        @error('image_target_min_kb')
                             <p class="text-sm text-red-600 mt-1">{{ $message }}</p>
                         @enderror
                     </div>
 
-                    {{-- PNG quality slider --}}
-                    <div class="sm:col-span-2">
-                        <label for="image_png_quality" class="block text-sm font-medium text-gray-700 mb-2">
-                            Compression PNG : <span class="text-indigo-600 font-semibold" x-text="pngQuality"></span> <span class="text-gray-400 text-xs">(0 = aucune, 9 = maximale)</span>
-                        </label>
-                        <input type="range" id="image_png_quality" name="image_png_quality"
-                               min="0" max="9" step="1"
-                               x-model="pngQuality"
-                               class="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer accent-indigo-600">
-                        <div class="flex justify-between text-xs text-gray-400 mt-1">
-                            <span>0 (aucune)</span>
-                            <span>8 (recommandé)</span>
-                            <span>9 (max)</span>
-                        </div>
-                        @error('image_png_quality')
+                    {{-- Target max size --}}
+                    <div>
+                        <label for="image_target_max_kb" class="block text-sm font-medium text-gray-700 mb-1">Poids max par image (KB)</label>
+                        <input type="number" id="image_target_max_kb" name="image_target_max_kb"
+                               value="{{ old('image_target_max_kb', $settings['image_target_max_kb']) }}"
+                               min="200" max="2000" step="50"
+                               class="w-full rounded-xl border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 text-sm">
+                        <p class="text-xs text-gray-400 mt-1">Au-dessus, l'algo baisse la qualité. Recommandé : 500 KB</p>
+                        @error('image_target_max_kb')
+                            <p class="text-sm text-red-600 mt-1">{{ $message }}</p>
+                        @enderror
+                    </div>
+
+                    {{-- Min quality --}}
+                    <div>
+                        <label for="image_min_quality" class="block text-sm font-medium text-gray-700 mb-1">Qualité minimale (%)</label>
+                        <input type="number" id="image_min_quality" name="image_min_quality"
+                               value="{{ old('image_min_quality', $settings['image_min_quality']) }}"
+                               min="30" max="90" step="5"
+                               class="w-full rounded-xl border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 text-sm">
+                        <p class="text-xs text-gray-400 mt-1">Plancher : ne descendra jamais en dessous. Recommandé : 60%</p>
+                        @error('image_min_quality')
                             <p class="text-sm text-red-600 mt-1">{{ $message }}</p>
                         @enderror
                     </div>

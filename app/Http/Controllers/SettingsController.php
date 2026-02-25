@@ -10,8 +10,9 @@ class SettingsController extends Controller
 {
     private const SETTINGS_KEYS = [
         'image_max_dimension',
-        'image_jpeg_quality',
-        'image_png_quality',
+        'image_target_min_kb',
+        'image_target_max_kb',
+        'image_min_quality',
         'image_max_upload_mb',
         'video_max_upload_mb',
         'video_bitrate_1080p',
@@ -22,8 +23,9 @@ class SettingsController extends Controller
 
     private const DEFAULTS = [
         'image_max_dimension' => 2048,
-        'image_jpeg_quality' => 82,
-        'image_png_quality' => 8,
+        'image_target_min_kb' => 200,
+        'image_target_max_kb' => 500,
+        'image_min_quality' => 60,
         'image_max_upload_mb' => 10,
         'video_max_upload_mb' => 50,
         'video_bitrate_1080p' => 6000,
@@ -54,8 +56,9 @@ class SettingsController extends Controller
 
         $validated = $request->validate([
             'image_max_dimension' => 'required|integer|min:512|max:4096',
-            'image_jpeg_quality' => 'required|integer|min:50|max:100',
-            'image_png_quality' => 'required|integer|min:0|max:9',
+            'image_target_min_kb' => 'required|integer|min:50|max:500',
+            'image_target_max_kb' => 'required|integer|min:200|max:2000',
+            'image_min_quality' => 'required|integer|min:30|max:90',
             'image_max_upload_mb' => 'required|integer|min:1|max:50',
             'video_max_upload_mb' => 'required|integer|min:10|max:500',
             'video_bitrate_1080p' => 'required|integer|min:1000|max:20000',
