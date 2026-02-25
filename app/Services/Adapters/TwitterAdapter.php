@@ -157,6 +157,20 @@ class TwitterAdapter implements PlatformAdapterInterface
             ]);
 
             if ($isVideo) {
+                // Twitter free tier has ~5MB limit for videos, compress if larger
+                if ($fileSize > 5 * 1024 * 1024) {
+                    Log::info('TwitterAdapter: video exceeds 5MB, compressing', ['original_size' => $fileSize]);
+                    $compressedFile = $this->compressVideo($tempFile);
+
+                    if ($compressedFile && file_exists($compressedFile)) {
+                        $result = $this->chunkedUpload($compressedFile, 'video/mp4');
+                        @unlink($compressedFile);
+                        return $result;
+                    }
+
+                    Log::warning('TwitterAdapter: compression failed, trying original file');
+                }
+
                 return $this->chunkedUpload($tempFile, $mimeType);
             }
 
@@ -358,6 +372,52 @@ class TwitterAdapter implements PlatformAdapterInterface
         }
 
         return false;
+    }
+
+    // -------------------------------------------------------------------------
+    //  Video compression
+    // -------------------------------------------------------------------------
+
+    /**
+     * Compress video using FFmpeg to reduce file size below 5MB for Twitter free tier.
+     * Uses settings similar to n8n workflow: 800k video bitrate, 128k audio bitrate.
+     *
+     * @param  string  $inputPath  Path to the original video file
+     * @return string|null  Path to compressed file on success, null on failure
+     */
+    private function compressVideo(string $inputPath): ?string
+    {
+        $outputPath = tempnam(sys_get_temp_dir(), 'tw_compressed_') . '.mp4';
+
+        // FFmpeg command: compress video to 800k bitrate (similar to n8n workflow)
+        $command = sprintf(
+            'ffmpeg -i %s -c:v libx264 -b:v 800k -maxrate 800k -bufsize 1600k -c:a aac -b:a 128k -y %s 2>&1',
+            escapeshellarg($inputPath),
+            escapeshellarg($outputPath)
+        );
+
+        Log::info('TwitterAdapter: compressing video', ['command' => $command]);
+
+        exec($command, $output, $returnCode);
+
+        if ($returnCode !== 0 || ! file_exists($outputPath)) {
+            Log::error('TwitterAdapter: FFmpeg compression failed', [
+                'return_code' => $returnCode,
+                'output' => implode("\n", $output),
+            ]);
+
+            return null;
+        }
+
+        $compressedSize = filesize($outputPath);
+
+        Log::info('TwitterAdapter: video compressed successfully', [
+            'original_size' => filesize($inputPath),
+            'compressed_size' => $compressedSize,
+            'reduction' => round((1 - $compressedSize / filesize($inputPath)) * 100, 1) . '%',
+        ]);
+
+        return $outputPath;
     }
 
     // -------------------------------------------------------------------------
