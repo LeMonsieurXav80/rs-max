@@ -10,7 +10,6 @@ use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 use Illuminate\View\View;
 use Symfony\Component\HttpFoundation\BinaryFileResponse;
-use Symfony\Component\HttpFoundation\StreamedResponse;
 
 class MediaController extends Controller
 {
@@ -265,7 +264,7 @@ class MediaController extends Controller
     /**
      * Serve a private media file.
      */
-    public function show(Request $request, string $filename): StreamedResponse
+    public function show(Request $request, string $filename): BinaryFileResponse
     {
         if (! $request->user() && ! $request->hasValidSignature()) {
             abort(403);
@@ -277,11 +276,13 @@ class MediaController extends Controller
             abort(404);
         }
 
+        $fullPath = Storage::disk('local')->path($path);
         $mimeType = Storage::disk('local')->mimeType($path);
 
-        return Storage::disk('local')->response($path, $filename, [
+        return response()->file($fullPath, [
             'Content-Type' => $mimeType,
             'Cache-Control' => 'private, max-age=86400',
+            'Accept-Ranges' => 'bytes',
         ]);
     }
 
