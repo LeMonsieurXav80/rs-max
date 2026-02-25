@@ -43,7 +43,7 @@ class TelegramAdapter implements PlatformAdapterInterface
             if (count($media) === 1) {
                 $item = $media[0];
 
-                if ($this->isVideo($item['mimetype'])) {
+                if ($this->isVideo($item['mimetype'], $item['url'])) {
                     return $this->sendVideo($baseUrl, $chatId, $item['url'], $content);
                 }
 
@@ -120,7 +120,7 @@ class TelegramAdapter implements PlatformAdapterInterface
         $inputMedia = [];
 
         foreach ($media as $index => $item) {
-            $type = $this->isVideo($item['mimetype']) ? 'video' : 'photo';
+            $type = $this->isVideo($item['mimetype'], $item['url'] ?? '') ? 'video' : 'photo';
 
             $entry = [
                 'type' => $type,
@@ -180,10 +180,17 @@ class TelegramAdapter implements PlatformAdapterInterface
     }
 
     /**
-     * Determine whether a MIME type represents a video.
+     * Determine whether a MIME type (or URL extension) represents a video.
      */
-    private function isVideo(string $mimetype): bool
+    private function isVideo(string $mimetype, string $url = ''): bool
     {
-        return str_starts_with($mimetype, 'video/');
+        if (str_starts_with($mimetype, 'video/')) {
+            return true;
+        }
+
+        // Fallback: check file extension in URL
+        $ext = strtolower(pathinfo(parse_url($url, PHP_URL_PATH) ?: '', PATHINFO_EXTENSION));
+
+        return in_array($ext, ['mp4', 'mov', 'avi', 'webm', 'mkv']);
     }
 }

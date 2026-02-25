@@ -148,8 +148,16 @@ class MediaController extends Controller
             ]);
         }
 
-        // Video: store as-is
+        // Video: store, then convert to MP4 (H.264/AAC) if needed for platform compatibility
         $file->storeAs('media', $filename, 'local');
+
+        if ($mimeType !== 'video/mp4') {
+            $converted = $this->convertToMp4($filename);
+            if ($converted) {
+                $filename = $converted['filename'];
+                $mimeType = 'video/mp4';
+            }
+        }
 
         $storedSize = Storage::disk('local')->size("media/{$filename}");
 
@@ -223,16 +231,7 @@ class MediaController extends Controller
         $thumbPath = $thumbDir . '/' . $thumbFilename;
 
         if (! file_exists($thumbPath)) {
-            $ffmpeg = trim(exec('which ffmpeg 2>/dev/null'));
-            if (! $ffmpeg) {
-                // Homebrew paths not in PHP's PATH
-                foreach (['/opt/homebrew/bin/ffmpeg', '/usr/local/bin/ffmpeg', '/usr/bin/ffmpeg'] as $path) {
-                    if (file_exists($path)) {
-                        $ffmpeg = $path;
-                        break;
-                    }
-                }
-            }
+            $ffmpeg = $this->findFfmpeg();
             if (! $ffmpeg) {
                 abort(404);
             }
@@ -473,6 +472,58 @@ class MediaController extends Controller
         }
 
         return false;
+    }
+
+    /**
+     * Convert a video to MP4 (H.264/AAC) using ffmpeg.
+     */
+    private function convertToMp4(string $filename): ?array
+    {
+        $ffmpeg = $this->findFfmpeg();
+        if (! $ffmpeg) {
+            return null;
+        }
+
+        $originalPath = Storage::disk('local')->path("media/{$filename}");
+        $mp4Filename = pathinfo($filename, PATHINFO_FILENAME) . '.mp4';
+        $mp4Path = Storage::disk('local')->path("media/{$mp4Filename}");
+
+        exec(sprintf(
+            '%s -i %s -c:v libx264 -preset fast -crf 23 -c:a aac -b:a 128k -movflags +faststart -y %s 2>&1',
+            escapeshellarg($ffmpeg),
+            escapeshellarg($originalPath),
+            escapeshellarg($mp4Path)
+        ), $output, $returnCode);
+
+        if ($returnCode === 0 && file_exists($mp4Path) && filesize($mp4Path) > 0) {
+            @unlink($originalPath);
+
+            return ['filename' => $mp4Filename];
+        }
+
+        // Conversion failed — keep original
+        @unlink($mp4Path);
+
+        return null;
+    }
+
+    /**
+     * Locate the ffmpeg binary.
+     */
+    private function findFfmpeg(): ?string
+    {
+        $ffmpeg = trim(exec('which ffmpeg 2>/dev/null'));
+        if ($ffmpeg) {
+            return $ffmpeg;
+        }
+
+        foreach (['/opt/homebrew/bin/ffmpeg', '/usr/local/bin/ffmpeg', '/usr/bin/ffmpeg'] as $path) {
+            if (file_exists($path)) {
+                return $path;
+            }
+        }
+
+        return null;
     }
 
     /**
