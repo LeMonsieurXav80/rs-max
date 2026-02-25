@@ -6,11 +6,14 @@ RS-Max est une application Laravel 12 de **publication automatisée multi-platef
 
 ### Fonctionnalités principales
 
-- **Publication multi-plateforme** : Facebook, Instagram, Twitter/X, Telegram
-- **Contenu bilingue** : FR/EN avec traduction auto via GPT-4o-mini
+- **Publication multi-plateforme** : Facebook, Instagram, Twitter/X, Telegram, Threads
+- **Contenu multilingue** : Support de plusieurs langues avec traduction auto via GPT-4o-mini
+- **OAuth intégré** : Connexion Facebook/Threads avec récupération automatique des comptes
+- **Geolocation** : Tag de lieux pour Facebook, Instagram et Threads
 - **Planification** : scheduler minute par minute pour les posts programmés
-- **Multi-client** : 1 user = 1 client, l'admin peut tout voir/gérer
-- **Médias privés** : stockage sécurisé avec URLs signées pour les APIs externes
+- **Multi-utilisateurs** : Comptes sociaux partagés entre utilisateurs (many-to-many)
+- **Médias privés** : stockage sécurisé avec URLs signées et streaming vidéo (HTTP Range)
+- **Conversion automatique** : Vidéos HEVC → H.264, compression adaptative d'images
 - **Branding** : signature personnalisable par compte social
 
 ---
@@ -36,11 +39,11 @@ RS-Max est une application Laravel 12 de **publication automatisée multi-platef
 rs-max/
 ├── app/
 │   ├── Console/Commands/       # Commandes Artisan (scheduler, import, media)
-│   ├── Http/Controllers/       # Controllers web (CRUD posts, comptes, dashboard)
+│   ├── Http/Controllers/       # Controllers web (CRUD posts, comptes, dashboard, OAuth)
 │   ├── Jobs/                   # PublishToPlatformJob (publication async)
-│   ├── Models/                 # User, Post, Platform, SocialAccount, PostPlatform, PostLog
+│   ├── Models/                 # User, Post, Platform, SocialAccount, Setting, PostPlatform, PostLog
 │   └── Services/
-│       ├── Adapters/           # Facebook, Instagram, Twitter, Telegram adapters
+│       ├── Adapters/           # Facebook, Instagram, Twitter, Telegram, Threads adapters
 │       ├── PublishingService   # Orchestration de la publication
 │       └── TranslationService  # Traduction via OpenAI
 ├── database/

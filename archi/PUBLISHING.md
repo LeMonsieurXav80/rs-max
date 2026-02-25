@@ -72,14 +72,17 @@ La commande `posts:publish-scheduled` (`PublishScheduledCommand`) :
 
 Construit le contenu final pour un compte spécifique :
 
-1. **Sélection de la langue** selon `account.language` :
-   - `en` → content_en (fallback content_fr)
-   - `both` → content_fr + "\n\n---\n\n" + content_en
-   - `fr` (défaut) → content_fr
+1. **Sélection de la langue** selon `account.languages` (JSON array) :
+   - Si une seule langue : utilise la traduction correspondante (ou content_fr par défaut)
+   - Si plusieurs langues : concatène les traductions avec séparateur "\n\n---\n\n"
+   - Ordre : FR d'abord, puis les autres langues
+   - Exemple : `["fr", "en"]` → content_fr + "\n\n---\n\n" + translations['en']
 
 2. **Ajout des hashtags** si présents : `\n\n{hashtags}`
 
 3. **Ajout du branding** si `account.show_branding = true` : `\n\n{branding}`
+
+4. **Options additionnelles** : Passe `location_id` et `location_name` via le paramètre `$options` aux adapters
 
 ---
 
@@ -114,10 +117,11 @@ Construit le contenu final pour un compte spécifique :
 4. Construit le contenu via `PublishingService::getContentForAccount()`
 5. Crée un log `submitted`
 6. **Résout les URLs médias** : convertit `/media/uuid.jpg` en URLs signées temporaires (1h)
-7. Appelle `adapter->publish(account, content, media)`
-8. **Succès** : met à jour PostPlatform (published, external_id, published_at) + log
-9. **Échec** : met à jour PostPlatform (failed, error_message) + log
-10. Met à jour le statut global du Post
+7. **Prépare les options** : `location_id`, `location_name` si définis dans le post
+8. Appelle `adapter->publish(account, content, media, options)`
+9. **Succès** : met à jour PostPlatform (published, external_id, published_at) + log
+10. **Échec** : met à jour PostPlatform (failed, error_message) + log
+11. Met à jour le statut global du Post
 
 ### Mise à jour du statut global
 

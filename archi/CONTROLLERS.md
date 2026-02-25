@@ -26,6 +26,13 @@
 | PUT     | `/accounts/{account}`         | SocialAccountController@update      | accounts.update     |
 | DELETE  | `/accounts/{account}`         | SocialAccountController@destroy     | accounts.destroy    |
 | PATCH   | `/accounts/{account}/toggle`  | SocialAccountController@toggleActive| accounts.toggle     |
+| GET     | `/oauth/facebook`             | FacebookOAuthController@redirect    | oauth.facebook      |
+| GET     | `/oauth/facebook/callback`    | FacebookOAuthController@callback    | -                   |
+| GET     | `/oauth/threads`              | ThreadsOAuthController@redirect     | oauth.threads       |
+| GET     | `/oauth/threads/callback`     | ThreadsOAuthController@callback     | -                   |
+| GET     | `/location/search`            | LocationController@search           | location.search     |
+| GET     | `/settings`                   | SettingsController@index            | settings.index      |
+| POST    | `/settings`                   | SettingsController@update           | settings.update     |
 
 ### Authentifiées (`auth`)
 | Méthode | URL         | Action                    | Nom             |
@@ -122,6 +129,8 @@ Supprime le post, ses PostPlatform et PostLogs (en transaction). Interdit si sta
 ### `index(Request $request)`
 Liste les comptes groupés par plateforme.
 
+**Many-to-many** : Les comptes sont chargés via `$user->socialAccounts()` (relation many-to-many). Les admins voient tous les comptes.
+
 ### `create()`
 Formulaire avec sélection de plateforme et champs dynamiques selon `platform.config.credential_fields`.
 
@@ -152,3 +161,85 @@ Sert un fichier média privé depuis `storage/app/private/media/`.
 2. L'URL a une signature valide (URLs signées pour les APIs externes)
 
 **Headers** : `Content-Type` détecté automatiquement, `Cache-Control: private, max-age=86400`
+
+**HTTP Range** : Supporte les requêtes Range pour le streaming vidéo (seeking). Retourne `206 Partial Content` si un header `Range` est présent.
+
+---
+
+## FacebookOAuthController
+
+**Fichier** : `app/Http/Controllers/FacebookOAuthController.php`
+
+### `redirect()`
+Redirige vers Facebook Login pour obtenir l'autorisation OAuth.
+
+**Scopes** : `pages_show_list`, `pages_manage_posts`, `instagram_basic`, `instagram_content_publish`
+
+**Config** : Utilise `FACEBOOK_CONFIG_ID` pour Facebook Login for Business.
+
+### `callback(Request $request)`
+Callback OAuth après autorisation.
+
+1. Échange le code contre un access token (user token)
+2. Récupère les pages via `/me/accounts` (fallback: `debug_token` + query par page_id)
+3. Pour chaque page :
+   - Récupère les détails (name, category, profile picture)
+   - Vérifie si un compte Instagram est lié
+   - Crée ou met à jour le `SocialAccount` (Facebook + Instagram si disponible)
+   - Attache le compte à l'utilisateur courant via la pivot table
+
+**Fallback** : Si `/me/accounts` retourne vide, utilise `debug_token` → `granular_scopes` → `pages_show_list.target_ids` pour obtenir les IDs de pages.
+
+---
+
+## ThreadsOAuthController
+
+**Fichier** : `app/Http/Controllers/ThreadsOAuthController.php`
+
+### `redirect()`
+Redirige vers Threads OAuth pour obtenir l'autorisation.
+
+**Scopes** : `threads_basic`, `threads_content_publish`
+
+### `callback(Request $request)`
+Callback OAuth après autorisation.
+
+1. Échange le code contre un access token
+2. Récupère les informations du profil Threads via `/me?fields=id,username,threads_profile_picture_url`
+3. Crée ou met à jour le `SocialAccount` Threads
+4. Attache le compte à l'utilisateur courant
+
+---
+
+## LocationController
+
+**Fichier** : `app/Http/Controllers/LocationController.php`
+
+### `search(Request $request)`
+Recherche de lieux via l'API Graph Facebook.
+
+**Paramètres** :
+- `q` (query) - Terme de recherche
+- `type` - Type de lieu (place, city, country, etc.)
+- `center` - Coordonnées géographiques (optionnel)
+
+**Retour** : JSON avec la liste des lieux (id, name, location)
+
+**Usage** : Utilisé pour le champ de recherche de localisation lors de la création/édition de posts.
+
+---
+
+## SettingsController
+
+**Fichier** : `app/Http/Controllers/SettingsController.php`
+
+### `index()`
+Affiche la page de configuration globale (admin uniquement).
+
+### `update(Request $request)`
+Met à jour les paramètres globaux via le modèle `Setting`.
+
+**Paramètres supportés** :
+- `openai_api_key` - Clé API OpenAI globale (chiffrée)
+
+**Accès** : Réservé aux administrateurs (`is_admin = true`)

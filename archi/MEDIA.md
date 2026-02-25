@@ -44,6 +44,12 @@ public function show(Request $request, string $filename): StreamedResponse
 **Headers** :
 - `Content-Type` : détecté automatiquement (image/jpeg, video/mp4, etc.)
 - `Cache-Control: private, max-age=86400` (24h, privé)
+- `Accept-Ranges: bytes` pour les vidéos (support du streaming)
+
+**HTTP Range** :
+- Supporte les requêtes `Range: bytes=start-end` pour le streaming vidéo
+- Permet le seeking (déplacement dans la timeline) directement dans le navigateur
+- Retourne `206 Partial Content` avec les headers `Content-Range` et `Content-Length` appropriés
 
 ---
 
@@ -85,6 +91,57 @@ https://rs-max.example.com/media/uuid.jpg?expires=1234567890&signature=abc123...
 ```
 
 Les APIs des plateformes téléchargent les médias via ces URLs. Après 1h, les URLs expirent et ne sont plus accessibles sans authentification.
+
+---
+
+## Conversion automatique de vidéos
+
+### Conversion HEVC/H.265 vers H.264
+
+Pour garantir la compatibilité maximale (notamment avec Telegram), les vidéos encodées en HEVC/H.265 sont automatiquement converties en H.264/AAC MP4.
+
+**Détection** :
+- Utilise `ffprobe` pour analyser le codec vidéo
+- Détecte les codecs : `hevc`, `h265`, `hvc1`
+
+**Conversion** :
+```bash
+ffmpeg -i input.mp4 -c:v libx264 -preset fast -crf 23 -c:a aac -b:a 128k output.mp4
+```
+
+**Paramètres** :
+- `libx264` : codec H.264 compatible universellement
+- `preset fast` : équilibre vitesse/qualité
+- `crf 23` : qualité constante (18-28, 23 = bon compromis)
+- `aac 128k` : audio AAC standard
+
+**Comportement** :
+- La conversion se fait lors de la publication vers Telegram
+- Le fichier original est préservé
+- Le fichier converti est stocké temporairement et supprimé après upload
+
+---
+
+## Compression adaptative d'images
+
+**Objectif** : Réduire la taille des images pour optimiser les uploads tout en préservant la qualité visuelle.
+
+**Paramètres** :
+- Taille cible : 500 KB - 1 MB
+- Qualité initiale : 85%
+- Qualité minimale : 60%
+- Résolution max : 4096×4096 pixels
+
+**Algorithme** :
+1. Si l'image > 1 MB : commence la compression
+2. Réduit progressivement la qualité (-5% par itération)
+3. S'arrête quand : taille < 1 MB OU qualité < 60%
+4. Si toujours trop grande : redimensionne proportionnellement
+
+**Support** :
+- JPEG/JPG : compression avec qualité variable
+- PNG : conversion en JPEG si > 1 MB
+- WebP : compression native
 
 ---
 

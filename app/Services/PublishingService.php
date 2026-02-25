@@ -40,6 +40,15 @@ class PublishingService
      * Get the right content for a social account based on its languages setting.
      * Translates on-the-fly and caches in post->translations.
      */
+    private const LANGUAGE_FLAGS = [
+        'fr' => '🇫🇷',
+        'en' => '🇬🇧',
+        'pt' => '🇵🇹',
+        'es' => '🇪🇸',
+        'de' => '🇩🇪',
+        'it' => '🇮🇹',
+    ];
+
     public function getContentForAccount(Post $post, SocialAccount $account): string
     {
         $languages = $account->languages ?? ['fr'];
@@ -47,16 +56,24 @@ class PublishingService
 
         foreach ($languages as $lang) {
             if ($lang === 'fr') {
-                $parts[] = $post->content_fr;
+                $text = $post->content_fr;
             } else {
-                $translation = $this->getTranslation($post, $lang);
-                if ($translation) {
-                    $parts[] = $translation;
-                }
+                $text = $this->getTranslation($post, $lang);
+            }
+
+            if ($text) {
+                $parts[] = ['lang' => $lang, 'text' => $text];
             }
         }
 
-        $content = implode("\n\n---\n\n", $parts);
+        // Add flag prefixes only when multiple languages
+        $multiLang = count($parts) > 1;
+        $sections = array_map(function ($part) use ($multiLang) {
+            $flag = self::LANGUAGE_FLAGS[$part['lang']] ?? '';
+            return $multiLang && $flag ? "{$flag} {$part['text']}" : $part['text'];
+        }, $parts);
+
+        $content = implode("\n\n", $sections);
 
         // Append hashtags
         if ($post->hashtags) {
