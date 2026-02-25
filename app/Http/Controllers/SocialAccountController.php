@@ -53,7 +53,8 @@ class SocialAccountController extends Controller
         $validated = $request->validate([
             'platform_id'   => 'required|integer|exists:platforms,id',
             'name'          => 'required|string|max:255',
-            'language'       => 'nullable|string|max:10',
+            'languages'      => 'required|array|min:1',
+            'languages.*'    => 'in:fr,en,pt,es,de,it',
             'branding'       => 'nullable|string|max:500',
             'show_branding'  => 'nullable|boolean',
             'credentials'    => 'required|array',
@@ -92,7 +93,7 @@ class SocialAccountController extends Controller
             $account->update([
                 'name' => $validated['name'],
                 'credentials' => $credentials,
-                'language' => $validated['language'] ?? $account->language,
+                'languages' => $validated['languages'],
                 'branding' => $validated['branding'] ?? $account->branding,
                 'show_branding' => $validated['show_branding'] ?? $account->show_branding,
             ]);
@@ -102,7 +103,7 @@ class SocialAccountController extends Controller
                 'platform_account_id' => $platformAccountId,
                 'name'         => $validated['name'],
                 'credentials'  => $credentials,
-                'language'     => $validated['language'] ?? $user->default_language ?? 'fr',
+                'languages'    => $validated['languages'],
                 'branding'     => $validated['branding'] ?? null,
                 'show_branding' => $validated['show_branding'] ?? false,
                 'is_active'    => true,
@@ -149,7 +150,8 @@ class SocialAccountController extends Controller
 
         $validated = $request->validate([
             'name'           => 'required|string|max:255',
-            'language'       => 'nullable|string|max:10',
+            'languages'      => 'required|array|min:1',
+            'languages.*'    => 'in:fr,en,pt,es,de,it',
             'branding'       => 'nullable|string|max:500',
             'show_branding'  => 'nullable|boolean',
             'credentials'    => 'nullable|array',
@@ -175,7 +177,7 @@ class SocialAccountController extends Controller
 
         $account->update([
             'name'          => $validated['name'],
-            'language'      => $validated['language'] ?? $account->language,
+            'languages'     => $validated['languages'],
             'branding'      => $validated['branding'] ?? $account->branding,
             'show_branding' => $validated['show_branding'] ?? false,
             'credentials'   => $account->credentials,

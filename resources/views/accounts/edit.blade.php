@@ -42,19 +42,39 @@
                     @enderror
                 </div>
 
-                {{-- Langue --}}
+                {{-- Langues --}}
                 <div class="mb-5">
-                    <label for="language" class="block text-sm font-medium text-gray-700 mb-1.5">Langue</label>
-                    <select
-                        id="language"
-                        name="language"
-                        class="w-full rounded-xl border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 text-sm"
-                    >
-                        <option value="fr" {{ old('language', $account->language) === 'fr' ? 'selected' : '' }}>Francais</option>
-                        <option value="en" {{ old('language', $account->language) === 'en' ? 'selected' : '' }}>Anglais</option>
-                        <option value="both" {{ old('language', $account->language) === 'both' ? 'selected' : '' }}>Les deux</option>
-                    </select>
-                    @error('language')
+                    <label class="block text-sm font-medium text-gray-700 mb-1.5">Langues de publication</label>
+                    <p class="text-xs text-gray-400 mb-3">Le contenu sera traduit et publie dans les langues selectionnees.</p>
+                    @php
+                        $availableLanguages = [
+                            'fr' => 'Francais',
+                            'en' => 'Anglais',
+                            'pt' => 'Portugais',
+                            'es' => 'Espagnol',
+                            'de' => 'Allemand',
+                            'it' => 'Italien',
+                        ];
+                        $accountLanguages = old('languages', $account->languages ?? ['fr']);
+                    @endphp
+                    <div class="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                        @foreach($availableLanguages as $code => $label)
+                            <label class="flex items-center gap-2 px-3 py-2 rounded-lg border border-gray-200 hover:bg-indigo-50/50 cursor-pointer transition-colors">
+                                <input
+                                    type="checkbox"
+                                    name="languages[]"
+                                    value="{{ $code }}"
+                                    {{ in_array($code, $accountLanguages) ? 'checked' : '' }}
+                                    class="rounded border-gray-300 text-indigo-600 focus:ring-indigo-500"
+                                >
+                                <span class="text-sm text-gray-700">{{ $label }}</span>
+                            </label>
+                        @endforeach
+                    </div>
+                    @error('languages')
+                        <p class="mt-1 text-sm text-red-600">{{ $message }}</p>
+                    @enderror
+                    @error('languages.*')
                         <p class="mt-1 text-sm text-red-600">{{ $message }}</p>
                     @enderror
                 </div>

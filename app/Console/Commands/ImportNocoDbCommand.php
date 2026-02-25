@@ -158,7 +158,7 @@ class ImportNocoDbCommand extends Command
                                 'bot_token' => $channelConfig['bot_token'],
                                 'chat_id' => $channelConfig['chat_id'] ?? '',
                             ],
-                            'language' => $language,
+                            'languages' => [$language],
                             'branding' => $branding,
                             'show_branding' => $channelConfig['show_branding'] ?? $showBranding,
                             'is_active' => true,
@@ -192,7 +192,7 @@ class ImportNocoDbCommand extends Command
                     ['user_id' => $user->id, 'platform_id' => $platform->id, 'name' => 'main'],
                     [
                         'credentials' => $credentials,
-                        'language' => $language,
+                        'languages' => [$language],
                         'branding' => $branding,
                         'show_branding' => $mainConfig['show_branding'] ?? $showBranding,
                         'is_active' => true,

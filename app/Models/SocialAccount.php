@@ -15,7 +15,7 @@ class SocialAccount extends Model
         'name',
         'profile_picture_url',
         'credentials',
-        'language',
+        'languages',
         'branding',
         'show_branding',
         'is_active',
@@ -26,6 +26,7 @@ class SocialAccount extends Model
     {
         return [
             'credentials' => 'encrypted:array',
+            'languages' => 'array',
             'is_active' => 'boolean',
             'show_branding' => 'boolean',
             'last_used_at' => 'datetime',

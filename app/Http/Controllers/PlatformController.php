@@ -124,7 +124,7 @@ class PlatformController extends Controller
                 'platform_account_id' => "bot_{$botId}",
                 'name' => $botName,
                 'credentials' => $credentials,
-                'language' => $user->default_language ?? 'fr',
+                'languages' => [$user->default_language ?? 'fr'],
                 'is_active' => true,
             ]);
         }
@@ -261,7 +261,7 @@ class PlatformController extends Controller
                 'platform_account_id' => $chatId,
                 'name' => $chatTitle,
                 'credentials' => $credentials,
-                'language' => $user->default_language ?? 'fr',
+                'languages' => [$user->default_language ?? 'fr'],
                 'is_active' => true,
             ]);
         }
@@ -303,7 +303,7 @@ class PlatformController extends Controller
             'platform_account_id' => null,
             'name' => $validated['name'],
             'credentials' => $credentials,
-            'language' => $user->default_language ?? 'fr',
+            'languages' => [$user->default_language ?? 'fr'],
             'is_active' => true,
         ]);
 

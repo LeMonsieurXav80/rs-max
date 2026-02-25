@@ -26,7 +26,7 @@ class FacebookOAuthController extends Controller
         $params = http_build_query([
             'client_id' => config('services.facebook.client_id'),
             'redirect_uri' => route('facebook.callback'),
-            'scope' => 'pages_show_list,pages_manage_posts,instagram_basic,instagram_content_publish',
+            'scope' => 'pages_show_list,pages_read_engagement,pages_manage_posts,instagram_basic,instagram_content_publish',
             'response_type' => 'code',
             'state' => $state,
         ]);
@@ -96,7 +96,10 @@ class FacebookOAuthController extends Controller
                 $page['instagram'] = $this->fetchInstagramAccount($page['id'], $page['access_token']);
             }
 
-            session(['facebook_oauth_pages' => $pages]);
+            session([
+                'facebook_oauth_pages' => $pages,
+                'facebook_oauth_user_token' => $longLived,
+            ]);
 
             return redirect()->route('facebook.select');
         } catch (\Throwable $e) {
@@ -135,6 +138,7 @@ class FacebookOAuthController extends Controller
         ]);
 
         $pages = session('facebook_oauth_pages', []);
+        $userToken = session('facebook_oauth_user_token');
         $selectedPageIds = $request->input('selected_pages', []);
         $selectedIgIds = $request->input('selected_instagram', []);
 
@@ -157,14 +161,19 @@ class FacebookOAuthController extends Controller
                     ->where('platform_account_id', $page['id'])
                     ->first();
 
+                $creds = [
+                    'page_id' => $page['id'],
+                    'access_token' => $page['access_token'],
+                ];
+                if ($userToken) {
+                    $creds['user_access_token'] = $userToken;
+                }
+
                 if ($account) {
                     $account->update([
                         'name' => $page['name'],
                         'profile_picture_url' => $page['picture_url'] ?? $account->profile_picture_url,
-                        'credentials' => [
-                            'page_id' => $page['id'],
-                            'access_token' => $page['access_token'],
-                        ],
+                        'credentials' => $creds,
                     ]);
                     $updated++;
                 } else {
@@ -173,11 +182,8 @@ class FacebookOAuthController extends Controller
                         'platform_account_id' => $page['id'],
                         'name' => $page['name'],
                         'profile_picture_url' => $page['picture_url'] ?? null,
-                        'credentials' => [
-                            'page_id' => $page['id'],
-                            'access_token' => $page['access_token'],
-                        ],
-                        'language' => $user->default_language ?? 'fr',
+                        'credentials' => $creds,
+                        'languages' => [$user->default_language ?? 'fr'],
                         'is_active' => true,
                     ]);
                     $created++;
@@ -201,14 +207,19 @@ class FacebookOAuthController extends Controller
                     ->where('platform_account_id', $page['instagram']['id'])
                     ->first();
 
+                $igCreds = [
+                    'account_id' => $page['instagram']['id'],
+                    'access_token' => $page['access_token'],
+                ];
+                if ($userToken) {
+                    $igCreds['user_access_token'] = $userToken;
+                }
+
                 if ($account) {
                     $account->update([
                         'name' => $igName,
                         'profile_picture_url' => $igPicture ?? $account->profile_picture_url,
-                        'credentials' => [
-                            'account_id' => $page['instagram']['id'],
-                            'access_token' => $page['access_token'],
-                        ],
+                        'credentials' => $igCreds,
                     ]);
                     $updated++;
                 } else {
@@ -217,11 +228,8 @@ class FacebookOAuthController extends Controller
                         'platform_account_id' => $page['instagram']['id'],
                         'name' => $igName,
                         'profile_picture_url' => $igPicture,
-                        'credentials' => [
-                            'account_id' => $page['instagram']['id'],
-                            'access_token' => $page['access_token'],
-                        ],
-                        'language' => $user->default_language ?? 'fr',
+                        'credentials' => $igCreds,
+                        'languages' => [$user->default_language ?? 'fr'],
                         'is_active' => true,
                     ]);
                     $created++;
@@ -234,7 +242,7 @@ class FacebookOAuthController extends Controller
             }
         }
 
-        session()->forget(['facebook_oauth_state', 'facebook_oauth_pages']);
+        session()->forget(['facebook_oauth_state', 'facebook_oauth_pages', 'facebook_oauth_user_token']);
 
         $parts = [];
         if ($created > 0) {

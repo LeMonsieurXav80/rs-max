@@ -108,7 +108,7 @@ class ThreadsOAuthController extends Controller
                         'user_id' => $userId,
                         'access_token' => $longLivedToken,
                     ],
-                    'language' => $user->default_language ?? 'fr',
+                    'languages' => [$user->default_language ?? 'fr'],
                     'is_active' => true,
                 ]);
             }

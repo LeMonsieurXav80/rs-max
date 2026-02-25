@@ -31,7 +31,8 @@ for var in APP_NAME APP_ENV APP_DEBUG APP_URL APP_KEY \
            MAIL_FROM_ADDRESS MAIL_FROM_NAME \
            SESSION_DRIVER CACHE_STORE QUEUE_CONNECTION \
            FACEBOOK_APP_ID FACEBOOK_APP_SECRET FACEBOOK_CONFIG_ID \
-           THREADS_APP_ID THREADS_APP_SECRET; do
+           THREADS_APP_ID THREADS_APP_SECRET \
+           OPENAI_API_KEY; do
     val=$(eval echo \$$var)
     if [ -n "$val" ]; then
         # Remove existing line and append new value

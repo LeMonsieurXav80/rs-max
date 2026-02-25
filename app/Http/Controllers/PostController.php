@@ -6,6 +6,7 @@ use App\Models\Platform;
 use App\Models\Post;
 use App\Models\PostPlatform;
 use App\Models\SocialAccount;
+use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -64,10 +65,13 @@ class PostController extends Controller
         }
 
         $calendarPosts = $calendarQuery
-            ->whereBetween('scheduled_at', [$startOfMonth, $endOfMonth])
-            ->orderBy('scheduled_at')
+            ->where(function ($q) use ($startOfMonth, $endOfMonth) {
+                $q->whereBetween('scheduled_at', [$startOfMonth, $endOfMonth])
+                  ->orWhereBetween('published_at', [$startOfMonth, $endOfMonth]);
+            })
+            ->orderByRaw('COALESCE(scheduled_at, published_at) ASC')
             ->get()
-            ->groupBy(fn (Post $p) => $p->scheduled_at->format('Y-m-d'));
+            ->groupBy(fn (Post $p) => ($p->scheduled_at ?? $p->published_at)->format('Y-m-d'));
 
         $prevMonth = $startOfMonth->copy()->subMonth()->format('Y-m');
         $nextMonth = $startOfMonth->copy()->addMonth()->format('Y-m');
@@ -107,7 +111,7 @@ class PostController extends Controller
     /**
      * Validate and store a newly created post.
      */
-    public function store(Request $request): RedirectResponse
+    public function store(Request $request): RedirectResponse|JsonResponse
     {
         $validated = $request->validate([
             'content_fr'        => 'required|string|max:10000',
@@ -121,13 +125,14 @@ class PostController extends Controller
             'location_id'       => 'nullable|string|max:255',
             'telegram_channel'  => 'nullable|string|max:255',
             'status'            => 'required|in:draft,scheduled',
-            'scheduled_at'      => 'required_if:status,scheduled|nullable|date|after_or_equal:now',
+            'publish_now'       => 'nullable|boolean',
+            'scheduled_at'      => [$request->boolean('publish_now') ? 'nullable' : 'required_if:status,scheduled', 'nullable', 'date', 'after_or_equal:now'],
             'accounts'          => 'required|array|min:1',
             'accounts.*'        => 'integer|exists:social_accounts,id',
-            'publish_now'       => 'nullable|boolean',
         ]);
 
         $user = $request->user();
+        $publishNow = ! empty($validated['publish_now']);
 
         // Verify all selected accounts are accessible to the user (unless admin)
         $accountIds = $validated['accounts'];
@@ -138,17 +143,19 @@ class PostController extends Controller
         }
 
         if ($validAccounts->count() !== count($accountIds)) {
+            if ($request->expectsJson()) {
+                return response()->json(['errors' => ['accounts' => ['One or more selected accounts are invalid.']]], 422);
+            }
             return back()->withErrors(['accounts' => 'One or more selected accounts are invalid.'])->withInput();
         }
 
-        DB::transaction(function () use ($validated, $user, $validAccounts) {
-            // If "publish now" is selected, override status and scheduled_at
+        $post = DB::transaction(function () use ($validated, $user, $validAccounts, $publishNow) {
             $status = $validated['status'];
             $scheduledAt = $validated['scheduled_at'] ?? null;
 
-            if (! empty($validated['publish_now'])) {
-                $status = 'scheduled';
-                $scheduledAt = now();
+            if ($publishNow) {
+                $status = 'draft';
+                $scheduledAt = null;
             }
 
             // Decode media JSON strings into arrays
@@ -164,7 +171,6 @@ class PostController extends Controller
                 }
             }
 
-            // Create the post
             $post = Post::create([
                 'user_id'          => $user->id,
                 'content_fr'       => $validated['content_fr'],
@@ -180,7 +186,6 @@ class PostController extends Controller
                 'scheduled_at'     => $scheduledAt,
             ]);
 
-            // Create PostPlatform entries for each selected account
             foreach ($validAccounts as $account) {
                 PostPlatform::create([
                     'post_id'           => $post->id,
@@ -189,7 +194,26 @@ class PostController extends Controller
                     'status'            => 'pending',
                 ]);
             }
+
+            return $post;
         });
+
+        // Return JSON for publish-now AJAX requests
+        if ($publishNow && $request->expectsJson()) {
+            $post->load('postPlatforms.socialAccount.platform');
+
+            return response()->json([
+                'success' => true,
+                'post_id' => $post->id,
+                'show_url' => route('posts.show', $post),
+                'post_platforms' => $post->postPlatforms->map(fn ($pp) => [
+                    'id' => $pp->id,
+                    'account_name' => $pp->socialAccount->name,
+                    'platform_slug' => $pp->socialAccount->platform->slug,
+                    'publish_url' => route('posts.publishOne', $pp),
+                ]),
+            ]);
+        }
 
         return redirect()->route('posts.index')
             ->with('success', 'Post created successfully.');
@@ -280,13 +304,14 @@ class PostController extends Controller
             'location_id'       => 'nullable|string|max:255',
             'telegram_channel'  => 'nullable|string|max:255',
             'status'            => 'required|in:draft,scheduled',
-            'scheduled_at'      => 'required_if:status,scheduled|nullable|date|after_or_equal:now',
+            'publish_now'       => 'nullable|boolean',
+            'scheduled_at'      => [$request->boolean('publish_now') ? 'nullable' : 'required_if:status,scheduled', 'nullable', 'date', 'after_or_equal:now'],
             'accounts'          => 'required|array|min:1',
             'accounts.*'        => 'integer|exists:social_accounts,id',
-            'publish_now'       => 'nullable|boolean',
         ]);
 
         $user = $request->user();
+        $publishNow = ! empty($validated['publish_now']);
 
         // Verify all selected accounts are accessible to the user (unless admin)
         $accountIds = $validated['accounts'];
@@ -300,12 +325,12 @@ class PostController extends Controller
             return back()->withErrors(['accounts' => 'One or more selected accounts are invalid.'])->withInput();
         }
 
-        DB::transaction(function () use ($post, $validated, $validAccounts) {
+        DB::transaction(function () use ($post, $validated, $validAccounts, $publishNow) {
             // If "publish now" is selected, override status and scheduled_at
             $status = $validated['status'];
             $scheduledAt = $validated['scheduled_at'] ?? null;
 
-            if (! empty($validated['publish_now'])) {
+            if ($publishNow) {
                 $status = 'scheduled';
                 $scheduledAt = now();
             }

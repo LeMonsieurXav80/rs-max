@@ -55,17 +55,7 @@ class PublishController extends Controller
             ], 422);
         }
 
-        // Auto-translate if needed
-        if ($post->auto_translate && empty($post->content_en) && ! empty($post->content_fr)) {
-            $apiKey = $post->user?->openai_api_key ?: config('services.openai.api_key');
-            $translationService = app(\App\Services\TranslationService::class);
-            $translated = $translationService->translate($post->content_fr, 'fr', 'en', $apiKey);
-            if ($translated) {
-                $post->update(['content_en' => $translated]);
-            }
-        }
-
-        // Build content
+        // Build content (translations handled by PublishingService)
         $content = $this->publishingService->getContentForAccount($post, $account);
 
         // Resolve media URLs
@@ -147,16 +137,6 @@ class PublishController extends Controller
                 'success' => false,
                 'error' => 'Aucune plateforme en attente de publication.',
             ], 422);
-        }
-
-        // Auto-translate if needed
-        if ($post->auto_translate && empty($post->content_en) && ! empty($post->content_fr)) {
-            $apiKey = $post->user?->openai_api_key ?: config('services.openai.api_key');
-            $translationService = app(\App\Services\TranslationService::class);
-            $translated = $translationService->translate($post->content_fr, 'fr', 'en', $apiKey);
-            if ($translated) {
-                $post->update(['content_en' => $translated]);
-            }
         }
 
         $media = $this->resolveMediaUrls($post->media);

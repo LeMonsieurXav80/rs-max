@@ -12,6 +12,99 @@
         showLibrary: false,
         libraryItems: [],
         libraryLoading: false,
+        // Publishing progress
+        isPublishing: false,
+        publishDone: false,
+        publishPostId: null,
+        publishShowUrl: '',
+        publishPlatforms: [],
+        publishCurrent: 0,
+        publishTotal: 0,
+        publishErrors: [],
+        async submitPublishNow(e) {
+            if (this.publishMode !== 'now') return;
+            e.preventDefault();
+            this.isPublishing = true;
+            this.publishDone = false;
+            this.publishErrors = [];
+
+            const form = e.target;
+            const formData = new FormData(form);
+
+            try {
+                const resp = await fetch(form.action, {
+                    method: 'POST',
+                    headers: { 'Accept': 'application/json' },
+                    body: formData,
+                });
+
+                if (!resp.ok) {
+                    const err = await resp.json();
+                    this.isPublishing = false;
+                    if (err.errors) {
+                        let msgs = [];
+                        Object.values(err.errors).forEach(v => msgs.push(...v));
+                        alert(msgs.join('\n'));
+                    }
+                    return;
+                }
+
+                const data = await resp.json();
+                this.publishPostId = data.post_id;
+                this.publishShowUrl = data.show_url;
+                this.publishPlatforms = data.post_platforms.map(pp => ({
+                    ...pp,
+                    status: 'pending',
+                    error: null,
+                }));
+                this.publishTotal = this.publishPlatforms.length;
+                this.publishCurrent = 0;
+
+                // Publish each platform sequentially
+                for (let i = 0; i < this.publishPlatforms.length; i++) {
+                    const pp = this.publishPlatforms[i];
+                    pp.status = 'publishing';
+                    this.publishCurrent = i;
+
+                    try {
+                        const pubResp = await fetch(pp.publish_url, {
+                            method: 'POST',
+                            headers: {
+                                'Content-Type': 'application/json',
+                                'X-CSRF-TOKEN': document.querySelector('meta[name=csrf-token]').getAttribute('content'),
+                                'Accept': 'application/json',
+                            },
+                        });
+
+                        const pubData = await pubResp.json();
+                        if (pubData.success) {
+                            pp.status = 'published';
+                        } else {
+                            pp.status = 'failed';
+                            pp.error = pubData.error || 'Erreur inconnue';
+                            this.publishErrors.push(pp.account_name + ': ' + pp.error);
+                        }
+                    } catch (err) {
+                        pp.status = 'failed';
+                        pp.error = 'Erreur de connexion';
+                        this.publishErrors.push(pp.account_name + ': Erreur de connexion');
+                    }
+
+                    this.publishCurrent = i + 1;
+                }
+
+                this.publishDone = true;
+            } catch (err) {
+                this.isPublishing = false;
+                alert('Erreur lors de la création du post.');
+            }
+        },
+        get publishSuccessCount() {
+            return this.publishPlatforms.filter(p => p.status === 'published').length;
+        },
+        get publishProgressPercent() {
+            return this.publishTotal > 0 ? Math.round((this.publishCurrent / this.publishTotal) * 100) : 0;
+        },
         init() {
             this.checkTelegram();
             // Restore media from old input
@@ -117,7 +210,7 @@
         isInMedia(item) {
             return this.mediaItems.find(m => m.url === item.url);
         }
-    }">
+    }" @submit="submitPublishNow($event)">
         @csrf
 
         {{-- Restore old media values --}}
@@ -316,7 +409,7 @@
             {{-- Media previews --}}
             <div x-show="mediaItems.length > 0" x-cloak class="mt-4">
                 <div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
-                    <template x-for="(item, index) in mediaItems" :key="index">
+                    <template x-for="(item, index) in mediaItems" :key="item.url">
                         <div class="relative group rounded-xl overflow-hidden border border-gray-200 aspect-square bg-gray-100">
                             {{-- Image preview --}}
                             <template x-if="item.mimetype && item.mimetype.startsWith('image/')">
@@ -436,11 +529,10 @@
                         this.locationLoading = true;
                         try {
                             let url = '{{ route('locations.search') }}?q=' + encodeURIComponent(this.locationQuery);
-                            if (navigator.geolocation) {
-                                // Try to use cached position if available
-                            }
                             const resp = await fetch(url, { headers: { 'Accept': 'application/json' } });
-                            this.locationResults = await resp.json();
+                            if (!resp.ok) { this.locationResults = []; this.locationOpen = false; this.locationLoading = false; return; }
+                            const data = await resp.json();
+                            this.locationResults = Array.isArray(data) ? data : [];
                             this.locationOpen = this.locationResults.length > 0;
                         } catch(e) { this.locationResults = []; }
                         this.locationLoading = false;
@@ -546,24 +638,6 @@
                     @enderror
                 </div>
 
-                {{-- Contenu anglais --}}
-                <div>
-                    <label for="content_en" class="block text-sm font-medium text-gray-700 mb-2">
-                        Contenu anglais
-                    </label>
-                    <textarea
-                        id="content_en"
-                        name="content_en"
-                        rows="4"
-                        class="w-full rounded-xl border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 text-sm placeholder-gray-400 transition-colors"
-                        placeholder="Rédigez votre publication en anglais..."
-                    >{{ old('content_en') }}</textarea>
-                    <p class="mt-1.5 text-xs text-gray-400">Sera auto-traduit si laissé vide</p>
-                    @error('content_en')
-                        <p class="mt-1.5 text-sm text-red-600">{{ $message }}</p>
-                    @enderror
-                </div>
-
                 {{-- Hashtags --}}
                 <div>
                     <label for="hashtags" class="block text-sm font-medium text-gray-700 mb-2">
@@ -583,18 +657,21 @@
                 </div>
 
                 {{-- Traduction automatique --}}
-                <div class="flex items-center gap-3">
+                <div class="flex items-start gap-3">
                     <input
                         type="checkbox"
                         id="auto_translate"
                         name="auto_translate"
                         value="1"
                         {{ old('auto_translate', true) ? 'checked' : '' }}
-                        class="rounded border-gray-300 text-indigo-600 focus:ring-indigo-500 transition-colors"
+                        class="mt-0.5 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500 transition-colors"
                     >
-                    <label for="auto_translate" class="text-sm text-gray-700">
-                        Traduction automatique
-                    </label>
+                    <div>
+                        <label for="auto_translate" class="text-sm text-gray-700 font-medium">
+                            Traduction automatique
+                        </label>
+                        <p class="text-xs text-gray-400 mt-0.5">Traduit le contenu dans les langues configurees sur chaque compte social</p>
+                    </div>
                 </div>
             </div>
         </div>
@@ -665,7 +742,7 @@
         </div>
 
         {{-- Submit --}}
-        <div class="flex items-center justify-end gap-4">
+        <div x-show="!isPublishing" class="flex items-center justify-end gap-4">
             <a href="{{ route('posts.index') }}" class="px-4 py-2 text-sm font-medium text-gray-700 hover:text-gray-900 transition-colors">
                 Annuler
             </a>
@@ -674,8 +751,111 @@
                 <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2">
                     <path stroke-linecap="round" stroke-linejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
                 </svg>
-                Créer le post
+                <span x-text="publishMode === 'now' ? 'Publier maintenant' : 'Créer le post'"></span>
             </button>
+        </div>
+
+        {{-- Publishing progress (inline) --}}
+        <div x-show="isPublishing" x-cloak class="bg-white rounded-2xl shadow-sm border border-gray-100 p-6 lg:p-8">
+            <div class="flex items-center justify-between mb-4">
+                <h2 class="text-base font-semibold text-gray-900" x-text="publishDone ? 'Publication terminée' : 'Publication en cours...'"></h2>
+                <span class="text-sm font-medium text-gray-500" x-text="publishCurrent + '/' + publishTotal"></span>
+            </div>
+
+            {{-- Progress bar --}}
+            <div class="w-full bg-gray-200 rounded-full h-2.5 mb-6">
+                <div class="h-2.5 rounded-full transition-all duration-500"
+                     :class="publishDone && publishErrors.length === 0 ? 'bg-green-500' : publishDone && publishErrors.length > 0 ? 'bg-yellow-500' : 'bg-indigo-600'"
+                     :style="'width: ' + publishProgressPercent + '%'"></div>
+            </div>
+
+            {{-- Platform list --}}
+            <div class="space-y-3">
+                <template x-for="(pp, index) in publishPlatforms" :key="pp.id">
+                    <div class="flex items-center gap-3 px-4 py-3 rounded-xl"
+                         :class="{
+                             'bg-gray-50': pp.status === 'pending',
+                             'bg-indigo-50': pp.status === 'publishing',
+                             'bg-green-50': pp.status === 'published',
+                             'bg-red-50': pp.status === 'failed',
+                         }">
+                        {{-- Status icon --}}
+                        <div class="flex-shrink-0 w-6 h-6 flex items-center justify-center">
+                            {{-- Pending --}}
+                            <template x-if="pp.status === 'pending'">
+                                <div class="w-4 h-4 rounded-full border-2 border-gray-300"></div>
+                            </template>
+                            {{-- Publishing --}}
+                            <template x-if="pp.status === 'publishing'">
+                                <svg class="w-5 h-5 text-indigo-600 animate-spin" fill="none" viewBox="0 0 24 24">
+                                    <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                                    <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path>
+                                </svg>
+                            </template>
+                            {{-- Published --}}
+                            <template x-if="pp.status === 'published'">
+                                <svg class="w-5 h-5 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2">
+                                    <path stroke-linecap="round" stroke-linejoin="round" d="m4.5 12.75 6 6 9-13.5" />
+                                </svg>
+                            </template>
+                            {{-- Failed --}}
+                            <template x-if="pp.status === 'failed'">
+                                <svg class="w-5 h-5 text-red-600" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2">
+                                    <path stroke-linecap="round" stroke-linejoin="round" d="M6 18 18 6M6 6l12 12" />
+                                </svg>
+                            </template>
+                        </div>
+
+                        {{-- Platform info --}}
+                        <div class="flex-1 min-w-0">
+                            <div class="flex items-center gap-2">
+                                <span class="text-sm font-medium text-gray-900" x-text="pp.account_name"></span>
+                                <span class="text-xs text-gray-400" x-text="pp.platform_slug"></span>
+                            </div>
+                            <p x-show="pp.error" class="text-xs text-red-600 mt-0.5" x-text="pp.error"></p>
+                        </div>
+
+                        {{-- Status label --}}
+                        <span class="text-xs font-medium flex-shrink-0"
+                              :class="{
+                                  'text-gray-400': pp.status === 'pending',
+                                  'text-indigo-600': pp.status === 'publishing',
+                                  'text-green-600': pp.status === 'published',
+                                  'text-red-600': pp.status === 'failed',
+                              }"
+                              x-text="{
+                                  'pending': 'En attente',
+                                  'publishing': 'En cours...',
+                                  'published': 'Publié',
+                                  'failed': 'Erreur',
+                              }[pp.status]"></span>
+                    </div>
+                </template>
+            </div>
+
+            {{-- Summary & actions (after publish complete) --}}
+            <div x-show="publishDone" x-cloak class="mt-6 pt-6 border-t border-gray-100">
+                <p class="text-sm text-gray-700 mb-4"
+                   x-text="publishSuccessCount + '/' + publishTotal + ' publication(s) réussie(s)' + (publishErrors.length > 0 ? ', ' + publishErrors.length + ' erreur(s)' : '')">
+                </p>
+                <div class="flex items-center gap-3">
+                    <a :href="publishShowUrl"
+                       class="inline-flex items-center gap-2 px-5 py-2.5 bg-indigo-600 text-white text-sm font-medium rounded-xl hover:bg-indigo-700 transition-colors shadow-sm">
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1.5">
+                            <path stroke-linecap="round" stroke-linejoin="round" d="M2.036 12.322a1.012 1.012 0 0 1 0-.639C3.423 7.51 7.36 4.5 12 4.5c4.638 0 8.573 3.007 9.963 7.178.07.207.07.431 0 .639C20.577 16.49 16.64 19.5 12 19.5c-4.638 0-8.573-3.007-9.963-7.178Z" />
+                            <path stroke-linecap="round" stroke-linejoin="round" d="M15 12a3 3 0 1 1-6 0 3 3 0 0 1 6 0Z" />
+                        </svg>
+                        Voir le post
+                    </a>
+                    <a href="{{ route('posts.create') }}"
+                       class="inline-flex items-center gap-2 px-5 py-2.5 bg-white text-gray-700 text-sm font-medium rounded-xl hover:bg-gray-50 transition-colors border border-gray-200 shadow-sm">
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1.5">
+                            <path stroke-linecap="round" stroke-linejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
+                        </svg>
+                        Nouveau post
+                    </a>
+                </div>
+            </div>
         </div>
     </form>
 @endsection

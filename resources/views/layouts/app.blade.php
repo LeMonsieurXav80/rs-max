@@ -28,7 +28,7 @@
             {{-- Sidebar --}}
             <aside
                 :class="sidebarOpen ? 'translate-x-0' : '-translate-x-full'"
-                class="fixed inset-y-0 left-0 z-50 w-64 bg-white border-r border-gray-200 flex flex-col transition-transform duration-300 ease-in-out lg:translate-x-0 lg:static lg:z-auto"
+                class="fixed inset-y-0 left-0 z-50 w-64 bg-white border-r border-gray-200 flex flex-col transition-transform duration-300 ease-in-out lg:translate-x-0"
             >
                 {{-- Logo --}}
                 <div class="flex items-center h-16 px-6 border-b border-gray-100">
@@ -190,7 +190,7 @@
             </aside>
 
             {{-- Main content --}}
-            <div class="flex-1 flex flex-col min-h-screen lg:ml-0">
+            <div class="flex-1 flex flex-col min-h-screen lg:ml-64">
                 {{-- Top header bar --}}
                 <header class="sticky top-0 z-30 bg-white border-b border-gray-200">
                     <div class="flex items-center justify-between h-16 px-6 lg:px-8">

@@ -45,7 +45,9 @@ class SettingsController extends Controller
             $settings[$key] = Setting::get($key, self::DEFAULTS[$key]);
         }
 
-        return view('settings.index', compact('settings'));
+        $hasOpenaiKey = (bool) Setting::getEncrypted('openai_api_key');
+
+        return view('settings.index', compact('settings', 'hasOpenaiKey'));
     }
 
     public function update(Request $request)
@@ -55,6 +57,7 @@ class SettingsController extends Controller
         }
 
         $validated = $request->validate([
+            'openai_api_key' => 'nullable|string|min:10',
             'image_max_dimension' => 'required|integer|min:512|max:4096',
             'image_target_min_kb' => 'required|integer|min:50|max:500',
             'image_target_max_kb' => 'required|integer|min:200|max:2000',
@@ -66,6 +69,12 @@ class SettingsController extends Controller
             'video_codec' => 'required|in:h264',
             'video_audio_bitrate' => 'required|integer|min:64|max:320',
         ]);
+
+        // Handle OpenAI key separately (encrypted storage)
+        if ($request->filled('openai_api_key')) {
+            Setting::setEncrypted('openai_api_key', $validated['openai_api_key']);
+        }
+        unset($validated['openai_api_key']);
 
         foreach ($validated as $key => $value) {
             Setting::set($key, $value);

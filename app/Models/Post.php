@@ -12,6 +12,7 @@ class Post extends Model
         'user_id',
         'content_fr',
         'content_en',
+        'translations',
         'hashtags',
         'auto_translate',
         'media',
@@ -28,6 +29,7 @@ class Post extends Model
     {
         return [
             'media' => 'array',
+            'translations' => 'array',
             'auto_translate' => 'boolean',
             'scheduled_at' => 'datetime',
             'published_at' => 'datetime',

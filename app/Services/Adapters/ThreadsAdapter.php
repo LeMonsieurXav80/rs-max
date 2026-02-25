@@ -212,6 +212,18 @@ class ThreadsAdapter implements PlatformAdapterInterface
 
     private function publishContainer(string $userId, string $accessToken, string $creationId): array
     {
+        // Wait for the container to be ready before publishing.
+        // Even text posts can have a brief delay before FINISHED status.
+        $ready = $this->waitUntilReady($creationId, $accessToken);
+
+        if (! $ready) {
+            return [
+                'success' => false,
+                'external_id' => null,
+                'error' => 'Container not ready after waiting. Status check timed out.',
+            ];
+        }
+
         $response = Http::post(self::API_BASE . "/{$userId}/threads_publish", [
             'creation_id' => $creationId,
             'access_token' => $accessToken,
@@ -241,6 +253,9 @@ class ThreadsAdapter implements PlatformAdapterInterface
         ];
     }
 
+    /**
+     * Wait for a container to reach FINISHED status (used for videos before publishContainer).
+     */
     private function waitForProcessing(string $containerId, string $accessToken): bool
     {
         for ($attempt = 0; $attempt < self::VIDEO_POLL_MAX_ATTEMPTS; $attempt++) {
@@ -264,6 +279,37 @@ class ThreadsAdapter implements PlatformAdapterInterface
 
                 return false;
             }
+        }
+
+        return false;
+    }
+
+    /**
+     * Lightweight wait before publishing — handles the brief delay even text/image containers can have.
+     */
+    private function waitUntilReady(string $containerId, string $accessToken, int $maxAttempts = 10, int $intervalSeconds = 1): bool
+    {
+        for ($attempt = 0; $attempt < $maxAttempts; $attempt++) {
+            $response = Http::get(self::API_BASE . "/{$containerId}", [
+                'fields' => 'status',
+                'access_token' => $accessToken,
+            ]);
+
+            $status = $response->json('status');
+
+            if ($status === 'FINISHED') {
+                return true;
+            }
+
+            if ($status === 'ERROR') {
+                Log::error('ThreadsAdapter: container returned ERROR during ready check', [
+                    'container_id' => $containerId,
+                ]);
+
+                return false;
+            }
+
+            sleep($intervalSeconds);
         }
 
         return false;

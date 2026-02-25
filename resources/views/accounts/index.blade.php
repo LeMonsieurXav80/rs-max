@@ -77,11 +77,13 @@
                                                     <p class="text-xs text-gray-400 mt-0.5">ID: {{ $account->platform_account_id }}</p>
                                                 @endif
 
-                                                <div class="flex items-center gap-2 mt-2">
-                                                    {{-- Language badge --}}
-                                                    <span class="inline-flex items-center px-2 py-0.5 rounded-md text-xs font-medium bg-gray-100 text-gray-600 uppercase">
-                                                        {{ $account->language ?? 'fr' }}
-                                                    </span>
+                                                <div class="flex items-center gap-2 mt-2 flex-wrap">
+                                                    {{-- Language badges --}}
+                                                    @foreach(($account->languages ?? ['fr']) as $lang)
+                                                        <span class="inline-flex items-center px-2 py-0.5 rounded-md text-xs font-medium bg-gray-100 text-gray-600 uppercase">
+                                                            {{ $lang }}
+                                                        </span>
+                                                    @endforeach
 
                                                     {{-- Active/Inactive badge --}}
                                                     <span

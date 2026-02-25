@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Models\SocialAccount;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Http;
@@ -12,47 +13,38 @@ class LocationController extends Controller
     private const API_BASE = 'https://graph.facebook.com/v21.0';
 
     /**
-     * Search for places via Facebook Places API.
+     * Search for places via Facebook Pages Search API.
+     * Requires "Page Public Metadata Access" feature enabled in Meta App dashboard.
      *
-     * GET /api/locations/search?q=Paris&lat=48.8566&lng=2.3522
+     * GET /api/locations/search?q=Paris
      */
     public function search(Request $request): JsonResponse
     {
         $request->validate([
             'q' => 'required|string|min:2|max:255',
-            'lat' => 'nullable|numeric|between:-90,90',
-            'lng' => 'nullable|numeric|between:-180,180',
         ]);
 
         $query = $request->input('q');
-        $lat = $request->input('lat');
-        $lng = $request->input('lng');
+        $accessToken = $this->getAccessToken();
 
-        // Use app token (client_id|client_secret) for Places search
-        $appId = config('services.facebook.client_id');
-        $appSecret = config('services.facebook.client_secret');
-        $accessToken = "{$appId}|{$appSecret}";
+        if (! $accessToken) {
+            Log::warning('LocationController: No access token available for places search');
 
-        $params = [
-            'type' => 'place',
-            'q' => $query,
-            'fields' => 'id,name,location',
-            'limit' => 10,
-            'access_token' => $accessToken,
-        ];
-
-        if ($lat && $lng) {
-            $params['center'] = "{$lat},{$lng}";
-            $params['distance'] = 50000; // 50km radius
+            return response()->json([], 200);
         }
 
         try {
-            $response = Http::get(self::API_BASE . '/search', $params);
+            $response = Http::get(self::API_BASE . '/pages/search', [
+                'q' => $query,
+                'fields' => 'id,name,location,category',
+                'limit' => 10,
+                'access_token' => $accessToken,
+            ]);
 
             if ($response->failed()) {
-                Log::error('LocationController: Places search failed', [
+                Log::error('LocationController: Pages search failed', [
                     'status' => $response->status(),
-                    'body' => $response->body(),
+                    'body' => substr($response->body(), 0, 500),
                 ]);
 
                 return response()->json([], 200);
@@ -60,25 +52,63 @@ class LocationController extends Controller
 
             $data = $response->json('data', []);
 
-            $results = collect($data)->map(function ($place) {
-                $location = $place['location'] ?? [];
+            // Filter to only pages that have a location (= places)
+            $results = collect($data)
+                ->filter(fn ($page) => ! empty($page['location']))
+                ->map(function ($page) {
+                    $location = $page['location'] ?? [];
 
-                return [
-                    'id' => $place['id'],
-                    'name' => $place['name'],
-                    'city' => $location['city'] ?? null,
-                    'country' => $location['country'] ?? null,
-                    'street' => $location['street'] ?? null,
-                ];
-            })->values()->all();
+                    return [
+                        'id' => $page['id'],
+                        'name' => $page['name'],
+                        'city' => $location['city'] ?? null,
+                        'country' => $location['country'] ?? null,
+                        'street' => $location['street'] ?? null,
+                        'category' => $page['category'] ?? null,
+                    ];
+                })
+                ->values()
+                ->all();
 
             return response()->json($results);
         } catch (\Throwable $e) {
-            Log::error('LocationController: Places search exception', [
+            Log::error('LocationController: Pages search exception', [
                 'error' => $e->getMessage(),
             ]);
 
             return response()->json([], 200);
         }
+    }
+
+    /**
+     * Get an access token for the search.
+     * Prefers a user access token (required for /pages/search with pages_read_engagement).
+     */
+    private function getAccessToken(): ?string
+    {
+        // /pages/search requires a USER access token with pages_read_engagement
+        $fbAccount = SocialAccount::whereHas('platform', fn ($q) => $q->where('slug', 'facebook'))
+            ->first();
+
+        if ($fbAccount) {
+            $creds = $fbAccount->credentials;
+            if (! empty($creds['user_access_token'])) {
+                return $creds['user_access_token'];
+            }
+            // Fallback to page token (less likely to work for /pages/search)
+            if (! empty($creds['access_token'])) {
+                return $creds['access_token'];
+            }
+        }
+
+        // Fallback to app token
+        $appId = config('services.facebook.client_id');
+        $appSecret = config('services.facebook.client_secret');
+
+        if ($appId && $appSecret) {
+            return "{$appId}|{$appSecret}";
+        }
+
+        return null;
     }
 }

@@ -282,7 +282,7 @@
             {{-- Media previews --}}
             <div x-show="mediaItems.length > 0" x-cloak class="mt-4">
                 <div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
-                    <template x-for="(item, index) in mediaItems" :key="index">
+                    <template x-for="(item, index) in mediaItems" :key="item.url">
                         <div class="relative group rounded-xl overflow-hidden border border-gray-200 aspect-square bg-gray-100">
                             {{-- Image preview --}}
                             <template x-if="item.mimetype && item.mimetype.startsWith('image/')">
@@ -403,7 +403,9 @@
                         try {
                             let url = '{{ route('locations.search') }}?q=' + encodeURIComponent(this.locationQuery);
                             const resp = await fetch(url, { headers: { 'Accept': 'application/json' } });
-                            this.locationResults = await resp.json();
+                            if (!resp.ok) { this.locationResults = []; this.locationOpen = false; this.locationLoading = false; return; }
+                            const data = await resp.json();
+                            this.locationResults = Array.isArray(data) ? data : [];
                             this.locationOpen = this.locationResults.length > 0;
                         } catch(e) { this.locationResults = []; }
                         this.locationLoading = false;
@@ -509,24 +511,6 @@
                     @enderror
                 </div>
 
-                {{-- Contenu anglais --}}
-                <div>
-                    <label for="content_en" class="block text-sm font-medium text-gray-700 mb-2">
-                        Contenu anglais
-                    </label>
-                    <textarea
-                        id="content_en"
-                        name="content_en"
-                        rows="4"
-                        class="w-full rounded-xl border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 text-sm placeholder-gray-400 transition-colors"
-                        placeholder="Rédigez votre publication en anglais..."
-                    >{{ old('content_en', $post->content_en) }}</textarea>
-                    <p class="mt-1.5 text-xs text-gray-400">Sera auto-traduit si laissé vide</p>
-                    @error('content_en')
-                        <p class="mt-1.5 text-sm text-red-600">{{ $message }}</p>
-                    @enderror
-                </div>
-
                 {{-- Hashtags --}}
                 <div>
                     <label for="hashtags" class="block text-sm font-medium text-gray-700 mb-2">
@@ -546,18 +530,21 @@
                 </div>
 
                 {{-- Traduction automatique --}}
-                <div class="flex items-center gap-3">
+                <div class="flex items-start gap-3">
                     <input
                         type="checkbox"
                         id="auto_translate"
                         name="auto_translate"
                         value="1"
                         {{ old('auto_translate', $post->auto_translate) ? 'checked' : '' }}
-                        class="rounded border-gray-300 text-indigo-600 focus:ring-indigo-500 transition-colors"
+                        class="mt-0.5 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500 transition-colors"
                     >
-                    <label for="auto_translate" class="text-sm text-gray-700">
-                        Traduction automatique
-                    </label>
+                    <div>
+                        <label for="auto_translate" class="text-sm text-gray-700 font-medium">
+                            Traduction automatique
+                        </label>
+                        <p class="text-xs text-gray-400 mt-0.5">Traduit le contenu dans les langues configurees sur chaque compte social</p>
+                    </div>
                 </div>
             </div>
         </div>

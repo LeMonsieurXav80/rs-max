@@ -3,7 +3,7 @@
 namespace App\Services;
 
 use App\Models\Post;
-use App\Models\PostPlatform;
+use App\Models\Setting;
 use App\Models\SocialAccount;
 use App\Jobs\PublishToPlatformJob;
 use Illuminate\Support\Facades\Log;
@@ -19,15 +19,6 @@ class PublishingService
      */
     public function publish(Post $post): void
     {
-        // Auto-translate if needed
-        if ($post->auto_translate && empty($post->content_en) && !empty($post->content_fr)) {
-            $apiKey = $post->user?->openai_api_key ?: config('services.openai.api_key');
-            $translated = $this->translationService->translate($post->content_fr, 'fr', 'en', $apiKey);
-            if ($translated) {
-                $post->update(['content_en' => $translated]);
-            }
-        }
-
         // Update post status
         $post->update(['status' => 'publishing']);
 
@@ -46,17 +37,26 @@ class PublishingService
     }
 
     /**
-     * Get the right content for a social account based on its language setting.
+     * Get the right content for a social account based on its languages setting.
+     * Translates on-the-fly and caches in post->translations.
      */
     public function getContentForAccount(Post $post, SocialAccount $account): string
     {
-        $language = $account->language ?? 'fr';
+        $languages = $account->languages ?? ['fr'];
+        $parts = [];
 
-        $content = match ($language) {
-            'en' => $post->content_en ?: $post->content_fr,
-            'both' => $post->content_fr . ($post->content_en ? "\n\n---\n\n" . $post->content_en : ''),
-            default => $post->content_fr,
-        };
+        foreach ($languages as $lang) {
+            if ($lang === 'fr') {
+                $parts[] = $post->content_fr;
+            } else {
+                $translation = $this->getTranslation($post, $lang);
+                if ($translation) {
+                    $parts[] = $translation;
+                }
+            }
+        }
+
+        $content = implode("\n\n---\n\n", $parts);
 
         // Append hashtags
         if ($post->hashtags) {
@@ -69,5 +69,51 @@ class PublishingService
         }
 
         return $content;
+    }
+
+    /**
+     * Get a translation for a specific language, from cache or by translating.
+     */
+    private function getTranslation(Post $post, string $lang): ?string
+    {
+        $translations = $post->translations ?? [];
+
+        // Check cached translation
+        if (! empty($translations[$lang])) {
+            return $translations[$lang];
+        }
+
+        // Backward compat: check content_en for English
+        if ($lang === 'en' && ! empty($post->content_en)) {
+            return $post->content_en;
+        }
+
+        // Auto-translate if enabled
+        if (! $post->auto_translate || empty($post->content_fr)) {
+            return null;
+        }
+
+        $apiKey = $this->getOpenaiApiKey();
+        if (! $apiKey) {
+            return null;
+        }
+
+        $translated = $this->translationService->translate($post->content_fr, 'fr', $lang, $apiKey);
+
+        if ($translated) {
+            // Cache in translations JSON
+            $translations[$lang] = $translated;
+            $post->update(['translations' => $translations]);
+        }
+
+        return $translated;
+    }
+
+    /**
+     * Get the OpenAI API key from settings or env.
+     */
+    private function getOpenaiApiKey(): ?string
+    {
+        return Setting::getEncrypted('openai_api_key') ?: config('services.openai.api_key');
     }
 }
