@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Models\Post;
+use App\Models\Setting;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Storage;
@@ -13,11 +14,20 @@ use Symfony\Component\HttpFoundation\StreamedResponse;
 
 class MediaController extends Controller
 {
-    private const MAX_IMAGE_DIMENSION = 2048;
+    private function maxImageDimension(): int
+    {
+        return (int) Setting::get('image_max_dimension', 2048);
+    }
 
-    private const JPEG_QUALITY = 80;
+    private function jpegQuality(): int
+    {
+        return (int) Setting::get('image_jpeg_quality', 82);
+    }
 
-    private const PNG_QUALITY = 8; // 0-9 scale (higher = more compression)
+    private function pngQuality(): int
+    {
+        return (int) Setting::get('image_png_quality', 8);
+    }
 
     /**
      * Media library page.
@@ -298,7 +308,7 @@ class MediaController extends Controller
         $newHeight = $origHeight;
 
         // Resize if the longest side exceeds max dimension
-        $maxDim = self::MAX_IMAGE_DIMENSION;
+        $maxDim = $this->maxImageDimension();
         if ($origWidth > $maxDim || $origHeight > $maxDim) {
             if ($origWidth >= $origHeight) {
                 $newWidth = $maxDim;
@@ -338,12 +348,15 @@ class MediaController extends Controller
             $outputMime = 'image/jpeg';
         }
 
+        $jpegQ = $this->jpegQuality();
+        $pngQ = $this->pngQuality();
+
         $saved = match ($outputMime) {
-            'image/jpeg' => imagejpeg($image, $storagePath, self::JPEG_QUALITY),
-            'image/png' => imagepng($image, $storagePath, self::PNG_QUALITY),
+            'image/jpeg' => imagejpeg($image, $storagePath, $jpegQ),
+            'image/png' => imagepng($image, $storagePath, $pngQ),
             'image/gif' => imagegif($image, $storagePath),
-            'image/webp' => imagewebp($image, $storagePath, self::JPEG_QUALITY),
-            default => imagejpeg($image, $storagePath, self::JPEG_QUALITY),
+            'image/webp' => imagewebp($image, $storagePath, $jpegQ),
+            default => imagejpeg($image, $storagePath, $jpegQ),
         };
 
         imagedestroy($image);

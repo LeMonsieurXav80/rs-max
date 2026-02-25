@@ -7,6 +7,7 @@ use App\Http\Controllers\PlatformController;
 use App\Http\Controllers\PostController;
 use App\Http\Controllers\ProfileController;
 use App\Http\Controllers\PublishController;
+use App\Http\Controllers\SettingsController;
 use App\Http\Controllers\SocialAccountController;
 use Illuminate\Support\Facades\Route;
 
@@ -51,6 +52,10 @@ Route::middleware(['auth', 'verified'])->group(function () {
     Route::post('posts/{post}/publish', [PublishController::class, 'publishAll'])->name('posts.publish');
     Route::post('posts/platform/{postPlatform}/publish', [PublishController::class, 'publishOne'])->name('posts.publishOne');
     Route::post('posts/platform/{postPlatform}/reset', [PublishController::class, 'resetOne'])->name('posts.resetOne');
+
+    // Settings (admin only)
+    Route::get('settings', [SettingsController::class, 'index'])->name('settings.index');
+    Route::patch('settings', [SettingsController::class, 'update'])->name('settings.update');
 
     // Media library
     Route::get('media', [MediaController::class, 'index'])->name('media.index');
