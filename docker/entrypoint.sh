@@ -78,9 +78,9 @@ php artisan migrate --force
 echo "Checking if seeding is needed..."
 php artisan db:seed --class=PlatformSeeder --force 2>/dev/null || true
 
-# Convert non-MP4 videos to MP4 (H.264/AAC) for platform compatibility
-echo "Converting videos if needed..."
-php artisan media:convert-videos 2>/dev/null || true
+# Convert non-H.264 videos to MP4 H.264/AAC (runs in background to not block startup)
+echo "Starting video conversion in background..."
+nohup php artisan media:convert-videos >> /var/www/html/storage/logs/video-convert.log 2>&1 &
 
 # Clear and optimize caches
 echo "Optimizing application..."

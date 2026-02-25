@@ -148,10 +148,12 @@ class MediaController extends Controller
             ]);
         }
 
-        // Video: store, then convert to MP4 (H.264/AAC) if needed for platform compatibility
+        // Video: store, then ensure MP4 H.264/AAC for platform compatibility
         $file->storeAs('media', $filename, 'local');
 
-        if ($mimeType !== 'video/mp4') {
+        $needsConversion = $mimeType !== 'video/mp4' || $this->isHevc($filename);
+
+        if ($needsConversion) {
             $converted = $this->convertToMp4($filename);
             if ($converted) {
                 $filename = $converted['filename'];
@@ -475,6 +477,29 @@ class MediaController extends Controller
     }
 
     /**
+     * Check if a video uses HEVC/H.265 codec (not supported for inline playback on Telegram).
+     */
+    private function isHevc(string $filename): bool
+    {
+        $ffprobe = $this->findBinary('ffprobe');
+        if (! $ffprobe) {
+            return false;
+        }
+
+        $filePath = Storage::disk('local')->path("media/{$filename}");
+        $output = [];
+        exec(sprintf(
+            '%s -v quiet -select_streams v:0 -show_entries stream=codec_name -of csv=p=0 %s 2>/dev/null',
+            escapeshellarg($ffprobe),
+            escapeshellarg($filePath)
+        ), $output);
+
+        $codec = trim($output[0] ?? '');
+
+        return in_array($codec, ['hevc', 'h265', 'vp9', 'av1']);
+    }
+
+    /**
      * Convert a video to MP4 (H.264/AAC) using ffmpeg.
      */
     private function convertToMp4(string $filename): ?array
@@ -486,23 +511,33 @@ class MediaController extends Controller
 
         $originalPath = Storage::disk('local')->path("media/{$filename}");
         $mp4Filename = pathinfo($filename, PATHINFO_FILENAME) . '.mp4';
-        $mp4Path = Storage::disk('local')->path("media/{$mp4Filename}");
+
+        // If input is already .mp4 (HEVC re-encode), use a temp file
+        $sameFile = strtolower(pathinfo($filename, PATHINFO_EXTENSION)) === 'mp4';
+        $outputPath = $sameFile
+            ? Storage::disk('local')->path("media/{$mp4Filename}.tmp.mp4")
+            : Storage::disk('local')->path("media/{$mp4Filename}");
 
         exec(sprintf(
             '%s -i %s -c:v libx264 -preset fast -crf 23 -c:a aac -b:a 128k -movflags +faststart -y %s 2>&1',
             escapeshellarg($ffmpeg),
             escapeshellarg($originalPath),
-            escapeshellarg($mp4Path)
+            escapeshellarg($outputPath)
         ), $output, $returnCode);
 
-        if ($returnCode === 0 && file_exists($mp4Path) && filesize($mp4Path) > 0) {
-            @unlink($originalPath);
+        if ($returnCode === 0 && file_exists($outputPath) && filesize($outputPath) > 0) {
+            if ($sameFile) {
+                @unlink($originalPath);
+                rename($outputPath, Storage::disk('local')->path("media/{$mp4Filename}"));
+            } else {
+                @unlink($originalPath);
+            }
 
             return ['filename' => $mp4Filename];
         }
 
         // Conversion failed — keep original
-        @unlink($mp4Path);
+        @unlink($outputPath);
 
         return null;
     }
@@ -512,14 +547,22 @@ class MediaController extends Controller
      */
     private function findFfmpeg(): ?string
     {
-        $ffmpeg = trim(exec('which ffmpeg 2>/dev/null'));
-        if ($ffmpeg) {
-            return $ffmpeg;
+        return $this->findBinary('ffmpeg');
+    }
+
+    /**
+     * Locate a binary (ffmpeg, ffprobe, etc.).
+     */
+    private function findBinary(string $name): ?string
+    {
+        $path = trim(exec("which {$name} 2>/dev/null"));
+        if ($path) {
+            return $path;
         }
 
-        foreach (['/opt/homebrew/bin/ffmpeg', '/usr/local/bin/ffmpeg', '/usr/bin/ffmpeg'] as $path) {
-            if (file_exists($path)) {
-                return $path;
+        foreach (["/opt/homebrew/bin/{$name}", "/usr/local/bin/{$name}", "/usr/bin/{$name}"] as $candidate) {
+            if (file_exists($candidate)) {
+                return $candidate;
             }
         }
 

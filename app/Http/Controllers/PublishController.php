@@ -274,7 +274,7 @@ class PublishController extends Controller
                 $filename = basename($url);
                 $item['url'] = URL::temporarySignedRoute(
                     'media.show',
-                    now()->addHour(),
+                    now()->addHours(4),
                     ['filename' => $filename]
                 );
             }
