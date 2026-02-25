@@ -8,6 +8,7 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 use Illuminate\View\View;
+use Symfony\Component\HttpFoundation\BinaryFileResponse;
 use Symfony\Component\HttpFoundation\StreamedResponse;
 
 class MediaController extends Controller
@@ -187,6 +188,68 @@ class MediaController extends Controller
         })->sortByDesc(fn ($item) => $item['date'])->values();
 
         return response()->json($items);
+    }
+
+    /**
+     * Serve a video thumbnail (generated via ffmpeg, cached).
+     */
+    public function thumbnail(Request $request, string $filename): BinaryFileResponse
+    {
+        $videoPath = Storage::disk('local')->path("media/{$filename}");
+        if (! file_exists($videoPath)) {
+            abort(404);
+        }
+
+        $thumbDir = Storage::disk('local')->path('media/thumbnails');
+        if (! is_dir($thumbDir)) {
+            mkdir($thumbDir, 0755, true);
+        }
+
+        $thumbFilename = pathinfo($filename, PATHINFO_FILENAME) . '.jpg';
+        $thumbPath = $thumbDir . '/' . $thumbFilename;
+
+        if (! file_exists($thumbPath)) {
+            $ffmpeg = trim(exec('which ffmpeg 2>/dev/null'));
+            if (! $ffmpeg) {
+                // Homebrew paths not in PHP's PATH
+                foreach (['/opt/homebrew/bin/ffmpeg', '/usr/local/bin/ffmpeg', '/usr/bin/ffmpeg'] as $path) {
+                    if (file_exists($path)) {
+                        $ffmpeg = $path;
+                        break;
+                    }
+                }
+            }
+            if (! $ffmpeg) {
+                abort(404);
+            }
+
+            // Extract frame at ~5 seconds
+            exec(sprintf(
+                '%s -ss 5 -i %s -frames:v 1 -q:v 3 -vf "scale=480:-1" -update 1 %s 2>/dev/null',
+                escapeshellarg($ffmpeg),
+                escapeshellarg($videoPath),
+                escapeshellarg($thumbPath)
+            ));
+
+            // If 5s failed (video too short), try first frame
+            if (! file_exists($thumbPath) || filesize($thumbPath) === 0) {
+                exec(sprintf(
+                    '%s -i %s -frames:v 1 -q:v 3 -vf "scale=480:-1" -update 1 %s 2>/dev/null',
+                    escapeshellarg($ffmpeg),
+                    escapeshellarg($videoPath),
+                    escapeshellarg($thumbPath)
+                ));
+            }
+
+            if (! file_exists($thumbPath) || filesize($thumbPath) === 0) {
+                abort(404);
+            }
+        }
+
+        return response()->file($thumbPath, [
+            'Content-Type' => 'image/jpeg',
+            'Cache-Control' => 'private, max-age=604800',
+        ]);
     }
 
     /**

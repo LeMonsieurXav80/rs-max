@@ -43,6 +43,15 @@
                         $currentRoute = request()->path();
                     @endphp
 
+                    {{-- Nouveau post --}}
+                    <a href="{{ route('posts.create') }}"
+                       class="flex items-center gap-3 px-3 py-2.5 mb-3 rounded-xl text-sm font-medium bg-indigo-600 text-white hover:bg-indigo-700 transition-colors shadow-sm">
+                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2">
+                            <path stroke-linecap="round" stroke-linejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
+                        </svg>
+                        Nouveau post
+                    </a>
+
                     {{-- Dashboard --}}
                     <a href="{{ url('/dashboard') }}"
                        class="flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-colors {{ $currentRoute === 'dashboard' ? 'bg-indigo-50 text-indigo-600' : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900' }}">
@@ -206,6 +215,20 @@
                 <main class="flex-1 p-6 lg:p-8">
                     @yield('content')
                 </main>
+
+                {{-- Footer with git version --}}
+                @php
+                    $gitCommit = trim(exec('git rev-parse --short HEAD 2>/dev/null'));
+                    $gitDate = trim(exec('git log -1 --format=%ci 2>/dev/null'));
+                @endphp
+                @if($gitCommit)
+                    <footer class="px-6 lg:px-8 pb-4">
+                        <p class="text-xs text-gray-400 text-right">
+                            v. {{ $gitCommit }}
+                            @if($gitDate) &middot; {{ \Carbon\Carbon::parse($gitDate)->format('d/m/Y H:i') }} @endif
+                        </p>
+                    </footer>
+                @endif
             </div>
         </div>
     </body>

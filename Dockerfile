@@ -16,7 +16,8 @@ RUN apk add --no-cache \
     icu-dev \
     oniguruma-dev \
     nodejs \
-    npm
+    npm \
+    ffmpeg
 
 # Install PHP extensions
 RUN docker-php-ext-configure gd --with-freetype --with-jpeg \

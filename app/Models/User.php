@@ -23,6 +23,7 @@ class User extends Authenticatable
         'openai_api_key',
         'telegram_alert_chat_id',
         'is_admin',
+        'default_accounts',
     ];
 
     protected $hidden = [
@@ -39,6 +40,7 @@ class User extends Authenticatable
             'openai_api_key' => 'encrypted',
             'auto_translate' => 'boolean',
             'is_admin' => 'boolean',
+            'default_accounts' => 'array',
         ];
     }
 

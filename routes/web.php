@@ -44,6 +44,9 @@ Route::middleware(['auth', 'verified'])->group(function () {
     Route::post('platforms/twitter/validate-account', [PlatformController::class, 'validateTwitterAccount'])->name('platforms.twitter.validateAccount');
     Route::delete('platforms/account/{account}', [PlatformController::class, 'destroyAccount'])->name('platforms.destroyAccount');
 
+    // Save default account selection
+    Route::post('posts/default-accounts', [PostController::class, 'saveDefaultAccounts'])->name('posts.defaultAccounts');
+
     // Manual publishing (test without scheduling)
     Route::post('posts/{post}/publish', [PublishController::class, 'publishAll'])->name('posts.publish');
     Route::post('posts/platform/{postPlatform}/publish', [PublishController::class, 'publishOne'])->name('posts.publishOne');
@@ -53,6 +56,7 @@ Route::middleware(['auth', 'verified'])->group(function () {
     Route::get('media', [MediaController::class, 'index'])->name('media.index');
     Route::post('media/upload', [MediaController::class, 'upload'])->name('media.upload');
     Route::get('media/list', [MediaController::class, 'list'])->name('media.list');
+    Route::get('media/thumbnail/{filename}', [MediaController::class, 'thumbnail'])->name('media.thumbnail');
     Route::delete('media/{filename}', [MediaController::class, 'destroy'])->name('media.destroy');
 });
 

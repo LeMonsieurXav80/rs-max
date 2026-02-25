@@ -14,6 +14,21 @@ use Illuminate\View\View;
 class PostController extends Controller
 {
     /**
+     * Save the user's default account selection for post creation.
+     */
+    public function saveDefaultAccounts(Request $request)
+    {
+        $validated = $request->validate([
+            'accounts' => 'required|array',
+            'accounts.*' => 'integer|exists:social_accounts,id',
+        ]);
+
+        $request->user()->update(['default_accounts' => $validated['accounts']]);
+
+        return response()->json(['success' => true]);
+    }
+
+    /**
      * Display a paginated list of posts, optionally filtered by status.
      */
     public function index(Request $request): View
@@ -84,8 +99,9 @@ class PostController extends Controller
         }
 
         $platforms = Platform::where('is_active', true)->get();
+        $defaultAccountIds = $user->default_accounts ?? [];
 
-        return view('posts.create', compact('accounts', 'platforms'));
+        return view('posts.create', compact('accounts', 'platforms', 'defaultAccountIds'));
     }
 
     /**
