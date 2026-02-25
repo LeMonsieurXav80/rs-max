@@ -19,7 +19,6 @@ class Post extends Model
         'link_url',
         'location_name',
         'location_id',
-        'telegram_channel',
         'status',
         'scheduled_at',
         'published_at',

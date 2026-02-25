@@ -124,7 +124,6 @@ class PostController extends Controller
             'link_url'          => 'nullable|url|max:2048',
             'location_name'     => 'nullable|string|max:255',
             'location_id'       => 'nullable|string|max:255',
-            'telegram_channel'  => 'nullable|string|max:255',
             'status'            => 'required|in:draft,scheduled',
             'publish_now'       => 'nullable|boolean',
             'scheduled_at'      => [$request->boolean('publish_now') ? 'nullable' : 'required_if:status,scheduled', 'nullable', 'date', 'after_or_equal:now'],
@@ -182,7 +181,6 @@ class PostController extends Controller
                 'link_url'         => $validated['link_url'] ?? null,
                 'location_name'    => $validated['location_name'] ?? null,
                 'location_id'      => $validated['location_id'] ?? null,
-                'telegram_channel' => $validated['telegram_channel'] ?? null,
                 'status'           => $status,
                 'scheduled_at'     => $scheduledAt,
             ]);
@@ -308,7 +306,6 @@ class PostController extends Controller
             'link_url'          => 'nullable|url|max:2048',
             'location_name'     => 'nullable|string|max:255',
             'location_id'       => 'nullable|string|max:255',
-            'telegram_channel'  => 'nullable|string|max:255',
             'status'            => 'required|in:draft,scheduled',
             'publish_now'       => 'nullable|boolean',
             'scheduled_at'      => [$request->boolean('publish_now') ? 'nullable' : 'required_if:status,scheduled', 'nullable', 'date', 'after_or_equal:now'],
@@ -364,7 +361,6 @@ class PostController extends Controller
                 'link_url'         => $validated['link_url'] ?? null,
                 'location_name'    => $validated['location_name'] ?? null,
                 'location_id'      => $validated['location_id'] ?? null,
-                'telegram_channel' => $validated['telegram_channel'] ?? null,
                 'status'           => $status,
                 'scheduled_at'     => $scheduledAt,
             ]);

@@ -22,16 +22,6 @@ class TelegramAdapter implements PlatformAdapterInterface
             $credentials = $account->credentials;
             $token = $credentials['bot_token'];
             $chatId = $credentials['chat_id'];
-
-            // Allow the Post's telegram_channel field to override the chat_id.
-            $post = $account->relationLoaded('postPlatforms')
-                ? optional($account->postPlatforms->first())->post
-                : null;
-
-            if ($post && ! empty($post->telegram_channel)) {
-                $chatId = $post->telegram_channel;
-            }
-
             $baseUrl = "https://api.telegram.org/bot{$token}";
 
             // No media -- plain text message.

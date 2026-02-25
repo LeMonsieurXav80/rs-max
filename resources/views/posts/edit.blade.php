@@ -5,7 +5,6 @@
 @section('content')
     <form method="POST" action="{{ route('posts.update', $post) }}" class="max-w-4xl space-y-6" x-data="{
         publishMode: '{{ old('publish_now') ? 'now' : ($post->scheduled_at ? 'schedule' : 'schedule') }}',
-        showTelegramChannel: {{ $post->telegram_channel ? 'true' : 'false' }},
         mediaItems: [],
         uploading: false,
         uploadProgress: 0,
@@ -13,7 +12,6 @@
         libraryItems: [],
         libraryLoading: false,
         init() {
-            this.checkTelegram();
             // Load existing media from post
             const existing = @js($post->media ?? []);
             if (Array.isArray(existing)) {
@@ -34,15 +32,6 @@
                     } catch(e) {}
                 });
             }
-        },
-        checkTelegram() {
-            const checked = document.querySelectorAll('input[name=\'accounts[]\']:checked');
-            this.showTelegramChannel = false;
-            checked.forEach(el => {
-                if (el.dataset.platform === 'telegram') {
-                    this.showTelegramChannel = true;
-                }
-            });
         },
         handleDrop(e) {
             e.preventDefault();
@@ -117,14 +106,18 @@
             }
         },
         selectFromLibrary(item) {
-            // Don't add duplicates
-            if (this.mediaItems.find(m => m.url === item.url)) return;
-            this.mediaItems.push({
-                url: item.url,
-                mimetype: item.mimetype,
-                size: item.size,
-                title: item.filename,
-            });
+            // Toggle: if already in media, remove it; otherwise add it
+            const index = this.mediaItems.findIndex(m => m.url === item.url);
+            if (index !== -1) {
+                this.mediaItems.splice(index, 1);
+            } else {
+                this.mediaItems.push({
+                    url: item.url,
+                    mimetype: item.mimetype,
+                    size: item.size,
+                    title: item.filename,
+                });
+            }
         },
         isInMedia(item) {
             return this.mediaItems.find(m => m.url === item.url);
@@ -192,7 +185,6 @@
                                                 name="accounts[]"
                                                 value="{{ $account->id }}"
                                                 data-platform="{{ $slug }}"
-                                                @change="checkTelegram()"
                                                 {{ in_array($account->id, old('accounts', $selectedAccountIds)) ? 'checked' : '' }}
                                                 class="rounded border-gray-300 text-indigo-600 focus:ring-indigo-500 transition-colors"
                                             >
@@ -220,21 +212,6 @@
             @error('accounts.*')
                 <p class="mt-3 text-sm text-red-600">{{ $message }}</p>
             @enderror
-
-            {{-- Telegram channel (shown when a Telegram account is selected) --}}
-            <div x-show="showTelegramChannel" x-transition x-cloak class="mt-4">
-                <label for="telegram_channel" class="block text-sm font-medium text-gray-700 mb-2">
-                    Canal Telegram (optionnel, remplace le chat_id du compte)
-                </label>
-                <input
-                    type="text"
-                    id="telegram_channel"
-                    name="telegram_channel"
-                    value="{{ old('telegram_channel', $post->telegram_channel) }}"
-                    class="w-full sm:w-1/2 rounded-xl border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 text-sm placeholder-gray-400 transition-colors"
-                    placeholder="@mon_canal"
-                >
-            </div>
         </div>
 
         {{-- Section 2: Médias --}}
