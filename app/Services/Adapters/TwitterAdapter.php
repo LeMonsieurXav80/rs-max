@@ -232,11 +232,12 @@ class TwitterAdapter implements PlatformAdapterInterface
 
             $authHeader = $this->buildOAuthHeader('POST', self::MEDIA_UPLOAD_URL, $appendParams);
 
-            $appendResponse = Http::withHeaders([
+            // Twitter expects base64-encoded media for APPEND
+            $appendResponse = Http::asForm()->withHeaders([
                 'Authorization' => $authHeader,
-            ])->attach(
-                'media_data', $chunk, 'chunk'
-            )->post(self::MEDIA_UPLOAD_URL . '?' . http_build_query($appendParams));
+            ])->post(self::MEDIA_UPLOAD_URL, array_merge($appendParams, [
+                'media' => base64_encode($chunk),
+            ]));
 
             if (! $appendResponse->successful() && $appendResponse->status() !== 204) {
                 Log::error('TwitterAdapter: chunked APPEND failed', [
