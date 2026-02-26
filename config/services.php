@@ -52,4 +52,10 @@ return [
         'api_version' => 'v1.0',
     ],
 
+    'youtube' => [
+        'client_id' => env('YOUTUBE_CLIENT_ID'),
+        'client_secret' => env('YOUTUBE_CLIENT_SECRET'),
+        'redirect' => env('APP_URL').'/oauth/youtube/callback',
+    ],
+
 ];

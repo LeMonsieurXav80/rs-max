@@ -79,6 +79,16 @@ class PlatformController extends Controller
     }
 
     /**
+     * YouTube configuration page.
+     */
+    public function youtube(Request $request): View
+    {
+        $accounts = $this->accountsForSlugs($request, ['youtube']);
+
+        return view('platforms.youtube', compact('accounts'));
+    }
+
+    /**
      * Register a Telegram bot (validate + save).
      */
     public function registerTelegramBot(Request $request): RedirectResponse

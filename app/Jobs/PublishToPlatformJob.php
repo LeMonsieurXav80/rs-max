@@ -10,6 +10,7 @@ use App\Services\Adapters\InstagramAdapter;
 use App\Services\Adapters\PlatformAdapterInterface;
 use App\Services\Adapters\TelegramAdapter;
 use App\Services\Adapters\TwitterAdapter;
+use App\Services\Adapters\YouTubeAdapter;
 use App\Services\PublishingService;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
@@ -92,6 +93,7 @@ class PublishToPlatformJob implements ShouldQueue
             'facebook' => new FacebookAdapter(),
             'instagram' => new InstagramAdapter(),
             'twitter' => new TwitterAdapter(),
+            'youtube' => new YouTubeAdapter(),
             default => null,
         };
     }

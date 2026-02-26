@@ -12,6 +12,7 @@ use App\Http\Controllers\PublishController;
 use App\Http\Controllers\SettingsController;
 use App\Http\Controllers\SocialAccountController;
 use App\Http\Controllers\ThreadsOAuthController;
+use App\Http\Controllers\YouTubeOAuthController;
 use Illuminate\Support\Facades\Route;
 
 Route::get('/', function () {
@@ -40,11 +41,18 @@ Route::middleware(['auth', 'verified'])->group(function () {
     Route::get('auth/threads/redirect', [ThreadsOAuthController::class, 'redirect'])->name('threads.redirect');
     Route::get('auth/threads/callback', [ThreadsOAuthController::class, 'callback'])->name('threads.callback');
 
+    // YouTube OAuth flow
+    Route::get('oauth/youtube/redirect', [YouTubeOAuthController::class, 'redirect'])->name('youtube.redirect');
+    Route::get('oauth/youtube/callback', [YouTubeOAuthController::class, 'callback'])->name('youtube.callback');
+    Route::get('oauth/youtube/select', [YouTubeOAuthController::class, 'select'])->name('youtube.select');
+    Route::post('oauth/youtube/store', [YouTubeOAuthController::class, 'store'])->name('youtube.store');
+
     // Platforms management (one page per platform)
     Route::get('platforms/facebook', [PlatformController::class, 'facebook'])->name('platforms.facebook');
     Route::get('platforms/threads', [PlatformController::class, 'threads'])->name('platforms.threads');
     Route::get('platforms/telegram', [PlatformController::class, 'telegram'])->name('platforms.telegram');
     Route::get('platforms/twitter', [PlatformController::class, 'twitter'])->name('platforms.twitter');
+    Route::get('platforms/youtube', [PlatformController::class, 'youtube'])->name('platforms.youtube');
     Route::post('platforms/telegram/validate-bot', [PlatformController::class, 'validateTelegramBot'])->name('platforms.telegram.validateBot');
     Route::post('platforms/telegram/register-bot', [PlatformController::class, 'registerTelegramBot'])->name('platforms.telegram.registerBot');
     Route::post('platforms/telegram/add-channel', [PlatformController::class, 'addTelegramChannel'])->name('platforms.telegram.addChannel');
