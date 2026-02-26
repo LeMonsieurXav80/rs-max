@@ -36,12 +36,15 @@ class DashboardController extends Controller
         $draftCount = (clone $postQuery)->where('status', 'draft')->count();
         // $activeAccountsCount already computed above
 
+        // Only load postPlatforms whose social account is active
+        $activePostPlatforms = fn ($q) => $q->whereHas('socialAccount', fn ($sq) => $sq->where('is_active', true));
+
         // Next 5 scheduled posts (upcoming)
         $upcomingPosts = (clone $postQuery)
             ->where('status', 'scheduled')
             ->whereNotNull('scheduled_at')
             ->where('scheduled_at', '>', now())
-            ->with('postPlatforms.platform')
+            ->with(['postPlatforms' => $activePostPlatforms, 'postPlatforms.platform'])
             ->orderBy('scheduled_at', 'asc')
             ->limit(5)
             ->get();
@@ -49,7 +52,7 @@ class DashboardController extends Controller
         // Last 5 published posts (recent)
         $recentPosts = (clone $postQuery)
             ->where('status', 'published')
-            ->with('postPlatforms.platform')
+            ->with(['postPlatforms' => $activePostPlatforms, 'postPlatforms.platform'])
             ->orderBy('published_at', 'desc')
             ->limit(5)
             ->get();

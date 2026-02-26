@@ -45,6 +45,14 @@ class PublishController extends Controller
         }
 
         $account = $postPlatform->socialAccount;
+
+        if (! $account->is_active) {
+            return response()->json([
+                'success' => false,
+                'error' => 'Ce compte est désactivé.',
+            ], 422);
+        }
+
         $platform = $account->platform;
 
         $adapter = $this->getAdapter($platform->slug);
@@ -130,6 +138,7 @@ class PublishController extends Controller
         $postPlatforms = $post->postPlatforms()
             ->with('socialAccount.platform')
             ->whereIn('status', ['pending', 'failed'])
+            ->whereHas('socialAccount', fn ($q) => $q->where('is_active', true))
             ->get();
 
         if ($postPlatforms->isEmpty()) {

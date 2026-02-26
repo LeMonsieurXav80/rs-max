@@ -141,12 +141,21 @@
                             {{-- Posts for this day --}}
                             <div class="space-y-1">
                                 @foreach($dayPosts->take(3) as $post)
+                                    @php
+                                        $calPpWithMetrics = $post->postPlatforms->where('status', 'published')->filter(fn($pp) => !empty($pp->metrics));
+                                        $calLikes = $calPpWithMetrics->sum(fn($pp) => $pp->metrics['likes'] ?? 0);
+                                        $calViews = $calPpWithMetrics->sum(fn($pp) => $pp->metrics['views'] ?? 0);
+                                        $isPublished = $post->status === 'published';
+                                    @endphp
                                     <a href="{{ route('posts.show', $post) }}"
                                        class="block px-1.5 py-1 rounded-lg text-xs hover:bg-indigo-50 transition-colors group"
                                        title="{{ Str::limit($post->content_fr, 60) }}">
                                         <div class="flex items-center gap-1">
-                                            {{-- Time --}}
-                                            <span class="font-medium text-gray-600 group-hover:text-indigo-600 whitespace-nowrap">
+                                            {{-- Status dot + Time --}}
+                                            @if($isPublished)
+                                                <span class="inline-block w-1.5 h-1.5 rounded-full bg-green-400 flex-shrink-0"></span>
+                                            @endif
+                                            <span class="font-medium {{ $isPublished ? 'text-green-700' : 'text-gray-600' }} group-hover:text-indigo-600 whitespace-nowrap">
                                                 {{ ($post->scheduled_at ?? $post->published_at)->format('H:i') }}
                                             </span>
                                             {{-- Platform icons --}}
@@ -155,6 +164,23 @@
                                                     <x-platform-icon :platform="$pp->platform->slug" size="sm" />
                                                 @endforeach
                                             </div>
+                                            {{-- Compact stats --}}
+                                            @if($calPpWithMetrics->count() > 0 && ($calViews > 0 || $calLikes > 0))
+                                                <span class="text-gray-400 whitespace-nowrap ml-auto" title="{{ number_format($calViews) }} vues, {{ number_format($calLikes) }} likes">
+                                                    @if($calViews > 0)
+                                                        {{ $calViews >= 1000 ? number_format($calViews / 1000, 1) . 'k' : $calViews }}
+                                                        <svg class="w-2.5 h-2.5 inline -mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1.5">
+                                                            <path stroke-linecap="round" stroke-linejoin="round" d="M2.036 12.322a1.012 1.012 0 0 1 0-.639C3.423 7.51 7.36 4.5 12 4.5c4.638 0 8.573 3.007 9.963 7.178.07.207.07.431 0 .639C20.577 16.49 16.64 19.5 12 19.5c-4.638 0-8.573-3.007-9.963-7.178Z" />
+                                                            <path stroke-linecap="round" stroke-linejoin="round" d="M15 12a3 3 0 1 1-6 0 3 3 0 0 1 6 0Z" />
+                                                        </svg>
+                                                    @else
+                                                        {{ $calLikes >= 1000 ? number_format($calLikes / 1000, 1) . 'k' : $calLikes }}
+                                                        <svg class="w-2.5 h-2.5 inline -mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1.5">
+                                                            <path stroke-linecap="round" stroke-linejoin="round" d="M21 8.25c0-2.485-2.099-4.5-4.688-4.5-1.935 0-3.597 1.126-4.312 2.733-.715-1.607-2.377-2.733-4.313-2.733C5.1 3.75 3 5.765 3 8.25c0 7.22 9 12 9 12s9-4.78 9-12Z" />
+                                                        </svg>
+                                                    @endif
+                                                </span>
+                                            @endif
                                         </div>
                                     </a>
                                 @endforeach
@@ -232,8 +258,8 @@
                                     {{ Str::limit($post->content_fr, 80) }}
                                 </p>
 
-                                {{-- Platform icons + date --}}
-                                <div class="flex items-center gap-4">
+                                {{-- Platform icons + dates --}}
+                                <div class="flex flex-wrap items-center gap-x-4 gap-y-1">
                                     <div class="flex items-center gap-1.5">
                                         @foreach($post->postPlatforms as $pp)
                                             <x-platform-icon :platform="$pp->platform->slug" size="sm" />
@@ -247,12 +273,47 @@
                                             </svg>
                                             {{ $post->scheduled_at->format('d/m/Y H:i') }}
                                         </div>
-                                    @elseif($post->published_at)
-                                        <div class="flex items-center gap-1.5 text-xs text-gray-500">
+                                    @endif
+
+                                    @if($post->published_at)
+                                        <div class="flex items-center gap-1.5 text-xs {{ $post->scheduled_at ? 'text-green-600' : 'text-gray-500' }}">
                                             <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1.5">
                                                 <path stroke-linecap="round" stroke-linejoin="round" d="M9 12.75 11.25 15 15 9.75M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z" />
                                             </svg>
                                             {{ $post->published_at->format('d/m/Y H:i') }}
+                                        </div>
+                                    @endif
+
+                                    {{-- Compact stats for published posts --}}
+                                    @php
+                                        $ppWithMetrics = $post->postPlatforms->where('status', 'published')->filter(fn($pp) => !empty($pp->metrics));
+                                        $listTotalViews = $ppWithMetrics->sum(fn($pp) => $pp->metrics['views'] ?? 0);
+                                        $listTotalLikes = $ppWithMetrics->sum(fn($pp) => $pp->metrics['likes'] ?? 0);
+                                        $listTotalComments = $ppWithMetrics->sum(fn($pp) => $pp->metrics['comments'] ?? 0);
+                                    @endphp
+                                    @if($ppWithMetrics->count() > 0)
+                                        <div class="flex items-center gap-3 text-xs text-gray-500 border-l border-gray-200 pl-4">
+                                            @if($listTotalViews > 0)
+                                                <span title="Vues">
+                                                    <svg class="w-3 h-3 inline -mt-0.5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1.5">
+                                                        <path stroke-linecap="round" stroke-linejoin="round" d="M2.036 12.322a1.012 1.012 0 0 1 0-.639C3.423 7.51 7.36 4.5 12 4.5c4.638 0 8.573 3.007 9.963 7.178.07.207.07.431 0 .639C20.577 16.49 16.64 19.5 12 19.5c-4.638 0-8.573-3.007-9.963-7.178Z" />
+                                                        <path stroke-linecap="round" stroke-linejoin="round" d="M15 12a3 3 0 1 1-6 0 3 3 0 0 1 6 0Z" />
+                                                    </svg>
+                                                    {{ number_format($listTotalViews, 0, ',', ' ') }}
+                                                </span>
+                                            @endif
+                                            <span title="Likes">
+                                                <svg class="w-3 h-3 inline -mt-0.5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1.5">
+                                                    <path stroke-linecap="round" stroke-linejoin="round" d="M21 8.25c0-2.485-2.099-4.5-4.688-4.5-1.935 0-3.597 1.126-4.312 2.733-.715-1.607-2.377-2.733-4.313-2.733C5.1 3.75 3 5.765 3 8.25c0 7.22 9 12 9 12s9-4.78 9-12Z" />
+                                                </svg>
+                                                {{ number_format($listTotalLikes, 0, ',', ' ') }}
+                                            </span>
+                                            <span title="Commentaires">
+                                                <svg class="w-3 h-3 inline -mt-0.5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1.5">
+                                                    <path stroke-linecap="round" stroke-linejoin="round" d="M12 20.25c4.97 0 9-3.694 9-8.25s-4.03-8.25-9-8.25S3 7.444 3 12c0 2.104.859 4.023 2.273 5.48.432.447.74 1.04.586 1.641a4.483 4.483 0 0 1-.923 1.785A5.969 5.969 0 0 0 6 21c1.282 0 2.47-.402 3.445-1.087.81.22 1.668.337 2.555.337Z" />
+                                                </svg>
+                                                {{ number_format($listTotalComments, 0, ',', ' ') }}
+                                            </span>
                                         </div>
                                     @endif
                                 </div>

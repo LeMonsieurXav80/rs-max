@@ -38,7 +38,15 @@ class PostController extends Controller
     {
         $user = $request->user();
 
-        $query = Post::query()->with('postPlatforms.platform', 'user');
+        // Only load postPlatforms whose social account is active
+        $activePostPlatforms = fn ($q) => $q->whereHas('socialAccount', fn ($sq) => $sq->where('is_active', true));
+
+        $query = Post::query()->with([
+            'postPlatforms' => $activePostPlatforms,
+            'postPlatforms.platform',
+            'postPlatforms.socialAccount',
+            'user',
+        ]);
 
         // Admin sees all posts, regular user sees only own posts
         if (! $user->is_admin) {
@@ -58,7 +66,12 @@ class PostController extends Controller
         $startOfMonth = \Carbon\Carbon::createFromFormat('Y-m', $month)->startOfMonth();
         $endOfMonth = $startOfMonth->copy()->endOfMonth();
 
-        $calendarQuery = Post::query()->with('postPlatforms.platform', 'user');
+        $calendarQuery = Post::query()->with([
+            'postPlatforms' => $activePostPlatforms,
+            'postPlatforms.platform',
+            'postPlatforms.socialAccount',
+            'user',
+        ]);
         if (! $user->is_admin) {
             $calendarQuery->where('user_id', $user->id);
         }
@@ -230,6 +243,7 @@ class PostController extends Controller
     public function show(Request $request, int $id): View
     {
         $post = Post::with([
+            'postPlatforms' => fn ($q) => $q->whereHas('socialAccount', fn ($sq) => $sq->where('is_active', true)),
             'postPlatforms.platform',
             'postPlatforms.socialAccount',
             'postPlatforms.logs',
@@ -441,6 +455,7 @@ class PostController extends Controller
             ->with(['platform', 'socialAccount'])
             ->where('status', 'published')
             ->whereNotNull('external_id')
+            ->whereHas('socialAccount', fn ($q) => $q->where('is_active', true))
             ->when($platformSlug, fn ($q) => $q->whereHas('platform', fn ($pq) => $pq->where('slug', $platformSlug)))
             ->get();
 
