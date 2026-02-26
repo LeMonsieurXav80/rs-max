@@ -480,6 +480,7 @@ class PlatformController extends Controller
             'threads' => 'platforms.threads',
             'telegram' => 'platforms.telegram',
             'twitter' => 'platforms.twitter',
+            'youtube' => 'platforms.youtube',
             default => 'platforms.facebook',
         };
 
