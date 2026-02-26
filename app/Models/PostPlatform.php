@@ -18,12 +18,16 @@ class PostPlatform extends Model
         'external_id',
         'error_message',
         'published_at',
+        'metrics',
+        'metrics_synced_at',
     ];
 
     protected function casts(): array
     {
         return [
             'published_at' => 'datetime',
+            'metrics_synced_at' => 'datetime',
+            'metrics' => 'array',
         ];
     }
 
