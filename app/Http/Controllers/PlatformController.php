@@ -552,13 +552,18 @@ class PlatformController extends Controller
                 return null;
             }
 
-            // Store locally on the public disk
+            // Store in the persistent media directory (covered by media_data Docker volume)
             $extension = pathinfo($filePath, PATHINFO_EXTENSION) ?: 'jpg';
-            $filename = 'tg_' . abs(crc32($chatId)) . '_' . time() . '.' . $extension;
+            $filename = 'pp_tg_' . abs(crc32($chatId)) . '.' . $extension;
 
-            Storage::disk('public')->put("profile-pictures/{$filename}", $imageResponse->body());
+            // Delete old file if exists (same chat = same filename)
+            if (Storage::disk('local')->exists("media/{$filename}")) {
+                Storage::disk('local')->delete("media/{$filename}");
+            }
 
-            return '/storage/profile-pictures/' . $filename;
+            Storage::disk('local')->put("media/{$filename}", $imageResponse->body());
+
+            return "/media/{$filename}";
         } catch (\Throwable $e) {
             return null;
         }
