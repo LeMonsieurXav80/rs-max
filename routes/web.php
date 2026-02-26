@@ -3,6 +3,7 @@
 use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\FacebookOAuthController;
 use App\Http\Controllers\HashtagController;
+use App\Http\Controllers\ImportController;
 use App\Http\Controllers\LocationController;
 use App\Http\Controllers\MediaController;
 use App\Http\Controllers\PlatformController;
@@ -68,6 +69,10 @@ Route::middleware(['auth', 'verified'])->group(function () {
     // Stats management
     Route::post('posts/{post}/sync-stats', [PostController::class, 'syncStats'])->name('posts.syncStats');
     Route::get('stats/dashboard', [StatsController::class, 'dashboard'])->name('stats.dashboard');
+
+    // Historical import
+    Route::get('accounts/{account}/import/info', [ImportController::class, 'info'])->name('accounts.import.info');
+    Route::post('accounts/{account}/import', [ImportController::class, 'import'])->name('accounts.import');
 
     // Manual publishing (test without scheduling)
     Route::post('posts/{post}/publish', [PublishController::class, 'publishAll'])->name('posts.publish');

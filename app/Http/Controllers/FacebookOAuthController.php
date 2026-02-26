@@ -26,7 +26,7 @@ class FacebookOAuthController extends Controller
         $params = http_build_query([
             'client_id' => config('services.facebook.client_id'),
             'redirect_uri' => route('facebook.callback'),
-            'scope' => 'pages_show_list,pages_read_engagement,pages_manage_posts,instagram_basic,instagram_content_publish',
+            'scope' => 'pages_show_list,pages_read_engagement,pages_read_user_content,pages_manage_posts,instagram_basic,instagram_content_publish',
             'response_type' => 'code',
             'state' => $state,
         ]);
@@ -74,6 +74,9 @@ class FacebookOAuthController extends Controller
                 return redirect()->route('accounts.index')
                     ->with('error', 'Impossible d\'obtenir un token longue durée.');
             }
+
+            // Log token permissions for debugging
+            $this->logTokenPermissions($longLived);
 
             // Try /me/accounts first
             $pages = $this->fetchPages($longLived);
@@ -419,5 +422,31 @@ class FacebookOAuthController extends Controller
         }
 
         return $response->json('instagram_business_account');
+    }
+
+    /**
+     * Log token permissions via debug_token for troubleshooting.
+     */
+    private function logTokenPermissions(string $userToken): void
+    {
+        try {
+            $appToken = config('services.facebook.client_id') . '|' . config('services.facebook.client_secret');
+
+            $response = Http::get(self::API_BASE . '/debug_token', [
+                'input_token' => $userToken,
+                'access_token' => $appToken,
+            ]);
+
+            if ($response->successful()) {
+                $data = $response->json('data', []);
+                Log::info('Facebook OAuth token permissions', [
+                    'scopes' => $data['scopes'] ?? [],
+                    'granular_scopes' => $data['granular_scopes'] ?? [],
+                    'expires_at' => $data['expires_at'] ?? null,
+                ]);
+            }
+        } catch (\Exception $e) {
+            Log::debug('Could not debug Facebook token: ' . $e->getMessage());
+        }
     }
 }

@@ -20,6 +20,7 @@ class SocialAccount extends Model
         'show_branding',
         'is_active',
         'last_used_at',
+        'last_history_import_at',
     ];
 
     protected function casts(): array
@@ -30,6 +31,7 @@ class SocialAccount extends Model
             'is_active' => 'boolean',
             'show_branding' => 'boolean',
             'last_used_at' => 'datetime',
+            'last_history_import_at' => 'datetime',
         ];
     }
 
@@ -46,5 +48,10 @@ class SocialAccount extends Model
     public function postPlatforms(): HasMany
     {
         return $this->hasMany(PostPlatform::class);
+    }
+
+    public function externalPosts(): HasMany
+    {
+        return $this->hasMany(ExternalPost::class);
     }
 }

@@ -220,9 +220,19 @@
                                         <span class="text-sm font-bold text-indigo-600">{{ $index + 1 }}</span>
                                     </div>
                                     <div class="flex-1 min-w-0">
-                                        <a href="{{ route('posts.show', $postStat['post']) }}" class="text-sm font-medium text-gray-900 hover:text-indigo-600 transition-colors truncate block">
-                                            {{ Str::limit($postStat['post']->content_fr, 80) }}
-                                        </a>
+                                        @if($postStat['is_external'] && $postStat['url'])
+                                            <a href="{{ $postStat['url'] }}" target="_blank" class="text-sm font-medium text-gray-900 hover:text-indigo-600 transition-colors truncate block">
+                                                {{ Str::limit($postStat['content'], 80) ?: '(sans texte)' }}
+                                            </a>
+                                        @elseif($postStat['post'])
+                                            <a href="{{ route('posts.show', $postStat['post']) }}" class="text-sm font-medium text-gray-900 hover:text-indigo-600 transition-colors truncate block">
+                                                {{ Str::limit($postStat['content'], 80) }}
+                                            </a>
+                                        @else
+                                            <span class="text-sm font-medium text-gray-900 truncate block">
+                                                {{ Str::limit($postStat['content'], 80) ?: '(sans texte)' }}
+                                            </span>
+                                        @endif
                                         <div class="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-gray-500">
                                             @if($postStat['views'] > 0)
                                                 <span>{{ number_format($postStat['views']) }} vues</span>
