@@ -11,6 +11,7 @@ use App\Http\Controllers\ProfileController;
 use App\Http\Controllers\PublishController;
 use App\Http\Controllers\SettingsController;
 use App\Http\Controllers\SocialAccountController;
+use App\Http\Controllers\StatsController;
 use App\Http\Controllers\ThreadsOAuthController;
 use App\Http\Controllers\YouTubeOAuthController;
 use Illuminate\Support\Facades\Route;
@@ -63,6 +64,10 @@ Route::middleware(['auth', 'verified'])->group(function () {
 
     // Save default account selection
     Route::post('posts/default-accounts', [PostController::class, 'saveDefaultAccounts'])->name('posts.defaultAccounts');
+
+    // Stats management
+    Route::post('posts/{post}/sync-stats', [PostController::class, 'syncStats'])->name('posts.syncStats');
+    Route::get('stats/dashboard', [StatsController::class, 'dashboard'])->name('stats.dashboard');
 
     // Manual publishing (test without scheduling)
     Route::post('posts/{post}/publish', [PublishController::class, 'publishAll'])->name('posts.publish');

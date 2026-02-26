@@ -7,6 +7,7 @@ use App\Models\Platform;
 use App\Models\Post;
 use App\Models\PostPlatform;
 use App\Models\SocialAccount;
+use App\Services\Stats\StatsSyncService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -419,6 +420,58 @@ class PostController extends Controller
 
         return redirect()->route('posts.index')
             ->with('success', 'Post deleted successfully.');
+    }
+
+    /**
+     * Manually sync stats for a post (all platforms or specific platform).
+     */
+    public function syncStats(Request $request, int $id, StatsSyncService $syncService): JsonResponse
+    {
+        $post = Post::with('postPlatforms.platform')->findOrFail($id);
+
+        // Authorization check
+        if (! $request->user()->is_admin && $post->user_id !== $request->user()->id) {
+            return response()->json(['success' => false, 'error' => 'Unauthorized'], 403);
+        }
+
+        // Get platform filter if specified
+        $platformSlug = $request->input('platform');
+
+        $postPlatforms = $post->postPlatforms()
+            ->with(['platform', 'socialAccount'])
+            ->where('status', 'published')
+            ->whereNotNull('external_id')
+            ->when($platformSlug, fn ($q) => $q->whereHas('platform', fn ($pq) => $pq->where('slug', $platformSlug)))
+            ->get();
+
+        if ($postPlatforms->isEmpty()) {
+            return response()->json([
+                'success' => false,
+                'error' => 'No published platforms found for this post.',
+            ], 400);
+        }
+
+        $synced = 0;
+        $failed = 0;
+
+        foreach ($postPlatforms as $postPlatform) {
+            try {
+                if ($syncService->syncPostPlatform($postPlatform)) {
+                    $synced++;
+                } else {
+                    $failed++;
+                }
+            } catch (\Throwable $e) {
+                $failed++;
+            }
+        }
+
+        return response()->json([
+            'success' => true,
+            'synced' => $synced,
+            'failed' => $failed,
+            'message' => "Synchronized {$synced} platform(s).",
+        ]);
     }
 
     /**
