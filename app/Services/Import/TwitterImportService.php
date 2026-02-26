@@ -17,7 +17,7 @@ class TwitterImportService implements PlatformImportInterface
      * Import historical tweets from a Twitter account.
      *
      * Strategy:
-     * 1. Fetch tweets from /users/{id}/tweets with metrics
+     * 1. Fetch tweets from /users/{id}/tweets with metrics (OAuth 1.0a)
      * 2. Store as ExternalPost records
      *
      * Rate limit: 1500 requests per 15 minutes (Free tier)
@@ -25,24 +25,26 @@ class TwitterImportService implements PlatformImportInterface
     public function importHistory(SocialAccount $account, int $limit = 50): Collection
     {
         $credentials = $account->credentials;
-        $accessToken = $credentials['access_token'] ?? null;
         $userId = $account->platform_account_id;
 
-        if (! $accessToken) {
-            throw new \Exception('No access token found for Twitter account');
+        $apiKey = $credentials['api_key'] ?? null;
+        $apiSecret = $credentials['api_secret'] ?? null;
+        $accessToken = $credentials['access_token'] ?? null;
+        $accessTokenSecret = $credentials['access_token_secret'] ?? null;
+
+        if (! $apiKey || ! $apiSecret || ! $accessToken || ! $accessTokenSecret) {
+            throw new \Exception('Missing Twitter OAuth 1.0a credentials for import');
         }
 
-        // Fetch tweets with metrics
-        $tweets = $this->fetchTweets($userId, $accessToken, $limit);
+        $tweets = $this->fetchTweets($userId, $apiKey, $apiSecret, $accessToken, $accessTokenSecret, $limit);
 
-        // Store as ExternalPost records (with deduplication)
         return $this->storeExternalPosts($account, $tweets);
     }
 
     /**
-     * Fetch tweets from Twitter user timeline.
+     * Fetch tweets from Twitter user timeline using OAuth 1.0a.
      */
-    private function fetchTweets(string $userId, string $accessToken, int $limit): Collection
+    private function fetchTweets(string $userId, string $apiKey, string $apiSecret, string $accessToken, string $accessTokenSecret, int $limit): Collection
     {
         $tweets = collect();
 
@@ -62,7 +64,11 @@ class TwitterImportService implements PlatformImportInterface
                     $params['pagination_token'] = $paginationToken;
                 }
 
-                $response = Http::withToken($accessToken)->get($url, $params);
+                $oauthHeader = $this->buildOAuth1Header('GET', $url, $params, $apiKey, $apiSecret, $accessToken, $accessTokenSecret);
+
+                $response = Http::withHeaders([
+                    'Authorization' => $oauthHeader,
+                ])->get($url, $params);
 
                 if (! $response->successful()) {
                     Log::error('Twitter API error fetching tweets', [
@@ -155,6 +161,38 @@ class TwitterImportService implements PlatformImportInterface
         $account->update(['last_history_import_at' => now()]);
 
         return $imported;
+    }
+
+    /**
+     * Build OAuth 1.0a Authorization header (HMAC-SHA1).
+     */
+    private function buildOAuth1Header(string $method, string $url, array $extraParams, string $consumerKey, string $consumerSecret, string $token, string $tokenSecret): string
+    {
+        $oauthParams = [
+            'oauth_consumer_key' => $consumerKey,
+            'oauth_nonce' => bin2hex(random_bytes(16)),
+            'oauth_signature_method' => 'HMAC-SHA1',
+            'oauth_timestamp' => (string) time(),
+            'oauth_token' => $token,
+            'oauth_version' => '1.0',
+        ];
+
+        $allParams = array_merge($oauthParams, $extraParams);
+        ksort($allParams);
+
+        $paramString = http_build_query($allParams, '', '&', PHP_QUERY_RFC3986);
+        $baseString = strtoupper($method).'&'.rawurlencode($url).'&'.rawurlencode($paramString);
+        $signingKey = rawurlencode($consumerSecret).'&'.rawurlencode($tokenSecret);
+
+        $signature = base64_encode(hash_hmac('sha1', $baseString, $signingKey, true));
+        $oauthParams['oauth_signature'] = $signature;
+
+        $headerParts = [];
+        foreach ($oauthParams as $k => $v) {
+            $headerParts[] = rawurlencode($k).'="'.rawurlencode($v).'"';
+        }
+
+        return 'OAuth '.implode(', ', $headerParts);
     }
 
     /**
