@@ -44,9 +44,19 @@ WORKDIR /var/www/html
 # Copy application files
 COPY . .
 
-# Capture git commit info for version display using build arguments
-RUN echo "${SOURCE_COMMIT}" | cut -c1-7 > storage/app/git-version.txt
-RUN date '+%Y-%m-%d %H:%M:%S %z' > storage/app/git-date.txt
+# Capture git commit info for version display
+RUN if [ "${SOURCE_COMMIT}" != "unknown" ] && [ -n "${SOURCE_COMMIT}" ]; then \
+        echo "${SOURCE_COMMIT}" | cut -c1-7 > storage/app/git-version.txt; \
+    elif [ -d .git ]; then \
+        git rev-parse --short HEAD > storage/app/git-version.txt 2>/dev/null || echo "unknown" > storage/app/git-version.txt; \
+    else \
+        echo "unknown" > storage/app/git-version.txt; \
+    fi
+RUN if [ -d .git ]; then \
+        git log -1 --format='%ci' > storage/app/git-date.txt 2>/dev/null || date '+%Y-%m-%d %H:%M:%S %z' > storage/app/git-date.txt; \
+    else \
+        date '+%Y-%m-%d %H:%M:%S %z' > storage/app/git-date.txt; \
+    fi
 
 # Install PHP dependencies
 RUN composer install --no-dev --optimize-autoloader --no-interaction
