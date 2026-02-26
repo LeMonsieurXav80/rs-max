@@ -175,7 +175,8 @@ class StatsController extends Controller
                     if (! empty($media) && isset($media[0]['url'])) {
                         $filename = basename($media[0]['url']);
                         $mimetype = $media[0]['mimetype'] ?? '';
-                        $thumbnail = str_starts_with($mimetype, 'video/')
+                        $isVideo = str_starts_with($mimetype, 'video/');
+                        $thumbnail = $isVideo
                             ? "/media/thumbnail/{$filename}"
                             : $media[0]['url'];
                     }
@@ -186,6 +187,7 @@ class StatsController extends Controller
                         'post' => $item->post,
                         'is_external' => false,
                         'thumbnail' => $thumbnail,
+                        'is_video' => $isVideo ?? false,
                         'views' => 0,
                         'likes' => 0,
                         'comments' => 0,

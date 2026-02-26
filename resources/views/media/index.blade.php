@@ -340,12 +340,31 @@
                                             <div class="space-y-2">
                                                 <template x-for="post in selected.posts" :key="post.id">
                                                     <a :href="'/posts/' + post.id"
-                                                       class="flex items-start gap-2.5 p-2.5 rounded-lg bg-gray-50 hover:bg-indigo-50 transition-colors group">
-                                                        <span class="inline-block w-2 h-2 rounded-full flex-shrink-0 mt-1.5" :class="post.status_dot"></span>
-                                                        <div class="min-w-0 flex-1">
-                                                            <p class="text-xs text-gray-700 group-hover:text-indigo-600 transition-colors truncate" x-text="post.preview"></p>
-                                                            <p class="text-[10px] text-gray-400 mt-0.5 capitalize" x-text="post.status === 'scheduled' ? 'Planifie' : post.status === 'published' ? 'Publie' : post.status === 'publishing' ? 'En cours' : post.status === 'failed' ? 'Echoue' : 'Brouillon'"></p>
+                                                       class="block p-2.5 rounded-lg bg-gray-50 hover:bg-indigo-50 transition-colors group">
+                                                        <div class="flex items-start gap-2.5">
+                                                            <span class="inline-block w-2 h-2 rounded-full flex-shrink-0 mt-1.5" :class="post.status_dot"></span>
+                                                            <div class="min-w-0 flex-1">
+                                                                <p class="text-xs text-gray-700 group-hover:text-indigo-600 transition-colors truncate" x-text="post.preview"></p>
+                                                                <p class="text-[10px] text-gray-400 mt-0.5 capitalize" x-text="post.status === 'scheduled' ? 'Planifie' : post.status === 'published' ? 'Publie' : post.status === 'publishing' ? 'En cours' : post.status === 'failed' ? 'Echoue' : 'Brouillon'"></p>
+                                                            </div>
                                                         </div>
+                                                        {{-- Platforms --}}
+                                                        <template x-if="post.platforms && post.platforms.length > 0">
+                                                            <div class="flex items-center gap-1.5 mt-1.5 ml-4.5">
+                                                                <template x-for="pf in post.platforms" :key="pf.slug">
+                                                                    <span class="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-medium"
+                                                                          :class="pf.status === 'published' ? 'bg-green-100 text-green-700' : pf.status === 'failed' ? 'bg-red-100 text-red-700' : pf.status === 'scheduled' ? 'bg-blue-100 text-blue-700' : 'bg-gray-100 text-gray-600'"
+                                                                          x-text="pf.name"></span>
+                                                                </template>
+                                                            </div>
+                                                        </template>
+                                                        {{-- Publication date --}}
+                                                        <template x-if="post.published_at || post.scheduled_at">
+                                                            <div class="flex items-center gap-1 mt-1 ml-4.5 text-[10px] text-gray-400">
+                                                                <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1.5"><path stroke-linecap="round" stroke-linejoin="round" d="M6.75 3v2.25M17.25 3v2.25M3 18.75V7.5a2.25 2.25 0 0 1 2.25-2.25h13.5A2.25 2.25 0 0 1 21 7.5v11.25m-18 0A2.25 2.25 0 0 0 5.25 21h13.5A2.25 2.25 0 0 0 21 18.75m-18 0v-7.5A2.25 2.25 0 0 1 5.25 9h13.5A2.25 2.25 0 0 1 21 11.25v7.5" /></svg>
+                                                                <span x-text="post.published_at ? post.published_at : ('Prevu : ' + post.scheduled_at)"></span>
+                                                            </div>
+                                                        </template>
                                                     </a>
                                                 </template>
                                             </div>
@@ -439,9 +458,26 @@
                                 <div class="space-y-2">
                                     <h4 class="text-xs font-semibold text-gray-500 uppercase">Publications liees</h4>
                                     <template x-for="post in selected.posts" :key="post.id">
-                                        <a :href="'/posts/' + post.id" class="flex items-center gap-2 p-2 rounded-lg bg-gray-50 text-xs text-gray-700">
-                                            <span class="w-2 h-2 rounded-full flex-shrink-0" :class="post.status_dot"></span>
-                                            <span class="truncate" x-text="post.preview"></span>
+                                        <a :href="'/posts/' + post.id" class="block p-2 rounded-lg bg-gray-50 text-xs text-gray-700">
+                                            <div class="flex items-center gap-2">
+                                                <span class="w-2 h-2 rounded-full flex-shrink-0" :class="post.status_dot"></span>
+                                                <span class="truncate" x-text="post.preview"></span>
+                                            </div>
+                                            <template x-if="post.platforms && post.platforms.length > 0">
+                                                <div class="flex items-center gap-1 mt-1 ml-4">
+                                                    <template x-for="pf in post.platforms" :key="pf.slug">
+                                                        <span class="px-1.5 py-0.5 rounded text-[10px] font-medium"
+                                                              :class="pf.status === 'published' ? 'bg-green-100 text-green-700' : pf.status === 'failed' ? 'bg-red-100 text-red-700' : pf.status === 'scheduled' ? 'bg-blue-100 text-blue-700' : 'bg-gray-100 text-gray-600'"
+                                                              x-text="pf.name"></span>
+                                                    </template>
+                                                </div>
+                                            </template>
+                                            <template x-if="post.published_at || post.scheduled_at">
+                                                <div class="flex items-center gap-1 mt-1 ml-4 text-[10px] text-gray-400">
+                                                    <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1.5"><path stroke-linecap="round" stroke-linejoin="round" d="M6.75 3v2.25M17.25 3v2.25M3 18.75V7.5a2.25 2.25 0 0 1 2.25-2.25h13.5A2.25 2.25 0 0 1 21 7.5v11.25m-18 0A2.25 2.25 0 0 0 5.25 21h13.5A2.25 2.25 0 0 0 21 18.75m-18 0v-7.5A2.25 2.25 0 0 1 5.25 9h13.5A2.25 2.25 0 0 1 21 11.25v7.5" /></svg>
+                                                    <span x-text="post.published_at ? post.published_at : ('Prevu : ' + post.scheduled_at)"></span>
+                                                </div>
+                                            </template>
                                         </a>
                                     </template>
                                 </div>

@@ -96,11 +96,19 @@ class MediaController extends Controller
                         'failed' => 'bg-red-500',
                         default => 'bg-gray-300',
                     };
+                    $platforms = $post->postPlatforms->map(fn ($pp) => [
+                        'slug' => $pp->platform->slug,
+                        'name' => $pp->platform->name,
+                        'status' => $pp->status,
+                    ])->values()->toArray();
                     $mediaPostMap[$fname][] = [
                         'id' => $post->id,
                         'preview' => Str::limit($post->content_fr, 50),
                         'status' => $post->status,
                         'status_dot' => $statusDotClass,
+                        'platforms' => $platforms,
+                        'scheduled_at' => $post->scheduled_at?->format('d/m/Y H:i'),
+                        'published_at' => $post->published_at?->format('d/m/Y H:i'),
                     ];
                 }
             }
