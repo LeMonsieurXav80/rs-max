@@ -93,14 +93,6 @@ class InstagramImportService implements PlatformImportInterface
         foreach ($mediaList as $media) {
             $mediaId = $media['id'];
 
-            $exists = ExternalPost::where('platform_id', $platform->id)
-                ->where('external_id', $mediaId)
-                ->exists();
-
-            if ($exists) {
-                continue;
-            }
-
             // Basic metrics (always available)
             $basicLikes = (int) ($media['like_count'] ?? 0);
             $basicComments = (int) ($media['comments_count'] ?? 0);
@@ -109,12 +101,26 @@ class InstagramImportService implements PlatformImportInterface
             // Try to fetch insights (views, shares) - requires instagram_manage_insights
             $insights = $this->fetchMediaInsights($mediaId, $accessToken, $mediaType);
 
-            $metrics = [
+            $metricsData = [
                 'views' => $insights['views'],
                 'likes' => $insights['likes'] > 0 ? $insights['likes'] : $basicLikes,
                 'comments' => $insights['comments'] > 0 ? $insights['comments'] : $basicComments,
                 'shares' => $insights['shares'],
             ];
+
+            // Update existing or create new
+            $existing = ExternalPost::where('platform_id', $platform->id)
+                ->where('external_id', $mediaId)
+                ->first();
+
+            if ($existing) {
+                $existing->update([
+                    'metrics' => $metricsData,
+                    'metrics_synced_at' => now(),
+                ]);
+
+                continue;
+            }
 
             $externalPost = ExternalPost::create([
                 'social_account_id' => $account->id,
@@ -124,16 +130,14 @@ class InstagramImportService implements PlatformImportInterface
                 'media_url' => $media['media_url'] ?? null,
                 'post_url' => $media['permalink'] ?? null,
                 'published_at' => $media['timestamp'] ?? null,
-                'metrics' => $metrics,
+                'metrics' => $metricsData,
                 'metrics_synced_at' => now(),
             ]);
 
             $imported->push($externalPost);
         }
 
-        if ($imported->isNotEmpty()) {
-            $account->update(['last_history_import_at' => now()]);
-        }
+        $account->update(['last_history_import_at' => now()]);
 
         return $imported;
     }

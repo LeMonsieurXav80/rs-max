@@ -91,23 +91,29 @@ class ThreadsImportService implements PlatformImportInterface
         foreach ($threadsList as $thread) {
             $threadId = $thread['id'];
 
-            $exists = ExternalPost::where('platform_id', $platform->id)
-                ->where('external_id', $threadId)
-                ->exists();
-
-            if ($exists) {
-                continue;
-            }
-
             // Fetch insights for this thread
             $insights = $this->fetchThreadInsights($threadId, $accessToken);
 
-            $metrics = [
+            $metricsData = [
                 'views' => $insights['views'],
                 'likes' => $insights['likes'],
                 'comments' => $insights['comments'],
                 'shares' => $insights['shares'],
             ];
+
+            // Update existing or create new
+            $existing = ExternalPost::where('platform_id', $platform->id)
+                ->where('external_id', $threadId)
+                ->first();
+
+            if ($existing) {
+                $existing->update([
+                    'metrics' => $metricsData,
+                    'metrics_synced_at' => now(),
+                ]);
+
+                continue;
+            }
 
             $externalPost = ExternalPost::create([
                 'social_account_id' => $account->id,
@@ -117,16 +123,14 @@ class ThreadsImportService implements PlatformImportInterface
                 'media_url' => $thread['media_url'] ?? null,
                 'post_url' => $thread['permalink'] ?? null,
                 'published_at' => $thread['timestamp'] ?? null,
-                'metrics' => $metrics,
+                'metrics' => $metricsData,
                 'metrics_synced_at' => now(),
             ]);
 
             $imported->push($externalPost);
         }
 
-        if ($imported->isNotEmpty()) {
-            $account->update(['last_history_import_at' => now()]);
-        }
+        $account->update(['last_history_import_at' => now()]);
 
         return $imported;
     }

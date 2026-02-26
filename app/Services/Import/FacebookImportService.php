@@ -177,14 +177,6 @@ class FacebookImportService implements PlatformImportInterface
         foreach ($posts as $post) {
             $postId = $post['id'];
 
-            $exists = ExternalPost::where('platform_id', $platform->id)
-                ->where('external_id', $postId)
-                ->exists();
-
-            if ($exists) {
-                continue;
-            }
-
             // Try to get views from video data
             $views = 0;
             $videoId = $this->extractVideoIdFromPermalink($post['permalink_url'] ?? null);
@@ -192,12 +184,26 @@ class FacebookImportService implements PlatformImportInterface
                 $views = $videoViews[$videoId];
             }
 
-            $metrics = [
+            $metricsData = [
                 'views' => $views,
                 'likes' => (int) ($post['likes']['summary']['total_count'] ?? 0),
                 'comments' => (int) ($post['comments']['summary']['total_count'] ?? 0),
                 'shares' => (int) ($post['shares']['count'] ?? 0),
             ];
+
+            // Update existing or create new
+            $existing = ExternalPost::where('platform_id', $platform->id)
+                ->where('external_id', $postId)
+                ->first();
+
+            if ($existing) {
+                $existing->update([
+                    'metrics' => $metricsData,
+                    'metrics_synced_at' => now(),
+                ]);
+
+                continue;
+            }
 
             $externalPost = ExternalPost::create([
                 'social_account_id' => $account->id,
@@ -207,16 +213,14 @@ class FacebookImportService implements PlatformImportInterface
                 'media_url' => $post['full_picture'] ?? null,
                 'post_url' => $post['permalink_url'] ?? null,
                 'published_at' => $post['created_time'] ?? null,
-                'metrics' => $metrics,
+                'metrics' => $metricsData,
                 'metrics_synced_at' => now(),
             ]);
 
             $imported->push($externalPost);
         }
 
-        if ($imported->isNotEmpty()) {
-            $account->update(['last_history_import_at' => now()]);
-        }
+        $account->update(['last_history_import_at' => now()]);
 
         return $imported;
     }

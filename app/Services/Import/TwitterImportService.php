@@ -114,18 +114,28 @@ class TwitterImportService implements PlatformImportInterface
 
         foreach ($tweets as $tweet) {
             $tweetId = $tweet['id'];
+            $metrics = $tweet['public_metrics'] ?? [];
 
-            // Check if already exists
-            $exists = ExternalPost::where('platform_id', $platform->id)
+            $metricsData = [
+                'views' => (int) ($metrics['impression_count'] ?? 0),
+                'likes' => (int) ($metrics['like_count'] ?? 0),
+                'comments' => (int) ($metrics['reply_count'] ?? 0),
+                'shares' => (int) ($metrics['retweet_count'] ?? 0),
+            ];
+
+            // Update existing or create new
+            $existing = ExternalPost::where('platform_id', $platform->id)
                 ->where('external_id', $tweetId)
-                ->exists();
+                ->first();
 
-            if ($exists) {
+            if ($existing) {
+                $existing->update([
+                    'metrics' => $metricsData,
+                    'metrics_synced_at' => now(),
+                ]);
+
                 continue;
             }
-
-            // Extract public metrics
-            $metrics = $tweet['public_metrics'] ?? [];
 
             $externalPost = ExternalPost::create([
                 'social_account_id' => $account->id,
@@ -135,22 +145,14 @@ class TwitterImportService implements PlatformImportInterface
                 'media_url' => $tweet['media_url'] ?? null,
                 'post_url' => "https://twitter.com/i/web/status/{$tweetId}",
                 'published_at' => $tweet['created_at'] ?? null,
-                'metrics' => [
-                    'views' => (int) ($metrics['impression_count'] ?? 0),
-                    'likes' => (int) ($metrics['like_count'] ?? 0),
-                    'comments' => (int) ($metrics['reply_count'] ?? 0),
-                    'shares' => (int) ($metrics['retweet_count'] ?? 0),
-                ],
+                'metrics' => $metricsData,
                 'metrics_synced_at' => now(),
             ]);
 
             $imported->push($externalPost);
         }
 
-        // Update last import timestamp ONLY if at least one post was imported
-        if ($imported->isNotEmpty()) {
-            $account->update(['last_history_import_at' => now()]);
-        }
+        $account->update(['last_history_import_at' => now()]);
 
         return $imported;
     }

@@ -190,13 +190,25 @@ class YouTubeImportService implements PlatformImportInterface
             $snippet = $video['snippet'] ?? [];
             $stats = $video['statistics'] ?? [];
 
-            // Check if already exists
-            $exists = ExternalPost::where('platform_id', $platform->id)
-                ->where('external_id', $videoId)
-                ->exists();
+            $metricsData = [
+                'views' => (int) ($stats['viewCount'] ?? 0),
+                'likes' => (int) ($stats['likeCount'] ?? 0),
+                'comments' => (int) ($stats['commentCount'] ?? 0),
+                'shares' => null,
+            ];
 
-            if ($exists) {
-                continue; // Skip duplicates
+            // Update existing or create new
+            $existing = ExternalPost::where('platform_id', $platform->id)
+                ->where('external_id', $videoId)
+                ->first();
+
+            if ($existing) {
+                $existing->update([
+                    'metrics' => $metricsData,
+                    'metrics_synced_at' => now(),
+                ]);
+
+                continue;
             }
 
             // Get thumbnail URL (best quality available)
@@ -214,22 +226,14 @@ class YouTubeImportService implements PlatformImportInterface
                 'media_url' => $mediaUrl,
                 'post_url' => "https://www.youtube.com/watch?v={$videoId}",
                 'published_at' => $snippet['publishedAt'] ?? null,
-                'metrics' => [
-                    'views' => (int) ($stats['viewCount'] ?? 0),
-                    'likes' => (int) ($stats['likeCount'] ?? 0),
-                    'comments' => (int) ($stats['commentCount'] ?? 0),
-                    'shares' => null,
-                ],
+                'metrics' => $metricsData,
                 'metrics_synced_at' => now(),
             ]);
 
             $imported->push($externalPost);
         }
 
-        // Update last import timestamp ONLY if at least one post was imported
-        if ($imported->isNotEmpty()) {
-            $account->update(['last_history_import_at' => now()]);
-        }
+        $account->update(['last_history_import_at' => now()]);
 
         return $imported;
     }
