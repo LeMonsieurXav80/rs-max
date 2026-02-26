@@ -178,17 +178,47 @@ class PlatformController extends Controller
             $botName = $result['first_name'] ?? 'Bot';
             $botUsername = $result['username'] ?? null;
 
-            // Update bot_name/bot_username on all existing accounts with this token
+            // Update bot_name/bot_username and profile pictures on all existing accounts with this token
             $platform = Platform::where('slug', 'telegram')->first();
             if ($platform) {
                 SocialAccount::where('platform_id', $platform->id)
                     ->get()
                     ->filter(fn ($a) => ($a->credentials['bot_token'] ?? null) === $token)
-                    ->each(function ($a) use ($botName, $botUsername) {
+                    ->each(function ($a) use ($botName, $botUsername, $token) {
                         $creds = $a->credentials;
                         $creds['bot_name'] = $botName;
                         $creds['bot_username'] = $botUsername;
-                        $a->update(['credentials' => $creds]);
+
+                        // Refresh profile picture
+                        $chatId = $creds['chat_id'] ?? null;
+                        $profilePictureUrl = null;
+
+                        if ($chatId) {
+                            $chatResponse = Http::get("https://api.telegram.org/bot{$token}/getChat", [
+                                'chat_id' => $chatId,
+                            ]);
+
+                            if ($chatResponse->successful() && $chatResponse->json('ok')) {
+                                $chat = $chatResponse->json('result');
+                                if (isset($chat['photo']['big_file_id'])) {
+                                    $fileResponse = Http::get("https://api.telegram.org/bot{$token}/getFile", [
+                                        'file_id' => $chat['photo']['big_file_id'],
+                                    ]);
+
+                                    if ($fileResponse->successful() && $fileResponse->json('ok')) {
+                                        $filePath = $fileResponse->json('result.file_path');
+                                        if ($filePath) {
+                                            $profilePictureUrl = "https://api.telegram.org/file/bot{$token}/{$filePath}";
+                                        }
+                                    }
+                                }
+                            }
+                        }
+
+                        $a->update([
+                            'credentials' => $creds,
+                            'profile_picture_url' => $profilePictureUrl,
+                        ]);
                     });
             }
 
@@ -245,6 +275,21 @@ class PlatformController extends Controller
         $chatId = (string) $chat['id'];
         $chatTitle = $chat['title'] ?? $chat['username'] ?? $channelId;
 
+        // Fetch profile picture if available
+        $profilePictureUrl = null;
+        if (isset($chat['photo']['big_file_id'])) {
+            $fileResponse = Http::get("https://api.telegram.org/bot{$token}/getFile", [
+                'file_id' => $chat['photo']['big_file_id'],
+            ]);
+
+            if ($fileResponse->successful() && $fileResponse->json('ok')) {
+                $filePath = $fileResponse->json('result.file_path');
+                if ($filePath) {
+                    $profilePictureUrl = "https://api.telegram.org/file/bot{$token}/{$filePath}";
+                }
+            }
+        }
+
         $telegramPlatform = Platform::where('slug', 'telegram')->firstOrFail();
         $user = $request->user();
 
@@ -264,6 +309,7 @@ class PlatformController extends Controller
             $account->update([
                 'name' => $chatTitle,
                 'credentials' => $credentials,
+                'profile_picture_url' => $profilePictureUrl,
             ]);
         } else {
             $account = SocialAccount::create([
@@ -271,6 +317,7 @@ class PlatformController extends Controller
                 'platform_account_id' => $chatId,
                 'name' => $chatTitle,
                 'credentials' => $credentials,
+                'profile_picture_url' => $profilePictureUrl,
                 'languages' => [$user->default_language ?? 'fr'],
                 'is_active' => true,
             ]);
