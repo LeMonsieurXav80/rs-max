@@ -227,10 +227,17 @@
 
                             <a href="{{ route('posts.show', $post) }}" class="flex-shrink-0">
                                 @if($thumb && str_starts_with(is_string($post->media[0] ?? '') ? '' : ($post->media[0]['mimetype'] ?? ''), 'video/') && !str_starts_with(is_string($post->media[0] ?? '') ? '' : ($post->media[0]['mimetype'] ?? ''), 'image/'))
-                                    <div class="w-16 h-16 rounded-xl bg-gray-900 flex items-center justify-center overflow-hidden">
-                                        <svg class="w-6 h-6 text-white/70" fill="currentColor" viewBox="0 0 24 24">
-                                            <path d="M8 5v14l11-7z"/>
-                                        </svg>
+                                    <div class="w-16 h-16 rounded-xl bg-gray-900 flex items-center justify-center overflow-hidden relative">
+                                        <img src="/media/thumbnail/{{ basename($thumb) }}" alt="" class="w-full h-full object-cover" loading="lazy"
+                                             onerror="this.style.display='none'; this.nextElementSibling.style.display='flex'">
+                                        <div class="w-full h-full flex-col items-center justify-center" style="display:none">
+                                            <svg class="w-6 h-6 text-white/70" fill="currentColor" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>
+                                        </div>
+                                        <div class="absolute inset-0 flex items-center justify-center">
+                                            <div class="w-6 h-6 rounded-full bg-black/50 flex items-center justify-center">
+                                                <svg class="w-3 h-3 text-white ml-0.5" fill="currentColor" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>
+                                            </div>
+                                        </div>
                                     </div>
                                 @elseif($thumb)
                                     <img src="{{ $thumb }}" alt="" class="w-16 h-16 rounded-xl object-cover border border-gray-100" loading="lazy">

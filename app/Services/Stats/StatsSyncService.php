@@ -3,7 +3,7 @@
 namespace App\Services\Stats;
 
 use App\Models\PostPlatform;
-use Carbon\Carbon;
+use App\Models\Setting;
 use Illuminate\Support\Facades\Log;
 
 class StatsSyncService
@@ -78,9 +78,9 @@ class StatsSyncService
     }
 
     /**
-     * Determine if a post platform should be synced based on age and last sync.
+     * Determine if a post platform should be synced based on configurable intervals.
      */
-    private function shouldSync(PostPlatform $postPlatform): bool
+    public function shouldSync(PostPlatform $postPlatform): bool
     {
         $slug = $postPlatform->platform->slug;
         $publishedAt = $postPlatform->published_at;
@@ -90,36 +90,23 @@ class StatsSyncService
             return false;
         }
 
-        $daysSincePublished = now()->diffInDays($publishedAt);
-
-        // YouTube: More conservative due to quota limits
-        if ($slug === 'youtube') {
-            // Recent posts (< 7 days): sync daily
-            if ($daysSincePublished < 7) {
-                return ! $lastSync || $lastSync->diffInHours(now()) >= 24;
-            }
-
-            // Medium age (7-30 days): sync weekly
-            if ($daysSincePublished < 30) {
-                return ! $lastSync || $lastSync->diffInDays(now()) >= 7;
-            }
-
-            // Old posts (> 30 days): manual sync only
-            return false;
-        }
-
         // Telegram: No stats available
         if ($slug === 'telegram') {
             return false;
         }
 
-        // Facebook, Instagram, Twitter, Threads: Daily sync for posts < 30 days
-        if ($daysSincePublished < 30) {
-            return ! $lastSync || $lastSync->diffInHours(now()) >= 24;
+        $intervalHours = (int) Setting::get("stats_{$slug}_interval", 24);
+        $maxDays = (int) Setting::get("stats_{$slug}_max_days", 30);
+
+        $daysSincePublished = now()->diffInDays($publishedAt);
+
+        // Posts older than max age: manual sync only
+        if ($daysSincePublished > $maxDays) {
+            return false;
         }
 
-        // Posts older than 30 days: manual sync only
-        return false;
+        // Sync if never synced or if enough time has passed
+        return ! $lastSync || $lastSync->diffInHours(now()) >= $intervalHours;
     }
 
     /**
@@ -132,6 +119,7 @@ class StatsSyncService
             'instagram' => new InstagramStatsService,
             'twitter' => new TwitterStatsService,
             'youtube' => new YouTubeStatsService,
+            'threads' => new ThreadsStatsService,
             default => null,
         };
     }

@@ -117,6 +117,7 @@ class ImportService
             'instagram' => app(InstagramImportService::class),
             'twitter' => app(TwitterImportService::class),
             'youtube' => app(YouTubeImportService::class),
+            'threads' => app(ThreadsImportService::class),
             default => null,
         };
     }

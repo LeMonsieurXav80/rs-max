@@ -168,6 +168,7 @@ class MediaController extends Controller
             'mimetype' => $mimeType,
             'size' => $storedSize,
             'title' => $originalName,
+            'thumbnail_url' => route('media.thumbnail', $filename),
         ]);
     }
 
@@ -198,17 +199,24 @@ class MediaController extends Controller
         $items = collect($files)->map(function ($path) use ($disk) {
             $filename = basename($path);
             $mimeType = $disk->mimeType($path);
+            $isVideo = str_starts_with($mimeType, 'video/');
 
-            return [
+            $item = [
                 'filename' => $filename,
                 'url' => "/media/{$filename}",
                 'mimetype' => $mimeType,
                 'size' => $disk->size($path),
                 'size_human' => $this->humanFileSize($disk->size($path)),
                 'is_image' => str_starts_with($mimeType, 'image/'),
-                'is_video' => str_starts_with($mimeType, 'video/'),
+                'is_video' => $isVideo,
                 'date' => date('d/m/Y H:i', $disk->lastModified($path)),
             ];
+
+            if ($isVideo) {
+                $item['thumbnail_url'] = route('media.thumbnail', $filename);
+            }
+
+            return $item;
         })->sortByDesc(fn ($item) => $item['date'])->values();
 
         return response()->json($items);

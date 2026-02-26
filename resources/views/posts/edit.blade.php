@@ -111,12 +111,16 @@
             if (index !== -1) {
                 this.mediaItems.splice(index, 1);
             } else {
-                this.mediaItems.push({
+                const mediaItem = {
                     url: item.url,
                     mimetype: item.mimetype,
                     size: item.size,
                     title: item.filename,
-                });
+                };
+                if (item.thumbnail_url) {
+                    mediaItem.thumbnail_url = item.thumbnail_url;
+                }
+                this.mediaItems.push(mediaItem);
             }
         },
         isInMedia(item) {
@@ -267,11 +271,17 @@
                             </template>
                             {{-- Video preview --}}
                             <template x-if="item.mimetype && item.mimetype.startsWith('video/')">
-                                <div class="w-full h-full flex flex-col items-center justify-center bg-gray-900 text-white">
-                                    <svg class="w-8 h-8 mb-1" fill="currentColor" viewBox="0 0 24 24">
-                                        <path d="M8 5v14l11-7z"/>
-                                    </svg>
-                                    <span class="text-xs opacity-75" x-text="item.title || 'Vidéo'"></span>
+                                <div class="w-full h-full relative">
+                                    <img :src="item.thumbnail_url || '/media/thumbnail/' + item.url.split('/').pop()" class="w-full h-full object-cover" loading="lazy"
+                                         x-on:error="$el.style.display='none'; $el.nextElementSibling.style.display='flex'">
+                                    <div class="w-full h-full flex-col items-center justify-center bg-gray-900 text-white" style="display:none">
+                                        <svg class="w-6 h-6" fill="currentColor" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>
+                                    </div>
+                                    <div class="absolute inset-0 flex items-center justify-center">
+                                        <div class="w-8 h-8 rounded-full bg-black/50 flex items-center justify-center">
+                                            <svg class="w-4 h-4 text-white ml-0.5" fill="currentColor" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>
+                                        </div>
+                                    </div>
                                 </div>
                             </template>
                             {{-- Remove button --}}
@@ -322,9 +332,17 @@
                                         <img :src="item.url" class="w-full h-full object-cover">
                                     </template>
                                     <template x-if="item.is_video">
-                                        <div class="w-full h-full flex flex-col items-center justify-center bg-gray-900 text-white">
-                                            <svg class="w-6 h-6" fill="currentColor" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>
-                                            <span class="text-xs mt-1 opacity-75" x-text="item.filename"></span>
+                                        <div class="w-full h-full relative">
+                                            <img :src="item.thumbnail_url || '/media/thumbnail/' + item.filename" class="w-full h-full object-cover" loading="lazy"
+                                                 x-on:error="$el.style.display='none'; $el.nextElementSibling.style.display='flex'">
+                                            <div class="w-full h-full flex-col items-center justify-center bg-gray-900 text-white" style="display:none">
+                                                <svg class="w-6 h-6" fill="currentColor" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>
+                                            </div>
+                                            <div class="absolute inset-0 flex items-center justify-center">
+                                                <div class="w-8 h-8 rounded-full bg-black/50 flex items-center justify-center">
+                                                    <svg class="w-4 h-4 text-white ml-0.5" fill="currentColor" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>
+                                                </div>
+                                            </div>
                                         </div>
                                     </template>
                                     <div x-show="isInMedia(item)" class="absolute top-1.5 right-1.5 w-5 h-5 bg-indigo-500 text-white rounded-full flex items-center justify-center">

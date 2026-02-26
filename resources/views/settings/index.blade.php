@@ -45,6 +45,90 @@
                 </div>
             </div>
 
+            {{-- Stats sync --}}
+            <div class="bg-white rounded-2xl border border-gray-100 shadow-sm p-6">
+                <div class="flex items-center gap-3 mb-1">
+                    <svg class="w-5 h-5 text-indigo-500" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1.5">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M3 13.125C3 12.504 3.504 12 4.125 12h2.25c.621 0 1.125.504 1.125 1.125v6.75C7.5 20.496 6.996 21 6.375 21h-2.25A1.125 1.125 0 0 1 3 19.875v-6.75ZM9.75 8.625c0-.621.504-1.125 1.125-1.125h2.25c.621 0 1.125.504 1.125 1.125v11.25c0 .621-.504 1.125-1.125 1.125h-2.25a1.125 1.125 0 0 1-1.125-1.125V8.625ZM16.5 4.125c0-.621.504-1.125 1.125-1.125h2.25C20.496 3 21 3.504 21 4.125v15.75c0 .621-.504 1.125-1.125 1.125h-2.25a1.125 1.125 0 0 1-1.125-1.125V4.125Z" />
+                    </svg>
+                    <h2 class="text-base font-semibold text-gray-900">Synchronisation des statistiques</h2>
+                </div>
+                <p class="text-sm text-gray-500 mb-5">Configure la frequence de mise a jour automatique des stats depuis les API des plateformes.</p>
+
+                {{-- Cron frequency --}}
+                <div class="mb-6">
+                    <label for="stats_sync_frequency" class="block text-sm font-medium text-gray-700 mb-1">Frequence du cron</label>
+                    <select id="stats_sync_frequency" name="stats_sync_frequency"
+                            class="w-full sm:w-1/2 rounded-xl border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 text-sm">
+                        <option value="every_15_min" {{ $settings['stats_sync_frequency'] === 'every_15_min' ? 'selected' : '' }}>Toutes les 15 minutes</option>
+                        <option value="every_30_min" {{ $settings['stats_sync_frequency'] === 'every_30_min' ? 'selected' : '' }}>Toutes les 30 minutes</option>
+                        <option value="hourly" {{ $settings['stats_sync_frequency'] === 'hourly' ? 'selected' : '' }}>Toutes les heures</option>
+                        <option value="every_2_hours" {{ $settings['stats_sync_frequency'] === 'every_2_hours' ? 'selected' : '' }}>Toutes les 2 heures</option>
+                        <option value="every_6_hours" {{ $settings['stats_sync_frequency'] === 'every_6_hours' ? 'selected' : '' }}>Toutes les 6 heures</option>
+                        <option value="every_12_hours" {{ $settings['stats_sync_frequency'] === 'every_12_hours' ? 'selected' : '' }}>Toutes les 12 heures</option>
+                        <option value="daily" {{ $settings['stats_sync_frequency'] === 'daily' ? 'selected' : '' }}>Une fois par jour</option>
+                    </select>
+                    <p class="text-xs text-gray-400 mt-1">A quelle frequence le systeme verifie et met a jour les stats. Recommande : toutes les heures</p>
+                    @error('stats_sync_frequency')
+                        <p class="text-sm text-red-600 mt-1">{{ $message }}</p>
+                    @enderror
+                </div>
+
+                {{-- Per-platform settings --}}
+                <div class="overflow-x-auto">
+                    <table class="w-full text-sm">
+                        <thead>
+                            <tr class="border-b border-gray-100">
+                                <th class="text-left font-medium text-gray-700 pb-3 pr-4">Plateforme</th>
+                                <th class="text-left font-medium text-gray-700 pb-3 px-4">Intervalle (heures)</th>
+                                <th class="text-left font-medium text-gray-700 pb-3 px-4">Age max (jours)</th>
+                                <th class="text-left font-medium text-gray-400 pb-3 pl-4">Limite API</th>
+                            </tr>
+                        </thead>
+                        <tbody class="divide-y divide-gray-50">
+                            @php
+                                $platforms = [
+                                    ['slug' => 'facebook', 'name' => 'Facebook', 'limit' => '200 appels/h'],
+                                    ['slug' => 'instagram', 'name' => 'Instagram', 'limit' => '200 appels/h'],
+                                    ['slug' => 'twitter', 'name' => 'Twitter/X', 'limit' => '15K lectures/mois (Basic)'],
+                                    ['slug' => 'youtube', 'name' => 'YouTube', 'limit' => '10K unites/jour'],
+                                    ['slug' => 'threads', 'name' => 'Threads', 'limit' => '~200 appels/h'],
+                                ];
+                            @endphp
+                            @foreach($platforms as $p)
+                                <tr>
+                                    <td class="py-3 pr-4 font-medium text-gray-900">{{ $p['name'] }}</td>
+                                    <td class="py-3 px-4">
+                                        <input type="number" name="stats_{{ $p['slug'] }}_interval"
+                                               value="{{ old('stats_'.$p['slug'].'_interval', $settings['stats_'.$p['slug'].'_interval']) }}"
+                                               min="1" max="168" step="1"
+                                               class="w-20 rounded-lg border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 text-sm">
+                                        @error('stats_'.$p['slug'].'_interval')
+                                            <p class="text-xs text-red-600 mt-1">{{ $message }}</p>
+                                        @enderror
+                                    </td>
+                                    <td class="py-3 px-4">
+                                        <input type="number" name="stats_{{ $p['slug'] }}_max_days"
+                                               value="{{ old('stats_'.$p['slug'].'_max_days', $settings['stats_'.$p['slug'].'_max_days']) }}"
+                                               min="1" max="365" step="1"
+                                               class="w-20 rounded-lg border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 text-sm">
+                                        @error('stats_'.$p['slug'].'_max_days')
+                                            <p class="text-xs text-red-600 mt-1">{{ $message }}</p>
+                                        @enderror
+                                    </td>
+                                    <td class="py-3 pl-4 text-xs text-gray-400">{{ $p['limit'] }}</td>
+                                </tr>
+                            @endforeach
+                            <tr>
+                                <td class="py-3 pr-4 font-medium text-gray-400">Telegram</td>
+                                <td class="py-3 px-4 text-xs text-gray-400" colspan="3">Stats non disponibles via le Bot API</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+                <p class="text-xs text-gray-400 mt-3">Intervalle : temps minimum entre deux syncs pour un meme post. Age max : les posts plus anciens ne sont plus synchronises automatiquement.</p>
+            </div>
+
             {{-- Image compression --}}
             <div class="bg-white rounded-2xl border border-gray-100 shadow-sm p-6">
                 <div class="flex items-center gap-3 mb-1">

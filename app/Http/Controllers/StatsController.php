@@ -159,6 +159,7 @@ class StatsController extends Controller
                     'url' => $item->post_url,
                     'post' => null,
                     'is_external' => true,
+                    'thumbnail' => $item->media_url,
                     'views' => $metrics['views'] ?? 0,
                     'likes' => $metrics['likes'] ?? 0,
                     'comments' => $metrics['comments'] ?? 0,
@@ -169,11 +170,22 @@ class StatsController extends Controller
                 // PostPlatform: group by post_id
                 $postId = $item->post_id;
                 if (! isset($postStats[$postId])) {
+                    $thumbnail = null;
+                    $media = $item->post->media ?? [];
+                    if (! empty($media) && isset($media[0]['url'])) {
+                        $filename = basename($media[0]['url']);
+                        $mimetype = $media[0]['mimetype'] ?? '';
+                        $thumbnail = str_starts_with($mimetype, 'video/')
+                            ? "/media/thumbnail/{$filename}"
+                            : $media[0]['url'];
+                    }
+
                     $postStats[$postId] = [
                         'content' => $item->post->content_fr ?? $item->post->content_en ?? '',
                         'url' => null,
                         'post' => $item->post,
                         'is_external' => false,
+                        'thumbnail' => $thumbnail,
                         'views' => 0,
                         'likes' => 0,
                         'comments' => 0,

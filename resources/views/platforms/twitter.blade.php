@@ -95,11 +95,7 @@
                                 toggling: false,
                                 testing: false,
                                 testOk: null,
-                                testError: null,
-                                importing: false,
-                                showImportModal: false,
-                                importInfo: null,
-                                importResult: null
+                                testError: null
                             }">
                                 <div class="flex items-center gap-3 min-w-0 flex-1">
                                     @if($account->profile_picture_url)
@@ -157,25 +153,6 @@
                                         <span x-text="testing ? 'Test...' : testOk ? testOk : testError ? 'Erreur' : 'Tester'"></span>
                                     </button>
 
-                                    {{-- Import History --}}
-                                    <button
-                                        type="button"
-                                        @click="
-                                            fetch('{{ route('accounts.import.info', $account) }}?limit=50', {
-                                                headers: { 'Accept': 'application/json' }
-                                            })
-                                            .then(r => r.json())
-                                            .then(d => { importInfo = d; showImportModal = true; })
-                                            .catch(e => alert('Erreur lors de la récupération des informations'));
-                                        "
-                                        class="inline-flex items-center p-1 text-gray-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg transition-colors"
-                                        title="Importer l'historique"
-                                    >
-                                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1.5">
-                                            <path stroke-linecap="round" stroke-linejoin="round" d="M3 16.5v2.25A2.25 2.25 0 0 0 5.25 21h13.5A2.25 2.25 0 0 0 21 18.75V16.5M16.5 12 12 16.5m0 0L7.5 12m4.5 4.5V3" />
-                                        </svg>
-                                    </button>
-
                                     {{-- Toggle --}}
                                     <button
                                         type="button"
@@ -214,98 +191,6 @@
                                             </svg>
                                         </button>
                                     </form>
-                                </div>
-
-                                {{-- Import Modal --}}
-                                <div x-show="showImportModal" x-cloak class="fixed inset-0 z-50 overflow-y-auto bg-black/30 backdrop-blur-sm" @click.self="showImportModal = false">
-                                    <div class="flex min-h-full items-center justify-center p-4">
-                                        <div class="relative bg-white rounded-2xl shadow-xl max-w-md w-full p-6" @click.stop>
-                                            <h3 class="text-lg font-semibold text-gray-900 mb-4">Importer l'historique Twitter</h3>
-
-                                            <template x-if="importInfo && !importInfo.can_import">
-                                                <div class="bg-yellow-50 border border-yellow-200 rounded-lg p-4 mb-4">
-                                                    <p class="text-sm text-yellow-800" x-text="importInfo.cooldown_reason"></p>
-                                                </div>
-                                            </template>
-
-                                            <template x-if="importInfo && importInfo.can_import">
-                                                <div>
-                                                    <div class="space-y-3 mb-6">
-                                                        <div class="flex justify-between text-sm">
-                                                            <span class="text-gray-600">Tweets à importer:</span>
-                                                            <span class="font-medium text-gray-900">50</span>
-                                                        </div>
-                                                        <div class="flex justify-between text-sm" x-show="importInfo.quota_cost > 0">
-                                                            <span class="text-gray-600">Coût API:</span>
-                                                            <span class="font-medium text-gray-900" x-text="importInfo.quota_description"></span>
-                                                        </div>
-                                                        <div class="flex justify-between text-sm" x-show="importInfo.last_import">
-                                                            <span class="text-gray-600">Dernier import:</span>
-                                                            <span class="font-medium text-gray-900" x-text="importInfo.last_import"></span>
-                                                        </div>
-                                                    </div>
-
-                                                    <template x-if="!importResult">
-                                                        <div class="flex gap-3">
-                                                            <button
-                                                                type="button"
-                                                                @click="showImportModal = false"
-                                                                class="flex-1 px-4 py-2 bg-gray-100 text-gray-700 text-sm font-medium rounded-lg hover:bg-gray-200 transition-colors"
-                                                            >
-                                                                Annuler
-                                                            </button>
-                                                            <button
-                                                                type="button"
-                                                                @click="
-                                                                    importing = true;
-                                                                    fetch('{{ route('accounts.import', $account) }}', {
-                                                                        method: 'POST',
-                                                                        headers: {
-                                                                            'Content-Type': 'application/json',
-                                                                            'X-CSRF-TOKEN': document.querySelector('meta[name=csrf-token]').getAttribute('content'),
-                                                                            'Accept': 'application/json',
-                                                                        },
-                                                                        body: JSON.stringify({ limit: 50 })
-                                                                    })
-                                                                    .then(r => r.json())
-                                                                    .then(d => { importResult = d; })
-                                                                    .catch(e => { importResult = { success: false, error: 'Erreur réseau' }; })
-                                                                    .finally(() => { importing = false; });
-                                                                "
-                                                                :disabled="importing"
-                                                                class="flex-1 px-4 py-2 bg-indigo-600 text-white text-sm font-medium rounded-lg hover:bg-indigo-700 transition-colors disabled:opacity-50"
-                                                            >
-                                                                <span x-show="!importing">Importer</span>
-                                                                <span x-show="importing" class="inline-flex items-center gap-2">
-                                                                    <svg class="animate-spin h-4 w-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path></svg>
-                                                                    Import en cours...
-                                                                </span>
-                                                            </button>
-                                                        </div>
-                                                    </template>
-
-                                                    <template x-if="importResult">
-                                                        <div>
-                                                            <div :class="importResult.success ? 'bg-green-50 border-green-200' : 'bg-red-50 border-red-200'" class="border rounded-lg p-4 mb-4">
-                                                                <p class="text-sm" :class="importResult.success ? 'text-green-800' : 'text-red-800'" x-text="importResult.success ? importResult.message : importResult.error"></p>
-                                                            </div>
-                                                            <button
-                                                                type="button"
-                                                                @click="showImportModal = false; importResult = null;"
-                                                                class="w-full px-4 py-2 bg-gray-100 text-gray-700 text-sm font-medium rounded-lg hover:bg-gray-200 transition-colors"
-                                                            >
-                                                                Fermer
-                                                            </button>
-                                                        </div>
-                                                    </template>
-                                                </div>
-                                            </template>
-
-                                            <template x-if="!importInfo">
-                                                <p class="text-sm text-gray-500">Chargement...</p>
-                                            </template>
-                                        </div>
-                                    </div>
                                 </div>
                             </div>
                         @endforeach

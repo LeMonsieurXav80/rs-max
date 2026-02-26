@@ -31,7 +31,7 @@ class SyncPostStats extends Command
      */
     public function handle(StatsSyncService $syncService): int
     {
-        $this->info('🔄 Starting stats sync...');
+        $this->info('Starting stats sync...');
 
         $query = PostPlatform::with(['platform', 'socialAccount', 'post'])
             ->where('status', 'published')
@@ -55,16 +55,15 @@ class SyncPostStats extends Command
         $postPlatforms = $query->get();
 
         if ($postPlatforms->isEmpty()) {
-            $this->warn('⚠️  No post platforms found to sync.');
+            $this->warn('No post platforms found to sync.');
 
             return self::SUCCESS;
         }
 
-        $this->info("📊 Found {$postPlatforms->count()} post platform(s) to process.");
+        $this->info("Found {$postPlatforms->count()} post platform(s) to process.");
 
-        // If force flag is set, temporarily mark all as needing sync
         if ($this->option('force')) {
-            $this->info('🔨 Force mode: ignoring last sync times');
+            $this->info('Force mode: ignoring last sync times');
         }
 
         $progressBar = $this->output->createProgressBar($postPlatforms->count());
@@ -74,7 +73,7 @@ class SyncPostStats extends Command
 
         foreach ($postPlatforms as $postPlatform) {
             // Skip if shouldn't sync (unless force)
-            if (! $this->option('force') && ! $this->shouldSync($postPlatform, $syncService)) {
+            if (! $this->option('force') && ! $syncService->shouldSync($postPlatform)) {
                 $results['skipped']++;
                 $progressBar->advance();
                 continue;
@@ -88,7 +87,7 @@ class SyncPostStats extends Command
                 }
             } catch (\Throwable $e) {
                 $results['failed']++;
-                $this->error("\n❌ Error syncing post platform {$postPlatform->id}: {$e->getMessage()}");
+                $this->error("\nError syncing post platform {$postPlatform->id}: {$e->getMessage()}");
             }
 
             $progressBar->advance();
@@ -98,29 +97,16 @@ class SyncPostStats extends Command
         $progressBar->finish();
         $this->newLine(2);
 
-        $this->info("✅ Synced: {$results['synced']}");
-        $this->info("⏭️  Skipped: {$results['skipped']}");
+        $this->info("Synced: {$results['synced']}");
+        $this->info("Skipped: {$results['skipped']}");
 
         if ($results['failed'] > 0) {
-            $this->error("❌ Failed: {$results['failed']}");
+            $this->error("Failed: {$results['failed']}");
         }
 
         $this->newLine();
-        $this->info('✨ Sync complete!');
+        $this->info('Sync complete!');
 
         return self::SUCCESS;
-    }
-
-    /**
-     * Check if a post platform should be synced using the service logic.
-     */
-    private function shouldSync(PostPlatform $postPlatform, StatsSyncService $syncService): bool
-    {
-        // Use reflection to access the private shouldSync method
-        $reflection = new \ReflectionClass($syncService);
-        $method = $reflection->getMethod('shouldSync');
-        $method->setAccessible(true);
-
-        return $method->invoke($syncService, $postPlatform);
     }
 }

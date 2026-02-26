@@ -8,6 +8,7 @@ use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Storage;
 use Illuminate\View\View;
 
 class PlatformController extends Controller
@@ -189,30 +190,16 @@ class PlatformController extends Controller
                         $creds['bot_name'] = $botName;
                         $creds['bot_username'] = $botUsername;
 
-                        // Refresh profile picture
+                        // Refresh profile picture (download locally)
                         $chatId = $creds['chat_id'] ?? null;
-                        $profilePictureUrl = null;
+                        $profilePictureUrl = $chatId
+                            ? $this->downloadTelegramProfilePicture($token, $chatId)
+                            : null;
 
-                        if ($chatId) {
-                            $chatResponse = Http::get("https://api.telegram.org/bot{$token}/getChat", [
-                                'chat_id' => $chatId,
-                            ]);
-
-                            if ($chatResponse->successful() && $chatResponse->json('ok')) {
-                                $chat = $chatResponse->json('result');
-                                if (isset($chat['photo']['big_file_id'])) {
-                                    $fileResponse = Http::get("https://api.telegram.org/bot{$token}/getFile", [
-                                        'file_id' => $chat['photo']['big_file_id'],
-                                    ]);
-
-                                    if ($fileResponse->successful() && $fileResponse->json('ok')) {
-                                        $filePath = $fileResponse->json('result.file_path');
-                                        if ($filePath) {
-                                            $profilePictureUrl = "https://api.telegram.org/file/bot{$token}/{$filePath}";
-                                        }
-                                    }
-                                }
-                            }
+                        // Delete old local profile picture if it was stored locally
+                        $oldUrl = $a->profile_picture_url;
+                        if ($oldUrl && str_starts_with($oldUrl, '/storage/profile-pictures/')) {
+                            Storage::disk('public')->delete('profile-pictures/' . basename($oldUrl));
                         }
 
                         $a->update([
@@ -275,20 +262,8 @@ class PlatformController extends Controller
         $chatId = (string) $chat['id'];
         $chatTitle = $chat['title'] ?? $chat['username'] ?? $channelId;
 
-        // Fetch profile picture if available
-        $profilePictureUrl = null;
-        if (isset($chat['photo']['big_file_id'])) {
-            $fileResponse = Http::get("https://api.telegram.org/bot{$token}/getFile", [
-                'file_id' => $chat['photo']['big_file_id'],
-            ]);
-
-            if ($fileResponse->successful() && $fileResponse->json('ok')) {
-                $filePath = $fileResponse->json('result.file_path');
-                if ($filePath) {
-                    $profilePictureUrl = "https://api.telegram.org/file/bot{$token}/{$filePath}";
-                }
-            }
-        }
+        // Download and store profile picture locally (Telegram API URLs expire)
+        $profilePictureUrl = $this->downloadTelegramProfilePicture($token, $chatId);
 
         $telegramPlatform = Platform::where('slug', 'telegram')->firstOrFail();
         $user = $request->user();
@@ -533,6 +508,60 @@ class PlatformController extends Controller
 
         return redirect()->route($route)
             ->with('success', "\"{$name}\" supprimé avec succès.");
+    }
+
+    /**
+     * Download a Telegram profile picture and store it locally.
+     * Returns the public URL or null on failure.
+     */
+    private function downloadTelegramProfilePicture(string $botToken, string $chatId): ?string
+    {
+        try {
+            $chatResponse = Http::get("https://api.telegram.org/bot{$botToken}/getChat", [
+                'chat_id' => $chatId,
+            ]);
+
+            if (! $chatResponse->successful() || ! $chatResponse->json('ok')) {
+                return null;
+            }
+
+            $chat = $chatResponse->json('result');
+
+            if (! isset($chat['photo']['big_file_id'])) {
+                return null;
+            }
+
+            $fileResponse = Http::get("https://api.telegram.org/bot{$botToken}/getFile", [
+                'file_id' => $chat['photo']['big_file_id'],
+            ]);
+
+            if (! $fileResponse->successful() || ! $fileResponse->json('ok')) {
+                return null;
+            }
+
+            $filePath = $fileResponse->json('result.file_path');
+            if (! $filePath) {
+                return null;
+            }
+
+            // Download the actual image file
+            $imageUrl = "https://api.telegram.org/file/bot{$botToken}/{$filePath}";
+            $imageResponse = Http::get($imageUrl);
+
+            if (! $imageResponse->successful()) {
+                return null;
+            }
+
+            // Store locally on the public disk
+            $extension = pathinfo($filePath, PATHINFO_EXTENSION) ?: 'jpg';
+            $filename = 'tg_' . abs(crc32($chatId)) . '_' . time() . '.' . $extension;
+
+            Storage::disk('public')->put("profile-pictures/{$filename}", $imageResponse->body());
+
+            return '/storage/profile-pictures/' . $filename;
+        } catch (\Throwable $e) {
+            return null;
+        }
     }
 
     /**

@@ -19,6 +19,18 @@ class SettingsController extends Controller
         'video_bitrate_720p',
         'video_codec',
         'video_audio_bitrate',
+        // Stats sync
+        'stats_sync_frequency',
+        'stats_facebook_interval',
+        'stats_instagram_interval',
+        'stats_twitter_interval',
+        'stats_youtube_interval',
+        'stats_threads_interval',
+        'stats_facebook_max_days',
+        'stats_instagram_max_days',
+        'stats_twitter_max_days',
+        'stats_youtube_max_days',
+        'stats_threads_max_days',
     ];
 
     private const DEFAULTS = [
@@ -32,6 +44,18 @@ class SettingsController extends Controller
         'video_bitrate_720p' => 2500,
         'video_codec' => 'h264',
         'video_audio_bitrate' => 128,
+        // Stats sync
+        'stats_sync_frequency' => 'hourly',
+        'stats_facebook_interval' => 12,
+        'stats_instagram_interval' => 12,
+        'stats_twitter_interval' => 24,
+        'stats_youtube_interval' => 24,
+        'stats_threads_interval' => 12,
+        'stats_facebook_max_days' => 30,
+        'stats_instagram_max_days' => 30,
+        'stats_twitter_max_days' => 14,
+        'stats_youtube_max_days' => 30,
+        'stats_threads_max_days' => 30,
     ];
 
     public function index(Request $request): View
@@ -68,6 +92,18 @@ class SettingsController extends Controller
             'video_bitrate_720p' => 'required|integer|min:500|max:10000',
             'video_codec' => 'required|in:h264',
             'video_audio_bitrate' => 'required|integer|min:64|max:320',
+            // Stats sync
+            'stats_sync_frequency' => 'required|in:every_15_min,every_30_min,hourly,every_2_hours,every_6_hours,every_12_hours,daily',
+            'stats_facebook_interval' => 'required|integer|min:1|max:168',
+            'stats_instagram_interval' => 'required|integer|min:1|max:168',
+            'stats_twitter_interval' => 'required|integer|min:1|max:168',
+            'stats_youtube_interval' => 'required|integer|min:1|max:168',
+            'stats_threads_interval' => 'required|integer|min:1|max:168',
+            'stats_facebook_max_days' => 'required|integer|min:1|max:365',
+            'stats_instagram_max_days' => 'required|integer|min:1|max:365',
+            'stats_twitter_max_days' => 'required|integer|min:1|max:365',
+            'stats_youtube_max_days' => 'required|integer|min:1|max:365',
+            'stats_threads_max_days' => 'required|integer|min:1|max:365',
         ]);
 
         // Handle OpenAI key separately (encrypted storage)
