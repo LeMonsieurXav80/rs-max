@@ -329,6 +329,144 @@
                     @endforelse
                 </div>
             </div>
+
+            {{-- Stats card --}}
+            @php
+                $publishedPlatforms = $post->postPlatforms->where('status', 'published')->whereNotNull('metrics');
+                $hasStats = $publishedPlatforms->count() > 0;
+                $canSync = $post->postPlatforms->where('status', 'published')->whereNotNull('external_id')->count() > 0;
+
+                if ($hasStats) {
+                    $totalViews = $publishedPlatforms->sum(fn($pp) => $pp->metrics['views'] ?? 0);
+                    $totalLikes = $publishedPlatforms->sum(fn($pp) => $pp->metrics['likes'] ?? 0);
+                    $totalComments = $publishedPlatforms->sum(fn($pp) => $pp->metrics['comments'] ?? 0);
+                    $totalShares = $publishedPlatforms->sum(fn($pp) => $pp->metrics['shares'] ?? 0);
+                    $totalEngagement = $totalLikes + $totalComments + $totalShares;
+                    $engagementRate = $totalViews > 0 ? round(($totalEngagement / $totalViews) * 100, 2) : 0;
+                }
+            @endphp
+
+            @if($hasStats || $canSync)
+                <div class="bg-white rounded-2xl shadow-sm border border-gray-100" x-data="{ syncing: false, syncResult: null }">
+                    <div class="px-6 lg:px-8 py-5 border-b border-gray-100 flex items-center justify-between">
+                        <h2 class="text-base font-semibold text-gray-900">Statistiques</h2>
+                        @if($canSync)
+                            <button type="button"
+                                @click="
+                                    if (syncing) return;
+                                    syncing = true; syncResult = null;
+                                    fetch('{{ route('posts.syncStats', $post) }}', {
+                                        method: 'POST',
+                                        headers: {
+                                            'Content-Type': 'application/json',
+                                            'X-CSRF-TOKEN': document.querySelector('meta[name=csrf-token]').getAttribute('content'),
+                                            'Accept': 'application/json',
+                                        },
+                                    })
+                                    .then(r => r.json())
+                                    .then(d => {
+                                        syncResult = d;
+                                        if (d.success) setTimeout(() => location.reload(), 1500);
+                                    })
+                                    .catch(() => { syncResult = { success: false, error: 'Erreur de connexion.' }; })
+                                    .finally(() => { syncing = false; });
+                                "
+                                :disabled="syncing"
+                                class="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg border transition-colors"
+                                :class="syncResult?.success ? 'border-green-300 bg-green-50 text-green-700' : 'border-gray-200 bg-white text-gray-600 hover:bg-gray-50'"
+                            >
+                                <svg x-show="syncing" class="w-3.5 h-3.5 animate-spin" fill="none" viewBox="0 0 24 24">
+                                    <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                                    <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path>
+                                </svg>
+                                <svg x-show="!syncing && !syncResult" class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1.5">
+                                    <path stroke-linecap="round" stroke-linejoin="round" d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0 3.181 3.183a8.25 8.25 0 0 0 13.803-3.7M4.031 9.865a8.25 8.25 0 0 1 13.803-3.7l3.181 3.182" />
+                                </svg>
+                                <svg x-show="syncResult?.success && !syncing" class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2">
+                                    <path stroke-linecap="round" stroke-linejoin="round" d="m4.5 12.75 6 6 9-13.5" />
+                                </svg>
+                                <span x-text="syncing ? 'Sync...' : syncResult?.success ? 'Synchronisé' : 'Rafraîchir'"></span>
+                            </button>
+                        @endif
+                    </div>
+
+                    @if($hasStats)
+                        {{-- Global stats --}}
+                        <div class="px-6 lg:px-8 py-5 border-b border-gray-100">
+                            <h3 class="text-xs font-medium text-gray-400 uppercase tracking-wider mb-4">Total (toutes plateformes)</h3>
+                            <div class="grid grid-cols-2 sm:grid-cols-4 gap-4">
+                                @if($totalViews > 0)
+                                    <div>
+                                        <p class="text-2xl font-bold text-indigo-600">{{ number_format($totalViews, 0, ',', ' ') }}</p>
+                                        <p class="text-xs text-gray-500 mt-1">Vues</p>
+                                    </div>
+                                @endif
+                                <div>
+                                    <p class="text-2xl font-bold text-indigo-600">{{ number_format($totalLikes, 0, ',', ' ') }}</p>
+                                    <p class="text-xs text-gray-500 mt-1">Likes</p>
+                                </div>
+                                <div>
+                                    <p class="text-2xl font-bold text-indigo-600">{{ number_format($totalComments, 0, ',', ' ') }}</p>
+                                    <p class="text-xs text-gray-500 mt-1">Commentaires</p>
+                                </div>
+                                @if($totalShares > 0)
+                                    <div>
+                                        <p class="text-2xl font-bold text-indigo-600">{{ number_format($totalShares, 0, ',', ' ') }}</p>
+                                        <p class="text-xs text-gray-500 mt-1">Partages</p>
+                                    </div>
+                                @endif
+                                @if($totalViews > 0)
+                                    <div>
+                                        <p class="text-2xl font-bold text-green-600">{{ $engagementRate }}%</p>
+                                        <p class="text-xs text-gray-500 mt-1">Taux engagement</p>
+                                    </div>
+                                @endif
+                            </div>
+                        </div>
+
+                        {{-- Stats per platform --}}
+                        <div class="px-6 lg:px-8 py-5">
+                            <h3 class="text-xs font-medium text-gray-400 uppercase tracking-wider mb-4">Par plateforme</h3>
+                            <div class="space-y-4">
+                                @foreach($publishedPlatforms as $pp)
+                                    @php
+                                        $metrics = $pp->metrics ?? [];
+                                        $views = $metrics['views'] ?? null;
+                                        $likes = $metrics['likes'] ?? 0;
+                                        $comments = $metrics['comments'] ?? 0;
+                                        $shares = $metrics['shares'] ?? null;
+                                        $lastSync = $pp->metrics_synced_at;
+                                    @endphp
+                                    <div class="flex items-start gap-3 pb-4 border-b border-gray-50 last:border-0">
+                                        <x-platform-icon :platform="$pp->platform->slug" size="sm" />
+                                        <div class="flex-1 min-w-0">
+                                            <p class="text-sm font-medium text-gray-900">{{ $pp->socialAccount->name }}</p>
+                                            <div class="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs">
+                                                @if($views !== null)
+                                                    <span class="text-gray-600"><span class="font-medium text-gray-900">{{ number_format($views) }}</span> vues</span>
+                                                @endif
+                                                <span class="text-gray-600"><span class="font-medium text-gray-900">{{ number_format($likes) }}</span> likes</span>
+                                                <span class="text-gray-600"><span class="font-medium text-gray-900">{{ number_format($comments) }}</span> com.</span>
+                                                @if($shares !== null && $shares > 0)
+                                                    <span class="text-gray-600"><span class="font-medium text-gray-900">{{ number_format($shares) }}</span> partages</span>
+                                                @endif
+                                            </div>
+                                            @if($lastSync)
+                                                <p class="mt-1 text-xs text-gray-400">Mis à jour {{ $lastSync->diffForHumans() }}</p>
+                                            @endif
+                                        </div>
+                                    </div>
+                                @endforeach
+                            </div>
+                        </div>
+                    @else
+                        <div class="px-6 lg:px-8 py-8 text-center">
+                            <p class="text-sm text-gray-400">Aucune statistique disponible pour le moment.</p>
+                            <p class="text-xs text-gray-400 mt-1">Cliquez sur "Rafraîchir" pour récupérer les stats.</p>
+                        </div>
+                    @endif
+                </div>
+            @endif
         </div>
 
         {{-- RIGHT: Media preview --}}
