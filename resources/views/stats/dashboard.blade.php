@@ -63,6 +63,43 @@
             </form>
         </div>
 
+        {{-- Followers overview --}}
+        @php
+            $accountsWithFollowers = $socialAccounts->filter(fn($a) => $a->followers_count !== null);
+            $totalFollowers = $accountsWithFollowers->sum('followers_count');
+        @endphp
+        @if($accountsWithFollowers->isNotEmpty())
+            <div class="bg-white rounded-2xl shadow-sm border border-gray-100 p-6">
+                <div class="flex items-center justify-between mb-4">
+                    <h2 class="text-base font-semibold text-gray-900">Audience</h2>
+                    <div class="text-right">
+                        <span class="text-2xl font-bold text-gray-900">{{ number_format($totalFollowers, 0, ',', ' ') }}</span>
+                        <span class="text-sm text-gray-500 ml-1">abonnés au total</span>
+                    </div>
+                </div>
+                <div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6 gap-3">
+                    @foreach($accountsWithFollowers->sortByDesc('followers_count') as $account)
+                        <div class="flex items-center gap-3 p-3 rounded-xl bg-gray-50 border border-gray-100">
+                            @if($account->profile_picture_url)
+                                <img src="{{ $account->profile_picture_url }}" alt="" class="w-9 h-9 rounded-full object-cover flex-shrink-0">
+                            @else
+                                <div class="w-9 h-9 rounded-full bg-gray-200 flex items-center justify-center flex-shrink-0">
+                                    <x-platform-icon :platform="$account->platform->slug" size="sm" />
+                                </div>
+                            @endif
+                            <div class="min-w-0">
+                                <p class="text-sm font-bold text-gray-900">{{ number_format($account->followers_count, 0, ',', ' ') }}</p>
+                                <p class="text-xs text-gray-500 truncate">{{ $account->name }}</p>
+                            </div>
+                        </div>
+                    @endforeach
+                </div>
+                @if($accountsWithFollowers->first()?->followers_synced_at)
+                    <p class="text-xs text-gray-400 mt-3">Mis à jour {{ $accountsWithFollowers->sortByDesc('followers_synced_at')->first()->followers_synced_at->diffForHumans() }}</p>
+                @endif
+            </div>
+        @endif
+
         @if($stats['posts_count'] > 0)
             {{-- KPIs --}}
             <div class="grid grid-cols-2 lg:grid-cols-4 gap-4">
@@ -174,6 +211,7 @@
                             <thead>
                                 <tr class="border-b border-gray-100 text-left">
                                     <th class="px-6 py-3 text-xs font-medium text-gray-500 uppercase tracking-wider">Compte</th>
+                                    <th class="px-6 py-3 text-xs font-medium text-gray-500 uppercase tracking-wider text-right">Abonnés</th>
                                     <th class="px-6 py-3 text-xs font-medium text-gray-500 uppercase tracking-wider text-right">Posts</th>
                                     <th class="px-6 py-3 text-xs font-medium text-gray-500 uppercase tracking-wider text-right">Vues</th>
                                     <th class="px-6 py-3 text-xs font-medium text-gray-500 uppercase tracking-wider text-right">Likes</th>
@@ -193,6 +231,7 @@
                                                 <span class="text-sm font-medium text-gray-900">{{ $accountStat['account']->name }}</span>
                                             </div>
                                         </td>
+                                        <td class="px-6 py-4 text-sm text-gray-700 text-right">{{ $accountStat['account']->followers_count ? number_format($accountStat['account']->followers_count) : '-' }}</td>
                                         <td class="px-6 py-4 text-sm text-gray-700 text-right">{{ number_format($accountStat['count']) }}</td>
                                         <td class="px-6 py-4 text-sm text-gray-700 text-right">{{ $accountStat['views'] > 0 ? number_format($accountStat['views']) : '-' }}</td>
                                         <td class="px-6 py-4 text-sm text-gray-700 text-right">{{ number_format($accountStat['likes']) }}</td>

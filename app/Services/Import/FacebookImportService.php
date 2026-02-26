@@ -29,8 +29,9 @@ class FacebookImportService implements PlatformImportInterface
         }
 
         $posts = $this->fetchPosts($pageId, $accessToken, $limit);
+        $videoViews = $this->fetchVideoViews($pageId, $accessToken);
 
-        return $this->storeExternalPosts($account, $posts);
+        return $this->storeExternalPosts($account, $posts, $videoViews);
     }
 
     /**
@@ -110,9 +111,65 @@ class FacebookImportService implements PlatformImportInterface
     }
 
     /**
+     * Fetch video views for a page. Returns [videoId => views] map.
+     */
+    private function fetchVideoViews(string $pageId, string $accessToken): array
+    {
+        $videoViews = [];
+
+        try {
+            $url = self::API_BASE."/{$pageId}/videos";
+            $params = [
+                'fields' => 'id,views',
+                'limit' => 100,
+                'access_token' => $accessToken,
+            ];
+
+            do {
+                $response = Http::get($url, $params);
+
+                if (! $response->successful()) {
+                    break;
+                }
+
+                $data = $response->json();
+
+                foreach ($data['data'] ?? [] as $video) {
+                    $videoViews[$video['id']] = (int) ($video['views'] ?? 0);
+                }
+
+                $url = $data['paging']['next'] ?? null;
+                $params = [];
+            } while ($url);
+        } catch (\Exception $e) {
+            Log::warning('Facebook: failed to fetch video views', ['error' => $e->getMessage()]);
+        }
+
+        return $videoViews;
+    }
+
+    /**
+     * Extract video ID from a Facebook permalink URL.
+     * E.g. https://www.facebook.com/reel/1966502867317951/ -> 1966502867317951
+     */
+    private function extractVideoIdFromPermalink(?string $permalink): ?string
+    {
+        if (! $permalink) {
+            return null;
+        }
+
+        // Match /reel/{id} or /videos/{id}
+        if (preg_match('#/(?:reel|videos)/(\d+)#', $permalink, $matches)) {
+            return $matches[1];
+        }
+
+        return null;
+    }
+
+    /**
      * Store posts as ExternalPost records with deduplication.
      */
-    private function storeExternalPosts(SocialAccount $account, Collection $posts): Collection
+    private function storeExternalPosts(SocialAccount $account, Collection $posts, array $videoViews = []): Collection
     {
         $platform = Platform::where('slug', 'facebook')->first();
         $imported = collect();
@@ -128,8 +185,15 @@ class FacebookImportService implements PlatformImportInterface
                 continue;
             }
 
+            // Try to get views from video data
+            $views = 0;
+            $videoId = $this->extractVideoIdFromPermalink($post['permalink_url'] ?? null);
+            if ($videoId && isset($videoViews[$videoId])) {
+                $views = $videoViews[$videoId];
+            }
+
             $metrics = [
-                'views' => 0,
+                'views' => $views,
                 'likes' => (int) ($post['likes']['summary']['total_count'] ?? 0),
                 'comments' => (int) ($post['comments']['summary']['total_count'] ?? 0),
                 'shares' => (int) ($post['shares']['count'] ?? 0),

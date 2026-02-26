@@ -135,12 +135,12 @@ class PostController extends Controller
         $user = $request->user();
         $publishNow = ! empty($validated['publish_now']);
 
-        // Verify all selected accounts are accessible to the user (unless admin)
+        // Verify all selected accounts are accessible and active (unless admin)
         $accountIds = $validated['accounts'];
         if ($user->is_admin) {
-            $validAccounts = SocialAccount::whereIn('id', $accountIds)->get();
+            $validAccounts = SocialAccount::whereIn('id', $accountIds)->where('is_active', true)->get();
         } else {
-            $validAccounts = $user->socialAccounts()->whereIn('social_accounts.id', $accountIds)->get();
+            $validAccounts = $user->activeSocialAccounts()->whereIn('social_accounts.id', $accountIds)->get();
         }
 
         if ($validAccounts->count() !== count($accountIds)) {
@@ -317,12 +317,12 @@ class PostController extends Controller
         $user = $request->user();
         $publishNow = ! empty($validated['publish_now']);
 
-        // Verify all selected accounts are accessible to the user (unless admin)
+        // Verify all selected accounts are accessible and active (unless admin)
         $accountIds = $validated['accounts'];
         if ($user->is_admin) {
-            $validAccounts = SocialAccount::whereIn('id', $accountIds)->get();
+            $validAccounts = SocialAccount::whereIn('id', $accountIds)->where('is_active', true)->get();
         } else {
-            $validAccounts = $user->socialAccounts()->whereIn('social_accounts.id', $accountIds)->get();
+            $validAccounts = $user->activeSocialAccounts()->whereIn('social_accounts.id', $accountIds)->get();
         }
 
         if ($validAccounts->count() !== count($accountIds)) {

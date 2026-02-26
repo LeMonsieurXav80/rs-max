@@ -74,6 +74,9 @@ Route::middleware(['auth', 'verified'])->group(function () {
     Route::get('accounts/{account}/import/info', [ImportController::class, 'info'])->name('accounts.import.info');
     Route::post('accounts/{account}/import', [ImportController::class, 'import'])->name('accounts.import');
 
+    // Followers sync
+    Route::post('accounts/sync-followers', [ImportController::class, 'syncFollowers'])->name('accounts.syncFollowers');
+
     // Manual publishing (test without scheduling)
     Route::post('posts/{post}/publish', [PublishController::class, 'publishAll'])->name('posts.publish');
     Route::post('posts/platform/{postPlatform}/publish', [PublishController::class, 'publishOne'])->name('posts.publishOne');

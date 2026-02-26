@@ -88,6 +88,7 @@ class LocationController extends Controller
     {
         // /pages/search requires a USER access token with pages_read_engagement
         $fbAccount = SocialAccount::whereHas('platform', fn ($q) => $q->where('slug', 'facebook'))
+            ->where('is_active', true)
             ->first();
 
         if ($fbAccount) {

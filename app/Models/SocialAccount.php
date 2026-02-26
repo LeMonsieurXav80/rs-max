@@ -14,6 +14,8 @@ class SocialAccount extends Model
         'platform_account_id',
         'name',
         'profile_picture_url',
+        'followers_count',
+        'followers_synced_at',
         'credentials',
         'languages',
         'branding',
@@ -32,6 +34,7 @@ class SocialAccount extends Model
             'show_branding' => 'boolean',
             'last_used_at' => 'datetime',
             'last_history_import_at' => 'datetime',
+            'followers_synced_at' => 'datetime',
         ];
     }
 

@@ -17,11 +17,14 @@ class StatsController extends Controller
     {
         $user = $request->user();
 
-        // Get user's social accounts for filter
+        // Get user's active social accounts for filter
         if ($user->is_admin) {
-            $socialAccounts = SocialAccount::with('platform')->orderBy('name')->get();
+            $socialAccounts = SocialAccount::with('platform')
+                ->where('is_active', true)
+                ->orderBy('name')
+                ->get();
         } else {
-            $socialAccounts = $user->socialAccounts()->with('platform')->orderBy('name')->get();
+            $socialAccounts = $user->activeSocialAccounts()->with('platform')->orderBy('name')->get();
         }
 
         // Get filters
@@ -40,12 +43,14 @@ class StatsController extends Controller
         $epQuery = ExternalPost::with(['platform', 'socialAccount'])
             ->whereNotNull('metrics');
 
-        // Filter by accounts
+        // Filter by accounts (only show data for active accounts)
         if (! empty($selectedAccounts)) {
             $ppQuery->whereIn('social_account_id', $selectedAccounts);
             $epQuery->whereIn('social_account_id', $selectedAccounts);
-        } elseif (! $user->is_admin) {
-            $accountIds = $user->socialAccounts()->pluck('social_accounts.id');
+        } else {
+            $accountIds = $user->is_admin
+                ? SocialAccount::where('is_active', true)->pluck('id')
+                : $user->activeSocialAccounts()->pluck('social_accounts.id');
             $ppQuery->whereIn('social_account_id', $accountIds);
             $epQuery->whereIn('social_account_id', $accountIds);
         }

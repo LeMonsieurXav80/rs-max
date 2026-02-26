@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Models\SocialAccount;
+use App\Services\FollowersService;
 use App\Services\Import\ImportService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -74,14 +75,20 @@ class ImportController extends Controller
 
         $result = $importService->import($account, $limit);
 
+        // Also sync follower count
+        $followersService = app(FollowersService::class);
+        $followers = $followersService->syncFollowers($account);
+
         if ($result['success']) {
             Log::info("Import completed for account {$accountId}", [
                 'imported' => $result['imported'],
+                'followers' => $followers,
             ]);
 
             return response()->json([
                 'success' => true,
                 'imported' => $result['imported'],
+                'followers' => $followers,
                 'message' => "{$result['imported']} publication(s) importée(s) avec succès.",
             ]);
         } else {
@@ -90,5 +97,22 @@ class ImportController extends Controller
                 'error' => $result['error'],
             ], 500);
         }
+    }
+
+    /**
+     * Sync follower counts for all active accounts.
+     */
+    public function syncFollowers(Request $request, FollowersService $followersService): JsonResponse
+    {
+        if (! $request->user()->is_admin) {
+            return response()->json(['error' => 'Unauthorized'], 403);
+        }
+
+        $results = $followersService->syncAllActive();
+
+        return response()->json([
+            'success' => true,
+            'results' => $results,
+        ]);
     }
 }
