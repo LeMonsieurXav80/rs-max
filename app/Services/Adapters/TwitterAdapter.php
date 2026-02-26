@@ -174,7 +174,9 @@ class TwitterAdapter implements PlatformAdapterInterface
                 return $this->chunkedUpload($tempFile, $mimeType);
             }
 
-            return $this->simpleUpload($tempFile, basename($mediaUrl));
+            $filename = basename(parse_url($mediaUrl, PHP_URL_PATH) ?? $mediaUrl);
+
+            return $this->simpleUpload($tempFile, $filename);
 
         } finally {
             if (file_exists($tempFile)) {
