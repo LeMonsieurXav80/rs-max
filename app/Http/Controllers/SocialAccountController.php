@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Models\Persona;
 use App\Models\Platform;
 use App\Models\SocialAccount;
 use Illuminate\Http\JsonResponse;
@@ -134,7 +135,9 @@ class SocialAccountController extends Controller
             ->orderBy('name')
             ->get();
 
-        return view('accounts.edit', compact('account', 'platforms'));
+        $personas = Persona::where('is_active', true)->orderBy('name')->get();
+
+        return view('accounts.edit', compact('account', 'platforms', 'personas'));
     }
 
     /**
@@ -154,6 +157,7 @@ class SocialAccountController extends Controller
             'languages.*'    => 'in:fr,en,pt,es,de,it',
             'branding'       => 'nullable|string|max:500',
             'show_branding'  => 'nullable|boolean',
+            'persona_id'     => 'nullable|exists:personas,id',
             'credentials'    => 'nullable|array',
             'credentials.*'  => 'nullable|string|max:2000',
         ]);
@@ -180,6 +184,7 @@ class SocialAccountController extends Controller
             'languages'     => $validated['languages'],
             'branding'      => $validated['branding'] ?? $account->branding,
             'show_branding' => $validated['show_branding'] ?? false,
+            'persona_id'    => $validated['persona_id'] ?? null,
             'credentials'   => $account->credentials,
         ]);
 

@@ -110,6 +110,24 @@
                         <p class="mt-1 text-sm text-red-600">{{ $message }}</p>
                     @enderror
                 </div>
+
+                {{-- Persona IA --}}
+                <div class="mt-5">
+                    <label for="persona_id" class="block text-sm font-medium text-gray-700 mb-1.5">Persona IA par défaut</label>
+                    <select name="persona_id" id="persona_id"
+                            class="w-full rounded-xl border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 text-sm">
+                        <option value="">Aucun</option>
+                        @foreach($personas as $persona)
+                            <option value="{{ $persona->id }}" {{ old('persona_id', $account->persona_id) == $persona->id ? 'selected' : '' }}>
+                                {{ $persona->name }}{{ $persona->tone ? ' — ' . $persona->tone : '' }}
+                            </option>
+                        @endforeach
+                    </select>
+                    <p class="mt-1 text-xs text-gray-400">Persona utilisé pour la génération IA sur ce compte.</p>
+                    @error('persona_id')
+                        <p class="mt-1 text-sm text-red-600">{{ $message }}</p>
+                    @enderror
+                </div>
             </div>
 
             {{-- Section : Identifiants de connexion --}}

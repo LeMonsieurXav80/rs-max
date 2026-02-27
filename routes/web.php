@@ -6,10 +6,13 @@ use App\Http\Controllers\HashtagController;
 use App\Http\Controllers\ImportController;
 use App\Http\Controllers\LocationController;
 use App\Http\Controllers\MediaController;
+use App\Http\Controllers\PersonaController;
 use App\Http\Controllers\PlatformController;
 use App\Http\Controllers\PostController;
 use App\Http\Controllers\ProfileController;
 use App\Http\Controllers\PublishController;
+use App\Http\Controllers\AiAssistController;
+use App\Http\Controllers\RssFeedController;
 use App\Http\Controllers\SettingsController;
 use App\Http\Controllers\SocialAccountController;
 use App\Http\Controllers\StatsController;
@@ -24,6 +27,9 @@ Route::get('/', function () {
 Route::middleware(['auth', 'verified'])->group(function () {
     // Dashboard
     Route::get('/dashboard', [DashboardController::class, 'index'])->name('dashboard');
+
+    // AI Assist (must be before posts resource to avoid route conflict)
+    Route::post('posts/ai-assist', [AiAssistController::class, 'generate'])->name('posts.aiAssist');
 
     // Posts (resource CRUD)
     Route::resource('posts', PostController::class);
@@ -81,6 +87,14 @@ Route::middleware(['auth', 'verified'])->group(function () {
     Route::post('posts/{post}/publish', [PublishController::class, 'publishAll'])->name('posts.publish');
     Route::post('posts/platform/{postPlatform}/publish', [PublishController::class, 'publishOne'])->name('posts.publishOne');
     Route::post('posts/platform/{postPlatform}/reset', [PublishController::class, 'resetOne'])->name('posts.resetOne');
+
+    // Personas (admin)
+    Route::resource('personas', PersonaController::class)->except(['show']);
+
+    // RSS Feeds (admin)
+    Route::resource('rss-feeds', RssFeedController::class)->except(['show']);
+    Route::post('rss-feeds/{rssFeed}/fetch', [RssFeedController::class, 'fetchNow'])->name('rss-feeds.fetch');
+    Route::post('rss-feeds/{rssFeed}/generate', [RssFeedController::class, 'generateNow'])->name('rss-feeds.generate');
 
     // Settings (admin only)
     Route::get('settings', [SettingsController::class, 'index'])->name('settings.index');
