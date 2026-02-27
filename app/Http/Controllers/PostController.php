@@ -90,8 +90,14 @@ class PostController extends Controller
         };
         $applyMediaTypeFilter($query);
 
-        // List view: paginated
-        $posts = (clone $query)->orderByDesc('created_at')->paginate(15)->withQueryString();
+        // List view: paginated (scheduled posts sorted by next to publish first)
+        $listQuery = clone $query;
+        if ($request->input('status') === 'scheduled') {
+            $listQuery->orderBy('scheduled_at');
+        } else {
+            $listQuery->orderByDesc('created_at');
+        }
+        $posts = $listQuery->paginate(15)->withQueryString();
 
         // Calendar view: posts for the selected month
         $month = $request->input('month', now()->format('Y-m'));
