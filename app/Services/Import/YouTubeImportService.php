@@ -5,6 +5,7 @@ namespace App\Services\Import;
 use App\Models\ExternalPost;
 use App\Models\Platform;
 use App\Models\SocialAccount;
+use App\Services\YouTubeTokenHelper;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
@@ -26,9 +27,8 @@ class YouTubeImportService implements PlatformImportInterface
      */
     public function importHistory(SocialAccount $account, int $limit = 50): Collection
     {
-        $credentials = $account->credentials;
-        $accessToken = $credentials['access_token'] ?? null;
         $channelId = $account->platform_account_id;
+        $accessToken = YouTubeTokenHelper::getFreshAccessToken($account);
 
         if (! $accessToken) {
             throw new \Exception('No access token found for YouTube account');

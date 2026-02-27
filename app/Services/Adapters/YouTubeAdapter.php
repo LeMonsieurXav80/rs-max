@@ -3,15 +3,14 @@
 namespace App\Services\Adapters;
 
 use App\Models\SocialAccount;
+use App\Services\YouTubeTokenHelper;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
-use Illuminate\Support\Facades\Storage;
 
 class YouTubeAdapter implements PlatformAdapterInterface
 {
     private const API_BASE = 'https://www.googleapis.com/youtube/v3';
     private const UPLOAD_BASE = 'https://www.googleapis.com/upload/youtube/v3';
-    private const TOKEN_URL = 'https://oauth2.googleapis.com/token';
 
     /**
      * Publish a video to YouTube.
@@ -51,11 +50,16 @@ class YouTubeAdapter implements PlatformAdapterInterface
                 ];
             }
 
-            $credentials = $account->credentials;
-            $accessToken = $credentials['access_token'];
+            // Refresh token (YouTube tokens expire after 1 hour)
+            $accessToken = YouTubeTokenHelper::getFreshAccessToken($account);
 
-            // Refresh token if needed (YouTube tokens expire after 1 hour)
-            $accessToken = $this->refreshTokenIfNeeded($account);
+            if (! $accessToken) {
+                return [
+                    'success' => false,
+                    'external_id' => null,
+                    'error' => 'Impossible de rafraîchir le token YouTube.',
+                ];
+            }
 
             // Extract title from content (first line, max 100 chars)
             $lines = explode("\n", $content);
@@ -165,56 +169,6 @@ class YouTubeAdapter implements PlatformAdapterInterface
         $data = $uploadResponse->json();
 
         return $data['id'] ?? null;
-    }
-
-    /**
-     * Refresh access token if needed.
-     */
-    private function refreshTokenIfNeeded(SocialAccount $account): string
-    {
-        $credentials = $account->credentials;
-
-        // If we don't have a refresh token, return current access token
-        if (empty($credentials['refresh_token'])) {
-            return $credentials['access_token'];
-        }
-
-        // TODO: Check token expiry and refresh only if needed
-        // For now, we'll use the current token and refresh on error
-
-        return $credentials['access_token'];
-    }
-
-    /**
-     * Refresh the access token using the refresh token.
-     */
-    private function refreshAccessToken(SocialAccount $account): ?string
-    {
-        $credentials = $account->credentials;
-
-        $response = Http::asForm()->post(self::TOKEN_URL, [
-            'client_id' => config('services.youtube.client_id'),
-            'client_secret' => config('services.youtube.client_secret'),
-            'refresh_token' => $credentials['refresh_token'],
-            'grant_type' => 'refresh_token',
-        ]);
-
-        if (! $response->successful()) {
-            Log::error('YouTubeAdapter: Token refresh failed', [
-                'status' => $response->status(),
-                'body' => $response->body(),
-            ]);
-            return null;
-        }
-
-        $data = $response->json();
-        $newAccessToken = $data['access_token'];
-
-        // Update credentials with new access token
-        $credentials['access_token'] = $newAccessToken;
-        $account->update(['credentials' => $credentials]);
-
-        return $newAccessToken;
     }
 
     /**

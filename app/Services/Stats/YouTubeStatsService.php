@@ -3,6 +3,7 @@
 namespace App\Services\Stats;
 
 use App\Models\PostPlatform;
+use App\Services\YouTubeTokenHelper;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 
@@ -14,7 +15,7 @@ class YouTubeStatsService implements PlatformStatsInterface
     {
         try {
             $videoId = $postPlatform->external_id;
-            $accessToken = $postPlatform->socialAccount->credentials['access_token'] ?? null;
+            $accessToken = YouTubeTokenHelper::getFreshAccessToken($postPlatform->socialAccount);
 
             if (! $videoId || ! $accessToken) {
                 return null;
