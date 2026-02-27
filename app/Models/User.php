@@ -46,7 +46,7 @@ class User extends Authenticatable
 
     public function socialAccounts(): BelongsToMany
     {
-        return $this->belongsToMany(SocialAccount::class)->withTimestamps();
+        return $this->belongsToMany(SocialAccount::class)->withPivot('is_active')->withTimestamps();
     }
 
     public function posts(): HasMany
@@ -56,6 +56,6 @@ class User extends Authenticatable
 
     public function activeSocialAccounts(): BelongsToMany
     {
-        return $this->socialAccounts()->where('is_active', true);
+        return $this->socialAccounts()->wherePivot('is_active', true);
     }
 }

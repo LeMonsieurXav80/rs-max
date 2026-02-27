@@ -4,7 +4,6 @@ namespace App\Http\Controllers;
 
 use App\Models\ExternalPost;
 use App\Models\PostPlatform;
-use App\Models\SocialAccount;
 use Illuminate\Http\Request;
 use Illuminate\View\View;
 
@@ -17,15 +16,8 @@ class StatsController extends Controller
     {
         $user = $request->user();
 
-        // Get user's active social accounts for filter
-        if ($user->is_admin) {
-            $socialAccounts = SocialAccount::with('platform')
-                ->where('is_active', true)
-                ->orderBy('name')
-                ->get();
-        } else {
-            $socialAccounts = $user->activeSocialAccounts()->with('platform')->orderBy('name')->get();
-        }
+        // Get user's active social accounts for filter (per-user is_active)
+        $socialAccounts = $user->activeSocialAccounts()->with('platform')->orderBy('name')->get();
 
         // Get filters
         $selectedAccounts = $request->input('accounts', []);
@@ -48,9 +40,7 @@ class StatsController extends Controller
             $ppQuery->whereIn('social_account_id', $selectedAccounts);
             $epQuery->whereIn('social_account_id', $selectedAccounts);
         } else {
-            $accountIds = $user->is_admin
-                ? SocialAccount::where('is_active', true)->pluck('id')
-                : $user->activeSocialAccounts()->pluck('social_accounts.id');
+            $accountIds = $user->activeSocialAccounts()->pluck('social_accounts.id');
             $ppQuery->whereIn('social_account_id', $accountIds);
             $epQuery->whereIn('social_account_id', $accountIds);
         }

@@ -46,7 +46,9 @@ class PublishController extends Controller
 
         $account = $postPlatform->socialAccount;
 
-        if (! $account->is_active) {
+        // Check if account is active for this user (per-user activation)
+        $isActiveForUser = $account->users()->where('user_id', $user->id)->where('social_account_user.is_active', true)->exists();
+        if (! $isActiveForUser) {
             return response()->json([
                 'success' => false,
                 'error' => 'Ce compte est désactivé.',
@@ -135,10 +137,13 @@ class PublishController extends Controller
             return response()->json(['success' => false, 'error' => 'Non autorisé.'], 403);
         }
 
+        $userId = $user->id;
         $postPlatforms = $post->postPlatforms()
             ->with('socialAccount.platform')
             ->whereIn('status', ['pending', 'failed'])
-            ->whereHas('socialAccount', fn ($q) => $q->where('is_active', true))
+            ->whereHas('socialAccount', function ($q) use ($userId) {
+                $q->whereHas('users', fn ($uq) => $uq->where('social_account_user.user_id', $userId)->where('social_account_user.is_active', true));
+            })
             ->get();
 
         if ($postPlatforms->isEmpty()) {

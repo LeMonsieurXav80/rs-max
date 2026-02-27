@@ -187,14 +187,13 @@ class FacebookOAuthController extends Controller
                         'profile_picture_url' => $page['picture_url'] ?? null,
                         'credentials' => $creds,
                         'languages' => [$user->default_language ?? 'fr'],
-                        'is_active' => true,
                     ]);
                     $created++;
                 }
 
                 // Link to current user (ignore if already linked)
                 if (! $account->users()->where('user_id', $user->id)->exists()) {
-                    $account->users()->attach($user->id);
+                    $account->users()->attach($user->id, ['is_active' => true]);
                     $linked++;
                 }
             }
@@ -233,13 +232,12 @@ class FacebookOAuthController extends Controller
                         'profile_picture_url' => $igPicture,
                         'credentials' => $igCreds,
                         'languages' => [$user->default_language ?? 'fr'],
-                        'is_active' => true,
                     ]);
                     $created++;
                 }
 
                 if (! $account->users()->where('user_id', $user->id)->exists()) {
-                    $account->users()->attach($user->id);
+                    $account->users()->attach($user->id, ['is_active' => true]);
                     $linked++;
                 }
             }

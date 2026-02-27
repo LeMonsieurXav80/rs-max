@@ -20,7 +20,6 @@ class SocialAccount extends Model
         'languages',
         'branding',
         'show_branding',
-        'is_active',
         'persona_id',
         'last_used_at',
         'last_history_import_at',
@@ -31,7 +30,6 @@ class SocialAccount extends Model
         return [
             'credentials' => 'encrypted:array',
             'languages' => 'array',
-            'is_active' => 'boolean',
             'show_branding' => 'boolean',
             'last_used_at' => 'datetime',
             'last_history_import_at' => 'datetime',
@@ -41,7 +39,7 @@ class SocialAccount extends Model
 
     public function users(): BelongsToMany
     {
-        return $this->belongsToMany(User::class)->withTimestamps();
+        return $this->belongsToMany(User::class)->withPivot('is_active')->withTimestamps();
     }
 
     public function platform(): BelongsTo

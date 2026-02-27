@@ -22,11 +22,10 @@ class PublishingService
         // Update post status
         $post->update(['status' => 'publishing']);
 
-        // Dispatch a job for each platform (only active accounts)
+        // Dispatch a job for each pending platform
         $postPlatforms = $post->postPlatforms()
             ->with('socialAccount.platform')
             ->where('status', 'pending')
-            ->whereHas('socialAccount', fn ($q) => $q->where('is_active', true))
             ->get();
 
         foreach ($postPlatforms as $postPlatform) {
