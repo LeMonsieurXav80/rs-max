@@ -9,6 +9,7 @@ use App\Services\Adapters\FacebookAdapter;
 use App\Services\Adapters\InstagramAdapter;
 use App\Services\Adapters\PlatformAdapterInterface;
 use App\Services\Adapters\TelegramAdapter;
+use App\Services\Adapters\ThreadsAdapter;
 use App\Services\Adapters\TwitterAdapter;
 use App\Services\Adapters\YouTubeAdapter;
 use App\Services\PublishingService;
@@ -24,8 +25,8 @@ class PublishToPlatformJob implements ShouldQueue
 {
     use Dispatchable, InteractsWithQueue, Queueable, SerializesModels;
 
-    public int $tries = 2;
-    public int $backoff = 30;
+    public int $tries = 1;
+    public int $timeout = 300;
 
     public function __construct(
         public PostPlatform $postPlatform,
@@ -33,6 +34,12 @@ class PublishToPlatformJob implements ShouldQueue
 
     public function handle(PublishingService $publishingService): void
     {
+        // Idempotency guard: skip if already published (e.g. manual retry after success)
+        $this->postPlatform->refresh();
+        if ($this->postPlatform->status === 'published') {
+            return;
+        }
+
         $postPlatform = $this->postPlatform->load('socialAccount.platform', 'post.user');
         $account = $postPlatform->socialAccount;
         $post = $postPlatform->post;
@@ -92,6 +99,7 @@ class PublishToPlatformJob implements ShouldQueue
             'telegram' => new TelegramAdapter(),
             'facebook' => new FacebookAdapter(),
             'instagram' => new InstagramAdapter(),
+            'threads' => new ThreadsAdapter(),
             'twitter' => new TwitterAdapter(),
             'youtube' => new YouTubeAdapter(),
             default => null,
