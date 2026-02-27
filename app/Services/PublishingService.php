@@ -55,13 +55,15 @@ class PublishingService
     public function getContentForAccount(Post $post, SocialAccount $account): string
     {
         $languages = $account->languages ?? ['fr'];
+        $platformSlug = $account->platform->slug;
+        $baseContent = $post->getContentForPlatform($platformSlug);
         $parts = [];
 
         foreach ($languages as $lang) {
             if ($lang === 'fr') {
-                $text = $post->content_fr;
+                $text = $baseContent;
             } else {
-                $text = $this->getTranslation($post, $lang);
+                $text = $this->getTranslation($post, $lang, $platformSlug);
             }
 
             if ($text) {
@@ -94,22 +96,24 @@ class PublishingService
     /**
      * Get a translation for a specific language, from cache or by translating.
      */
-    private function getTranslation(Post $post, string $lang): ?string
+    private function getTranslation(Post $post, string $lang, ?string $platformSlug = null): ?string
     {
         $translations = $post->translations ?? [];
+        $cacheKey = $platformSlug ? "{$platformSlug}_{$lang}" : $lang;
 
         // Check cached translation
-        if (! empty($translations[$lang])) {
-            return $translations[$lang];
+        if (! empty($translations[$cacheKey])) {
+            return $translations[$cacheKey];
         }
 
-        // Backward compat: check content_en for English
-        if ($lang === 'en' && ! empty($post->content_en)) {
+        // Backward compat: check content_en for English (only when no platform-specific content)
+        if ($lang === 'en' && ! $platformSlug && ! empty($post->content_en)) {
             return $post->content_en;
         }
 
         // Auto-translate if enabled
-        if (! $post->auto_translate || empty($post->content_fr)) {
+        $sourceText = $platformSlug ? $post->getContentForPlatform($platformSlug) : $post->content_fr;
+        if (! $post->auto_translate || empty($sourceText)) {
             return null;
         }
 
@@ -118,11 +122,10 @@ class PublishingService
             return null;
         }
 
-        $translated = $this->translationService->translate($post->content_fr, 'fr', $lang, $apiKey);
+        $translated = $this->translationService->translate($sourceText, 'fr', $lang, $apiKey);
 
         if ($translated) {
-            // Cache in translations JSON
-            $translations[$lang] = $translated;
+            $translations[$cacheKey] = $translated;
             $post->update(['translations' => $translations]);
         }
 

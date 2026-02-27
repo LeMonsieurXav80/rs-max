@@ -13,6 +13,7 @@ class Post extends Model
         'content_fr',
         'content_en',
         'translations',
+        'platform_contents',
         'hashtags',
         'auto_translate',
         'media',
@@ -30,6 +31,7 @@ class Post extends Model
         return [
             'media' => 'array',
             'translations' => 'array',
+            'platform_contents' => 'array',
             'auto_translate' => 'boolean',
             'scheduled_at' => 'datetime',
             'published_at' => 'datetime',
@@ -54,6 +56,13 @@ class Post extends Model
     public function scopeReadyToPublish($query)
     {
         return $query->scheduled()->where('scheduled_at', '<=', now());
+    }
+
+    public function getContentForPlatform(string $slug): string
+    {
+        $contents = $this->platform_contents ?? [];
+
+        return ! empty($contents[$slug]) ? $contents[$slug] : $this->content_fr;
     }
 
     public function getContentPreviewAttribute(): string

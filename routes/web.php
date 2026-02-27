@@ -30,6 +30,8 @@ Route::middleware(['auth', 'verified'])->group(function () {
 
     // AI Assist (must be before posts resource to avoid route conflict)
     Route::post('posts/ai-assist', [AiAssistController::class, 'generate'])->name('posts.aiAssist');
+    Route::post('posts/ai-assist-platforms', [AiAssistController::class, 'generateForPlatforms'])->name('posts.aiAssistPlatforms');
+    Route::post('posts/ai-assist-media', [AiAssistController::class, 'generateFromMedia'])->name('posts.aiAssistMedia');
 
     // Posts (resource CRUD)
     Route::resource('posts', PostController::class);

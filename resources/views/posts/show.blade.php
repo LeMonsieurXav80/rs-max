@@ -93,11 +93,33 @@
                 </div>
 
                 <div class="space-y-6">
-                    {{-- Contenu français --}}
+                    {{-- Contenu par défaut --}}
                     <div>
-                        <h3 class="text-sm font-medium text-gray-500 mb-2">Contenu français</h3>
+                        <h3 class="text-sm font-medium text-gray-500 mb-2">Contenu par défaut</h3>
                         <div class="text-sm text-gray-900 whitespace-pre-line bg-gray-50 rounded-xl p-4 leading-relaxed">{{ $post->content_fr }}</div>
                     </div>
+
+                    {{-- Contenu par plateforme --}}
+                    @if($post->platform_contents)
+                        @php
+                            $platformLabels = [
+                                'facebook' => 'Facebook', 'instagram' => 'Instagram',
+                                'threads' => 'Threads', 'twitter' => 'Twitter / X',
+                                'telegram' => 'Telegram', 'youtube' => 'YouTube',
+                            ];
+                        @endphp
+                        @foreach($post->platform_contents as $slug => $text)
+                            @if($text)
+                                <div>
+                                    <h3 class="text-sm font-medium text-gray-500 mb-2 flex items-center gap-2">
+                                        <x-platform-icon :platform="$slug" size="sm" />
+                                        Contenu {{ $platformLabels[$slug] ?? ucfirst($slug) }}
+                                    </h3>
+                                    <div class="text-sm text-gray-900 whitespace-pre-line bg-gray-50 rounded-xl p-4 leading-relaxed">{{ $text }}</div>
+                                </div>
+                            @endif
+                        @endforeach
+                    @endif
 
                     {{-- Traductions --}}
                     @php
