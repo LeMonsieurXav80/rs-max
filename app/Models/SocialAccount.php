@@ -21,6 +21,7 @@ class SocialAccount extends Model
         'branding',
         'show_branding',
         'is_active',
+        'persona_id',
         'last_used_at',
         'last_history_import_at',
     ];
@@ -48,6 +49,11 @@ class SocialAccount extends Model
         return $this->belongsTo(Platform::class);
     }
 
+    public function persona(): BelongsTo
+    {
+        return $this->belongsTo(Persona::class);
+    }
+
     public function postPlatforms(): HasMany
     {
         return $this->hasMany(PostPlatform::class);
@@ -56,5 +62,12 @@ class SocialAccount extends Model
     public function externalPosts(): HasMany
     {
         return $this->hasMany(ExternalPost::class);
+    }
+
+    public function rssFeeds(): BelongsToMany
+    {
+        return $this->belongsToMany(RssFeed::class, 'rss_feed_social_account')
+            ->withPivot('persona_id', 'auto_post', 'post_frequency', 'max_posts_per_day')
+            ->withTimestamps();
     }
 }

@@ -20,6 +20,7 @@ class Post extends Model
         'location_name',
         'location_id',
         'status',
+        'source_type',
         'scheduled_at',
         'published_at',
     ];

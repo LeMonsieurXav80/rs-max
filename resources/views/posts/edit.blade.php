@@ -489,10 +489,45 @@
 
             <div class="space-y-6">
                 {{-- Contenu français --}}
-                <div>
-                    <label for="content_fr" class="block text-sm font-medium text-gray-700 mb-2">
-                        Contenu français <span class="text-red-500">*</span>
-                    </label>
+                <div x-data="{ aiLoading: false, aiError: '' }">
+                    <div class="flex items-center justify-between mb-2">
+                        <label for="content_fr" class="block text-sm font-medium text-gray-700">
+                            Contenu français <span class="text-red-500">*</span>
+                        </label>
+                        <button type="button"
+                                @click="
+                                    const checkedAccount = document.querySelector('input[name=\'accounts[]\']:checked');
+                                    if (!checkedAccount) { aiError = 'Sélectionnez au moins un compte.'; setTimeout(() => aiError = '', 3000); return; }
+                                    aiLoading = true; aiError = '';
+                                    const textarea = document.getElementById('content_fr');
+                                    try {
+                                        const resp = await fetch('{{ route('posts.aiAssist') }}', {
+                                            method: 'POST',
+                                            headers: { 'Content-Type': 'application/json', 'X-CSRF-TOKEN': document.querySelector('meta[name=csrf-token]').content, 'Accept': 'application/json' },
+                                            body: JSON.stringify({ content: textarea.value, account_id: parseInt(checkedAccount.value) }),
+                                        });
+                                        const data = await resp.json();
+                                        if (data.content) { textarea.value = data.content; textarea.dispatchEvent(new Event('input')); }
+                                        else if (data.error) { aiError = data.error; setTimeout(() => aiError = '', 5000); }
+                                    } catch(e) { aiError = 'Erreur de connexion'; setTimeout(() => aiError = '', 3000); }
+                                    aiLoading = false;
+                                "
+                                :disabled="aiLoading"
+                                class="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-purple-600 bg-purple-50 rounded-lg hover:bg-purple-100 transition-colors disabled:opacity-50">
+                            <template x-if="!aiLoading">
+                                <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1.5">
+                                    <path stroke-linecap="round" stroke-linejoin="round" d="M9.813 15.904 9 18.75l-.813-2.846a4.5 4.5 0 0 0-3.09-3.09L2.25 12l2.846-.813a4.5 4.5 0 0 0 3.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 0 0 3.09 3.09L15.75 12l-2.846.813a4.5 4.5 0 0 0-3.09 3.09ZM18.259 8.715 18 9.75l-.259-1.035a3.375 3.375 0 0 0-2.455-2.456L14.25 6l1.036-.259a3.375 3.375 0 0 0 2.455-2.456L18 2.25l.259 1.035a3.375 3.375 0 0 0 2.455 2.456L21.75 6l-1.036.259a3.375 3.375 0 0 0-2.455 2.456Z" />
+                                </svg>
+                            </template>
+                            <template x-if="aiLoading">
+                                <svg class="w-3.5 h-3.5 animate-spin" fill="none" viewBox="0 0 24 24">
+                                    <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                                    <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path>
+                                </svg>
+                            </template>
+                            <span x-text="aiLoading ? 'Génération...' : 'Générer avec IA'"></span>
+                        </button>
+                    </div>
                     <textarea
                         id="content_fr"
                         name="content_fr"
@@ -501,6 +536,7 @@
                         class="w-full rounded-xl border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 text-sm placeholder-gray-400 transition-colors"
                         placeholder="Rédigez votre publication en français..."
                     >{{ old('content_fr', $post->content_fr) }}</textarea>
+                    <p x-show="aiError" x-text="aiError" class="mt-1.5 text-sm text-red-600" x-cloak></p>
                     @error('content_fr')
                         <p class="mt-1.5 text-sm text-red-600">{{ $message }}</p>
                     @enderror
