@@ -3,6 +3,7 @@ FROM php:8.3-fpm-alpine
 
 # Build arguments for git version info (Coolify provides SOURCE_COMMIT automatically)
 ARG SOURCE_COMMIT=unknown
+ENV SOURCE_COMMIT=${SOURCE_COMMIT}
 
 # Install system dependencies
 RUN apk add --no-cache \

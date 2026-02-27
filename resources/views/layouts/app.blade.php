@@ -298,19 +298,26 @@
 
                 {{-- Footer with git version --}}
                 @php
-                    // Try reading from files first (production), fallback to exec (local dev)
+                    // 1. File from Docker build, 2. Env var (Coolify), 3. Local git
                     $versionFile = storage_path('app/git-version.txt');
                     $dateFile = storage_path('app/git-date.txt');
 
-                    $gitCommit = file_exists($versionFile)
-                        ? trim(file_get_contents($versionFile))
-                        : trim(exec('git rev-parse --short HEAD 2>/dev/null'));
+                    $gitCommit = null;
+                    if (file_exists($versionFile) && trim(file_get_contents($versionFile)) !== 'unknown') {
+                        $gitCommit = trim(file_get_contents($versionFile));
+                    }
+                    if (!$gitCommit && !empty(env('SOURCE_COMMIT'))) {
+                        $gitCommit = substr(env('SOURCE_COMMIT'), 0, 7);
+                    }
+                    if (!$gitCommit) {
+                        $gitCommit = trim(exec('git rev-parse --short HEAD 2>/dev/null') ?: '');
+                    }
 
                     $gitDate = file_exists($dateFile)
                         ? trim(file_get_contents($dateFile))
-                        : trim(exec('git log -1 --format=%ci 2>/dev/null'));
+                        : trim(exec('git log -1 --format=%ci 2>/dev/null') ?: '');
                 @endphp
-                @if($gitCommit && $gitCommit !== 'unknown')
+                @if($gitCommit)
                     <footer class="px-6 lg:px-8 pb-4">
                         <p class="text-xs text-gray-400 text-right">
                             v. {{ $gitCommit }}
