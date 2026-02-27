@@ -82,6 +82,19 @@ php artisan db:seed --class=PlatformSeeder --force 2>/dev/null || true
 echo "Starting video conversion in background..."
 nohup php artisan media:convert-videos >> /var/www/html/storage/logs/video-convert.log 2>&1 &
 
+# Ensure git version files exist (fix if build didn't capture them)
+VERSION_FILE="/var/www/html/storage/app/git-version.txt"
+DATE_FILE="/var/www/html/storage/app/git-date.txt"
+if [ ! -f "$VERSION_FILE" ] || [ "$(cat $VERSION_FILE)" = "unknown" ]; then
+    if [ -n "$SOURCE_COMMIT" ] && [ "$SOURCE_COMMIT" != "unknown" ]; then
+        echo "$SOURCE_COMMIT" | cut -c1-7 > "$VERSION_FILE"
+        echo "Git version set from SOURCE_COMMIT: $(cat $VERSION_FILE)"
+    fi
+fi
+if [ ! -f "$DATE_FILE" ]; then
+    date '+%Y-%m-%d %H:%M:%S %z' > "$DATE_FILE"
+fi
+
 # Clear and optimize caches
 echo "Optimizing application..."
 php artisan config:cache

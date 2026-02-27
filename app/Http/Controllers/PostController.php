@@ -71,6 +71,25 @@ class PostController extends Controller
             $query->where('status', $request->input('status'));
         }
 
+        // Filter by media type if provided
+        $applyMediaTypeFilter = function ($q) use ($request) {
+            if (! $request->filled('media_type')) {
+                return;
+            }
+            match ($request->input('media_type')) {
+                'photo' => $q->whereNotNull('media')
+                    ->whereRaw("JSON_LENGTH(media) = 1")
+                    ->whereRaw("JSON_EXTRACT(media, '$[0].mimetype') LIKE 'image/%'"),
+                'video' => $q->whereNotNull('media')
+                    ->whereRaw("JSON_LENGTH(media) = 1")
+                    ->whereRaw("JSON_EXTRACT(media, '$[0].mimetype') LIKE 'video/%'"),
+                'carousel' => $q->whereNotNull('media')
+                    ->whereRaw("JSON_LENGTH(media) > 1"),
+                default => null,
+            };
+        };
+        $applyMediaTypeFilter($query);
+
         // List view: paginated
         $posts = (clone $query)->orderByDesc('created_at')->paginate(15)->withQueryString();
 
@@ -92,6 +111,7 @@ class PostController extends Controller
         if ($request->filled('status')) {
             $calendarQuery->where('status', $request->input('status'));
         }
+        $applyMediaTypeFilter($calendarQuery);
 
         $calendarPosts = $calendarQuery
             ->where(function ($q) use ($startOfMonth, $endOfMonth) {
