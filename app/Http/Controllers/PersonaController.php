@@ -40,11 +40,12 @@ class PersonaController extends Controller
             'system_prompt' => 'required|string|max:5000',
             'output_instructions' => 'nullable|string|max:2000',
             'tone' => 'nullable|string|max:100',
-            'language' => 'required|string|max:10',
+            'language' => 'nullable|string|max:10',
             'is_active' => 'boolean',
         ]);
 
         $validated['is_active'] = $request->boolean('is_active', true);
+        $validated['language'] = $validated['language'] ?? 'fr';
 
         Persona::create($validated);
 
@@ -72,11 +73,12 @@ class PersonaController extends Controller
             'system_prompt' => 'required|string|max:5000',
             'output_instructions' => 'nullable|string|max:2000',
             'tone' => 'nullable|string|max:100',
-            'language' => 'required|string|max:10',
+            'language' => 'nullable|string|max:10',
             'is_active' => 'boolean',
         ]);
 
         $validated['is_active'] = $request->boolean('is_active', true);
+        $validated['language'] = $validated['language'] ?? $persona->language;
 
         $persona->update($validated);
 
