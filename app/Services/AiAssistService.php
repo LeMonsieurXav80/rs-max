@@ -50,8 +50,14 @@ class AiAssistService
             }
         }
 
-        if ($persona->output_instructions) {
-            $userPrompt .= "\n\nInstructions de formatage :\n{$persona->output_instructions}";
+        if ($account) {
+            $charLimit = (int) Setting::get(
+                "platform_char_limit_{$account->platform->slug}",
+                $this->getDefaultCharLimit($account->platform->slug)
+            );
+            if ($charLimit > 0) {
+                $userPrompt .= "\n\nLe contenu ne doit pas dépasser {$charLimit} caractères (limite {$account->platform->name}).";
+            }
         }
 
         try {
@@ -91,5 +97,18 @@ class AiAssistService
 
             return null;
         }
+    }
+
+    private function getDefaultCharLimit(string $slug): int
+    {
+        return match ($slug) {
+            'twitter' => 280,
+            'facebook' => 63206,
+            'instagram' => 2200,
+            'threads' => 500,
+            'youtube' => 5000,
+            'telegram' => 4096,
+            default => 0,
+        };
     }
 }

@@ -37,8 +37,7 @@ class PersonaController extends Controller
         $validated = $request->validate([
             'name' => 'required|string|max:255',
             'description' => 'nullable|string|max:500',
-            'system_prompt' => 'required|string|max:5000',
-            'output_instructions' => 'nullable|string|max:2000',
+            'system_prompt' => 'required|string|max:10000',
             'tone' => 'nullable|string|max:100',
             'language' => 'nullable|string|max:10',
             'is_active' => 'boolean',
@@ -70,8 +69,7 @@ class PersonaController extends Controller
         $validated = $request->validate([
             'name' => 'required|string|max:255',
             'description' => 'nullable|string|max:500',
-            'system_prompt' => 'required|string|max:5000',
-            'output_instructions' => 'nullable|string|max:2000',
+            'system_prompt' => 'required|string|max:10000',
             'tone' => 'nullable|string|max:100',
             'language' => 'nullable|string|max:10',
             'is_active' => 'boolean',

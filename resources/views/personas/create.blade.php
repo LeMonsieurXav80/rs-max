@@ -71,23 +71,6 @@
 
             <hr class="border-gray-100">
 
-            {{-- Instructions de sortie --}}
-            <div>
-                <h3 class="text-sm font-semibold text-gray-900 mb-4 flex items-center gap-2">
-                    <svg class="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1.5">
-                        <path stroke-linecap="round" stroke-linejoin="round" d="M3.75 6.75h16.5M3.75 12h16.5m-16.5 5.25H12" />
-                    </svg>
-                    Instructions de sortie
-                </h3>
-                <p class="text-xs text-gray-500 mb-3">Règles de formatage pour le contenu généré (longueur max, hashtags, emojis, etc.).</p>
-                <textarea name="output_instructions" id="output_instructions" rows="4"
-                          class="w-full rounded-xl border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 text-sm font-mono"
-                          placeholder="Ex: Maximum 280 caractères. Utilise 2-3 emojis pertinents. Inclus 3 hashtags maximum. Termine par un appel à l'action.">{{ old('output_instructions') }}</textarea>
-                @error('output_instructions') <p class="mt-1 text-xs text-red-600">{{ $message }}</p> @enderror
-            </div>
-
-            <hr class="border-gray-100">
-
             {{-- Actif --}}
             <div class="flex items-center gap-3">
                 <input type="hidden" name="is_active" value="0">

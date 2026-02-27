@@ -68,8 +68,12 @@ class ContentGenerationService
         $userPrompt .= "Contenu de l'article :\n{$articleContent}\n\n";
         $userPrompt .= "Génère une publication en {$languageLabel} pour le compte \"{$account->name}\" sur {$account->platform->name}.\n";
 
-        if ($persona->output_instructions) {
-            $userPrompt .= "\nInstructions de formatage :\n{$persona->output_instructions}\n";
+        $charLimit = (int) Setting::get(
+            "platform_char_limit_{$account->platform->slug}",
+            $this->getDefaultCharLimit($account->platform->slug)
+        );
+        if ($charLimit > 0) {
+            $userPrompt .= "\nLe contenu ne doit pas dépasser {$charLimit} caractères (limite {$account->platform->name}).\n";
         }
 
         $userPrompt .= "\nInclus le lien de l'article dans la publication : {$item->url}";
@@ -112,5 +116,18 @@ class ContentGenerationService
 
             return null;
         }
+    }
+
+    private function getDefaultCharLimit(string $slug): int
+    {
+        return match ($slug) {
+            'twitter' => 280,
+            'facebook' => 63206,
+            'instagram' => 2200,
+            'threads' => 500,
+            'youtube' => 5000,
+            'telegram' => 4096,
+            default => 0,
+        };
     }
 }

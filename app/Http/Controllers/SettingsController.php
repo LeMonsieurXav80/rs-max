@@ -31,6 +31,13 @@ class SettingsController extends Controller
         'stats_twitter_max_days',
         'stats_youtube_max_days',
         'stats_threads_max_days',
+        // Platform character limits
+        'platform_char_limit_twitter',
+        'platform_char_limit_facebook',
+        'platform_char_limit_instagram',
+        'platform_char_limit_threads',
+        'platform_char_limit_youtube',
+        'platform_char_limit_telegram',
     ];
 
     private const DEFAULTS = [
@@ -56,6 +63,13 @@ class SettingsController extends Controller
         'stats_twitter_max_days' => 14,
         'stats_youtube_max_days' => 30,
         'stats_threads_max_days' => 30,
+        // Platform character limits
+        'platform_char_limit_twitter' => 280,
+        'platform_char_limit_facebook' => 63206,
+        'platform_char_limit_instagram' => 2200,
+        'platform_char_limit_threads' => 500,
+        'platform_char_limit_youtube' => 5000,
+        'platform_char_limit_telegram' => 4096,
     ];
 
     public function index(Request $request): View
@@ -104,6 +118,13 @@ class SettingsController extends Controller
             'stats_twitter_max_days' => 'required|integer|min:1|max:365',
             'stats_youtube_max_days' => 'required|integer|min:1|max:365',
             'stats_threads_max_days' => 'required|integer|min:1|max:365',
+            // Platform character limits
+            'platform_char_limit_twitter' => 'required|integer|min:1|max:100000',
+            'platform_char_limit_facebook' => 'required|integer|min:1|max:100000',
+            'platform_char_limit_instagram' => 'required|integer|min:1|max:100000',
+            'platform_char_limit_threads' => 'required|integer|min:1|max:100000',
+            'platform_char_limit_youtube' => 'required|integer|min:1|max:100000',
+            'platform_char_limit_telegram' => 'required|integer|min:1|max:100000',
         ]);
 
         // Handle OpenAI key separately (encrypted storage)
@@ -116,6 +137,6 @@ class SettingsController extends Controller
             Setting::set($key, $value);
         }
 
-        return redirect()->route('settings.index')->with('status', 'settings-updated');
+        return redirect()->route('settings.index', ['tab' => $request->input('_active_tab', 'ia')])->with('status', 'settings-updated');
     }
 }

@@ -11,7 +11,6 @@ class Persona extends Model
         'name',
         'description',
         'system_prompt',
-        'output_instructions',
         'tone',
         'language',
         'is_active',
