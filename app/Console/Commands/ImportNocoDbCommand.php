@@ -161,7 +161,6 @@ class ImportNocoDbCommand extends Command
                             'languages' => [$language],
                             'branding' => $branding,
                             'show_branding' => $channelConfig['show_branding'] ?? $showBranding,
-                            'is_active' => true,
                         ]
                     );
                 }
@@ -195,7 +194,6 @@ class ImportNocoDbCommand extends Command
                         'languages' => [$language],
                         'branding' => $branding,
                         'show_branding' => $mainConfig['show_branding'] ?? $showBranding,
-                        'is_active' => true,
                     ]
                 );
             }

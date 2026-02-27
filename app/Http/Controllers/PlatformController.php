@@ -136,12 +136,11 @@ class PlatformController extends Controller
                 'name' => $botName,
                 'credentials' => $credentials,
                 'languages' => [$user->default_language ?? 'fr'],
-                'is_active' => true,
             ]);
         }
 
         if (! $account->users()->where('user_id', $user->id)->exists()) {
-            $account->users()->attach($user->id);
+            $account->users()->attach($user->id, ['is_active' => true]);
         }
 
         // Also update bot_name on any existing channels with this token
@@ -294,13 +293,12 @@ class PlatformController extends Controller
                 'credentials' => $credentials,
                 'profile_picture_url' => $profilePictureUrl,
                 'languages' => [$user->default_language ?? 'fr'],
-                'is_active' => true,
             ]);
         }
 
         // Link to current user
         if (! $account->users()->where('user_id', $user->id)->exists()) {
-            $account->users()->attach($user->id);
+            $account->users()->attach($user->id, ['is_active' => true]);
         }
 
         return redirect()->route('platforms.telegram')
@@ -336,11 +334,10 @@ class PlatformController extends Controller
             'name' => $validated['name'],
             'credentials' => $credentials,
             'languages' => [$user->default_language ?? 'fr'],
-            'is_active' => true,
         ]);
 
         if (! $account->users()->where('user_id', $user->id)->exists()) {
-            $account->users()->attach($user->id);
+            $account->users()->attach($user->id, ['is_active' => true]);
         }
 
         return redirect()->route('platforms.twitter')

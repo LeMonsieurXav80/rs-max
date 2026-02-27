@@ -54,7 +54,7 @@
                             @foreach($platformAccounts as $account)
                                 <div
                                     class="bg-white rounded-2xl shadow-sm border border-gray-100 p-6 hover:shadow-md transition-shadow"
-                                    x-data="{ active: {{ $account->is_active ? 'true' : 'false' }}, toggling: false }"
+                                    x-data="{ active: {{ $account->user_is_active ? 'true' : 'false' }}, toggling: false }"
                                 >
                                     <div class="flex items-start justify-between gap-4">
                                         {{-- Profile picture + Account info --}}

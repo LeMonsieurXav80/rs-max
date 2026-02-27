@@ -21,15 +21,23 @@ class SocialAccountController extends Controller
         $user = $request->user();
 
         if ($user->is_admin) {
-            $query = SocialAccount::with('platform', 'users');
+            // Admin sees all accounts; load their own pivot to get per-user is_active
+            $accounts = SocialAccount::with('platform', 'users')->orderBy('platform_id')->orderBy('name')->get();
+
+            // For each account, attach admin's is_active from pivot (or default true)
+            foreach ($accounts as $account) {
+                $pivot = $account->users->firstWhere('id', $user->id)?->pivot;
+                $account->setAttribute('user_is_active', $pivot ? (bool) $pivot->is_active : true);
+            }
         } else {
-            $query = $user->socialAccounts()->with('platform', 'users');
+            $accounts = $user->socialAccounts()->with('platform', 'users')->orderBy('platform_id')->orderBy('name')->get();
+
+            foreach ($accounts as $account) {
+                $account->setAttribute('user_is_active', (bool) $account->pivot->is_active);
+            }
         }
 
-        $accounts = $query->orderBy('platform_id')
-            ->orderBy('name')
-            ->get()
-            ->groupBy(fn (SocialAccount $account) => $account->platform->name);
+        $accounts = $accounts->groupBy(fn (SocialAccount $account) => $account->platform->name);
 
         return view('accounts.index', compact('accounts'));
     }
@@ -107,13 +115,12 @@ class SocialAccountController extends Controller
                 'languages'    => $validated['languages'],
                 'branding'     => $validated['branding'] ?? null,
                 'show_branding' => $validated['show_branding'] ?? false,
-                'is_active'    => true,
             ]);
         }
 
-        // Link to current user
+        // Link to current user with is_active = true
         if (! $account->users()->where('user_id', $user->id)->exists()) {
-            $account->users()->attach($user->id);
+            $account->users()->attach($user->id, ['is_active' => true]);
         }
 
         return redirect()->route('accounts.index')
@@ -226,18 +233,24 @@ class SocialAccountController extends Controller
     public function toggleActive(Request $request, int $id): JsonResponse
     {
         $account = SocialAccount::findOrFail($id);
+        $user = $request->user();
 
-        if (! $this->userCanAccess($request->user(), $account)) {
+        if (! $this->userCanAccess($user, $account)) {
             return response()->json(['error' => 'Unauthorized.'], 403);
         }
 
-        $account->is_active = ! $account->is_active;
-        $account->save();
+        // Ensure pivot entry exists (admin may not have one yet)
+        if (! $account->users()->where('user_id', $user->id)->exists()) {
+            $account->users()->attach($user->id, ['is_active' => true]);
+        }
+
+        $currentActive = (bool) $account->users()->where('user_id', $user->id)->first()->pivot->is_active;
+        $account->users()->updateExistingPivot($user->id, ['is_active' => ! $currentActive]);
 
         return response()->json([
             'success'   => true,
-            'is_active' => $account->is_active,
-            'message'   => $account->is_active
+            'is_active' => ! $currentActive,
+            'message'   => ! $currentActive
                 ? 'Compte activé.'
                 : 'Compte désactivé.',
         ]);

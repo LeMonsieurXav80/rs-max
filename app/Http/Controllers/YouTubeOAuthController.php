@@ -182,11 +182,10 @@ class YouTubeOAuthController extends Controller
                 'expires_in' => $channelData['expires_in'],
             ],
             'profile_picture_url' => $channelData['channel_thumbnail'],
-            'is_active' => true,
         ]);
 
         // Attach to user
-        $account->users()->attach($user->id);
+        $account->users()->attach($user->id, ['is_active' => true]);
 
         session()->forget('youtube_oauth_channel');
 

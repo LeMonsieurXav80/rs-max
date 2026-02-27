@@ -3,7 +3,6 @@
 namespace App\Http\Controllers;
 
 use App\Models\Post;
-use App\Models\SocialAccount;
 use Illuminate\Http\Request;
 use Illuminate\View\View;
 
@@ -17,45 +16,50 @@ class DashboardController extends Controller
     {
         $user = $request->user();
         $isAdmin = $user->is_admin;
+        $userId = $user->id;
 
         // Build base queries - admin sees all, regular user sees own data
         $postQuery = Post::query();
 
         if (! $isAdmin) {
-            $postQuery->where('user_id', $user->id);
+            $postQuery->where('user_id', $userId);
         }
 
-        $activeAccountsCount = $isAdmin
-            ? SocialAccount::where('is_active', true)->count()
-            : $user->activeSocialAccounts()->count();
+        $activeAccountsCount = $user->activeSocialAccounts()->count();
 
         // Stats
         $scheduledCount = (clone $postQuery)->where('status', 'scheduled')->count();
         $publishedCount = (clone $postQuery)->where('status', 'published')->count();
         $failedCount = (clone $postQuery)->where('status', 'failed')->count();
         $draftCount = (clone $postQuery)->where('status', 'draft')->count();
-        // $activeAccountsCount already computed above
 
-        // Only load postPlatforms whose social account is active
-        $activePostPlatforms = fn ($q) => $q->whereHas('socialAccount', fn ($sq) => $sq->where('is_active', true));
+        // Only load postPlatforms whose social account is active for THIS USER
+        $activePostPlatforms = fn ($q) => $q->whereHas('socialAccount', function ($sq) use ($userId) {
+            $sq->whereHas('users', fn ($uq) => $uq->where('social_account_user.user_id', $userId)->where('social_account_user.is_active', true));
+        });
+
+        // Only show posts with at least one active account for this user
+        $hasActiveAccount = fn ($q) => $q->whereHas('postPlatforms', function ($ppq) use ($userId) {
+            $ppq->whereHas('socialAccount', function ($sq) use ($userId) {
+                $sq->whereHas('users', fn ($uq) => $uq->where('social_account_user.user_id', $userId)->where('social_account_user.is_active', true));
+            });
+        });
 
         // Next 5 scheduled posts (upcoming)
-        $upcomingPosts = (clone $postQuery)
+        $upcomingQuery = (clone $postQuery)
             ->where('status', 'scheduled')
             ->whereNotNull('scheduled_at')
             ->where('scheduled_at', '>', now())
-            ->with(['postPlatforms' => $activePostPlatforms, 'postPlatforms.platform'])
-            ->orderBy('scheduled_at', 'asc')
-            ->limit(5)
-            ->get();
+            ->with(['postPlatforms' => $activePostPlatforms, 'postPlatforms.platform']);
+        $hasActiveAccount($upcomingQuery);
+        $upcomingPosts = $upcomingQuery->orderBy('scheduled_at', 'asc')->limit(5)->get();
 
         // Last 5 published posts (recent)
-        $recentPosts = (clone $postQuery)
+        $recentQuery = (clone $postQuery)
             ->where('status', 'published')
-            ->with(['postPlatforms' => $activePostPlatforms, 'postPlatforms.platform'])
-            ->orderBy('published_at', 'desc')
-            ->limit(5)
-            ->get();
+            ->with(['postPlatforms' => $activePostPlatforms, 'postPlatforms.platform']);
+        $hasActiveAccount($recentQuery);
+        $recentPosts = $recentQuery->orderBy('published_at', 'desc')->limit(5)->get();
 
         return view('dashboard', compact(
             'scheduledCount',

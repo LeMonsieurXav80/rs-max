@@ -42,7 +42,7 @@ class FollowersService
      */
     public function syncAllActive(): array
     {
-        $accounts = SocialAccount::where('is_active', true)->with('platform')->get();
+        $accounts = SocialAccount::with('platform')->get();
         $results = [];
 
         foreach ($accounts as $account) {

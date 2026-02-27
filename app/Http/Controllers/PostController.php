@@ -37,9 +37,19 @@ class PostController extends Controller
     public function index(Request $request): View
     {
         $user = $request->user();
+        $userId = $user->id;
 
-        // Only load postPlatforms whose social account is active
-        $activePostPlatforms = fn ($q) => $q->whereHas('socialAccount', fn ($sq) => $sq->where('is_active', true));
+        // Only load postPlatforms whose social account is active FOR THIS USER
+        $activePostPlatforms = fn ($q) => $q->whereHas('socialAccount', function ($sq) use ($userId) {
+            $sq->whereHas('users', fn ($uq) => $uq->where('social_account_user.user_id', $userId)->where('social_account_user.is_active', true));
+        });
+
+        // Only show posts that have at least one active account for this user
+        $hasActiveAccount = fn ($q) => $q->whereHas('postPlatforms', function ($ppq) use ($userId) {
+            $ppq->whereHas('socialAccount', function ($sq) use ($userId) {
+                $sq->whereHas('users', fn ($uq) => $uq->where('social_account_user.user_id', $userId)->where('social_account_user.is_active', true));
+            });
+        });
 
         $query = Post::query()->with([
             'postPlatforms' => $activePostPlatforms,
@@ -52,6 +62,9 @@ class PostController extends Controller
         if (! $user->is_admin) {
             $query->where('user_id', $user->id);
         }
+
+        // Only show posts with at least one active account for this user
+        $hasActiveAccount($query);
 
         // Filter by status if provided
         if ($request->filled('status')) {
@@ -75,6 +88,7 @@ class PostController extends Controller
         if (! $user->is_admin) {
             $calendarQuery->where('user_id', $user->id);
         }
+        $hasActiveAccount($calendarQuery);
         if ($request->filled('status')) {
             $calendarQuery->where('status', $request->input('status'));
         }
@@ -103,19 +117,12 @@ class PostController extends Controller
     {
         $user = $request->user();
 
-        // Admin sees all active accounts, regular user sees only their own
-        if ($user->is_admin) {
-            $accounts = SocialAccount::with('platform')
-                ->where('is_active', true)
-                ->orderBy('name')
-                ->get()
-                ->groupBy(fn (SocialAccount $account) => $account->platform->slug);
-        } else {
-            $accounts = $user->activeSocialAccounts()
-                ->with('platform')
-                ->get()
-                ->groupBy(fn (SocialAccount $account) => $account->platform->slug);
-        }
+        // Both admin and regular user see their own active accounts (per-user is_active)
+        $accounts = $user->activeSocialAccounts()
+            ->with('platform')
+            ->orderBy('name')
+            ->get()
+            ->groupBy(fn (SocialAccount $account) => $account->platform->slug);
 
         $platforms = Platform::where('is_active', true)->get();
         $defaultAccountIds = $user->default_accounts ?? [];
@@ -148,13 +155,9 @@ class PostController extends Controller
         $user = $request->user();
         $publishNow = ! empty($validated['publish_now']);
 
-        // Verify all selected accounts are accessible and active (unless admin)
+        // Verify all selected accounts are accessible and active for this user
         $accountIds = $validated['accounts'];
-        if ($user->is_admin) {
-            $validAccounts = SocialAccount::whereIn('id', $accountIds)->where('is_active', true)->get();
-        } else {
-            $validAccounts = $user->activeSocialAccounts()->whereIn('social_accounts.id', $accountIds)->get();
-        }
+        $validAccounts = $user->activeSocialAccounts()->whereIn('social_accounts.id', $accountIds)->get();
 
         if ($validAccounts->count() !== count($accountIds)) {
             if ($request->expectsJson()) {
@@ -242,8 +245,15 @@ class PostController extends Controller
      */
     public function show(Request $request, int $id): View
     {
+        $user = $request->user();
+        $userId = $user->id;
+
         $post = Post::with([
-            'postPlatforms' => fn ($q) => $q->whereHas('socialAccount', fn ($sq) => $sq->where('is_active', true)),
+            'postPlatforms' => function ($q) use ($userId) {
+                $q->whereHas('socialAccount', function ($sq) use ($userId) {
+                    $sq->whereHas('users', fn ($uq) => $uq->where('social_account_user.user_id', $userId)->where('social_account_user.is_active', true));
+                });
+            },
             'postPlatforms.platform',
             'postPlatforms.socialAccount',
             'postPlatforms.logs',
@@ -251,7 +261,7 @@ class PostController extends Controller
         ])->findOrFail($id);
 
         // Regular users can only view their own posts
-        if (! $request->user()->is_admin && $post->user_id !== $request->user()->id) {
+        if (! $user->is_admin && $post->user_id !== $user->id) {
             abort(403, 'Unauthorized.');
         }
 
@@ -272,19 +282,12 @@ class PostController extends Controller
 
         $user = $request->user();
 
-        // Admin sees all active accounts, regular user sees only their own
-        if ($user->is_admin) {
-            $accounts = SocialAccount::with('platform')
-                ->where('is_active', true)
-                ->orderBy('name')
-                ->get()
-                ->groupBy(fn (SocialAccount $account) => $account->platform->slug);
-        } else {
-            $accounts = $user->activeSocialAccounts()
-                ->with('platform')
-                ->get()
-                ->groupBy(fn (SocialAccount $account) => $account->platform->slug);
-        }
+        // Both admin and regular user see their own active accounts (per-user is_active)
+        $accounts = $user->activeSocialAccounts()
+            ->with('platform')
+            ->orderBy('name')
+            ->get()
+            ->groupBy(fn (SocialAccount $account) => $account->platform->slug);
 
         $platforms = Platform::where('is_active', true)->get();
 
@@ -331,13 +334,9 @@ class PostController extends Controller
         $user = $request->user();
         $publishNow = ! empty($validated['publish_now']);
 
-        // Verify all selected accounts are accessible and active (unless admin)
+        // Verify all selected accounts are accessible and active for this user
         $accountIds = $validated['accounts'];
-        if ($user->is_admin) {
-            $validAccounts = SocialAccount::whereIn('id', $accountIds)->where('is_active', true)->get();
-        } else {
-            $validAccounts = $user->activeSocialAccounts()->whereIn('social_accounts.id', $accountIds)->get();
-        }
+        $validAccounts = $user->activeSocialAccounts()->whereIn('social_accounts.id', $accountIds)->get();
 
         if ($validAccounts->count() !== count($accountIds)) {
             return back()->withErrors(['accounts' => 'One or more selected accounts are invalid.'])->withInput();
@@ -451,11 +450,14 @@ class PostController extends Controller
         // Get platform filter if specified
         $platformSlug = $request->input('platform');
 
+        $userId = $request->user()->id;
         $postPlatforms = $post->postPlatforms()
             ->with(['platform', 'socialAccount'])
             ->where('status', 'published')
             ->whereNotNull('external_id')
-            ->whereHas('socialAccount', fn ($q) => $q->where('is_active', true))
+            ->whereHas('socialAccount', function ($q) use ($userId) {
+                $q->whereHas('users', fn ($uq) => $uq->where('social_account_user.user_id', $userId)->where('social_account_user.is_active', true));
+            })
             ->when($platformSlug, fn ($q) => $q->whereHas('platform', fn ($pq) => $pq->where('slug', $platformSlug)))
             ->get();
 

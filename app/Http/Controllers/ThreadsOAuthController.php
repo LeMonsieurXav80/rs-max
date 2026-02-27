@@ -109,13 +109,12 @@ class ThreadsOAuthController extends Controller
                         'access_token' => $longLivedToken,
                     ],
                     'languages' => [$user->default_language ?? 'fr'],
-                    'is_active' => true,
                 ]);
             }
 
             // Link to current user
             if (! $account->users()->where('user_id', $user->id)->exists()) {
-                $account->users()->attach($user->id);
+                $account->users()->attach($user->id, ['is_active' => true]);
             }
 
             session()->forget('threads_oauth_state');
