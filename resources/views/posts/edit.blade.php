@@ -169,8 +169,9 @@
                             'threads' => 'Threads',
                             'twitter' => 'Twitter / X',
                             'telegram' => 'Telegram',
+                            'youtube' => 'YouTube',
                         ];
-                        $platformOrder = ['facebook', 'instagram', 'threads', 'twitter', 'telegram'];
+                        $platformOrder = ['facebook', 'instagram', 'threads', 'twitter', 'telegram', 'youtube'];
                     @endphp
 
                     @foreach($platformOrder as $slug)

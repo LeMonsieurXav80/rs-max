@@ -11,6 +11,7 @@ use App\Services\Adapters\PlatformAdapterInterface;
 use App\Services\Adapters\TelegramAdapter;
 use App\Services\Adapters\ThreadsAdapter;
 use App\Services\Adapters\TwitterAdapter;
+use App\Services\Adapters\YouTubeAdapter;
 use App\Services\PublishingService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -259,6 +260,7 @@ class PublishController extends Controller
             'instagram' => new InstagramAdapter(),
             'threads' => new ThreadsAdapter(),
             'twitter' => new TwitterAdapter(),
+            'youtube' => new YouTubeAdapter(),
             default => null,
         };
     }
