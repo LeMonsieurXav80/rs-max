@@ -154,7 +154,13 @@ class AiAssistController extends Controller
             $validated['content'] ?? ''
         );
 
-        if (! $result) {
+        if ($result === 'refused') {
+            return response()->json([
+                'error' => 'L\'IA a refusé d\'analyser cette image (politique de contenu OpenAI). Essayez avec une autre photo.',
+            ], 422);
+        }
+
+        if (! $result || ! is_array($result)) {
             return response()->json([
                 'error' => 'Impossible de générer le contenu. Vérifiez la clé API OpenAI dans les paramètres.',
             ], 422);

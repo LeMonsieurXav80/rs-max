@@ -220,7 +220,7 @@ class AiAssistService
      * Generate platform-specific content by analyzing images/video frames via OpenAI Vision API.
      * $imageDataUrls is an array of base64 data URLs ("data:image/jpeg;base64,...").
      */
-    public function generateFromMediaForPlatforms(array $imageDataUrls, array $platformSlugs, Persona $persona, ?SocialAccount $account = null, string $content = ''): ?array
+    public function generateFromMediaForPlatforms(array $imageDataUrls, array $platformSlugs, Persona $persona, ?SocialAccount $account = null, string $content = ''): null|array|string
     {
         $apiKey = Setting::getEncrypted('openai_api_key');
         if (! $apiKey) {
@@ -376,7 +376,7 @@ class AiAssistService
 
             Log::error('AiAssistService: All Vision models failed or refused');
 
-            return null;
+            return 'refused';
 
         } catch (\Exception $e) {
             Log::error('AiAssistService: Vision exception', ['error' => $e->getMessage()]);
