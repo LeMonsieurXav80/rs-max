@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Models\Setting;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Http;
 use Illuminate\View\View;
 
 class SettingsController extends Controller
@@ -95,7 +96,35 @@ class SettingsController extends Controller
 
         $hasOpenaiKey = (bool) Setting::getEncrypted('openai_api_key');
 
-        return view('settings.index', compact('settings', 'hasOpenaiKey'));
+        // Fetch available OpenAI models if API key is configured
+        $availableModels = [];
+        if ($hasOpenaiKey) {
+            $availableModels = rescue(function () {
+                $apiKey = Setting::getEncrypted('openai_api_key');
+                $response = Http::withHeaders([
+                    'Authorization' => "Bearer {$apiKey}",
+                ])->timeout(10)->get('https://api.openai.com/v1/models');
+
+                if ($response->successful()) {
+                    return collect($response->json('data'))
+                        ->pluck('id')
+                        ->filter(fn ($m) => str_starts_with($m, 'gpt-'))
+                        ->reject(fn ($m) => str_contains($m, 'realtime')
+                            || str_contains($m, 'audio')
+                            || str_contains($m, 'transcribe')
+                            || str_contains($m, 'tts')
+                            || str_contains($m, 'search')
+                            || str_contains($m, 'instruct'))
+                        ->sort()
+                        ->values()
+                        ->toArray();
+                }
+
+                return [];
+            }, [], false);
+        }
+
+        return view('settings.index', compact('settings', 'hasOpenaiKey', 'availableModels'));
     }
 
     public function update(Request $request)

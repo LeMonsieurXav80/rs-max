@@ -77,13 +77,6 @@
 
                     {{-- AI Models --}}
                     @php
-                        $aiModels = [
-                            'gpt-4o-mini' => 'GPT-4o Mini — Rapide, economique',
-                            'gpt-4o' => 'GPT-4o — Equilibre qualite/cout',
-                            'gpt-4.1-nano' => 'GPT-4.1 Nano — Le plus economique',
-                            'gpt-4.1-mini' => 'GPT-4.1 Mini — Rapide et performant',
-                            'gpt-4.1' => 'GPT-4.1 — Le plus performant',
-                        ];
                         $aiModelSettings = [
                             ['key' => 'ai_model_text', 'label' => 'Redaction de contenu', 'desc' => 'Generation et reecriture de texte pour les publications'],
                             ['key' => 'ai_model_vision', 'label' => 'Analyse d\'images/videos', 'desc' => 'Analyse visuelle des medias pour generer du contenu'],
@@ -92,16 +85,18 @@
                         ];
                     @endphp
 
+                    @if(!empty($availableModels))
                     <div class="border-t border-gray-100 mt-6 pt-6">
                         <h3 class="text-sm font-semibold text-gray-900 mb-4">Modeles IA par fonctionnalite</h3>
+                        <p class="text-xs text-gray-400 mb-4">{{ count($availableModels) }} modeles disponibles avec votre cle API</p>
                         <div class="grid grid-cols-1 sm:grid-cols-2 gap-5">
                             @foreach($aiModelSettings as $m)
                                 <div>
                                     <label for="{{ $m['key'] }}" class="block text-sm font-medium text-gray-700 mb-1">{{ $m['label'] }}</label>
                                     <select id="{{ $m['key'] }}" name="{{ $m['key'] }}"
                                             class="w-full rounded-xl border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 text-sm">
-                                        @foreach($aiModels as $value => $label)
-                                            <option value="{{ $value }}" {{ $settings[$m['key']] === $value ? 'selected' : '' }}>{{ $label }}</option>
+                                        @foreach($availableModels as $model)
+                                            <option value="{{ $model }}" {{ $settings[$m['key']] === $model ? 'selected' : '' }}>{{ $model }}</option>
                                         @endforeach
                                     </select>
                                     <p class="text-xs text-gray-400 mt-1">{{ $m['desc'] }}</p>
@@ -112,6 +107,7 @@
                             @endforeach
                         </div>
                     </div>
+                    @endif
                 </div>
             </div>
 
