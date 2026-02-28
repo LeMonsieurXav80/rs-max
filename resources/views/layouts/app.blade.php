@@ -108,7 +108,7 @@
                     </a>
                     @endif
 
-                    {{-- Contenu RSS (collapsible) --}}
+                    {{-- Sources de contenu (collapsible) --}}
                     @if(auth()->user()->is_admin)
                     <div x-data="{ rssOpen: {{ str_starts_with($currentRoute, 'rss') ? 'true' : 'false' }} }">
                         <button
@@ -119,7 +119,7 @@
                                 <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1.5">
                                     <path stroke-linecap="round" stroke-linejoin="round" d="M12.75 19.5v-.75a7.5 7.5 0 0 0-7.5-7.5H4.5m0-6.75h.75c7.87 0 14.25 6.38 14.25 14.25v.75M6 18.75a.75.75 0 1 1-1.5 0 .75.75 0 0 1 1.5 0Z" />
                                 </svg>
-                                Contenu RSS
+                                Sources de contenu
                             </span>
                             <svg class="w-4 h-4 transition-transform" :class="rssOpen && 'rotate-180'" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1.5">
                                 <path stroke-linecap="round" stroke-linejoin="round" d="m19.5 8.25-7.5 7.5-7.5-7.5" />
@@ -132,7 +132,7 @@
                                 <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1.5">
                                     <path stroke-linecap="round" stroke-linejoin="round" d="M12.75 19.5v-.75a7.5 7.5 0 0 0-7.5-7.5H4.5m0-6.75h.75c7.87 0 14.25 6.38 14.25 14.25v.75M6 18.75a.75.75 0 1 1-1.5 0 .75.75 0 0 1 1.5 0Z" />
                                 </svg>
-                                Flux RSS
+                                Flux RSS/XML
                             </a>
                         </div>
                     </div>

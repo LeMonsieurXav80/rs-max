@@ -1,6 +1,6 @@
 @extends('layouts.app')
 
-@section('title', 'Nouveau flux RSS')
+@section('title', 'Nouveau flux RSS/XML')
 
 @section('actions')
     <a href="{{ route('rss-feeds.index') }}"
@@ -90,6 +90,38 @@
 
             <hr class="border-gray-100">
 
+            {{-- Périodicité --}}
+            <div>
+                <h3 class="text-sm font-semibold text-gray-900 mb-4 flex items-center gap-2">
+                    <svg class="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1.5">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M12 6v6h4.5m4.5 0a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z" />
+                    </svg>
+                    Périodicité de publication
+                </h3>
+                <div class="grid grid-cols-1 sm:grid-cols-2 gap-5">
+                    <div>
+                        <label for="schedule_frequency" class="block text-sm font-medium text-gray-700 mb-1">Fréquence</label>
+                        <select name="schedule_frequency" id="schedule_frequency"
+                                class="w-full rounded-xl border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 text-sm">
+                            <option value="daily" {{ old('schedule_frequency') === 'daily' ? 'selected' : '' }}>Quotidien</option>
+                            <option value="twice_weekly" {{ old('schedule_frequency') === 'twice_weekly' ? 'selected' : '' }}>2x par semaine</option>
+                            <option value="weekly" {{ old('schedule_frequency', 'weekly') === 'weekly' ? 'selected' : '' }}>Hebdomadaire</option>
+                            <option value="biweekly" {{ old('schedule_frequency') === 'biweekly' ? 'selected' : '' }}>Tous les 15 jours</option>
+                            <option value="monthly" {{ old('schedule_frequency') === 'monthly' ? 'selected' : '' }}>Mensuel</option>
+                        </select>
+                        @error('schedule_frequency') <p class="mt-1 text-xs text-red-600">{{ $message }}</p> @enderror
+                    </div>
+                    <div>
+                        <label for="schedule_time" class="block text-sm font-medium text-gray-700 mb-1">Heure de publication</label>
+                        <input type="time" name="schedule_time" id="schedule_time" value="{{ old('schedule_time', '10:00') }}"
+                               class="w-full rounded-xl border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 text-sm">
+                        @error('schedule_time') <p class="mt-1 text-xs text-red-600">{{ $message }}</p> @enderror
+                    </div>
+                </div>
+            </div>
+
+            <hr class="border-gray-100">
+
             {{-- Comptes liés --}}
             <div>
                 <h3 class="text-sm font-semibold text-gray-900 mb-2 flex items-center gap-2">
@@ -109,7 +141,7 @@
                                  :class="isSelected({{ $account->id }}) ? 'border-indigo-200 bg-indigo-50/30' : 'border-gray-200'">
                                 {{-- Account row --}}
                                 <div class="flex items-center gap-3 p-3 cursor-pointer" @click="toggleAccount({{ $account->id }})">
-                                    <input type="checkbox" :checked="isSelected({{ $account->id }})" class="rounded border-gray-300 text-indigo-600 shadow-sm focus:ring-indigo-500" @click.stop>
+                                    <input type="checkbox" :checked="isSelected({{ $account->id }})" class="rounded border-gray-300 text-indigo-600 shadow-sm focus:ring-indigo-500" @click.stop="toggleAccount({{ $account->id }})">
 
                                     @if($account->profile_picture_url)
                                         <img src="{{ $account->profile_picture_url }}" class="w-8 h-8 rounded-lg object-cover flex-shrink-0" alt="">

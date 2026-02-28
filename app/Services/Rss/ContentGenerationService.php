@@ -68,6 +68,12 @@ class ContentGenerationService
         $userPrompt .= "Contenu de l'article :\n{$articleContent}\n\n";
         $userPrompt .= "Génère une publication en {$languageLabel} pour le compte \"{$account->name}\" sur {$account->platform->name}.\n";
 
+        // Platform-specific formatting rules
+        $platformRules = $this->getPlatformRules($account->platform->slug);
+        if ($platformRules) {
+            $userPrompt .= "\nRègles de formatage pour {$account->platform->name} :\n{$platformRules}\n";
+        }
+
         $charLimit = (int) Setting::get(
             "platform_char_limit_{$account->platform->slug}",
             $this->getDefaultCharLimit($account->platform->slug)
@@ -76,7 +82,10 @@ class ContentGenerationService
             $userPrompt .= "\nLe contenu ne doit pas dépasser {$charLimit} caractères (limite {$account->platform->name}).\n";
         }
 
-        $userPrompt .= "\nInclus le lien de l'article dans la publication : {$item->url}";
+        // Instagram links are not clickable, so don't ask to include the URL
+        if ($account->platform->slug !== 'instagram') {
+            $userPrompt .= "\nInclus le lien de l'article dans la publication : {$item->url}";
+        }
 
         // 5. Call OpenAI API
         try {
@@ -116,6 +125,41 @@ class ContentGenerationService
 
             return null;
         }
+    }
+
+    private function getPlatformRules(string $slug): ?string
+    {
+        // Global rules applied to ALL platforms
+        $globalRules = [
+            '- N\'utilise JAMAIS de hashtags (#). Les hashtags sont gérés séparément.',
+            '- N\'utilise JAMAIS de liens en format markdown [texte](url). Écris toujours les URLs en clair directement dans le texte.',
+        ];
+
+        $platformRules = match ($slug) {
+            'twitter' => [
+                '- Le ton doit être concis et percutant.',
+            ],
+            'facebook' => [
+                '- Tu peux utiliser des emojis avec modération.',
+                '- Le ton peut être plus détaillé et engageant.',
+            ],
+            'instagram' => [
+                '- N\'inclus PAS de lien dans le texte (les liens ne sont pas cliquables sur Instagram).',
+                '- Utilise des emojis pour rendre le contenu visuel.',
+            ],
+            'telegram' => [
+                '- Tu peux utiliser le formatage Markdown (gras, italique) mais PAS pour les liens.',
+                '- Le ton peut être informatif et direct.',
+            ],
+            'threads' => [
+                '- Le ton doit être conversationnel.',
+            ],
+            default => [],
+        };
+
+        $allRules = array_merge($globalRules, $platformRules);
+
+        return implode("\n", $allRules);
     }
 
     private function getDefaultCharLimit(string $slug): int

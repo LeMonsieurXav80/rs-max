@@ -97,6 +97,10 @@ Route::middleware(['auth', 'verified'])->group(function () {
     Route::resource('rss-feeds', RssFeedController::class)->except(['show']);
     Route::post('rss-feeds/{rssFeed}/fetch', [RssFeedController::class, 'fetchNow'])->name('rss-feeds.fetch');
     Route::post('rss-feeds/{rssFeed}/generate', [RssFeedController::class, 'generateNow'])->name('rss-feeds.generate');
+    Route::get('rss-feeds/{rssFeed}/preview', [RssFeedController::class, 'preview'])->name('rss-feeds.preview');
+    Route::post('rss-feeds/{rssFeed}/generate-preview', [RssFeedController::class, 'generatePreview'])->name('rss-feeds.generatePreview');
+    Route::post('rss-feeds/{rssFeed}/regenerate-item', [RssFeedController::class, 'regenerateItem'])->name('rss-feeds.regenerateItem');
+    Route::post('rss-feeds/{rssFeed}/confirm-publications', [RssFeedController::class, 'confirmPublications'])->name('rss-feeds.confirmPublications');
 
     // Settings (admin only)
     Route::get('settings', [SettingsController::class, 'index'])->name('settings.index');

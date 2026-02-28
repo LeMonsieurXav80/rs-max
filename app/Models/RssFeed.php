@@ -15,6 +15,8 @@ class RssFeed extends Model
         'category',
         'is_active',
         'is_multi_part_sitemap',
+        'schedule_frequency',
+        'schedule_time',
         'last_fetched_at',
     ];
 
