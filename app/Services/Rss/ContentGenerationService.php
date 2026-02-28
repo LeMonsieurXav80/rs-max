@@ -84,7 +84,7 @@ class ContentGenerationService
                 'Authorization' => "Bearer {$apiKey}",
                 'Content-Type' => 'application/json',
             ])->timeout(60)->post('https://api.openai.com/v1/chat/completions', [
-                'model' => 'gpt-4o-mini',
+                'model' => Setting::get('ai_model_rss', 'gpt-4o-mini'),
                 'messages' => [
                     ['role' => 'system', 'content' => $persona->system_prompt],
                     ['role' => 'user', 'content' => $userPrompt],

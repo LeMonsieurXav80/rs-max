@@ -38,6 +38,11 @@ class SettingsController extends Controller
         'platform_char_limit_threads',
         'platform_char_limit_youtube',
         'platform_char_limit_telegram',
+        // AI models
+        'ai_model_text',
+        'ai_model_vision',
+        'ai_model_translation',
+        'ai_model_rss',
     ];
 
     private const DEFAULTS = [
@@ -70,6 +75,11 @@ class SettingsController extends Controller
         'platform_char_limit_threads' => 500,
         'platform_char_limit_youtube' => 5000,
         'platform_char_limit_telegram' => 4096,
+        // AI models
+        'ai_model_text' => 'gpt-4o-mini',
+        'ai_model_vision' => 'gpt-4o',
+        'ai_model_translation' => 'gpt-4o-mini',
+        'ai_model_rss' => 'gpt-4o-mini',
     ];
 
     public function index(Request $request): View
@@ -125,6 +135,11 @@ class SettingsController extends Controller
             'platform_char_limit_threads' => 'required|integer|min:1|max:100000',
             'platform_char_limit_youtube' => 'required|integer|min:1|max:100000',
             'platform_char_limit_telegram' => 'required|integer|min:1|max:100000',
+            // AI models
+            'ai_model_text' => 'required|string|max:50',
+            'ai_model_vision' => 'required|string|max:50',
+            'ai_model_translation' => 'required|string|max:50',
+            'ai_model_rss' => 'required|string|max:50',
         ]);
 
         // Handle OpenAI key separately (encrypted storage)

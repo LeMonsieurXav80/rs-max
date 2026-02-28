@@ -58,7 +58,7 @@
                         </svg>
                         <h2 class="text-base font-semibold text-gray-900">Contenu IA</h2>
                     </div>
-                    <p class="text-sm text-gray-500 mb-5">Configuration de l'IA pour la generation de contenu, la reecriture et la traduction automatique via GPT-4o-mini.</p>
+                    <p class="text-sm text-gray-500 mb-5">Configuration de l'IA pour la generation de contenu, la reecriture et la traduction automatique.</p>
 
                     <div>
                         <label for="openai_api_key" class="block text-sm font-medium text-gray-700 mb-1">Cle API OpenAI</label>
@@ -73,6 +73,44 @@
                         @error('openai_api_key')
                             <p class="text-sm text-red-600 mt-1">{{ $message }}</p>
                         @enderror
+                    </div>
+
+                    {{-- AI Models --}}
+                    @php
+                        $aiModels = [
+                            'gpt-4o-mini' => 'GPT-4o Mini — Rapide, economique',
+                            'gpt-4o' => 'GPT-4o — Equilibre qualite/cout',
+                            'gpt-4.1-nano' => 'GPT-4.1 Nano — Le plus economique',
+                            'gpt-4.1-mini' => 'GPT-4.1 Mini — Rapide et performant',
+                            'gpt-4.1' => 'GPT-4.1 — Le plus performant',
+                        ];
+                        $aiModelSettings = [
+                            ['key' => 'ai_model_text', 'label' => 'Redaction de contenu', 'desc' => 'Generation et reecriture de texte pour les publications'],
+                            ['key' => 'ai_model_vision', 'label' => 'Analyse d\'images/videos', 'desc' => 'Analyse visuelle des medias pour generer du contenu'],
+                            ['key' => 'ai_model_translation', 'label' => 'Traduction', 'desc' => 'Traduction automatique entre langues'],
+                            ['key' => 'ai_model_rss', 'label' => 'Generation depuis flux RSS', 'desc' => 'Creation de publications a partir d\'articles RSS'],
+                        ];
+                    @endphp
+
+                    <div class="border-t border-gray-100 mt-6 pt-6">
+                        <h3 class="text-sm font-semibold text-gray-900 mb-4">Modeles IA par fonctionnalite</h3>
+                        <div class="grid grid-cols-1 sm:grid-cols-2 gap-5">
+                            @foreach($aiModelSettings as $m)
+                                <div>
+                                    <label for="{{ $m['key'] }}" class="block text-sm font-medium text-gray-700 mb-1">{{ $m['label'] }}</label>
+                                    <select id="{{ $m['key'] }}" name="{{ $m['key'] }}"
+                                            class="w-full rounded-xl border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 text-sm">
+                                        @foreach($aiModels as $value => $label)
+                                            <option value="{{ $value }}" {{ $settings[$m['key']] === $value ? 'selected' : '' }}>{{ $label }}</option>
+                                        @endforeach
+                                    </select>
+                                    <p class="text-xs text-gray-400 mt-1">{{ $m['desc'] }}</p>
+                                    @error($m['key'])
+                                        <p class="text-xs text-red-600 mt-1">{{ $message }}</p>
+                                    @enderror
+                                </div>
+                            @endforeach
+                        </div>
                     </div>
                 </div>
             </div>

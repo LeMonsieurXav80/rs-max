@@ -2,6 +2,7 @@
 
 namespace App\Services;
 
+use App\Models\Setting;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 
@@ -26,7 +27,7 @@ class TranslationService
                 'Authorization' => "Bearer {$key}",
                 'Content-Type' => 'application/json',
             ])->timeout(30)->post('https://api.openai.com/v1/chat/completions', [
-                'model' => 'gpt-4o-mini',
+                'model' => Setting::get('ai_model_translation', 'gpt-4o-mini'),
                 'messages' => [
                     ['role' => 'system', 'content' => 'You are a professional translator. Only output the translation, nothing else.'],
                     ['role' => 'user', 'content' => $prompt],
