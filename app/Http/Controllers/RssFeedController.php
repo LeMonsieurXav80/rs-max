@@ -33,7 +33,6 @@ class RssFeedController extends Controller
         }
 
         $accounts = SocialAccount::with('platform')
-            ->where('is_active', true)
             ->orderBy('name')
             ->get();
 
@@ -98,7 +97,6 @@ class RssFeedController extends Controller
         $rssFeed->load('socialAccounts');
 
         $accounts = SocialAccount::with('platform')
-            ->where('is_active', true)
             ->orderBy('name')
             ->get();
 
