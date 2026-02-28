@@ -334,6 +334,7 @@ class AiAssistService
                         'platforms' => $platformSlugs,
                         'image_count' => count($imageDataUrls),
                         'lengths' => array_map('mb_strlen', $result),
+                        'content' => $result,
                     ]);
 
                     return $result;
