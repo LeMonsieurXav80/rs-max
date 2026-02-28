@@ -2,7 +2,8 @@
 
 namespace App\Services\YouTube;
 
-use App\Models\Setting;
+use App\Models\Platform;
+use App\Models\SocialAccount;
 use App\Models\YtItem;
 use App\Models\YtSource;
 use Illuminate\Support\Facades\Http;
@@ -12,24 +13,80 @@ class YouTubeFetchService
 {
     private const API_BASE = 'https://www.googleapis.com/youtube/v3';
 
+    private const TOKEN_URL = 'https://oauth2.googleapis.com/token';
+
     private const MIN_DURATION_SECONDS = 61;
+
+    /**
+     * Get a fresh access token from any connected YouTube social account.
+     */
+    private function getAccessToken(): ?string
+    {
+        $platform = Platform::where('slug', 'youtube')->first();
+        if (! $platform) {
+            return null;
+        }
+
+        $account = SocialAccount::where('platform_id', $platform->id)
+            ->whereNotNull('credentials')
+            ->first();
+
+        if (! $account) {
+            return null;
+        }
+
+        $credentials = $account->credentials;
+        $refreshToken = $credentials['refresh_token'] ?? null;
+
+        if (! $refreshToken) {
+            return $credentials['access_token'] ?? null;
+        }
+
+        // Always refresh — tokens expire after 1 hour
+        $response = Http::asForm()->post(self::TOKEN_URL, [
+            'client_id' => config('services.youtube.client_id'),
+            'client_secret' => config('services.youtube.client_secret'),
+            'refresh_token' => $refreshToken,
+            'grant_type' => 'refresh_token',
+        ]);
+
+        if (! $response->successful()) {
+            Log::warning('YouTubeFetchService: Token refresh failed, using existing token', [
+                'status' => $response->status(),
+            ]);
+
+            return $credentials['access_token'] ?? null;
+        }
+
+        $newAccessToken = $response->json('access_token');
+
+        // Update stored token
+        $account->update([
+            'credentials' => array_merge($credentials, [
+                'access_token' => $newAccessToken,
+                'expires_in' => $response->json('expires_in', 3600),
+            ]),
+        ]);
+
+        return $newAccessToken;
+    }
 
     /**
      * Test the connection to a YouTube channel and return its info.
      */
     public function testConnection(string $channelUrl): array
     {
-        $apiKey = Setting::getEncrypted('youtube_api_key');
+        $accessToken = $this->getAccessToken();
 
-        if (! $apiKey) {
+        if (! $accessToken) {
             return [
                 'success' => false,
-                'error' => "Aucune clé API YouTube configurée. Ajoutez-la dans Paramètres > Contenu IA.",
+                'error' => "Aucun compte YouTube connecté. Connectez une chaîne YouTube dans Plateformes > YouTube.",
             ];
         }
 
         try {
-            $channelInfo = $this->resolveChannel($channelUrl, $apiKey);
+            $channelInfo = $this->resolveChannel($channelUrl, $accessToken);
 
             if (! $channelInfo) {
                 return [
@@ -57,17 +114,17 @@ class YouTubeFetchService
      */
     public function fetchSource(YtSource $source): int
     {
-        $apiKey = Setting::getEncrypted('youtube_api_key');
+        $accessToken = $this->getAccessToken();
 
-        if (! $apiKey) {
-            Log::warning('YouTubeFetchService: No API key configured');
+        if (! $accessToken) {
+            Log::warning('YouTubeFetchService: No YouTube account connected');
 
             return 0;
         }
 
         try {
             // Get uploads playlist ID
-            $uploadsPlaylistId = $this->getUploadsPlaylistId($source->channel_id, $apiKey);
+            $uploadsPlaylistId = $this->getUploadsPlaylistId($source->channel_id, $accessToken);
 
             if (! $uploadsPlaylistId) {
                 Log::error('YouTubeFetchService: Could not get uploads playlist', [
@@ -79,7 +136,7 @@ class YouTubeFetchService
             }
 
             // Fetch all video IDs from playlist
-            $videoIds = $this->fetchPlaylistVideoIds($uploadsPlaylistId, $apiKey);
+            $videoIds = $this->fetchPlaylistVideoIds($uploadsPlaylistId, $accessToken);
 
             if (empty($videoIds)) {
                 return 0;
@@ -90,7 +147,7 @@ class YouTubeFetchService
             $batches = array_chunk($videoIds, 50);
 
             foreach ($batches as $batch) {
-                $newCount += $this->fetchAndStoreVideos($source, $batch, $apiKey);
+                $newCount += $this->fetchAndStoreVideos($source, $batch, $accessToken);
             }
 
             $source->update(['last_fetched_at' => now()]);
@@ -115,7 +172,7 @@ class YouTubeFetchService
     /**
      * Resolve a channel URL to channel info.
      */
-    private function resolveChannel(string $channelUrl, string $apiKey): ?array
+    private function resolveChannel(string $channelUrl, string $accessToken): ?array
     {
         $channelUrl = trim($channelUrl, '/ ');
 
@@ -123,43 +180,41 @@ class YouTubeFetchService
         if (preg_match('/@([\w.-]+)/', $channelUrl, $matches)) {
             $handle = $matches[1];
 
-            return $this->fetchChannelByHandle($handle, $apiKey);
+            return $this->fetchChannelByHandle($handle, $accessToken);
         }
 
         if (preg_match('/channel\/(UC[\w-]+)/', $channelUrl, $matches)) {
-            return $this->fetchChannelById($matches[1], $apiKey);
+            return $this->fetchChannelById($matches[1], $accessToken);
         }
 
         // Try as handle directly (without @)
         if (preg_match('/^[\w.-]+$/', $channelUrl)) {
-            return $this->fetchChannelByHandle($channelUrl, $apiKey);
+            return $this->fetchChannelByHandle($channelUrl, $accessToken);
         }
 
         // Try the whole URL as a custom URL path
         if (preg_match('/youtube\.com\/(c\/)?(\w+)/i', $channelUrl, $matches)) {
-            return $this->fetchChannelByHandle($matches[2], $apiKey);
+            return $this->fetchChannelByHandle($matches[2], $accessToken);
         }
 
         return null;
     }
 
-    private function fetchChannelByHandle(string $handle, string $apiKey): ?array
+    private function fetchChannelByHandle(string $handle, string $accessToken): ?array
     {
-        $response = Http::timeout(15)->get(self::API_BASE.'/channels', [
+        $response = Http::timeout(15)->withToken($accessToken)->get(self::API_BASE.'/channels', [
             'part' => 'snippet,contentDetails',
             'forHandle' => $handle,
-            'key' => $apiKey,
         ]);
 
         return $this->parseChannelResponse($response);
     }
 
-    private function fetchChannelById(string $channelId, string $apiKey): ?array
+    private function fetchChannelById(string $channelId, string $accessToken): ?array
     {
-        $response = Http::timeout(15)->get(self::API_BASE.'/channels', [
+        $response = Http::timeout(15)->withToken($accessToken)->get(self::API_BASE.'/channels', [
             'part' => 'snippet,contentDetails',
             'id' => $channelId,
-            'key' => $apiKey,
         ]);
 
         return $this->parseChannelResponse($response);
@@ -186,12 +241,11 @@ class YouTubeFetchService
         ];
     }
 
-    private function getUploadsPlaylistId(string $channelId, string $apiKey): ?string
+    private function getUploadsPlaylistId(string $channelId, string $accessToken): ?string
     {
-        $response = Http::timeout(15)->get(self::API_BASE.'/channels', [
+        $response = Http::timeout(15)->withToken($accessToken)->get(self::API_BASE.'/channels', [
             'part' => 'contentDetails',
             'id' => $channelId,
-            'key' => $apiKey,
         ]);
 
         if (! $response->successful()) {
@@ -201,7 +255,7 @@ class YouTubeFetchService
         return $response->json('items.0.contentDetails.relatedPlaylists.uploads');
     }
 
-    private function fetchPlaylistVideoIds(string $playlistId, string $apiKey): array
+    private function fetchPlaylistVideoIds(string $playlistId, string $accessToken): array
     {
         $videoIds = [];
         $pageToken = null;
@@ -211,14 +265,13 @@ class YouTubeFetchService
                 'part' => 'contentDetails',
                 'playlistId' => $playlistId,
                 'maxResults' => 50,
-                'key' => $apiKey,
             ];
 
             if ($pageToken) {
                 $params['pageToken'] = $pageToken;
             }
 
-            $response = Http::timeout(30)->get(self::API_BASE.'/playlistItems', $params);
+            $response = Http::timeout(30)->withToken($accessToken)->get(self::API_BASE.'/playlistItems', $params);
 
             if (! $response->successful()) {
                 break;
@@ -237,12 +290,11 @@ class YouTubeFetchService
         return $videoIds;
     }
 
-    private function fetchAndStoreVideos(YtSource $source, array $videoIds, string $apiKey): int
+    private function fetchAndStoreVideos(YtSource $source, array $videoIds, string $accessToken): int
     {
-        $response = Http::timeout(30)->get(self::API_BASE.'/videos', [
+        $response = Http::timeout(30)->withToken($accessToken)->get(self::API_BASE.'/videos', [
             'part' => 'snippet,contentDetails,statistics',
             'id' => implode(',', $videoIds),
-            'key' => $apiKey,
         ]);
 
         if (! $response->successful()) {

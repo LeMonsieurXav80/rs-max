@@ -75,21 +75,6 @@
                         @enderror
                     </div>
 
-                    <div class="border-t border-gray-100 mt-6 pt-6">
-                        <label for="youtube_api_key" class="block text-sm font-medium text-gray-700 mb-1">Cle API YouTube (Data API v3)</label>
-                        <input type="password" id="youtube_api_key" name="youtube_api_key"
-                               class="w-full sm:w-2/3 rounded-xl border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 text-sm"
-                               placeholder="{{ $hasYoutubeApiKey ? '••••••••••••••••' : 'AIza...' }}">
-                        @if($hasYoutubeApiKey)
-                            <p class="text-xs text-green-600 mt-1">Cle configuree. Laissez vide pour conserver la cle actuelle.</p>
-                        @else
-                            <p class="text-xs text-gray-400 mt-1">Necessaire pour recuperer les videos des chaines YouTube. Creez une cle dans Google Cloud Console.</p>
-                        @endif
-                        @error('youtube_api_key')
-                            <p class="text-sm text-red-600 mt-1">{{ $message }}</p>
-                        @enderror
-                    </div>
-
                     {{-- AI Models --}}
                     @php
                         $aiModelSettings = [
