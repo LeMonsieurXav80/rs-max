@@ -21,9 +21,10 @@ class FacebookStatsService implements PlatformStatsInterface
                 return null;
             }
 
-            // Fetch post insights
+            // Fetch post metrics (likes + comments only; shares/reactions require
+            // additional permissions that may not be available for all post types)
             $response = Http::get(self::GRAPH_API_BASE.'/'.self::GRAPH_API_VERSION."/{$externalId}", [
-                'fields' => 'likes.summary(true),comments.summary(true),shares,reactions.summary(true)',
+                'fields' => 'likes.summary(true),comments.summary(true)',
                 'access_token' => $accessToken,
             ]);
 
@@ -40,7 +41,24 @@ class FacebookStatsService implements PlatformStatsInterface
 
             $data = $response->json();
 
-            // Fetch page followers count (page info)
+            // Try to fetch post insights (views, shares) - may fail depending on post type/permissions
+            $views = null;
+            $shares = null;
+            $insightsResponse = Http::get(self::GRAPH_API_BASE.'/'.self::GRAPH_API_VERSION."/{$externalId}/insights", [
+                'metric' => 'post_impressions,post_engaged_users',
+                'access_token' => $accessToken,
+            ]);
+
+            if ($insightsResponse->successful()) {
+                $insights = $insightsResponse->json('data', []);
+                foreach ($insights as $insight) {
+                    if ($insight['name'] === 'post_impressions') {
+                        $views = $insight['values'][0]['value'] ?? null;
+                    }
+                }
+            }
+
+            // Fetch page followers count
             $pageId = $postPlatform->socialAccount->platform_account_id;
             $followersCount = null;
 
@@ -56,10 +74,10 @@ class FacebookStatsService implements PlatformStatsInterface
             }
 
             return [
-                'views' => null, // Facebook doesn't provide view count for regular posts
+                'views' => $views,
                 'likes' => $data['likes']['summary']['total_count'] ?? 0,
                 'comments' => $data['comments']['summary']['total_count'] ?? 0,
-                'shares' => $data['shares']['count'] ?? 0,
+                'shares' => $shares,
                 'followers' => $followersCount,
             ];
         } catch (\Throwable $e) {

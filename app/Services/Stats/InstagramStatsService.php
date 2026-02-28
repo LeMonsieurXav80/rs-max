@@ -40,20 +40,25 @@ class InstagramStatsService implements PlatformStatsInterface
 
             $data = $response->json();
 
-            // Try to fetch insights (reach, impressions) - may require instagram_manage_insights permission
+            // Fetch insights using unified metrics (views, reach, shares, saved)
+            // Note: 'impressions' is deprecated for Reels (VIDEO) from v22.0+, use 'views' instead
             $views = null;
+            $shares = null;
+            $saved = null;
             $insightsResponse = Http::get(self::GRAPH_API_BASE.'/'.self::GRAPH_API_VERSION."/{$externalId}/insights", [
-                'metric' => 'reach,impressions',
+                'metric' => 'views,reach,likes,comments,shares,saved',
                 'access_token' => $accessToken,
             ]);
 
             if ($insightsResponse->successful()) {
                 $insights = $insightsResponse->json('data', []);
                 foreach ($insights as $insight) {
-                    if ($insight['name'] === 'reach') {
-                        $views = $insight['values'][0]['value'] ?? null;
-                        break;
-                    }
+                    match ($insight['name']) {
+                        'views' => $views = $insight['values'][0]['value'] ?? null,
+                        'shares' => $shares = $insight['values'][0]['value'] ?? null,
+                        'saved' => $saved = $insight['values'][0]['value'] ?? null,
+                        default => null,
+                    };
                 }
             }
 
@@ -76,7 +81,8 @@ class InstagramStatsService implements PlatformStatsInterface
                 'views' => $views,
                 'likes' => $data['like_count'] ?? 0,
                 'comments' => $data['comments_count'] ?? 0,
-                'shares' => null, // Instagram doesn't provide share count
+                'shares' => $shares,
+                'saved' => $saved,
                 'followers' => $followersCount,
             ];
         } catch (\Throwable $e) {
