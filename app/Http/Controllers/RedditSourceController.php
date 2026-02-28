@@ -243,7 +243,7 @@ class RedditSourceController extends Controller
             'monthly' => 'Mensuel',
         ];
 
-        return view('reddit.preview', compact('redditSource', 'totalItems', 'nextDate', 'frequencyLabels'));
+        return view('reddit.preview', compact('redditSource', 'totalItems', 'nextDate', 'lastPostDate', 'frequencyLabels'));
     }
 
     public function generatePreview(Request $request, RedditSource $redditSource): JsonResponse

@@ -6,7 +6,7 @@ use App\Models\SocialAccount;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 
-class TwitterAdapter implements PlatformAdapterInterface
+class TwitterAdapter implements PlatformAdapterInterface, ThreadableAdapterInterface
 {
     private const TWEET_URL = 'https://api.twitter.com/2/tweets';
 
@@ -68,6 +68,62 @@ class TwitterAdapter implements PlatformAdapterInterface
         } catch (\Throwable $e) {
             Log::error('TwitterAdapter: publish failed', [
                 'account_id' => $account->id,
+                'error' => $e->getMessage(),
+            ]);
+
+            return [
+                'success' => false,
+                'external_id' => null,
+                'error' => $e->getMessage(),
+            ];
+        }
+    }
+
+    /**
+     * Publish a reply tweet for thread chaining.
+     */
+    public function publishReply(SocialAccount $account, string $content, string $replyToId, ?array $media = null, ?array $options = null): array
+    {
+        try {
+            $credentials = $account->credentials;
+            $this->consumerKey = $credentials['api_key'];
+            $this->consumerSecret = $credentials['api_secret'];
+            $this->accessToken = $credentials['access_token'];
+            $this->accessTokenSecret = $credentials['access_token_secret'];
+
+            $tweetPayload = [
+                'text' => $content,
+                'reply' => [
+                    'in_reply_to_tweet_id' => $replyToId,
+                ],
+            ];
+
+            if (! empty($media)) {
+                $mediaIds = [];
+
+                foreach ($media as $item) {
+                    $mediaId = $this->uploadMedia($item['url']);
+
+                    if ($mediaId === null) {
+                        return [
+                            'success' => false,
+                            'external_id' => null,
+                            'error' => "Failed to upload media: {$item['url']}",
+                        ];
+                    }
+
+                    $mediaIds[] = $mediaId;
+                }
+
+                $tweetPayload['media'] = ['media_ids' => $mediaIds];
+            }
+
+            return $this->postTweet($tweetPayload);
+
+        } catch (\Throwable $e) {
+            Log::error('TwitterAdapter: publishReply failed', [
+                'account_id' => $account->id,
+                'reply_to' => $replyToId,
                 'error' => $e->getMessage(),
             ]);
 

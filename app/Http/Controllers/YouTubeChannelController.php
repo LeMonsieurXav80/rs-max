@@ -243,7 +243,7 @@ class YouTubeChannelController extends Controller
             'monthly' => 'Mensuel',
         ];
 
-        return view('youtube.preview', compact('ytSource', 'totalItems', 'nextDate', 'frequencyLabels'));
+        return view('youtube.preview', compact('ytSource', 'totalItems', 'nextDate', 'lastPostDate', 'frequencyLabels'));
     }
 
     public function generatePreview(Request $request, YtSource $ytSource): JsonResponse

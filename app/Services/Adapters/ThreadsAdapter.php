@@ -6,7 +6,7 @@ use App\Models\SocialAccount;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 
-class ThreadsAdapter implements PlatformAdapterInterface
+class ThreadsAdapter implements PlatformAdapterInterface, ThreadableAdapterInterface
 {
     private const API_BASE = 'https://graph.threads.net/v1.0';
 
@@ -42,6 +42,74 @@ class ThreadsAdapter implements PlatformAdapterInterface
         } catch (\Throwable $e) {
             Log::error('ThreadsAdapter: publish failed', [
                 'account_id' => $account->id,
+                'error' => $e->getMessage(),
+            ]);
+
+            return [
+                'success' => false,
+                'external_id' => null,
+                'error' => $e->getMessage(),
+            ];
+        }
+    }
+
+    /**
+     * Publish a reply to an existing Threads post (for thread chaining).
+     */
+    public function publishReply(SocialAccount $account, string $content, string $replyToId, ?array $media = null, ?array $options = null): array
+    {
+        try {
+            $credentials = $account->credentials;
+            $userId = $credentials['user_id'];
+            $accessToken = $credentials['access_token'];
+
+            $params = [
+                'text' => $content,
+                'media_type' => 'TEXT',
+                'reply_to_id' => $replyToId,
+                'access_token' => $accessToken,
+            ];
+
+            // Single image reply.
+            if (! empty($media) && count($media) === 1 && $this->isImage($media[0]['mimetype'])) {
+                $params['media_type'] = 'IMAGE';
+                $params['image_url'] = $media[0]['url'];
+            }
+
+            // Single video reply.
+            if (! empty($media) && count($media) === 1 && $this->isVideo($media[0]['mimetype'])) {
+                $params['media_type'] = 'VIDEO';
+                $params['video_url'] = $media[0]['url'];
+            }
+
+            $this->addLocationParams($params, $options);
+
+            $container = Http::post(self::API_BASE . "/{$userId}/threads", $params);
+            $containerId = $this->extractId($container, 'reply container creation');
+
+            if ($containerId === null) {
+                return $this->errorFromResponse($container, 'Failed to create reply container');
+            }
+
+            // Wait for video processing if needed.
+            if (($params['media_type'] ?? '') === 'VIDEO') {
+                $ready = $this->waitForProcessing($containerId, $accessToken);
+
+                if (! $ready) {
+                    return [
+                        'success' => false,
+                        'external_id' => null,
+                        'error' => 'Reply video processing timed out.',
+                    ];
+                }
+            }
+
+            return $this->publishContainer($userId, $accessToken, $containerId);
+
+        } catch (\Throwable $e) {
+            Log::error('ThreadsAdapter: publishReply failed', [
+                'account_id' => $account->id,
+                'reply_to' => $replyToId,
                 'error' => $e->getMessage(),
             ]);
 

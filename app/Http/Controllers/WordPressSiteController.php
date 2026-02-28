@@ -270,7 +270,7 @@ class WordPressSiteController extends Controller
         // Get post type labels for display
         $postTypeLabels = $wpSource->post_types ?? [];
 
-        return view('wordpress.preview', compact('wpSource', 'totalItems', 'nextDate', 'frequencyLabels', 'postTypeLabels'));
+        return view('wordpress.preview', compact('wpSource', 'totalItems', 'nextDate', 'lastPostDate', 'frequencyLabels', 'postTypeLabels'));
     }
 
     public function generatePreview(Request $request, WpSource $wpSource): JsonResponse

@@ -19,6 +19,7 @@ use App\Http\Controllers\WordPressSiteController;
 use App\Http\Controllers\SocialAccountController;
 use App\Http\Controllers\YouTubeChannelController;
 use App\Http\Controllers\StatsController;
+use App\Http\Controllers\ThreadController;
 use App\Http\Controllers\ThreadsOAuthController;
 use App\Http\Controllers\YouTubeOAuthController;
 use Illuminate\Support\Facades\Route;
@@ -92,6 +93,14 @@ Route::middleware(['auth', 'verified'])->group(function () {
     Route::post('posts/{post}/publish', [PublishController::class, 'publishAll'])->name('posts.publish');
     Route::post('posts/platform/{postPlatform}/publish', [PublishController::class, 'publishOne'])->name('posts.publishOne');
     Route::post('posts/platform/{postPlatform}/reset', [PublishController::class, 'resetOne'])->name('posts.resetOne');
+
+    // Threads (Fils de discussion)
+    Route::post('threads/generate-from-url', [ThreadController::class, 'generateFromUrl'])->name('threads.generateFromUrl');
+    Route::post('threads/regenerate-segment', [ThreadController::class, 'regenerateSegment'])->name('threads.regenerateSegment');
+    Route::resource('threads', ThreadController::class);
+    Route::post('threads/{thread}/publish', [ThreadController::class, 'publishAll'])->name('threads.publish');
+    Route::post('threads/{thread}/publish/{socialAccount}', [ThreadController::class, 'publishOne'])->name('threads.publishOne');
+    Route::post('threads/{thread}/reset/{socialAccount}', [ThreadController::class, 'resetAccount'])->name('threads.resetAccount');
 
     // Personas (admin)
     Route::resource('personas', PersonaController::class)->except(['show']);

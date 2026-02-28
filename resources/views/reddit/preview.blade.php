@@ -169,7 +169,7 @@
                                         </template>
                                         <span x-text="pub.regenerating ? 'Régénération...' : 'Régénérer'"></span>
                                     </button>
-                                    <button type="button" @click="publications.splice(pubIndex, 1)"
+                                    <button type="button" @click="removePublication(pubIndex)"
                                             class="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-red-600 bg-red-50 rounded-lg hover:bg-red-100 transition-colors">
                                         <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1.5">
                                             <path stroke-linecap="round" stroke-linejoin="round" d="M6 18 18 6M6 6l12 12" />
@@ -269,6 +269,9 @@ function redditPreview() {
         confirmSuccess: false,
         confirmMessage: '',
         confirmError: '',
+        frequency: @json($redditSource->schedule_frequency),
+        scheduleTime: @json($redditSource->schedule_time),
+        baseDate: @json($lastPostDate->format('Y-m-d H:i')),
 
         formatScore(n) {
             if (!n) return '0';
@@ -409,6 +412,66 @@ function redditPreview() {
             }
 
             pub.regenerating = false;
+        },
+
+        removePublication(pubIndex) {
+            this.publications.splice(pubIndex, 1);
+            this.recalculateDates();
+        },
+
+        recalculateDates() {
+            let current = new Date(this.baseDate.replace(' ', 'T'));
+            for (let i = 0; i < this.publications.length; i++) {
+                current = this._calcNext(current);
+                const pub = this.publications[i];
+                pub.scheduled_at = this._formatForServer(current);
+                pub.scheduled_at_human = this._formatHuman(current);
+            }
+        },
+
+        _calcNext(from) {
+            let next = new Date(from);
+            switch (this.frequency) {
+                case 'daily':
+                    next.setDate(next.getDate() + 1);
+                    break;
+                case 'twice_weekly': {
+                    const day = next.getDay();
+                    if (day === 0) next.setDate(next.getDate() + 1);
+                    else if (day < 4) next.setDate(next.getDate() + (4 - day));
+                    else next.setDate(next.getDate() + (8 - day));
+                    break;
+                }
+                case 'weekly':
+                    next.setDate(next.getDate() + 7);
+                    break;
+                case 'biweekly':
+                    next.setDate(next.getDate() + 14);
+                    break;
+                case 'monthly':
+                    next.setMonth(next.getMonth() + 1);
+                    break;
+                default:
+                    next.setDate(next.getDate() + 7);
+            }
+            if (this.scheduleTime) {
+                const [h, m] = this.scheduleTime.split(':');
+                next.setHours(parseInt(h), parseInt(m), 0, 0);
+            }
+            if (next <= new Date()) return this._calcNext(next);
+            return next;
+        },
+
+        _formatForServer(d) {
+            const pad = n => String(n).padStart(2, '0');
+            return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+        },
+
+        _formatHuman(d) {
+            const opts = { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' };
+            const datePart = d.toLocaleDateString('fr-FR', opts);
+            const timePart = d.toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' });
+            return datePart + ' à ' + timePart;
         },
 
         async confirm() {

@@ -242,7 +242,7 @@ class RssFeedController extends Controller
             'monthly' => 'Mensuel',
         ];
 
-        return view('rss.preview', compact('rssFeed', 'totalItems', 'nextDate', 'frequencyLabels'));
+        return view('rss.preview', compact('rssFeed', 'totalItems', 'nextDate', 'lastPostDate', 'frequencyLabels'));
     }
 
     public function generatePreview(Request $request, RssFeed $rssFeed): JsonResponse
