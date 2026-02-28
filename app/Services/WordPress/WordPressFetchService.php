@@ -185,12 +185,15 @@ class WordPressFetchService
         $typeMapping = $this->getTypeMapping($baseUrl, $source->auth_username, $source->auth_password);
 
         $newCount = 0;
+        $allFetchedWpPostIds = [];
 
         foreach ($postTypes as $postType) {
             $restBase = $typeMapping[$postType] ?? $postType . 's';
 
             try {
-                $newCount += $this->fetchPostType($source, $baseUrl, $postType, $restBase);
+                [$count, $fetchedIds] = $this->fetchPostType($source, $baseUrl, $postType, $restBase);
+                $newCount += $count;
+                $allFetchedWpPostIds = array_merge($allFetchedWpPostIds, $fetchedIds);
             } catch (\Exception $e) {
                 Log::error('WordPressFetchService: Error fetching post type', [
                     'source' => $source->name,
@@ -200,14 +203,18 @@ class WordPressFetchService
             }
         }
 
-        // Remove items whose post_type is no longer selected (only if they have no generated posts)
-        $removedCount = WpItem::where('wp_source_id', $source->id)
-            ->whereNotIn('post_type', $postTypes)
-            ->whereDoesntHave('wpPosts')
-            ->delete();
+        // Remove items no longer matching (deselected post type, removed category, unpublished)
+        $removeQuery = WpItem::where('wp_source_id', $source->id)
+            ->whereDoesntHave('wpPosts');
+
+        if (! empty($allFetchedWpPostIds)) {
+            $removeQuery->whereNotIn('wp_post_id', $allFetchedWpPostIds);
+        }
+
+        $removedCount = $removeQuery->delete();
 
         if ($removedCount > 0) {
-            Log::info('WordPressFetchService: Removed items from deselected post types', [
+            Log::info('WordPressFetchService: Removed stale items', [
                 'source' => $source->name,
                 'removed' => $removedCount,
             ]);
@@ -224,10 +231,14 @@ class WordPressFetchService
         return $newCount;
     }
 
-    private function fetchPostType(WpSource $source, string $baseUrl, string $postType, string $restBase): int
+    /**
+     * Fetch posts for a specific post type. Returns [newCount, fetchedWpPostIds].
+     */
+    private function fetchPostType(WpSource $source, string $baseUrl, string $postType, string $restBase): array
     {
         $page = 1;
         $newCount = 0;
+        $fetchedWpPostIds = [];
 
         $request = Http::timeout(30)->acceptJson();
 
@@ -283,6 +294,8 @@ class WordPressFetchService
                     continue;
                 }
 
+                $fetchedWpPostIds[] = $wpPostId;
+
                 $title = strip_tags($post['title']['rendered'] ?? '');
                 $content = $this->cleanHtmlContent($post['content']['rendered'] ?? '');
                 $summary = strip_tags($post['excerpt']['rendered'] ?? '');
@@ -329,7 +342,7 @@ class WordPressFetchService
             $page++;
         } while ($page <= $totalPages);
 
-        return $newCount;
+        return [$newCount, $fetchedWpPostIds];
     }
 
     private function getTypeMapping(string $baseUrl, ?string $username, ?string $password): array
