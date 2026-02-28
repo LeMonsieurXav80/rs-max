@@ -125,6 +125,12 @@ class ContentGenerationService
             }
             $userPrompt .= "URL : {$item->url}\n\n";
             $userPrompt .= "Contenu de l'article :\n{$articleContent}\n\n";
+
+            // Add age-aware phrasing for articles older than 6 months
+            if ($item->published_at && $item->published_at->diffInMonths(now()) >= 6) {
+                $agePhrase = $this->getArticleAgePhrase($item->published_at);
+                $userPrompt .= "IMPORTANT : L'article n'est PAS récent. N'utilise PAS d'expressions comme « nouvel article », « vient de paraître » ou « tout juste publié ». Intègre naturellement cette formulation dans ta publication : « {$agePhrase} ». Tu peux l'adapter légèrement au contexte, mais garde l'idée.\n\n";
+            }
         }
         $userPrompt .= "Génère une publication en {$languageLabel} pour le compte \"{$account->name}\" sur {$account->platform->name}.\n";
 
@@ -275,6 +281,53 @@ class ContentGenerationService
         ];
 
         // Use random_int for true randomness
+        $template = $templates[random_int(0, count($templates) - 1)];
+
+        return str_replace(
+            ['{age}', '{mois}', '{année}', '{mois_année}'],
+            [$age, $mois, $année, $mois_année],
+            $template
+        );
+    }
+
+    private function getArticleAgePhrase(\Carbon\Carbon $publishedAt): string
+    {
+        $mois = $publishedAt->translatedFormat('F');
+        $année = $publishedAt->format('Y');
+        $mois_année = "{$mois} {$année}";
+
+        $diffMonths = $publishedAt->diffInMonths(now());
+        if ($diffMonths >= 24) {
+            $age = (int) floor($diffMonths / 12) . ' ans';
+        } elseif ($diffMonths >= 12) {
+            $age = 'un an';
+        } else {
+            $age = $diffMonths . ' mois';
+        }
+
+        $templates = [
+            "Cet article date de {mois_année}.",
+            "Il y a {age}, on publiait cet article...",
+            "C'était en {mois_année}.",
+            "Un article de {mois_année} sur le sujet.",
+            "Publié il y a {age}.",
+            "On avait abordé ça en {mois_année}.",
+            "Ça remonte à {mois_année}.",
+            "Il y a {age} déjà.",
+            "En {mois_année}, on en parlait.",
+            "Un article de {année} à relire.",
+            "Sorti en {mois_année}.",
+            "Ça date de {mois_année}, mais c'est toujours valable.",
+            "On avait écrit ça en {mois_année}.",
+            "Petit retour en {mois_année}.",
+            "Il y a {age}, on vous parlait de ça.",
+            "{mois_année}, déjà.",
+            "Cet article a {age}.",
+            "De {mois_année}.",
+            "Écrit il y a {age}.",
+            "On vous en parlait en {mois_année}.",
+        ];
+
         $template = $templates[random_int(0, count($templates) - 1)];
 
         return str_replace(
