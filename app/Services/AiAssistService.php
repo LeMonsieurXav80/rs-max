@@ -340,7 +340,13 @@ class AiAssistService
                     return $result;
                 }
 
-                Log::error('AiAssistService: Failed to parse Vision JSON response', ['raw' => $raw]);
+                Log::error('AiAssistService: Failed to parse Vision JSON response', [
+                    'raw' => $raw,
+                    'finish_reason' => $response->json('choices.0.finish_reason'),
+                    'refusal' => $response->json('choices.0.message.refusal'),
+                    'full_message' => $response->json('choices.0.message'),
+                    'model_used' => $response->json('model'),
+                ]);
 
                 return null;
             }
