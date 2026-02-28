@@ -306,53 +306,75 @@ class AiAssistService
             ];
         }
 
+        // System prompt with professional framing to avoid content refusals
+        $systemPrompt = "Tu es un assistant de gestion de réseaux sociaux professionnel. "
+            . "Tu travailles pour un(e) créateur/créatrice de contenu qui te fournit ses propres photos pour publication sur ses comptes. "
+            . "Ton rôle est de rédiger des légendes/descriptions engageantes pour accompagner ces photos.\n\n"
+            . $persona->system_prompt;
+
+        // Try with configured model, then fallback models if refused
+        $primaryModel = Setting::get('ai_model_vision', 'gpt-4o');
+        $modelsToTry = array_unique([$primaryModel, 'gpt-4.1', 'gpt-4.1-mini', 'gpt-4o-mini']);
+
         try {
-            $response = Http::withHeaders([
-                'Authorization' => "Bearer {$apiKey}",
-                'Content-Type' => 'application/json',
-            ])->timeout(120)->post('https://api.openai.com/v1/chat/completions', [
-                'model' => Setting::get('ai_model_vision', 'gpt-4o'),
-                'messages' => [
-                    ['role' => 'system', 'content' => $persona->system_prompt],
-                    ['role' => 'user', 'content' => $contentBlocks],
-                ],
-                'temperature' => 0.7,
-                'max_tokens' => 4000,
-                'response_format' => ['type' => 'json_object'],
-            ]);
-
-            if ($response->successful()) {
-                $raw = trim($response->json('choices.0.message.content', ''));
-                $parsed = json_decode($raw, true);
-
-                if (is_array($parsed)) {
-                    $result = array_intersect_key($parsed, array_flip($platformSlugs));
-                    Log::info('AiAssistService: Media-based content generated', [
-                        'persona' => $persona->name,
-                        'platforms' => $platformSlugs,
-                        'image_count' => count($imageDataUrls),
-                        'lengths' => array_map('mb_strlen', $result),
-                        'content' => $result,
-                    ]);
-
-                    return $result;
-                }
-
-                Log::error('AiAssistService: Failed to parse Vision JSON response', [
-                    'raw' => $raw,
-                    'finish_reason' => $response->json('choices.0.finish_reason'),
-                    'refusal' => $response->json('choices.0.message.refusal'),
-                    'full_message' => $response->json('choices.0.message'),
-                    'model_used' => $response->json('model'),
+            foreach ($modelsToTry as $model) {
+                $response = Http::withHeaders([
+                    'Authorization' => "Bearer {$apiKey}",
+                    'Content-Type' => 'application/json',
+                ])->timeout(120)->post('https://api.openai.com/v1/chat/completions', [
+                    'model' => $model,
+                    'messages' => [
+                        ['role' => 'system', 'content' => $systemPrompt],
+                        ['role' => 'user', 'content' => $contentBlocks],
+                    ],
+                    'temperature' => 0.7,
+                    'max_tokens' => 4000,
+                    'response_format' => ['type' => 'json_object'],
                 ]);
 
-                return null;
+                if ($response->successful()) {
+                    $refusal = $response->json('choices.0.message.refusal');
+
+                    if ($refusal) {
+                        Log::warning('AiAssistService: Vision model refused', [
+                            'model' => $model,
+                            'refusal' => $refusal,
+                        ]);
+
+                        continue; // Try next model
+                    }
+
+                    $raw = trim($response->json('choices.0.message.content', ''));
+                    $parsed = json_decode($raw, true);
+
+                    if (is_array($parsed)) {
+                        $result = array_intersect_key($parsed, array_flip($platformSlugs));
+                        Log::info('AiAssistService: Media-based content generated', [
+                            'persona' => $persona->name,
+                            'model' => $model,
+                            'platforms' => $platformSlugs,
+                            'image_count' => count($imageDataUrls),
+                            'lengths' => array_map('mb_strlen', $result),
+                        ]);
+
+                        return $result;
+                    }
+
+                    Log::error('AiAssistService: Failed to parse Vision JSON response', [
+                        'model' => $model,
+                        'raw' => $raw,
+                    ]);
+
+                    return null;
+                }
+
+                Log::warning('AiAssistService: Vision API error, trying next model', [
+                    'model' => $model,
+                    'status' => $response->status(),
+                ]);
             }
 
-            Log::error('AiAssistService: Vision API error', [
-                'status' => $response->status(),
-                'body' => $response->body(),
-            ]);
+            Log::error('AiAssistService: All Vision models failed or refused');
 
             return null;
 
