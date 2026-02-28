@@ -200,11 +200,25 @@ class WordPressFetchService
             }
         }
 
+        // Remove items whose post_type is no longer selected (only if they have no generated posts)
+        $removedCount = WpItem::where('wp_source_id', $source->id)
+            ->whereNotIn('post_type', $postTypes)
+            ->whereDoesntHave('wpPosts')
+            ->delete();
+
+        if ($removedCount > 0) {
+            Log::info('WordPressFetchService: Removed items from deselected post types', [
+                'source' => $source->name,
+                'removed' => $removedCount,
+            ]);
+        }
+
         $source->update(['last_fetched_at' => now()]);
 
         Log::info('WordPressFetchService: Fetch complete', [
             'source' => $source->name,
             'new_items' => $newCount,
+            'removed_items' => $removedCount,
         ]);
 
         return $newCount;

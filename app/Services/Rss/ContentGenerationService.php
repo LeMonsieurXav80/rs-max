@@ -3,10 +3,13 @@
 namespace App\Services\Rss;
 
 use App\Models\Persona;
+use App\Models\RedditItem;
 use App\Models\RssItem;
 use App\Models\Setting;
 use App\Models\SocialAccount;
 use App\Models\WpItem;
+use App\Models\YtItem;
+use App\Services\YouTube\YouTubeFetchService;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 
@@ -22,7 +25,7 @@ class ContentGenerationService
     /**
      * Generate a social media post from an RSS item using a persona.
      */
-    public function generate(RssItem|WpItem $item, Persona $persona, SocialAccount $account): ?string
+    public function generate(RssItem|WpItem|YtItem|RedditItem $item, Persona $persona, SocialAccount $account): ?string
     {
         $apiKey = Setting::getEncrypted('openai_api_key');
         if (! $apiKey) {
@@ -31,22 +34,33 @@ class ContentGenerationService
             return null;
         }
 
-        // 1. Try to fetch the full article content (+ title for sitemap items)
-        $pageMeta = $this->articleFetcher->fetchPageMeta($item->url);
-        $articleContent = $pageMeta['content'];
+        // 1. Build article content based on item type
+        $articleContent = '';
 
-        // Update item title if it was derived from URL (sitemap) and we got a real title
-        if ($pageMeta['title'] && ! $item->content && ! $item->summary) {
-            $item->update(['title' => $pageMeta['title']]);
-        }
+        if ($item instanceof YtItem) {
+            // YouTube: use description as content
+            $articleContent = $item->description ?: $item->title;
+        } elseif ($item instanceof RedditItem) {
+            // Reddit: use selftext for self posts, title for link posts
+            $articleContent = $item->selftext ?: $item->title;
+        } else {
+            // RSS/WordPress: fetch the full article content
+            $pageMeta = $this->articleFetcher->fetchPageMeta($item->url);
+            $articleContent = $pageMeta['content'];
 
-        // 2. Fallback to RSS content/summary
-        if (! $articleContent) {
-            $articleContent = $item->content ?: $item->summary;
-        }
+            // Update item title if it was derived from URL (sitemap) and we got a real title
+            if ($pageMeta['title'] && ! $item->content && ! $item->summary) {
+                $item->update(['title' => $pageMeta['title']]);
+            }
 
-        if (! $articleContent) {
-            $articleContent = $item->title;
+            // Fallback to RSS content/summary
+            if (! $articleContent) {
+                $articleContent = $item->content ?: $item->summary;
+            }
+
+            if (! $articleContent) {
+                $articleContent = $item->title;
+            }
         }
 
         // 3. Determine language (always French by default, account can override)
@@ -63,13 +77,49 @@ class ContentGenerationService
         };
 
         // 4. Build the user prompt
-        $userPrompt = "Voici un article à transformer en publication pour les réseaux sociaux.\n\n";
-        $userPrompt .= "Titre : {$item->title}\n";
-        if ($item->published_at) {
-            $userPrompt .= "Date de publication : {$item->published_at->translatedFormat('j F Y')}\n";
+        if ($item instanceof YtItem) {
+            $userPrompt = "Voici une vidéo YouTube à transformer en publication pour les réseaux sociaux.\n\n";
+            $userPrompt .= "Titre : {$item->title}\n";
+            if ($item->duration) {
+                $userPrompt .= "Durée : " . YouTubeFetchService::formatDuration($item->duration) . "\n";
+            }
+            if ($item->view_count) {
+                $userPrompt .= "Vues : " . number_format($item->view_count, 0, ',', ' ') . "\n";
+            }
+            if ($item->like_count) {
+                $userPrompt .= "Likes : " . number_format($item->like_count, 0, ',', ' ') . "\n";
+            }
+            if ($item->published_at) {
+                $userPrompt .= "Date de publication : {$item->published_at->translatedFormat('j F Y')}\n";
+            }
+            $userPrompt .= "URL : {$item->url}\n\n";
+            $userPrompt .= "Description de la vidéo :\n{$articleContent}\n\n";
+        } elseif ($item instanceof RedditItem) {
+            $userPrompt = "Voici un post Reddit à transformer en publication pour les réseaux sociaux.\n\n";
+            $userPrompt .= "Titre : {$item->title}\n";
+            $userPrompt .= "Score : {$item->score} upvotes\n";
+            $userPrompt .= "Commentaires : {$item->num_comments}\n";
+            if ($item->author) {
+                $userPrompt .= "Auteur : u/{$item->author}\n";
+            }
+            if ($item->published_at) {
+                $userPrompt .= "Date de publication : {$item->published_at->translatedFormat('j F Y')}\n";
+            }
+            $userPrompt .= "URL : {$item->permalink}\n\n";
+            if ($item->is_self && $item->selftext) {
+                $userPrompt .= "Contenu du post :\n{$articleContent}\n\n";
+            } else {
+                $userPrompt .= "Lien partagé : {$item->url}\n\n";
+            }
+        } else {
+            $userPrompt = "Voici un article à transformer en publication pour les réseaux sociaux.\n\n";
+            $userPrompt .= "Titre : {$item->title}\n";
+            if ($item->published_at) {
+                $userPrompt .= "Date de publication : {$item->published_at->translatedFormat('j F Y')}\n";
+            }
+            $userPrompt .= "URL : {$item->url}\n\n";
+            $userPrompt .= "Contenu de l'article :\n{$articleContent}\n\n";
         }
-        $userPrompt .= "URL : {$item->url}\n\n";
-        $userPrompt .= "Contenu de l'article :\n{$articleContent}\n\n";
         $userPrompt .= "Génère une publication en {$languageLabel} pour le compte \"{$account->name}\" sur {$account->platform->name}.\n";
 
         // Platform-specific formatting rules
@@ -88,7 +138,8 @@ class ContentGenerationService
 
         // Instagram links are not clickable, so don't ask to include the URL
         if ($account->platform->slug !== 'instagram') {
-            $userPrompt .= "\nInclus le lien de l'article dans la publication : {$item->url}";
+            $linkUrl = ($item instanceof RedditItem) ? $item->permalink : $item->url;
+            $userPrompt .= "\nInclus le lien dans la publication : {$linkUrl}";
         }
 
         // 5. Call OpenAI API

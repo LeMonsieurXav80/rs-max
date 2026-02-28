@@ -95,6 +95,7 @@ class SettingsController extends Controller
         }
 
         $hasOpenaiKey = (bool) Setting::getEncrypted('openai_api_key');
+        $hasYoutubeApiKey = (bool) Setting::getEncrypted('youtube_api_key');
 
         // Fetch available OpenAI models if API key is configured
         $availableModels = [];
@@ -124,7 +125,7 @@ class SettingsController extends Controller
             }, [], false);
         }
 
-        return view('settings.index', compact('settings', 'hasOpenaiKey', 'availableModels'));
+        return view('settings.index', compact('settings', 'hasOpenaiKey', 'hasYoutubeApiKey', 'availableModels'));
     }
 
     public function update(Request $request)
@@ -135,6 +136,7 @@ class SettingsController extends Controller
 
         $validated = $request->validate([
             'openai_api_key' => 'nullable|string|min:10',
+            'youtube_api_key' => 'nullable|string|min:10',
             'image_max_dimension' => 'required|integer|min:512|max:4096',
             'image_target_min_kb' => 'required|integer|min:50|max:500',
             'image_target_max_kb' => 'required|integer|min:200|max:2000',
@@ -171,11 +173,16 @@ class SettingsController extends Controller
             'ai_model_rss' => 'required|string|max:50',
         ]);
 
-        // Handle OpenAI key separately (encrypted storage)
+        // Handle encrypted keys separately
         if ($request->filled('openai_api_key')) {
             Setting::setEncrypted('openai_api_key', $validated['openai_api_key']);
         }
         unset($validated['openai_api_key']);
+
+        if ($request->filled('youtube_api_key')) {
+            Setting::setEncrypted('youtube_api_key', $validated['youtube_api_key']);
+        }
+        unset($validated['youtube_api_key']);
 
         foreach ($validated as $key => $value) {
             Setting::set($key, $value);

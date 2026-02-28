@@ -14,8 +14,10 @@ use App\Http\Controllers\PublishController;
 use App\Http\Controllers\AiAssistController;
 use App\Http\Controllers\RssFeedController;
 use App\Http\Controllers\SettingsController;
+use App\Http\Controllers\RedditSourceController;
 use App\Http\Controllers\WordPressSiteController;
 use App\Http\Controllers\SocialAccountController;
+use App\Http\Controllers\YouTubeChannelController;
 use App\Http\Controllers\StatsController;
 use App\Http\Controllers\ThreadsOAuthController;
 use App\Http\Controllers\YouTubeOAuthController;
@@ -111,6 +113,24 @@ Route::middleware(['auth', 'verified'])->group(function () {
     Route::post('wordpress-sites/{wpSource}/generate-preview', [WordPressSiteController::class, 'generatePreview'])->name('wordpress-sites.generatePreview');
     Route::post('wordpress-sites/{wpSource}/regenerate-item', [WordPressSiteController::class, 'regenerateItem'])->name('wordpress-sites.regenerateItem');
     Route::post('wordpress-sites/{wpSource}/confirm-publications', [WordPressSiteController::class, 'confirmPublications'])->name('wordpress-sites.confirmPublications');
+
+    // YouTube Channels (admin)
+    Route::resource('youtube-channels', YouTubeChannelController::class)->except(['show'])->parameters(['youtube-channels' => 'ytSource']);
+    Route::post('youtube-channels/test-connection', [YouTubeChannelController::class, 'testConnection'])->name('youtube-channels.testConnection');
+    Route::post('youtube-channels/{ytSource}/fetch', [YouTubeChannelController::class, 'fetchNow'])->name('youtube-channels.fetch');
+    Route::get('youtube-channels/{ytSource}/preview', [YouTubeChannelController::class, 'preview'])->name('youtube-channels.preview');
+    Route::post('youtube-channels/{ytSource}/generate-preview', [YouTubeChannelController::class, 'generatePreview'])->name('youtube-channels.generatePreview');
+    Route::post('youtube-channels/{ytSource}/regenerate-item', [YouTubeChannelController::class, 'regenerateItem'])->name('youtube-channels.regenerateItem');
+    Route::post('youtube-channels/{ytSource}/confirm-publications', [YouTubeChannelController::class, 'confirmPublications'])->name('youtube-channels.confirmPublications');
+
+    // Reddit Sources (admin)
+    Route::resource('reddit-sources', RedditSourceController::class)->except(['show'])->parameters(['reddit-sources' => 'redditSource']);
+    Route::post('reddit-sources/test-connection', [RedditSourceController::class, 'testConnection'])->name('reddit-sources.testConnection');
+    Route::post('reddit-sources/{redditSource}/fetch', [RedditSourceController::class, 'fetchNow'])->name('reddit-sources.fetch');
+    Route::get('reddit-sources/{redditSource}/preview', [RedditSourceController::class, 'preview'])->name('reddit-sources.preview');
+    Route::post('reddit-sources/{redditSource}/generate-preview', [RedditSourceController::class, 'generatePreview'])->name('reddit-sources.generatePreview');
+    Route::post('reddit-sources/{redditSource}/regenerate-item', [RedditSourceController::class, 'regenerateItem'])->name('reddit-sources.regenerateItem');
+    Route::post('reddit-sources/{redditSource}/confirm-publications', [RedditSourceController::class, 'confirmPublications'])->name('reddit-sources.confirmPublications');
 
     // Settings (admin only)
     Route::get('settings', [SettingsController::class, 'index'])->name('settings.index');
