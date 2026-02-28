@@ -14,6 +14,7 @@ use App\Http\Controllers\PublishController;
 use App\Http\Controllers\AiAssistController;
 use App\Http\Controllers\RssFeedController;
 use App\Http\Controllers\SettingsController;
+use App\Http\Controllers\WordPressSiteController;
 use App\Http\Controllers\SocialAccountController;
 use App\Http\Controllers\StatsController;
 use App\Http\Controllers\ThreadsOAuthController;
@@ -101,6 +102,15 @@ Route::middleware(['auth', 'verified'])->group(function () {
     Route::post('rss-feeds/{rssFeed}/generate-preview', [RssFeedController::class, 'generatePreview'])->name('rss-feeds.generatePreview');
     Route::post('rss-feeds/{rssFeed}/regenerate-item', [RssFeedController::class, 'regenerateItem'])->name('rss-feeds.regenerateItem');
     Route::post('rss-feeds/{rssFeed}/confirm-publications', [RssFeedController::class, 'confirmPublications'])->name('rss-feeds.confirmPublications');
+
+    // WordPress Sites (admin)
+    Route::resource('wordpress-sites', WordPressSiteController::class)->except(['show'])->parameters(['wordpress-sites' => 'wpSource']);
+    Route::post('wordpress-sites/test-connection', [WordPressSiteController::class, 'testConnection'])->name('wordpress-sites.testConnection');
+    Route::post('wordpress-sites/{wpSource}/fetch', [WordPressSiteController::class, 'fetchNow'])->name('wordpress-sites.fetch');
+    Route::get('wordpress-sites/{wpSource}/preview', [WordPressSiteController::class, 'preview'])->name('wordpress-sites.preview');
+    Route::post('wordpress-sites/{wpSource}/generate-preview', [WordPressSiteController::class, 'generatePreview'])->name('wordpress-sites.generatePreview');
+    Route::post('wordpress-sites/{wpSource}/regenerate-item', [WordPressSiteController::class, 'regenerateItem'])->name('wordpress-sites.regenerateItem');
+    Route::post('wordpress-sites/{wpSource}/confirm-publications', [WordPressSiteController::class, 'confirmPublications'])->name('wordpress-sites.confirmPublications');
 
     // Settings (admin only)
     Route::get('settings', [SettingsController::class, 'index'])->name('settings.index');

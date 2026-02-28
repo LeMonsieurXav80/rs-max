@@ -6,6 +6,7 @@ use App\Models\Persona;
 use App\Models\RssItem;
 use App\Models\Setting;
 use App\Models\SocialAccount;
+use App\Models\WpItem;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 
@@ -21,7 +22,7 @@ class ContentGenerationService
     /**
      * Generate a social media post from an RSS item using a persona.
      */
-    public function generate(RssItem $item, Persona $persona, SocialAccount $account): ?string
+    public function generate(RssItem|WpItem $item, Persona $persona, SocialAccount $account): ?string
     {
         $apiKey = Setting::getEncrypted('openai_api_key');
         if (! $apiKey) {
@@ -64,6 +65,9 @@ class ContentGenerationService
         // 4. Build the user prompt
         $userPrompt = "Voici un article à transformer en publication pour les réseaux sociaux.\n\n";
         $userPrompt .= "Titre : {$item->title}\n";
+        if ($item->published_at) {
+            $userPrompt .= "Date de publication : {$item->published_at->translatedFormat('j F Y')}\n";
+        }
         $userPrompt .= "URL : {$item->url}\n\n";
         $userPrompt .= "Contenu de l'article :\n{$articleContent}\n\n";
         $userPrompt .= "Génère une publication en {$languageLabel} pour le compte \"{$account->name}\" sur {$account->platform->name}.\n";

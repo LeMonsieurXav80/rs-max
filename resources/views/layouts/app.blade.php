@@ -110,10 +110,10 @@
 
                     {{-- Sources de contenu (collapsible) --}}
                     @if(auth()->user()->is_admin)
-                    <div x-data="{ rssOpen: {{ str_starts_with($currentRoute, 'rss') ? 'true' : 'false' }} }">
+                    <div x-data="{ rssOpen: {{ str_starts_with($currentRoute, 'rss') || str_starts_with($currentRoute, 'wordpress') ? 'true' : 'false' }} }">
                         <button
                             @click="rssOpen = !rssOpen"
-                            class="w-full flex items-center justify-between px-3 py-2.5 rounded-xl text-sm font-medium transition-colors {{ str_starts_with($currentRoute, 'rss') ? 'text-indigo-600' : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900' }}"
+                            class="w-full flex items-center justify-between px-3 py-2.5 rounded-xl text-sm font-medium transition-colors {{ str_starts_with($currentRoute, 'rss') || str_starts_with($currentRoute, 'wordpress') ? 'text-indigo-600' : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900' }}"
                         >
                             <span class="flex items-center gap-3">
                                 <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1.5">
@@ -133,6 +133,13 @@
                                     <path stroke-linecap="round" stroke-linejoin="round" d="M12.75 19.5v-.75a7.5 7.5 0 0 0-7.5-7.5H4.5m0-6.75h.75c7.87 0 14.25 6.38 14.25 14.25v.75M6 18.75a.75.75 0 1 1-1.5 0 .75.75 0 0 1 1.5 0Z" />
                                 </svg>
                                 Flux RSS/XML
+                            </a>
+                            <a href="{{ url('/wordpress-sites') }}"
+                               class="flex items-center gap-3 px-3 py-2 rounded-lg text-sm transition-colors {{ str_starts_with($currentRoute, 'wordpress-sites') ? 'bg-indigo-50 text-indigo-600 font-medium' : 'text-gray-500 hover:bg-gray-50 hover:text-gray-900' }}">
+                                <svg class="w-4 h-4" fill="currentColor" viewBox="0 0 24 24">
+                                    <path d="M21.469 6.825c.84 1.537 1.318 3.3 1.318 5.175 0 3.979-2.156 7.456-5.363 9.325l3.295-9.527c.615-1.539.82-2.771.82-3.864 0-.397-.026-.765-.07-1.109m-7.981.105c.647-.034 1.23-.1 1.23-.1.579-.068.51-.919-.069-.886 0 0-1.742.137-2.865.137-1.056 0-2.83-.137-2.83-.137-.579-.033-.648.852-.068.886 0 0 .549.06 1.128.103l1.674 4.59-2.35 7.05-3.911-11.64c.647-.034 1.23-.1 1.23-.1.579-.068.51-.919-.069-.886 0 0-1.742.137-2.865.137-.201 0-.44-.005-.693-.014C4.758 3.668 8.088 2 11.869 2c2.81 0 5.371 1.075 7.294 2.833-.046-.003-.091-.009-.141-.009-1.056 0-1.803.919-1.803 1.907 0 .886.51 1.636 1.055 2.523.41.717.889 1.636.889 2.962 0 .919-.354 1.985-.82 3.47l-1.075 3.59-3.896-11.586.003-.002zM11.869 24c-1.886 0-3.673-.429-5.265-1.196l5.596-16.252 5.728 15.69c.038.092.083.178.131.257C15.997 23.467 14.008 24 11.869 24M.926 12c0-2.335.73-4.5 1.974-6.278l5.441 14.906C3.597 18.705.926 15.641.926 12"/>
+                                </svg>
+                                Sites WordPress
                             </a>
                         </div>
                     </div>
