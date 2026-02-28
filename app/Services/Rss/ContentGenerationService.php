@@ -94,6 +94,7 @@ class ContentGenerationService
             }
             $userPrompt .= "URL : {$item->url}\n\n";
             $userPrompt .= "Description de la vidéo :\n{$articleContent}\n\n";
+            $userPrompt .= "IMPORTANT : La vidéo date du {$item->published_at->translatedFormat('j F Y')}. N'utilise PAS d'expressions comme « notre dernière vidéo », « nouvelle vidéo » ou « vient de sortir » si la vidéo a plus d'un mois. Adapte le ton à l'ancienneté du contenu.\n\n";
         } elseif ($item instanceof RedditItem) {
             $userPrompt = "Voici un post Reddit à transformer en publication pour les réseaux sociaux.\n\n";
             $userPrompt .= "Titre : {$item->title}\n";
