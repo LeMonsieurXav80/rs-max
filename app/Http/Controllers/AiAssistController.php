@@ -113,6 +113,7 @@ class AiAssistController extends Controller
             $filePath = Storage::disk('local')->path("media/{$filename}");
 
             if (! file_exists($filePath)) {
+                Log::warning('AiAssistController: Media file not found', ['url' => $url, 'filename' => $filename, 'path' => $filePath]);
                 continue;
             }
 
@@ -130,10 +131,19 @@ class AiAssistController extends Controller
         }
 
         if (empty($imageDataUrls)) {
+            Log::warning('AiAssistController: No valid media data URLs generated', [
+                'media_urls' => $validated['media_urls'],
+            ]);
+
             return response()->json([
                 'error' => 'Aucun média valide trouvé à analyser.',
             ], 422);
         }
+
+        Log::info('AiAssistController: Sending to Vision API', [
+            'image_count' => count($imageDataUrls),
+            'platforms' => $validated['platforms'],
+        ]);
 
         $service = new AiAssistService;
         $result = $service->generateFromMediaForPlatforms(
