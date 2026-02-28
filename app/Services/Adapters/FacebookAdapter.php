@@ -118,23 +118,75 @@ class FacebookAdapter implements PlatformAdapterInterface
     }
 
     /**
-     * Publish a single video with a description.
+     * Publish a single video as a Facebook Reel.
+     *
+     * 1. Initialize the upload session.
+     * 2. Upload the video via hosted URL.
+     * 3. Publish the reel.
      */
     private function publishSingleVideo(string $pageId, string $accessToken, string $content, string $videoUrl, ?string $placeId = null): array
     {
-        $params = [
+        // Step 1 -- initialize the upload session.
+        $initResponse = Http::post(self::API_BASE . "/{$pageId}/video_reels", [
+            'upload_phase' => 'start',
+            'access_token' => $accessToken,
+        ]);
+
+        $initBody = $initResponse->json();
+
+        if (! $initResponse->successful() || empty($initBody['video_id'])) {
+            $error = $initBody['error']['message'] ?? 'Failed to initialize reel upload';
+            Log::error('FacebookAdapter: reel init failed', ['error' => $error]);
+
+            return ['success' => false, 'external_id' => null, 'error' => $error];
+        }
+
+        $videoId = $initBody['video_id'];
+
+        // Step 2 -- upload the video via hosted URL.
+        $uploadResponse = Http::withHeaders([
+            'Authorization' => "OAuth {$accessToken}",
             'file_url' => $videoUrl,
+        ])->post("https://rupload.facebook.com/video-upload/v21.0/{$videoId}");
+
+        $uploadBody = $uploadResponse->json();
+
+        if (! $uploadResponse->successful() || empty($uploadBody['success'])) {
+            $error = $uploadBody['error']['message'] ?? 'Failed to upload reel video';
+            Log::error('FacebookAdapter: reel upload failed', ['video_id' => $videoId, 'error' => $error]);
+
+            return ['success' => false, 'external_id' => null, 'error' => $error];
+        }
+
+        // Step 3 -- publish the reel.
+        $publishParams = [
+            'upload_phase' => 'finish',
+            'video_id' => $videoId,
+            'video_state' => 'PUBLISHED',
             'description' => $content,
             'access_token' => $accessToken,
         ];
 
         if ($placeId) {
-            $params['place'] = $placeId;
+            $publishParams['place'] = $placeId;
         }
 
-        $response = Http::post(self::API_BASE . "/{$pageId}/videos", $params);
+        $publishResponse = Http::post(self::API_BASE . "/{$pageId}/video_reels", $publishParams);
 
-        return $this->parseResponse($response);
+        $publishBody = $publishResponse->json();
+
+        if ($publishResponse->successful() && isset($publishBody['success']) && $publishBody['success']) {
+            return [
+                'success' => true,
+                'external_id' => (string) $videoId,
+                'error' => null,
+            ];
+        }
+
+        $error = $publishBody['error']['message'] ?? 'Failed to publish reel';
+        Log::error('FacebookAdapter: reel publish failed', ['video_id' => $videoId, 'error' => $error]);
+
+        return ['success' => false, 'external_id' => null, 'error' => $error];
     }
 
     /**

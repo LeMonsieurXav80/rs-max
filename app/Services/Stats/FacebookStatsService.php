@@ -58,6 +58,19 @@ class FacebookStatsService implements PlatformStatsInterface
                 }
             }
 
+            // Fallback for videos: post insights don't work on video objects,
+            // but the 'views' field is available directly on the video object.
+            if ($views === null) {
+                $videoResponse = Http::get(self::GRAPH_API_BASE.'/'.self::GRAPH_API_VERSION."/{$externalId}", [
+                    'fields' => 'views',
+                    'access_token' => $accessToken,
+                ]);
+
+                if ($videoResponse->successful()) {
+                    $views = $videoResponse->json('views');
+                }
+            }
+
             // Fetch page followers count
             $pageId = $postPlatform->socialAccount->platform_account_id;
             $followersCount = null;
