@@ -186,7 +186,9 @@
                             {{-- Last update info --}}
                             <div class="mt-2 text-xs text-gray-400">
                                 @if($canImport)
-                                    @if($hasImported)
+                                    @if($account->followers_synced_at)
+                                        Dernière MAJ : {{ $account->followers_synced_at->diffForHumans() }}
+                                    @elseif($hasImported)
                                         Dernière MAJ : {{ $account->last_history_import_at->diffForHumans() }}
                                     @else
                                         Jamais importé

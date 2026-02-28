@@ -10,6 +10,9 @@ Schedule::command('posts:publish-scheduled')->everyMinute()->withoutOverlapping(
 // RSS auto-generate posts every 6 hours
 Schedule::command('rss:generate')->cron('0 */6 * * *')->withoutOverlapping();
 
+// Sync follower counts every 6 hours
+Schedule::command('followers:sync')->cron('0 */6 * * *')->withoutOverlapping();
+
 // Stats sync - frequency configurable via Settings page
 $syncFreq = rescue(fn () => Setting::get('stats_sync_frequency', 'hourly'), 'hourly', false);
 $statsSchedule = Schedule::command('stats:sync')->withoutOverlapping();

@@ -95,7 +95,7 @@ class StatsSyncService
             return false;
         }
 
-        $intervalHours = (int) Setting::get("stats_{$slug}_interval", 24);
+        $configuredInterval = (int) Setting::get("stats_{$slug}_interval", 24);
         $maxDays = (int) Setting::get("stats_{$slug}_max_days", 30);
 
         $daysSincePublished = now()->diffInDays($publishedAt);
@@ -103,6 +103,15 @@ class StatsSyncService
         // Posts older than max age: manual sync only
         if ($daysSincePublished > $maxDays) {
             return false;
+        }
+
+        // Adaptive intervals: fresh posts need more frequent syncing
+        if ($daysSincePublished < 2) {
+            $intervalHours = 1;          // < 48h: every hour
+        } elseif ($daysSincePublished < 7) {
+            $intervalHours = 6;          // 2-7 days: every 6 hours
+        } else {
+            $intervalHours = $configuredInterval; // 7+ days: use configured interval
         }
 
         // Sync if never synced or if enough time has passed
