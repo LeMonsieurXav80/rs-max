@@ -94,7 +94,12 @@ class ContentGenerationService
             }
             $userPrompt .= "URL : {$item->url}\n\n";
             $userPrompt .= "Description de la vidéo :\n{$articleContent}\n\n";
-            $userPrompt .= "IMPORTANT : La vidéo date du {$item->published_at->translatedFormat('j F Y')}. N'utilise PAS d'expressions comme « notre dernière vidéo », « nouvelle vidéo » ou « vient de sortir » si la vidéo a plus d'un mois. Adapte le ton à l'ancienneté du contenu.\n\n";
+
+            // Add age-aware phrasing for videos older than 6 months
+            if ($item->published_at && $item->published_at->diffInMonths(now()) >= 6) {
+                $agePhrase = $this->getVideoAgePhrase($item->published_at);
+                $userPrompt .= "IMPORTANT : La vidéo n'est PAS récente. N'utilise PAS d'expressions comme « notre dernière vidéo », « nouvelle vidéo » ou « vient de sortir ». Intègre naturellement cette formulation dans ta publication : « {$agePhrase} ». Tu peux l'adapter légèrement au contexte, mais garde l'idée.\n\n";
+            }
         } elseif ($item instanceof RedditItem) {
             $userPrompt = "Voici un post Reddit à transformer en publication pour les réseaux sociaux.\n\n";
             $userPrompt .= "Titre : {$item->title}\n";
@@ -229,5 +234,53 @@ class ContentGenerationService
             'telegram' => 4096,
             default => 0,
         };
+    }
+
+    private function getVideoAgePhrase(\Carbon\Carbon $publishedAt): string
+    {
+        $mois = $publishedAt->translatedFormat('F');
+        $année = $publishedAt->format('Y');
+        $mois_année = "{$mois} {$année}";
+
+        $diffMonths = $publishedAt->diffInMonths(now());
+        if ($diffMonths >= 24) {
+            $age = (int) floor($diffMonths / 12) . ' ans';
+        } elseif ($diffMonths >= 12) {
+            $age = 'un an';
+        } else {
+            $age = $diffMonths . ' mois';
+        }
+
+        $templates = [
+            "Il y a {age}, on publiait cette vidéo...",
+            "Vous vous souvenez ? C'était en {mois_année}.",
+            "On est retombé sur cette vidéo de {année} et elle vaut le détour.",
+            "Cette vidéo de {mois_année} a peut-être un peu vieilli, mais pas son message.",
+            "Retour en {mois_année} avec cette vidéo.",
+            "{mois_année} — ça ne nous rajeunit pas, mais cette vidéo reste pertinente.",
+            "Petit flashback : cette vidéo date de {mois_année}.",
+            "On remet en lumière cette vidéo sortie il y a {age}.",
+            "C'était il y a {age}. Le temps passe vite !",
+            "Sortie en {mois_année}, cette vidéo mérite d'être (re)découverte.",
+            "Une vidéo de {année} qu'on avait envie de vous repartager.",
+            "Publiée en {mois_année}, toujours d'actualité.",
+            "Il y a {age}, on vous proposait cette vidéo. Vous l'aviez vue ?",
+            "On replonge dans nos archives de {mois_année}.",
+            "Depuis {mois_année}, cette vidéo a bien voyagé.",
+            "Cette vidéo a {age} et elle n'a pas pris une ride.",
+            "En {mois_année}, on partageait cette vidéo. La revoilà !",
+            "Un classique de {année} à (re)voir.",
+            "Ça fait déjà {age} que cette vidéo est sortie.",
+            "Coup d'œil dans le rétro : {mois_année}.",
+        ];
+
+        // Use random_int for true randomness
+        $template = $templates[random_int(0, count($templates) - 1)];
+
+        return str_replace(
+            ['{age}', '{mois}', '{année}', '{mois_année}'],
+            [$age, $mois, $année, $mois_année],
+            $template
+        );
     }
 }
