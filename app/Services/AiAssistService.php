@@ -269,23 +269,21 @@ class AiAssistService
 
         $platformList = implode(', ', $platformDescriptions);
 
-        $userPrompt = "Analyse en profondeur les images/photos ci-jointes. Ces médias seront publiés sur les réseaux sociaux.\n\n";
-        $userPrompt .= "ÉTAPE 1 — ANALYSE VISUELLE DÉTAILLÉE (utilise ces observations pour nourrir ton texte) :\n";
-        $userPrompt .= "- Type de photo : selfie, portrait, photo posée, photo spontanée, paysage, produit, food, etc.\n";
-        $userPrompt .= "- Personnes : visage visible ou non, expression (sourire, regard, etc.), pose, angle de prise de vue\n";
-        $userPrompt .= "- Corps : parties visibles (visage, mains, jambes, pieds, dos, etc.), posture\n";
-        $userPrompt .= "- Vêtements/accessoires : type (robe, lingerie, talons, bijoux, etc.), couleurs, matières, style\n";
-        $userPrompt .= "- Décor/environnement : intérieur/extérieur, lieu, lumière (naturelle, tamisée, etc.), ambiance\n";
-        $userPrompt .= "- Couleurs dominantes, composition, mood général de l'image\n\n";
+        $userPrompt = "Observe attentivement les images/photos ci-jointes et génère un texte de publication pour les réseaux sociaux.\n\n";
+        $userPrompt .= "Pour écrire un texte pertinent, décris mentalement ce que tu vois :\n";
+        $userPrompt .= "- Le style et l'ambiance générale de la photo\n";
+        $userPrompt .= "- Le décor, la lumière, les couleurs dominantes\n";
+        $userPrompt .= "- La tenue, le style vestimentaire, les accessoires\n";
+        $userPrompt .= "- La pose, l'attitude, l'énergie qui se dégage\n";
+        $userPrompt .= "- L'atmosphère et le mood de l'ensemble\n\n";
         if (trim($content)) {
             $userPrompt .= "CONTEXTE FOURNI PAR L'UTILISATEUR :\n";
             $userPrompt .= "{$content}\n\n";
             $userPrompt .= "Utilise ce contexte pour orienter et enrichir ton texte en combinaison avec les détails visuels.\n\n";
         }
 
-        $userPrompt .= "ÉTAPE 2 — GÉNÉRATION DU TEXTE :\n";
-        $userPrompt .= "En t'appuyant sur les détails visuels concrets identifiés ci-dessus" . (trim($content) ? ' et le contexte fourni' : '') . ", génère un texte de publication engageant en {$languageLabel} adapté à chaque plateforme : {$platformList}.\n";
-        $userPrompt .= "Le texte doit faire référence à des éléments spécifiques et concrets de l'image (couleurs, vêtements, pose, lieu, ambiance), pas à des concepts abstraits.\n";
+        $userPrompt .= "En t'appuyant sur ces éléments visuels concrets" . (trim($content) ? ' et le contexte fourni' : '') . ", génère un texte engageant en {$languageLabel} adapté à chaque plateforme : {$platformList}.\n";
+        $userPrompt .= "Le texte doit faire référence à des détails spécifiques de l'image (couleurs, tenue, pose, lieu, ambiance), pas à des concepts abstraits.\n";
         $userPrompt .= "Suis le style et le ton de la persona.\n";
         $userPrompt .= "Adapte le ton et la longueur à chaque plateforme. Respecte les limites de caractères.\n";
         $userPrompt .= "N'inclus PAS de hashtags dans le texte, ils sont gérés séparément.\n\n";
