@@ -98,7 +98,7 @@ class StatsSyncService
         $configuredInterval = (int) Setting::get("stats_{$slug}_interval", 24);
         $maxDays = (int) Setting::get("stats_{$slug}_max_days", 30);
 
-        $daysSincePublished = now()->diffInDays($publishedAt);
+        $daysSincePublished = (int) abs(now()->diffInDays($publishedAt));
 
         // Posts older than max age: manual sync only
         if ($daysSincePublished > $maxDays) {
