@@ -29,6 +29,26 @@ class TelegramAdapter implements PlatformAdapterInterface
                 return $this->sendMessage($baseUrl, $chatId, $content);
             }
 
+            // Telegram caption limit is 1024 characters.
+            // If text is too long, send text first then media separately.
+            if (mb_strlen($content) > 1024) {
+                $textResult = $this->sendMessage($baseUrl, $chatId, $content);
+                if (! $textResult['success']) {
+                    return $textResult;
+                }
+
+                if (count($media) === 1) {
+                    $item = $media[0];
+                    if ($this->isVideo($item['mimetype'], $item['url'])) {
+                        return $this->sendVideo($baseUrl, $chatId, $item['url'], '');
+                    }
+
+                    return $this->sendPhoto($baseUrl, $chatId, $item['url'], '');
+                }
+
+                return $this->sendMediaGroup($baseUrl, $chatId, $media, '');
+            }
+
             // Single media item.
             if (count($media) === 1) {
                 $item = $media[0];
