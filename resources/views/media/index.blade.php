@@ -57,6 +57,7 @@
         bulkMoveFolder: '',
         uploading: false,
         uploadProgress: 0,
+        uploadPhase: 'upload',
         deleteConfirm: false,
         dragOver: false,
         newFolderName: '',
@@ -155,6 +156,7 @@
         async uploadFile(file) {
             this.uploading = true;
             this.uploadProgress = 0;
+            this.uploadPhase = 'upload';
             const formData = new FormData();
             formData.append('file', file);
             if (this.currentFolder && this.currentFolder !== 'uncategorized') {
@@ -165,6 +167,9 @@
                 xhr.upload.addEventListener('progress', (e) => {
                     if (e.lengthComputable) {
                         this.uploadProgress = Math.round((e.loaded / e.total) * 100);
+                        if (this.uploadProgress >= 100) {
+                            this.uploadPhase = 'processing';
+                        }
                     }
                 });
                 await new Promise((resolve, reject) => {
@@ -358,11 +363,15 @@
                             <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
                             <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path>
                         </svg>
-                        <p class="text-sm font-medium text-indigo-600">Upload en cours...</p>
+                        <p class="text-sm font-medium text-indigo-600" x-show="uploadPhase === 'upload'">Upload en cours...</p>
+                        <p class="text-sm font-medium text-amber-600" x-show="uploadPhase === 'processing'">Traitement en cours (encodage video)...</p>
                         <div class="w-48 mx-auto mt-3 bg-gray-200 rounded-full h-2">
-                            <div class="bg-indigo-600 h-2 rounded-full transition-all" :style="'width: ' + uploadProgress + '%'"></div>
+                            <div class="h-2 rounded-full transition-all"
+                                 :class="uploadPhase === 'processing' ? 'bg-amber-500 animate-pulse' : 'bg-indigo-600'"
+                                 :style="'width: ' + (uploadPhase === 'processing' ? '100' : uploadProgress) + '%'"></div>
                         </div>
-                        <p class="text-xs text-gray-500 mt-2" x-text="uploadProgress + '%'"></p>
+                        <p class="text-xs text-gray-500 mt-2" x-show="uploadPhase === 'upload'" x-text="uploadProgress + '%'"></p>
+                        <p class="text-xs text-gray-500 mt-2" x-show="uploadPhase === 'processing'">Veuillez patienter, cela peut prendre quelques minutes...</p>
                     </div>
                 </template>
             </div>

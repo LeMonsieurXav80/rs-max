@@ -543,20 +543,32 @@
                     <div class="flex-1 overflow-y-auto p-6">
                         {{-- Upload zone --}}
                         <div class="mb-4">
-                            <label class="flex items-center justify-center gap-2 px-4 py-3 border-2 border-dashed border-gray-300 rounded-xl cursor-pointer hover:border-indigo-400 hover:bg-indigo-50/50 transition-colors">
-                                <template x-if="!mediaUploading">
-                                    <svg class="w-5 h-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1.5">
-                                        <path stroke-linecap="round" stroke-linejoin="round" d="M3 16.5v2.25A2.25 2.25 0 0 0 5.25 21h13.5A2.25 2.25 0 0 0 21 18.75V16.5m-13.5-9L12 3m0 0 4.5 4.5M12 3v13.5" />
-                                    </svg>
-                                </template>
+                            <label class="flex flex-col items-center justify-center gap-2 px-4 py-3 border-2 border-dashed rounded-xl transition-colors"
+                                   :class="mediaUploading ? 'border-indigo-400 bg-indigo-50/50' : 'border-gray-300 cursor-pointer hover:border-indigo-400 hover:bg-indigo-50/50'">
+                                <div class="flex items-center gap-2">
+                                    <template x-if="!mediaUploading">
+                                        <svg class="w-5 h-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1.5">
+                                            <path stroke-linecap="round" stroke-linejoin="round" d="M3 16.5v2.25A2.25 2.25 0 0 0 5.25 21h13.5A2.25 2.25 0 0 0 21 18.75V16.5m-13.5-9L12 3m0 0 4.5 4.5M12 3v13.5" />
+                                        </svg>
+                                    </template>
+                                    <template x-if="mediaUploading">
+                                        <svg class="w-5 h-5 text-indigo-500 animate-spin" fill="none" viewBox="0 0 24 24">
+                                            <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                                            <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path>
+                                        </svg>
+                                    </template>
+                                    <span class="text-sm text-gray-600" x-show="!mediaUploading">Uploader un fichier</span>
+                                    <span class="text-sm text-indigo-600 font-medium" x-show="mediaUploading && mediaUploadPhase === 'upload'" x-text="'Upload en cours... ' + mediaUploadProgress + '%'"></span>
+                                    <span class="text-sm text-indigo-600 font-medium" x-show="mediaUploading && mediaUploadPhase === 'processing'">Traitement en cours...</span>
+                                </div>
                                 <template x-if="mediaUploading">
-                                    <svg class="w-5 h-5 text-indigo-500 animate-spin" fill="none" viewBox="0 0 24 24">
-                                        <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
-                                        <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path>
-                                    </svg>
+                                    <div class="w-full bg-gray-200 rounded-full h-1.5 mt-1">
+                                        <div class="h-1.5 rounded-full transition-all duration-300"
+                                             :class="mediaUploadPhase === 'processing' ? 'bg-amber-500 animate-pulse' : 'bg-indigo-600'"
+                                             :style="'width: ' + (mediaUploadPhase === 'processing' ? '100' : mediaUploadProgress) + '%'"></div>
+                                    </div>
                                 </template>
-                                <span class="text-sm text-gray-600" x-text="mediaUploading ? 'Upload en cours...' : 'Uploader une image'"></span>
-                                <input type="file" class="hidden" accept="image/*" multiple @change="uploadMediaForSegment($event)">
+                                <input type="file" class="hidden" accept="image/*,video/*" multiple @change="uploadMediaForSegment($event)" :disabled="mediaUploading">
                             </label>
                         </div>
 
@@ -708,6 +720,8 @@
                 mediaLibraryFolder: null,
                 mediaLibraryLoading: false,
                 mediaUploading: false,
+                mediaUploadProgress: 0,
+                mediaUploadPhase: '',
 
                 get hasCompiledPlatforms() {
                     const compiledSlugs = ['facebook', 'telegram'];
@@ -832,33 +846,61 @@
                     return seg.media.some(m => m.url === item.url);
                 },
 
-                async uploadMediaForSegment(event) {
+                uploadMediaForSegment(event) {
                     const files = event.target.files;
                     if (!files.length) return;
-                    this.mediaUploading = true;
-                    for (const file of files) {
+                    const self = this;
+
+                    const uploadNext = (index) => {
+                        if (index >= files.length) {
+                            self.mediaUploading = false;
+                            self.mediaUploadProgress = 0;
+                            self.mediaUploadPhase = '';
+                            event.target.value = '';
+                            return;
+                        }
+
+                        self.mediaUploading = true;
+                        self.mediaUploadProgress = 0;
+                        self.mediaUploadPhase = 'upload';
+
                         const formData = new FormData();
-                        formData.append('file', file);
-                        try {
-                            const resp = await fetch('{{ route("media.upload") }}', {
-                                method: 'POST',
-                                headers: {
-                                    'X-CSRF-TOKEN': document.querySelector('meta[name=csrf-token]').getAttribute('content'),
-                                    'Accept': 'application/json',
-                                },
-                                body: formData,
-                            });
-                            const data = await resp.json();
-                            if (data.url) {
-                                const seg = this.segments[this.activeMediaSegmentIndex];
-                                if (!seg.media) seg.media = [];
-                                seg.media.push({ type: data.is_video ? 'video' : 'image', url: data.url });
-                                this.fetchMediaLibrary(this.mediaLibraryFolder);
+                        formData.append('file', files[index]);
+
+                        const xhr = new XMLHttpRequest();
+                        xhr.open('POST', '{{ route("media.upload") }}');
+                        xhr.setRequestHeader('X-CSRF-TOKEN', document.querySelector('meta[name=csrf-token]').getAttribute('content'));
+                        xhr.setRequestHeader('Accept', 'application/json');
+
+                        xhr.upload.addEventListener('progress', (e) => {
+                            if (e.lengthComputable) {
+                                self.mediaUploadProgress = Math.round((e.loaded / e.total) * 100);
+                                if (self.mediaUploadProgress >= 100) {
+                                    self.mediaUploadPhase = 'processing';
+                                }
                             }
-                        } catch (err) {}
-                    }
-                    this.mediaUploading = false;
-                    event.target.value = '';
+                        });
+
+                        xhr.onload = () => {
+                            if (xhr.status >= 200 && xhr.status < 300) {
+                                try {
+                                    const data = JSON.parse(xhr.responseText);
+                                    if (data.url) {
+                                        const seg = self.segments[self.activeMediaSegmentIndex];
+                                        if (!seg.media) seg.media = [];
+                                        seg.media.push({ type: data.mimetype?.startsWith('video/') ? 'video' : 'image', url: data.url });
+                                        self.fetchMediaLibrary(self.mediaLibraryFolder);
+                                    }
+                                } catch (err) {}
+                            }
+                            uploadNext(index + 1);
+                        };
+
+                        xhr.onerror = () => uploadNext(index + 1);
+                        xhr.send(formData);
+                    };
+
+                    uploadNext(0);
                 },
 
                 removeSegmentMedia(segmentIndex, mediaIndex) {

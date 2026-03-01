@@ -2,6 +2,7 @@
 
 namespace App\Services;
 
+use App\Models\MediaFile;
 use App\Models\SocialAccount;
 use App\Models\Thread;
 use App\Models\ThreadSegment;
@@ -341,11 +342,36 @@ class ThreadPublishingService
 
             if (str_starts_with($url, '/media/')) {
                 $filename = basename($url);
+
+                // Enrich with mimetype/size from database.
+                $mediaFile = MediaFile::where('filename', $filename)->first();
+                if ($mediaFile) {
+                    $item['mimetype'] = $mediaFile->mime_type;
+                    $item['size'] = $mediaFile->size;
+                    $item['title'] = $mediaFile->original_name;
+                } else {
+                    // Fallback: guess from extension.
+                    $ext = strtolower(pathinfo($filename, PATHINFO_EXTENSION));
+                    $item['mimetype'] = match ($ext) {
+                        'jpg', 'jpeg' => 'image/jpeg',
+                        'png' => 'image/png',
+                        'gif' => 'image/gif',
+                        'webp' => 'image/webp',
+                        'mp4' => 'video/mp4',
+                        default => 'application/octet-stream',
+                    };
+                }
+
                 $item['url'] = URL::temporarySignedRoute(
                     'media.show',
                     now()->addHours(4),
                     ['filename' => $filename]
                 );
+            }
+
+            // Ensure mimetype key always exists for external URLs too.
+            if (! isset($item['mimetype'])) {
+                $item['mimetype'] = ($item['type'] ?? 'image') === 'video' ? 'video/mp4' : 'image/jpeg';
             }
 
             return $item;
