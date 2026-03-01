@@ -37,16 +37,25 @@ class TelegramAdapter implements PlatformAdapterInterface
                     return $textResult;
                 }
 
+                // Try to send media separately; if it fails, still return success
+                // since the text (main content) was already delivered.
+                $mediaResult = null;
                 if (count($media) === 1) {
                     $item = $media[0];
-                    if ($this->isVideo($item['mimetype'], $item['url'])) {
-                        return $this->sendVideo($baseUrl, $chatId, $item['url'], '');
-                    }
-
-                    return $this->sendPhoto($baseUrl, $chatId, $item['url'], '');
+                    $mediaResult = $this->isVideo($item['mimetype'], $item['url'])
+                        ? $this->sendVideo($baseUrl, $chatId, $item['url'], '')
+                        : $this->sendPhoto($baseUrl, $chatId, $item['url'], '');
+                } else {
+                    $mediaResult = $this->sendMediaGroup($baseUrl, $chatId, $media, '');
                 }
 
-                return $this->sendMediaGroup($baseUrl, $chatId, $media, '');
+                if (! $mediaResult['success']) {
+                    Log::warning('TelegramAdapter: text sent but media failed', [
+                        'error' => $mediaResult['error'],
+                    ]);
+                }
+
+                return $textResult;
             }
 
             // Single media item.
