@@ -13,10 +13,6 @@ class AiAssistController extends Controller
 {
     public function generate(Request $request): JsonResponse
     {
-        if (! $request->user()->is_admin) {
-            abort(403);
-        }
-
         $validated = $request->validate([
             'content' => 'nullable|string|max:10000',
             'account_id' => 'required|exists:social_accounts,id',
@@ -45,10 +41,6 @@ class AiAssistController extends Controller
 
     public function generateForPlatforms(Request $request): JsonResponse
     {
-        if (! $request->user()->is_admin) {
-            abort(403);
-        }
-
         $validated = $request->validate([
             'content' => 'nullable|string|max:10000',
             'platforms' => 'required|array|min:1',
@@ -84,10 +76,6 @@ class AiAssistController extends Controller
 
     public function generateFromMedia(Request $request): JsonResponse
     {
-        if (! $request->user()->is_admin) {
-            abort(403);
-        }
-
         $validated = $request->validate([
             'media_urls' => 'required|array|min:1',
             'media_urls.*' => 'required|string',
