@@ -300,9 +300,24 @@ class ThreadsAdapter implements PlatformAdapterInterface, ThreadableAdapterInter
         $body = $response->json();
 
         if ($response->successful() && isset($body['id'])) {
+            $mediaId = (string) $body['id'];
+
+            // Fetch permalink for proper URL format.
+            $permalink = null;
+            try {
+                $plResp = Http::get(self::API_BASE . "/{$mediaId}", [
+                    'fields' => 'permalink',
+                    'access_token' => $accessToken,
+                ]);
+                $permalink = $plResp->json('permalink');
+            } catch (\Throwable $e) {
+                // Non-critical — backlink just won't work.
+            }
+
             return [
                 'success' => true,
-                'external_id' => (string) $body['id'],
+                'external_id' => $mediaId,
+                'permalink' => $permalink,
                 'error' => null,
             ];
         }

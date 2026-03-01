@@ -444,6 +444,9 @@ class ThreadController extends Controller
      */
     public function publishAll(Request $request, Thread $thread): JsonResponse
     {
+        // Threads requires 35s between segments — extend timeout accordingly.
+        set_time_limit(600);
+
         $user = $request->user();
 
         if (! $user->is_admin && $thread->user_id !== $user->id) {
@@ -467,6 +470,9 @@ class ThreadController extends Controller
      */
     public function publishOne(Request $request, Thread $thread, SocialAccount $socialAccount): JsonResponse
     {
+        // Threads requires 35s between segments — extend timeout accordingly.
+        set_time_limit(600);
+
         $user = $request->user();
 
         if (! $user->is_admin && $thread->user_id !== $user->id) {

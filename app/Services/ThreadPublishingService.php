@@ -35,6 +35,7 @@ class ThreadPublishingService
 
         $previousExternalId = null;
         $firstExternalId = null;
+        $firstPostPermalink = null;
         $results = [];
         $lastPosition = $segments->max('position');
 
@@ -65,7 +66,8 @@ class ThreadPublishingService
 
             // Inject the first post's URL into the last segment.
             if ($segment->position === $lastPosition && $firstExternalId) {
-                $firstPostUrl = $this->buildPostUrl($account->platform->slug, $account->platform_account_id, $firstExternalId);
+                $firstPostUrl = $firstPostPermalink
+                    ?? $this->buildPostUrl($account->platform->slug, $account->platform_account_id, $firstExternalId);
                 if ($firstPostUrl) {
                     $content .= "\n\n" . $firstPostUrl;
                 }
@@ -91,6 +93,7 @@ class ThreadPublishingService
                     $previousExternalId = $result['external_id'];
                     if ($firstExternalId === null) {
                         $firstExternalId = $result['external_id'];
+                        $firstPostPermalink = $result['permalink'] ?? null;
                     }
                     $results[] = $result;
                 } else {
