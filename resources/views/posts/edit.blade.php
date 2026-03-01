@@ -10,6 +10,8 @@
         uploadProgress: 0,
         showLibrary: false,
         libraryItems: [],
+        libraryFolders: [],
+        libraryFolder: null,
         libraryLoading: false,
         init() {
             // Load existing media from post
@@ -93,17 +95,29 @@
         },
         async openLibrary() {
             this.showLibrary = true;
+            this.libraryFolder = null;
+            await this.fetchLibrary();
+        },
+        async fetchLibrary(folder) {
             this.libraryLoading = true;
             try {
-                const response = await fetch('{{ route('media.list') }}', {
+                let url = '{{ route('media.list') }}';
+                if (folder) url += '?folder=' + folder;
+                const response = await fetch(url, {
                     headers: { 'Accept': 'application/json' }
                 });
-                this.libraryItems = await response.json();
+                const data = await response.json();
+                this.libraryItems = data.items || [];
+                this.libraryFolders = data.folders || [];
             } catch(e) {
                 this.libraryItems = [];
             } finally {
                 this.libraryLoading = false;
             }
+        },
+        async filterLibraryFolder(folderId) {
+            this.libraryFolder = folderId;
+            await this.fetchLibrary(folderId);
         },
         selectFromLibrary(item) {
             // Toggle: if already in media, remove it; otherwise add it
@@ -317,6 +331,24 @@
                         </button>
                     </div>
                     <div class="flex-1 overflow-y-auto p-6">
+                        {{-- Folder pills --}}
+                        <div class="flex flex-wrap items-center gap-2 mb-4" x-show="libraryFolders.length > 0">
+                            <button type="button" @click="filterLibraryFolder(null)"
+                                    class="px-3 py-1 text-xs font-medium rounded-full transition-colors"
+                                    :class="!libraryFolder ? 'bg-indigo-600 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'">
+                                Tous
+                            </button>
+                            <template x-for="folder in libraryFolders" :key="folder.id">
+                                <button type="button" @click="filterLibraryFolder(folder.id)"
+                                        class="inline-flex items-center gap-1.5 px-3 py-1 text-xs font-medium rounded-full transition-colors"
+                                        :class="libraryFolder == folder.id ? 'bg-indigo-600 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'">
+                                    <span class="w-2 h-2 rounded-sm" :style="'background-color: ' + folder.color" x-show="libraryFolder != folder.id"></span>
+                                    <span x-text="folder.name"></span>
+                                    <span class="text-[10px] opacity-70" x-text="'(' + folder.files_count + ')'"></span>
+                                </button>
+                            </template>
+                        </div>
+
                         <div x-show="libraryLoading" class="text-center py-8">
                             <svg class="w-8 h-8 text-gray-400 mx-auto animate-spin" fill="none" viewBox="0 0 24 24">
                                 <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
@@ -324,7 +356,7 @@
                             </svg>
                         </div>
                         <div x-show="!libraryLoading && libraryItems.length === 0" class="text-center py-8 text-sm text-gray-400">
-                            Aucun média dans la bibliothèque.
+                            Aucun média dans ce dossier.
                         </div>
                         <div x-show="!libraryLoading" class="grid grid-cols-3 sm:grid-cols-4 gap-3">
                             <template x-for="item in libraryItems" :key="item.url">

@@ -19,7 +19,7 @@ return new class extends Migration
             $table->timestamp('published_at')->nullable();
             $table->timestamps();
 
-            $table->index(['thread_segment_id', 'social_account_id']);
+            $table->index(['thread_segment_id', 'social_account_id'], 'tsp_segment_account_idx');
             $table->index(['social_account_id', 'status']);
         });
     }

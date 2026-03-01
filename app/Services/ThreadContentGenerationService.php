@@ -2,6 +2,7 @@
 
 namespace App\Services;
 
+use App\Models\Hook;
 use App\Models\Persona;
 use App\Models\Setting;
 use App\Services\Rss\ArticleFetchService;
@@ -25,7 +26,7 @@ class ThreadContentGenerationService
      *   - 'compiled' => ['facebook' => '...', 'telegram' => '...']
      *   - 'title' => '...'
      */
-    public function generate(string $sourceUrl, Persona $persona, array $platformSlugs): ?array
+    public function generate(string $sourceUrl, Persona $persona, array $platformSlugs, ?int $hookCategoryId = null): ?array
     {
         $apiKey = Setting::getEncrypted('openai_api_key');
         if (! $apiKey) {
@@ -45,6 +46,7 @@ class ThreadContentGenerationService
         }
 
         $articleTitle = $pageMeta['title'] ?? '';
+        $articleImage = $pageMeta['image'] ?? null;
 
         // 2. Determine platform limits.
         $charLimits = [];
@@ -68,8 +70,19 @@ class ThreadContentGenerationService
         $userPrompt .= "- Chaque segment doit être compréhensible seul mais s'inscrire dans la continuité.\n";
         $userPrompt .= "- N'utilise PAS de hashtags (#).\n";
         $userPrompt .= "- N'utilise PAS de liens en format markdown [texte](url). Écris les URLs en clair.\n";
-        $userPrompt .= "- Inclus le lien source dans le dernier segment.\n";
+        $userPrompt .= "- N'inclus AUCUNE URL (ni l'URL source, ni aucun lien) dans les segments.\n";
+        $userPrompt .= "- Le dernier segment doit être un appel à l'action : invite les gens à partager le premier post de ce fil (RT, repost) et à suivre le compte. Sois naturel et engageant, pas robotique.\n";
         $userPrompt .= "- N'utilise PAS de numérotation (1/, 2/, etc.) ni d'indicateurs comme [Thread] ou [Fil].\n\n";
+
+        // Inject hook example if a category was selected.
+        if ($hookCategoryId) {
+            $hook = Hook::pickForCategory($hookCategoryId);
+            if ($hook) {
+                $userPrompt .= "=== STYLE D'ACCROCHE (PREMIER SEGMENT) ===\n";
+                $userPrompt .= "Inspire-toi du style et du ton de cet exemple pour rédiger le premier segment. Ne le copie pas mot pour mot, adapte-le au sujet de l'article :\n";
+                $userPrompt .= "\"" . $hook->content . "\"\n\n";
+            }
+        }
 
         $userPrompt .= "=== LIMITES DE CARACTÈRES PAR SEGMENT ===\n";
         foreach ($charLimits as $slug => $limit) {
@@ -112,10 +125,10 @@ class ThreadContentGenerationService
             $userPrompt .= ",\n  \"compiled\": {";
             $compiledParts = [];
             if (in_array('facebook', $platformSlugs)) {
-                $compiledParts[] = "\n    \"facebook\": \"Texte long complet pour Facebook (tous segments réunis en un seul texte fluide)\"";
+                $compiledParts[] = "\n    \"facebook\": \"Texte long complet pour Facebook (tous segments réunis en un seul texte fluide, séparés par des sauts de ligne, PAS de --- ni de séparateurs)\"";
             }
             if (in_array('telegram', $platformSlugs)) {
-                $compiledParts[] = "\n    \"telegram\": \"Texte long complet pour Telegram (tous segments réunis, formatage Markdown autorisé)\"";
+                $compiledParts[] = "\n    \"telegram\": \"Texte long complet pour Telegram (tous segments réunis, séparés par des sauts de ligne, PAS de --- ni de séparateurs, formatage Markdown autorisé)\"";
             }
             $userPrompt .= implode(',', $compiledParts);
             $userPrompt .= "\n  }";
@@ -160,7 +173,20 @@ class ThreadContentGenerationService
             }
 
             // Normalize the response.
-            return $this->normalizeResponse($parsed, $platformSlugs);
+            $normalized = $this->normalizeResponse($parsed, $platformSlugs);
+
+            // Download and compress source image, attach to the first segment.
+            if ($articleImage && ! empty($normalized['segments'])) {
+                $downloadService = new MediaDownloadService;
+                $mediaFile = $downloadService->downloadAndStore($articleImage, 'og_image');
+                if ($mediaFile) {
+                    $normalized['segments'][0]['media'] = [
+                        ['type' => 'image', 'url' => $mediaFile->url],
+                    ];
+                }
+            }
+
+            return $normalized;
 
         } catch (\Exception $e) {
             Log::error('ThreadContentGenerationService: Exception', ['error' => $e->getMessage()]);

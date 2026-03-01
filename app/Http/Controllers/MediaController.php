@@ -2,8 +2,10 @@
 
 namespace App\Http\Controllers;
 
+use App\Concerns\ProcessesImages;
+use App\Models\MediaFile;
+use App\Models\MediaFolder;
 use App\Models\Post;
-use App\Models\Setting;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Storage;
@@ -13,68 +15,59 @@ use Symfony\Component\HttpFoundation\BinaryFileResponse;
 
 class MediaController extends Controller
 {
-    private function maxImageDimension(): int
-    {
-        return (int) Setting::get('image_max_dimension', 2048);
-    }
-
-    private function imageTargetMinKb(): int
-    {
-        return (int) Setting::get('image_target_min_kb', 200);
-    }
-
-    private function imageTargetMaxKb(): int
-    {
-        return (int) Setting::get('image_target_max_kb', 500);
-    }
-
-    private function imageMinQuality(): int
-    {
-        return (int) Setting::get('image_min_quality', 60);
-    }
+    use ProcessesImages;
 
     /**
      * Media library page.
      */
     public function index(Request $request): View
     {
-        $disk = Storage::disk('local');
-        $files = $disk->files('media');
-
         $filter = $request->input('filter', 'all');
+        $folderId = $request->input('folder');
 
-        // Build media items with metadata
-        $items = collect($files)->map(function ($path) use ($disk) {
-            $filename = basename($path);
-            $mimeType = $disk->mimeType($path);
-            $size = $disk->size($path);
-            $lastModified = $disk->lastModified($path);
-            $isImage = str_starts_with($mimeType, 'image/');
-            $isVideo = str_starts_with($mimeType, 'video/');
+        // Query from database
+        $query = MediaFile::with('folder')->latest();
 
-            return [
-                'filename' => $filename,
-                'path' => $path,
-                'url' => "/media/{$filename}",
-                'mimetype' => $mimeType,
-                'size' => $size,
-                'size_human' => $this->humanFileSize($size),
+        if ($folderId === 'uncategorized') {
+            $query->whereNull('folder_id');
+        } elseif ($folderId) {
+            $query->where('folder_id', $folderId);
+        }
+
+        if ($filter === 'images') {
+            $query->where('mime_type', 'like', 'image/%');
+        } elseif ($filter === 'videos') {
+            $query->where('mime_type', 'like', 'video/%');
+        }
+
+        $mediaFiles = $query->get();
+
+        $items = $mediaFiles->map(function (MediaFile $mf) {
+            $isImage = $mf->is_image;
+            $isVideo = $mf->is_video;
+
+            $item = [
+                'id' => $mf->id,
+                'filename' => $mf->filename,
+                'url' => $mf->url,
+                'mimetype' => $mf->mime_type,
+                'size' => $mf->size,
+                'size_human' => $mf->size_human,
                 'is_image' => $isImage,
                 'is_video' => $isVideo,
                 'type' => $isImage ? 'image' : ($isVideo ? 'video' : 'other'),
-                'last_modified' => $lastModified,
-                'date' => date('d/m/Y H:i', $lastModified),
+                'date' => $mf->created_at->format('d/m/Y H:i'),
+                'folder_id' => $mf->folder_id,
+                'folder_name' => $mf->folder?->name,
+                'folder_color' => $mf->folder?->color,
             ];
-        })->filter(function ($item) use ($filter) {
-            if ($filter === 'images') {
-                return $item['is_image'];
-            }
-            if ($filter === 'videos') {
-                return $item['is_video'];
+
+            if ($isVideo) {
+                $item['thumbnail_url'] = route('media.thumbnail', $mf->filename);
             }
 
-            return true;
-        })->sortByDesc('last_modified')->values();
+            return $item;
+        })->values();
 
         // Find which posts reference each media file
         $posts = Post::whereNotNull('media')->with('postPlatforms.platform')->get();
@@ -114,10 +107,17 @@ class MediaController extends Controller
             }
         }
 
-        $imageCount = collect($files)->filter(fn ($f) => str_starts_with(Storage::disk('local')->mimeType($f), 'image/'))->count();
-        $videoCount = collect($files)->filter(fn ($f) => str_starts_with(Storage::disk('local')->mimeType($f), 'video/'))->count();
+        $folders = MediaFolder::ordered()->withCount('files')->get();
+        $imageCount = MediaFile::where('mime_type', 'like', 'image/%')->count();
+        $videoCount = MediaFile::where('mime_type', 'like', 'video/%')->count();
+        $totalCount = MediaFile::count();
+        $uncategorizedCount = MediaFile::whereNull('folder_id')->count();
+        $currentFolder = $folderId;
 
-        return view('media.index', compact('items', 'mediaPostMap', 'filter', 'imageCount', 'videoCount'));
+        return view('media.index', compact(
+            'items', 'mediaPostMap', 'filter', 'imageCount', 'videoCount',
+            'folders', 'totalCount', 'uncategorizedCount', 'currentFolder'
+        ));
     }
 
     /**
@@ -127,12 +127,14 @@ class MediaController extends Controller
     {
         $request->validate([
             'file' => 'required|file|max:51200|mimes:jpeg,jpg,png,gif,webp,mp4,mov,avi,webm',
+            'folder_id' => 'nullable|exists:media_folders,id',
         ]);
 
         $file = $request->file('file');
         $originalName = $file->getClientOriginalName();
         $mimeType = $file->getMimeType();
         $isImage = str_starts_with($mimeType, 'image/');
+        $folderId = $request->input('folder_id');
 
         // Generate unique filename
         $extension = $isImage ? $this->outputExtension($mimeType, $file->getRealPath()) : $file->getClientOriginalExtension();
@@ -146,8 +148,22 @@ class MediaController extends Controller
                 return response()->json(['error' => $result['error']], 422);
             }
 
+            // Use the filename from processImage (may have changed for PNG→JPG)
+            $finalFilename = $result['filename'] ?? $filename;
+
+            MediaFile::create([
+                'folder_id' => $folderId,
+                'filename' => $finalFilename,
+                'original_name' => $originalName,
+                'mime_type' => $result['mimetype'],
+                'size' => $result['size'],
+                'width' => $result['width'],
+                'height' => $result['height'],
+                'source' => 'upload',
+            ]);
+
             return response()->json([
-                'url' => "/media/{$filename}",
+                'url' => "/media/{$finalFilename}",
                 'mimetype' => $result['mimetype'],
                 'size' => $result['size'],
                 'title' => $originalName,
@@ -171,6 +187,15 @@ class MediaController extends Controller
 
         $storedSize = Storage::disk('local')->size("media/{$filename}");
 
+        MediaFile::create([
+            'folder_id' => $folderId,
+            'filename' => $filename,
+            'original_name' => $originalName,
+            'mime_type' => $mimeType,
+            'size' => $storedSize,
+            'source' => 'upload',
+        ]);
+
         return response()->json([
             'url' => "/media/{$filename}",
             'mimetype' => $mimeType,
@@ -193,6 +218,9 @@ class MediaController extends Controller
 
         Storage::disk('local')->delete($path);
 
+        // Remove from database
+        MediaFile::where('filename', $filename)->delete();
+
         return response()->json(['success' => true, 'message' => 'Fichier supprimé.']);
     }
 
@@ -201,33 +229,51 @@ class MediaController extends Controller
      */
     public function list(Request $request): JsonResponse
     {
-        $disk = Storage::disk('local');
-        $files = $disk->files('media');
+        $folderId = $request->input('folder');
 
-        $items = collect($files)->map(function ($path) use ($disk) {
-            $filename = basename($path);
-            $mimeType = $disk->mimeType($path);
-            $isVideo = str_starts_with($mimeType, 'video/');
+        $query = MediaFile::with('folder')->latest();
+
+        if ($folderId === 'uncategorized') {
+            $query->whereNull('folder_id');
+        } elseif ($folderId) {
+            $query->where('folder_id', $folderId);
+        }
+
+        $items = $query->get()->map(function (MediaFile $mf) {
+            $isVideo = $mf->is_video;
 
             $item = [
-                'filename' => $filename,
-                'url' => "/media/{$filename}",
-                'mimetype' => $mimeType,
-                'size' => $disk->size($path),
-                'size_human' => $this->humanFileSize($disk->size($path)),
-                'is_image' => str_starts_with($mimeType, 'image/'),
+                'id' => $mf->id,
+                'filename' => $mf->filename,
+                'url' => $mf->url,
+                'mimetype' => $mf->mime_type,
+                'size' => $mf->size,
+                'size_human' => $mf->size_human,
+                'is_image' => $mf->is_image,
                 'is_video' => $isVideo,
-                'date' => date('d/m/Y H:i', $disk->lastModified($path)),
+                'date' => $mf->created_at->format('d/m/Y H:i'),
+                'folder_id' => $mf->folder_id,
+                'folder_name' => $mf->folder?->name,
             ];
 
             if ($isVideo) {
-                $item['thumbnail_url'] = route('media.thumbnail', $filename);
+                $item['thumbnail_url'] = route('media.thumbnail', $mf->filename);
             }
 
             return $item;
-        })->sortByDesc(fn ($item) => $item['date'])->values();
+        })->values();
 
-        return response()->json($items);
+        $folders = MediaFolder::ordered()->withCount('files')->get()->map(fn ($f) => [
+            'id' => $f->id,
+            'name' => $f->name,
+            'color' => $f->color,
+            'files_count' => $f->files_count,
+        ]);
+
+        return response()->json([
+            'items' => $items,
+            'folders' => $folders,
+        ]);
     }
 
     /**
@@ -308,189 +354,6 @@ class MediaController extends Controller
         ]);
     }
 
-    /**
-     * Process an image: resize if needed, compress, and store.
-     */
-    private function processImage(string $sourcePath, string $mimeType, string $filename): array
-    {
-        $image = match ($mimeType) {
-            'image/jpeg' => @imagecreatefromjpeg($sourcePath),
-            'image/png' => @imagecreatefrompng($sourcePath),
-            'image/gif' => @imagecreatefromgif($sourcePath),
-            'image/webp' => @imagecreatefromwebp($sourcePath),
-            default => null,
-        };
-
-        if (! $image) {
-            return ['success' => false, 'error' => 'Format image non supporté.'];
-        }
-
-        $origWidth = imagesx($image);
-        $origHeight = imagesy($image);
-        $newWidth = $origWidth;
-        $newHeight = $origHeight;
-
-        // Resize if the longest side exceeds max dimension
-        $maxDim = $this->maxImageDimension();
-        if ($origWidth > $maxDim || $origHeight > $maxDim) {
-            if ($origWidth >= $origHeight) {
-                $newWidth = $maxDim;
-                $newHeight = (int) round($origHeight * ($maxDim / $origWidth));
-            } else {
-                $newHeight = $maxDim;
-                $newWidth = (int) round($origWidth * ($maxDim / $origHeight));
-            }
-
-            $resized = imagecreatetruecolor($newWidth, $newHeight);
-
-            // Preserve transparency for PNG
-            if ($mimeType === 'image/png') {
-                imagealphablending($resized, false);
-                imagesavealpha($resized, true);
-                $transparent = imagecolorallocatealpha($resized, 0, 0, 0, 127);
-                imagefilledrectangle($resized, 0, 0, $newWidth, $newHeight, $transparent);
-            }
-
-            imagecopyresampled($resized, $image, 0, 0, 0, 0, $newWidth, $newHeight, $origWidth, $origHeight);
-            imagedestroy($image);
-            $image = $resized;
-        }
-
-        // Determine output format
-        $storagePath = Storage::disk('local')->path("media/{$filename}");
-        $dir = dirname($storagePath);
-        if (! is_dir($dir)) {
-            mkdir($dir, 0755, true);
-        }
-
-        $outputMime = $mimeType;
-        if ($mimeType === 'image/png' && ! $this->hasTransparency($image)) {
-            $filename = preg_replace('/\.png$/i', '.jpg', $filename);
-            $storagePath = Storage::disk('local')->path("media/{$filename}");
-            $outputMime = 'image/jpeg';
-        }
-
-        $targetMinBytes = $this->imageTargetMinKb() * 1024;
-        $targetMaxBytes = $this->imageTargetMaxKb() * 1024;
-        $minQuality = $this->imageMinQuality();
-
-        if ($outputMime === 'image/png') {
-            imagepng($image, $storagePath, 8);
-            imagedestroy($image);
-            $saved = true;
-        } elseif ($outputMime === 'image/gif') {
-            imagegif($image, $storagePath);
-            imagedestroy($image);
-            $saved = true;
-        } else {
-            // JPEG/WebP: adaptive compression between target min and max
-            $saveFunc = $outputMime === 'image/webp' ? 'imagewebp' : 'imagejpeg';
-
-            // First pass at max quality (90%)
-            $saveFunc($image, $storagePath, 90);
-            $fileSize = filesize($storagePath);
-
-            if ($fileSize <= $targetMaxBytes) {
-                // Already under max target — keep at 90%
-                imagedestroy($image);
-                $saved = true;
-            } else {
-                // Binary search for the right quality between minQuality and 85
-                $low = $minQuality;
-                $high = 85;
-                $bestQuality = $minQuality;
-
-                while ($low <= $high) {
-                    $mid = (int) (($low + $high) / 2);
-                    $saveFunc($image, $storagePath, $mid);
-                    clearstatcache(true, $storagePath);
-                    $fileSize = filesize($storagePath);
-
-                    if ($fileSize <= $targetMaxBytes && $fileSize >= $targetMinBytes) {
-                        // In the sweet spot
-                        $bestQuality = $mid;
-                        break;
-                    } elseif ($fileSize > $targetMaxBytes) {
-                        // Too big, lower quality
-                        $high = $mid - 1;
-                        $bestQuality = $mid;
-                    } else {
-                        // Too small, raise quality
-                        $low = $mid + 1;
-                        $bestQuality = $mid;
-                    }
-                }
-
-                // Final save at best quality found
-                $saveFunc($image, $storagePath, $bestQuality);
-                imagedestroy($image);
-                $saved = true;
-            }
-        }
-
-        if (! $saved) {
-            return ['success' => false, 'error' => 'Erreur lors de la compression de l\'image.'];
-        }
-
-        return [
-            'success' => true,
-            'mimetype' => $outputMime,
-            'size' => filesize($storagePath),
-            'width' => $newWidth,
-            'height' => $newHeight,
-        ];
-    }
-
-    /**
-     * Determine output file extension.
-     */
-    private function outputExtension(string $mimeType, string $filePath): string
-    {
-        // PNG with no transparency will be converted to JPEG
-        if ($mimeType === 'image/png') {
-            $image = @imagecreatefrompng($filePath);
-            if ($image && ! $this->hasTransparency($image)) {
-                imagedestroy($image);
-
-                return 'jpg';
-            }
-            if ($image) {
-                imagedestroy($image);
-            }
-
-            return 'png';
-        }
-
-        return match ($mimeType) {
-            'image/jpeg' => 'jpg',
-            'image/gif' => 'gif',
-            'image/webp' => 'webp',
-            default => 'jpg',
-        };
-    }
-
-    /**
-     * Check if a GD image resource has any transparent pixels.
-     */
-    private function hasTransparency(\GdImage $image): bool
-    {
-        $width = imagesx($image);
-        $height = imagesy($image);
-
-        // Sample a grid of pixels for performance
-        $step = max(1, (int) ($width * $height / 1000));
-        for ($i = 0; $i < $width * $height; $i += $step) {
-            $x = $i % $width;
-            $y = (int) ($i / $width);
-            $rgba = imagecolorat($image, $x, $y);
-            $alpha = ($rgba >> 24) & 0x7F;
-            if ($alpha > 0) {
-                return true;
-            }
-        }
-
-        return false;
-    }
 
     /**
      * Check if a video uses HEVC/H.265 codec (not supported for inline playback on Telegram).

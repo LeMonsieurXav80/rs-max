@@ -148,11 +148,30 @@
                                           rows="3"
                                           class="w-full rounded-xl border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 text-sm resize-y"
                                           placeholder="Contenu du segment..."></textarea>
+                                <input type="hidden" :name="'segments[' + index + '][media_json]'"
+                                       :value="segment.media ? JSON.stringify(segment.media) : ''">
                                 <div class="flex justify-end mt-1">
                                     <span class="text-xs" :class="(segment.content_fr || '').length > 500 ? 'text-red-500' : 'text-gray-400'"
                                           x-text="(segment.content_fr || '').length + ' car.'"></span>
                                 </div>
                             </div>
+
+                            {{-- Image preview --}}
+                            <template x-if="segment.media && segment.media.length > 0">
+                                <div class="flex items-center gap-3 p-3 bg-gray-50 rounded-xl">
+                                    <img :src="segment.media[0].url" alt="" class="w-20 h-14 object-cover rounded-lg border border-gray-200">
+                                    <div class="flex-1 min-w-0">
+                                        <p class="text-xs font-medium text-gray-700">Image attachee</p>
+                                        <p class="text-xs text-gray-400 truncate" x-text="segment.media[0].url"></p>
+                                    </div>
+                                    <button type="button" @click="segment.media = null"
+                                            class="p-1 text-gray-400 hover:text-red-500 transition-colors">
+                                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2">
+                                            <path stroke-linecap="round" stroke-linejoin="round" d="M6 18 18 6M6 6l12 12" />
+                                        </svg>
+                                    </button>
+                                </div>
+                            </template>
 
                             <div x-data="{ showOverrides: Object.values(segment.platform_contents || {}).some(v => v) }">
                                 <button type="button" @click="showOverrides = !showOverrides"
@@ -243,12 +262,14 @@
                         'twitter' => $s->platform_contents['twitter'] ?? '',
                         'threads' => $s->platform_contents['threads'] ?? '',
                     ],
+                    'media' => $s->media,
                 ])->values()),
 
                 addSegment() {
                     this.segments.push({
                         content_fr: '',
                         platform_contents: { twitter: '', threads: '' },
+                        media: null,
                     });
                 },
 

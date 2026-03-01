@@ -26,22 +26,117 @@
                 $item['status_label'] = null;
                 $item['status_class'] = '';
             }
-            if ($item['is_video']) {
+            if ($item['is_video'] ?? false) {
                 $item['thumbnail_url'] = route('media.thumbnail', $item['filename']);
             }
             return $item;
+        })->values()->toArray();
+
+        $foldersJson = $folders->map(function ($f) {
+            return [
+                'id' => $f->id,
+                'name' => $f->name,
+                'slug' => $f->slug,
+                'color' => $f->color,
+                'is_system' => $f->is_system,
+                'files_count' => $f->files_count,
+            ];
         })->values()->toArray();
     @endphp
 
     <div x-data="{
         items: @js($itemsJson),
+        folders: @js($foldersJson),
+        currentFolder: @js($currentFolder),
+        totalCount: {{ $totalCount }},
+        uncategorizedCount: {{ $uncategorizedCount }},
         selected: null,
+        multiSelect: false,
+        multiSelected: [],
+        lastMultiClickIndex: null,
+        bulkMoveFolder: '',
         uploading: false,
         uploadProgress: 0,
         deleteConfirm: false,
         dragOver: false,
-        selectItem(item) {
+        newFolderName: '',
+        creatingFolder: false,
+        editingFolder: null,
+        editFolderName: '',
+        editFolderColor: '',
+        deleteFolderConfirm: null,
+        folderMenuOpen: null,
+        movingToFolder: false,
+        selectItem(item, event) {
+            if (this.multiSelect) {
+                const currentIndex = this.items.findIndex(i => i.id === item.id);
+                if (event && event.shiftKey && this.lastMultiClickIndex !== null && currentIndex !== this.lastMultiClickIndex) {
+                    const start = Math.min(this.lastMultiClickIndex, currentIndex);
+                    const end = Math.max(this.lastMultiClickIndex, currentIndex);
+                    for (let i = start; i <= end; i++) {
+                        const id = this.items[i].id;
+                        if (!this.multiSelected.includes(id)) {
+                            this.multiSelected.push(id);
+                        }
+                    }
+                } else {
+                    const idx = this.multiSelected.indexOf(item.id);
+                    if (idx === -1) {
+                        this.multiSelected.push(item.id);
+                    } else {
+                        this.multiSelected.splice(idx, 1);
+                    }
+                }
+                this.lastMultiClickIndex = currentIndex;
+                return;
+            }
             this.selected = (this.selected && this.selected.filename === item.filename) ? null : item;
+        },
+        isMultiSelected(item) {
+            return this.multiSelected.includes(item.id);
+        },
+        selectAll() {
+            if (this.multiSelected.length === this.items.length) {
+                this.multiSelected = [];
+            } else {
+                this.multiSelected = this.items.map(i => i.id);
+            }
+        },
+        exitMultiSelect() {
+            this.multiSelect = false;
+            this.multiSelected = [];
+            this.lastMultiClickIndex = null;
+            this.bulkMoveFolder = '';
+        },
+        async bulkMove() {
+            if (this.multiSelected.length === 0 || this.bulkMoveFolder === '') return;
+            const folderId = this.bulkMoveFolder === 'uncategorized' ? null : this.bulkMoveFolder;
+            try {
+                const response = await fetch('{{ route('media.folders.move') }}', {
+                    method: 'POST',
+                    headers: {
+                        'X-CSRF-TOKEN': document.querySelector('meta[name=csrf-token]').getAttribute('content'),
+                        'Content-Type': 'application/json',
+                        'Accept': 'application/json',
+                    },
+                    body: JSON.stringify({ file_ids: this.multiSelected, folder_id: folderId }),
+                });
+                if (response.ok) {
+                    window.location.reload();
+                }
+            } catch(e) {
+                alert('Erreur de connexion.');
+            }
+        },
+        navigateFolder(folderId) {
+            const params = new URLSearchParams(window.location.search);
+            if (folderId === null) {
+                params.delete('folder');
+            } else {
+                params.set('folder', folderId);
+            }
+            params.delete('filter');
+            window.location.href = '{{ route('media.index') }}' + (params.toString() ? '?' + params.toString() : '');
         },
         handleDrop(e) {
             e.preventDefault();
@@ -62,6 +157,9 @@
             this.uploadProgress = 0;
             const formData = new FormData();
             formData.append('file', file);
+            if (this.currentFolder && this.currentFolder !== 'uncategorized') {
+                formData.append('folder_id', this.currentFolder);
+            }
             try {
                 const xhr = new XMLHttpRequest();
                 xhr.upload.addEventListener('progress', (e) => {
@@ -112,6 +210,91 @@
             }
             this.deleteConfirm = false;
         },
+        async createFolder() {
+            if (!this.newFolderName.trim()) return;
+            try {
+                const response = await fetch('{{ route('media.folders.store') }}', {
+                    method: 'POST',
+                    headers: {
+                        'X-CSRF-TOKEN': document.querySelector('meta[name=csrf-token]').getAttribute('content'),
+                        'Content-Type': 'application/json',
+                        'Accept': 'application/json',
+                    },
+                    body: JSON.stringify({ name: this.newFolderName.trim() }),
+                });
+                if (response.ok) {
+                    window.location.reload();
+                } else {
+                    const data = await response.json();
+                    alert(data.message || 'Erreur.');
+                }
+            } catch(e) {
+                alert('Erreur de connexion.');
+            }
+        },
+        startEditFolder(folder) {
+            this.editingFolder = folder.id;
+            this.editFolderName = folder.name;
+            this.editFolderColor = folder.color;
+        },
+        async saveFolder(folder) {
+            try {
+                const response = await fetch('/media/folders/' + folder.id, {
+                    method: 'PATCH',
+                    headers: {
+                        'X-CSRF-TOKEN': document.querySelector('meta[name=csrf-token]').getAttribute('content'),
+                        'Content-Type': 'application/json',
+                        'Accept': 'application/json',
+                    },
+                    body: JSON.stringify({ name: this.editFolderName, color: this.editFolderColor }),
+                });
+                if (response.ok) {
+                    window.location.reload();
+                }
+            } catch(e) {
+                alert('Erreur de connexion.');
+            }
+            this.editingFolder = null;
+        },
+        async deleteFolder(folder) {
+            try {
+                const response = await fetch('/media/folders/' + folder.id, {
+                    method: 'DELETE',
+                    headers: {
+                        'X-CSRF-TOKEN': document.querySelector('meta[name=csrf-token]').getAttribute('content'),
+                        'Accept': 'application/json',
+                    }
+                });
+                if (response.ok) {
+                    window.location.reload();
+                } else {
+                    const data = await response.json();
+                    alert(data.error || 'Erreur.');
+                }
+            } catch(e) {
+                alert('Erreur de connexion.');
+            }
+            this.deleteFolderConfirm = null;
+        },
+        async moveToFolder(folderId) {
+            if (!this.selected || !this.selected.id) return;
+            try {
+                const response = await fetch('{{ route('media.folders.move') }}', {
+                    method: 'POST',
+                    headers: {
+                        'X-CSRF-TOKEN': document.querySelector('meta[name=csrf-token]').getAttribute('content'),
+                        'Content-Type': 'application/json',
+                        'Accept': 'application/json',
+                    },
+                    body: JSON.stringify({ file_ids: [this.selected.id], folder_id: folderId }),
+                });
+                if (response.ok) {
+                    window.location.reload();
+                }
+            } catch(e) {
+                alert('Erreur de connexion.');
+            }
+        },
         get statusLabel() {
             if (!this.selected) return '';
             const statuses = (this.selected.posts || []).map(p => p.status);
@@ -136,7 +319,7 @@
         {{-- Stats cards --}}
         <div class="grid grid-cols-3 gap-4 mb-6">
             <div class="bg-white rounded-2xl border border-gray-100 shadow-sm p-5">
-                <div class="text-2xl font-bold text-gray-900">{{ $items->count() }}</div>
+                <div class="text-2xl font-bold text-gray-900">{{ $totalCount }}</div>
                 <div class="text-sm text-gray-500 mt-1">Total des fichiers</div>
             </div>
             <div class="bg-white rounded-2xl border border-gray-100 shadow-sm p-5">
@@ -185,52 +368,228 @@
             </div>
         </div>
 
-        {{-- Filters --}}
-        <div class="flex flex-wrap items-center justify-between gap-4 mb-6">
-            <div class="flex items-center gap-2">
-                <a href="{{ route('media.index') }}"
-                   class="px-3 py-1.5 text-sm font-medium rounded-lg transition-colors {{ $filter === 'all' ? 'bg-indigo-600 text-white' : 'bg-white text-gray-600 border border-gray-200 hover:bg-gray-50' }}">
-                    Tous ({{ $items->count() }})
-                </a>
-                <a href="{{ route('media.index', ['filter' => 'images']) }}"
-                   class="px-3 py-1.5 text-sm font-medium rounded-lg transition-colors {{ $filter === 'images' ? 'bg-indigo-600 text-white' : 'bg-white text-gray-600 border border-gray-200 hover:bg-gray-50' }}">
-                    Images ({{ $imageCount }})
-                </a>
-                <a href="{{ route('media.index', ['filter' => 'videos']) }}"
-                   class="px-3 py-1.5 text-sm font-medium rounded-lg transition-colors {{ $filter === 'videos' ? 'bg-indigo-600 text-white' : 'bg-white text-gray-600 border border-gray-200 hover:bg-gray-50' }}">
-                    Videos ({{ $videoCount }})
-                </a>
+        {{-- Folder pills --}}
+        <div class="bg-white rounded-2xl border border-gray-100 shadow-sm p-4 mb-6">
+            <div class="flex items-center gap-2 flex-wrap">
+                {{-- All files pill --}}
+                <button @click="navigateFolder(null)"
+                        class="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium rounded-lg transition-colors"
+                        :class="!currentFolder ? 'bg-indigo-600 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'">
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1.5">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="m2.25 15.75 5.159-5.159a2.25 2.25 0 0 1 3.182 0l5.159 5.159m-1.5-1.5 1.409-1.409a2.25 2.25 0 0 1 3.182 0l2.909 2.909M3.75 21h16.5A2.25 2.25 0 0 0 22.5 18.75V5.25A2.25 2.25 0 0 0 20.25 3H3.75A2.25 2.25 0 0 0 1.5 5.25v13.5A2.25 2.25 0 0 0 3.75 21Z" />
+                    </svg>
+                    Tous
+                    <span class="text-xs opacity-70" x-text="'(' + totalCount + ')'"></span>
+                </button>
+
+                {{-- Dynamic folder pills --}}
+                <template x-for="folder in folders" :key="folder.id">
+                    <div class="relative inline-flex">
+                        <div class="inline-flex items-center rounded-lg transition-colors"
+                             :class="currentFolder == folder.id ? 'bg-indigo-600 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'">
+                            <button @click="navigateFolder(folder.id)"
+                                    class="inline-flex items-center gap-1.5 pl-3 py-1.5 text-sm font-medium">
+                                <span class="w-2.5 h-2.5 rounded-sm flex-shrink-0" :style="'background-color: ' + folder.color"></span>
+                                <span x-text="folder.name"></span>
+                                <span class="text-xs opacity-70" x-text="'(' + folder.files_count + ')'"></span>
+                            </button>
+                            {{-- Three-dot menu inside the pill --}}
+                            <button @click.stop="folderMenuOpen = (folderMenuOpen === folder.id ? null : folder.id)"
+                                    class="inline-flex items-center px-1.5 py-1.5 opacity-60 hover:opacity-100 transition-opacity">
+                                <svg class="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
+                                    <path d="M10 6a2 2 0 110-4 2 2 0 010 4zM10 12a2 2 0 110-4 2 2 0 010 4zM10 18a2 2 0 110-4 2 2 0 010 4z" />
+                                </svg>
+                            </button>
+                        </div>
+                        {{-- Dropdown menu --}}
+                        <div x-show="folderMenuOpen === folder.id" x-cloak
+                             @click.outside="folderMenuOpen = null"
+                             class="absolute top-full left-0 mt-1 w-52 bg-white rounded-xl shadow-lg border border-gray-200 py-1.5 z-50">
+                            <button @click="startEditFolder(folder); folderMenuOpen = null"
+                                    class="w-full flex items-center gap-2.5 px-3 py-2 text-sm text-gray-700 hover:bg-gray-50 transition-colors">
+                                <svg class="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1.5"><path stroke-linecap="round" stroke-linejoin="round" d="m16.862 4.487 1.687-1.688a1.875 1.875 0 1 1 2.652 2.652L10.582 16.07a4.5 4.5 0 0 1-1.897 1.13L6 18l.8-2.685a4.5 4.5 0 0 1 1.13-1.897l8.932-8.931Z" /></svg>
+                                Renommer
+                            </button>
+                            {{-- Color picker --}}
+                            <div class="px-3 py-2 flex items-center gap-2.5">
+                                <svg class="w-4 h-4 text-gray-400 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1.5"><path stroke-linecap="round" stroke-linejoin="round" d="M4.098 19.902a3.75 3.75 0 0 0 5.304 0l6.401-6.402M6.75 21A3.75 3.75 0 0 1 3 17.25V4.125C3 3.504 3.504 3 4.125 3h5.25c.621 0 1.125.504 1.125 1.125v4.072M6.75 21a3.75 3.75 0 0 0 3.75-3.75V8.197M6.75 21h13.125c.621 0 1.125-.504 1.125-1.125v-5.25c0-.621-.504-1.125-1.125-1.125h-4.072M10.5 8.197l2.88-2.88c.438-.439 1.15-.439 1.59 0l3.712 3.713c.44.44.44 1.152 0 1.59l-2.879 2.88M6.75 17.25h.008v.008H6.75v-.008Z" /></svg>
+                                <span class="text-sm text-gray-700">Couleur</span>
+                                <input type="color" :value="folder.color"
+                                       @change="editFolderColor = $event.target.value; editFolderName = folder.name; saveFolder(folder)"
+                                       class="w-6 h-6 rounded cursor-pointer border-0 p-0 ml-auto">
+                            </div>
+                            <template x-if="!folder.is_system">
+                                <div>
+                                    <div class="border-t border-gray-100 my-1"></div>
+                                    <button @click="deleteFolderConfirm = folder; folderMenuOpen = null"
+                                            class="w-full flex items-center gap-2.5 px-3 py-2 text-sm text-red-600 hover:bg-red-50 transition-colors">
+                                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1.5"><path stroke-linecap="round" stroke-linejoin="round" d="m14.74 9-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 0 1-2.244 2.077H8.084a2.25 2.25 0 0 1-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 0 0-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 0 1 3.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 0 0-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 0 0-7.5 0" /></svg>
+                                        Supprimer
+                                    </button>
+                                </div>
+                            </template>
+                        </div>
+                    </div>
+                </template>
+
+                {{-- Uncategorized pill --}}
+                <button @click="navigateFolder('uncategorized')"
+                        class="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium rounded-lg transition-colors"
+                        :class="currentFolder === 'uncategorized' ? 'bg-indigo-600 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'">
+                    <svg class="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1.5">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M3.75 9.776c.112-.017.227-.026.344-.026h15.812c.117 0 .232.009.344.026m-16.5 0a2.25 2.25 0 0 0-1.883 2.542l.857 6a2.25 2.25 0 0 0 2.227 1.932H19.05a2.25 2.25 0 0 0 2.227-1.932l.857-6a2.25 2.25 0 0 0-1.883-2.542m-16.5 0V6A2.25 2.25 0 0 1 6 3.75h3.879a1.5 1.5 0 0 1 1.06.44l2.122 2.12a1.5 1.5 0 0 0 1.06.44H18A2.25 2.25 0 0 1 20.25 9v.776" />
+                    </svg>
+                    Non classe
+                    <span class="text-xs opacity-70" x-text="'(' + uncategorizedCount + ')'"></span>
+                </button>
+
+                {{-- Separator --}}
+                <div class="w-px h-6 bg-gray-200 mx-1"></div>
+
+                {{-- New folder inline --}}
+                <template x-if="!creatingFolder">
+                    <button @click="creatingFolder = true; $nextTick(() => $refs.newFolderInput.focus())"
+                            class="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium rounded-lg text-indigo-600 bg-indigo-50 hover:bg-indigo-100 transition-colors">
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2">
+                            <path stroke-linecap="round" stroke-linejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
+                        </svg>
+                        Nouveau dossier
+                    </button>
+                </template>
+                <template x-if="creatingFolder">
+                    <div class="inline-flex items-center gap-1.5">
+                        <input type="text" x-ref="newFolderInput" x-model="newFolderName" placeholder="Nom du dossier..."
+                               class="text-sm border border-gray-200 rounded-lg px-2.5 py-1.5 w-40 focus:border-indigo-400 focus:ring-1 focus:ring-indigo-400"
+                               @keydown.enter="createFolder()" @keydown.escape="creatingFolder = false; newFolderName = ''">
+                        <button @click="createFolder()" :disabled="!newFolderName.trim()"
+                                class="p-1.5 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 disabled:opacity-50 transition-colors">
+                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2">
+                                <path stroke-linecap="round" stroke-linejoin="round" d="m4.5 12.75 6 6 9-13.5" />
+                            </svg>
+                        </button>
+                        <button @click="creatingFolder = false; newFolderName = ''" class="p-1.5 text-gray-400 hover:text-gray-600">
+                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2">
+                                <path stroke-linecap="round" stroke-linejoin="round" d="M6 18 18 6M6 6l12 12" />
+                            </svg>
+                        </button>
+                    </div>
+                </template>
             </div>
-            <button type="button" @click="$refs.fileInput.click()"
-                class="inline-flex items-center gap-2 px-4 py-2 bg-indigo-600 text-white text-sm font-medium rounded-xl hover:bg-indigo-700 transition-colors shadow-sm">
-                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2">
-                    <path stroke-linecap="round" stroke-linejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
-                </svg>
-                Ajouter des medias
-            </button>
+
+            {{-- Edit folder inline form --}}
+            <template x-if="editingFolder">
+                <div class="mt-3 pt-3 border-t border-gray-100 flex items-center gap-2">
+                    <span class="text-xs text-gray-400">Modifier :</span>
+                    <input type="text" x-model="editFolderName"
+                           class="text-sm border border-gray-200 rounded-lg px-2.5 py-1.5 w-40 focus:border-indigo-400 focus:ring-1 focus:ring-indigo-400"
+                           @keydown.enter="saveFolder({id: editingFolder})" @keydown.escape="editingFolder = null">
+                    <input type="color" x-model="editFolderColor" class="w-8 h-8 rounded cursor-pointer border-0 p-0">
+                    <button @click="saveFolder({id: editingFolder})" class="px-2.5 py-1.5 text-xs font-medium bg-indigo-600 text-white rounded-lg hover:bg-indigo-700">Sauver</button>
+                    <button @click="editingFolder = null" class="px-2.5 py-1.5 text-xs text-gray-400 hover:text-gray-600">Annuler</button>
+                </div>
+            </template>
         </div>
 
-        {{-- Main: 2/3 grid + 1/3 detail panel --}}
+        {{-- Filters + multi-select --}}
+        <div class="flex flex-wrap items-center justify-between gap-4 mb-6">
+            <div class="flex items-center gap-2">
+                <a href="{{ route('media.index', array_filter(['folder' => $currentFolder])) }}"
+                   class="px-3 py-1.5 text-sm font-medium rounded-lg transition-colors {{ $filter === 'all' ? 'bg-indigo-600 text-white' : 'bg-white text-gray-600 border border-gray-200 hover:bg-gray-50' }}">
+                    Tous
+                </a>
+                <a href="{{ route('media.index', array_filter(['filter' => 'images', 'folder' => $currentFolder])) }}"
+                   class="px-3 py-1.5 text-sm font-medium rounded-lg transition-colors {{ $filter === 'images' ? 'bg-indigo-600 text-white' : 'bg-white text-gray-600 border border-gray-200 hover:bg-gray-50' }}">
+                    Images
+                </a>
+                <a href="{{ route('media.index', array_filter(['filter' => 'videos', 'folder' => $currentFolder])) }}"
+                   class="px-3 py-1.5 text-sm font-medium rounded-lg transition-colors {{ $filter === 'videos' ? 'bg-indigo-600 text-white' : 'bg-white text-gray-600 border border-gray-200 hover:bg-gray-50' }}">
+                    Videos
+                </a>
+            </div>
+            <div class="flex items-center gap-2">
+                {{-- Toggle multi-select --}}
+                <button type="button" @click="multiSelect ? exitMultiSelect() : (multiSelect = true, selected = null)"
+                    class="inline-flex items-center gap-1.5 px-3 py-2 text-sm font-medium rounded-xl transition-colors"
+                    :class="multiSelect ? 'bg-amber-100 text-amber-700 border border-amber-300' : 'bg-white text-gray-600 border border-gray-200 hover:bg-gray-50'">
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1.5">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M9 12.75 11.25 15 15 9.75M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z" />
+                    </svg>
+                    <span x-text="multiSelect ? 'Annuler' : 'Selectionner'"></span>
+                </button>
+                <button type="button" @click="$refs.fileInput.click()"
+                    class="inline-flex items-center gap-2 px-4 py-2 bg-indigo-600 text-white text-sm font-medium rounded-xl hover:bg-indigo-700 transition-colors shadow-sm">
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
+                    </svg>
+                    Ajouter des medias
+                </button>
+            </div>
+        </div>
+
+        {{-- Bulk action bar --}}
+        <div x-show="multiSelect" x-cloak
+             class="mb-4 bg-amber-50 border border-amber-200 rounded-xl px-4 py-3 flex flex-wrap items-center gap-3">
+            <button @click="selectAll()"
+                    class="text-sm font-medium text-amber-700 hover:text-amber-900 underline underline-offset-2">
+                <span x-text="multiSelected.length === items.length ? 'Tout deselectionner' : 'Tout selectionner'"></span>
+            </button>
+            <span class="text-sm text-amber-600" x-show="multiSelected.length > 0">
+                <span x-text="multiSelected.length"></span> fichier(s) selectionne(s)
+            </span>
+            <div class="flex items-center gap-2 ml-auto" x-show="multiSelected.length > 0">
+                <label class="text-sm text-gray-600">Deplacer vers :</label>
+                <select x-model="bulkMoveFolder" class="text-sm border border-gray-200 rounded-lg px-2.5 py-1.5 focus:border-indigo-400 focus:ring-1 focus:ring-indigo-400">
+                    <option value="">-- Choisir --</option>
+                    <option value="uncategorized">Non classe</option>
+                    <template x-for="folder in folders" :key="folder.id">
+                        <option :value="folder.id" x-text="folder.name"></option>
+                    </template>
+                </select>
+                <button @click="bulkMove()" :disabled="bulkMoveFolder === ''"
+                        class="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 disabled:opacity-50 transition-colors">
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1.5">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M3.75 9.776c.112-.017.227-.026.344-.026h15.812c.117 0 .232.009.344.026m-16.5 0a2.25 2.25 0 0 0-1.883 2.542l.857 6a2.25 2.25 0 0 0 2.227 1.932H19.05a2.25 2.25 0 0 0 2.227-1.932l.857-6a2.25 2.25 0 0 0-1.883-2.542m-16.5 0V6A2.25 2.25 0 0 1 6 3.75h3.879a1.5 1.5 0 0 1 1.06.44l2.122 2.12a1.5 1.5 0 0 0 1.06.44H18A2.25 2.25 0 0 1 20.25 9v.776" />
+                    </svg>
+                    Deplacer
+                </button>
+            </div>
+        </div>
+
+        {{-- Main layout: grid + detail panel --}}
         <div class="flex gap-6">
-            {{-- Left: media grid (2/3) --}}
-            <div class="min-w-0" style="flex: 2">
+            {{-- Center: media grid --}}
+            <div class="min-w-0 flex-1">
                 <template x-if="items.length === 0">
                     <div class="bg-white rounded-2xl border border-gray-100 shadow-sm p-16 text-center">
                         <svg class="w-12 h-12 text-gray-300 mx-auto mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1">
                             <path stroke-linecap="round" stroke-linejoin="round" d="m2.25 15.75 5.159-5.159a2.25 2.25 0 0 1 3.182 0l5.159 5.159m-1.5-1.5 1.409-1.409a2.25 2.25 0 0 1 3.182 0l2.909 2.909M3.75 21h16.5A2.25 2.25 0 0 0 22.5 18.75V5.25A2.25 2.25 0 0 0 20.25 3H3.75A2.25 2.25 0 0 0 1.5 5.25v13.5A2.25 2.25 0 0 0 3.75 21Z" />
                         </svg>
-                        <p class="text-gray-500 text-sm">Aucun media dans la bibliotheque.</p>
+                        <p class="text-gray-500 text-sm">Aucun media dans ce dossier.</p>
                         <p class="text-gray-400 text-xs mt-1">Glissez des fichiers dans la zone ci-dessus pour commencer.</p>
                     </div>
                 </template>
 
-                <div class="grid grid-cols-2 sm:grid-cols-4 gap-4">
+                <div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-4">
                     <template x-for="item in items" :key="item.filename">
-                        <div @click="selectItem(item)"
+                        <div @click="selectItem(item, $event)"
                              class="bg-white rounded-xl border-2 overflow-hidden cursor-pointer transition-all shadow-sm hover:shadow-md"
-                             :class="selected && selected.filename === item.filename ? 'border-indigo-500 ring-2 ring-indigo-200' : 'border-gray-100 hover:border-gray-300'">
+                             :class="{
+                                 'border-indigo-500 ring-2 ring-indigo-200': !multiSelect && selected && selected.filename === item.filename,
+                                 'border-amber-400 ring-2 ring-amber-200': multiSelect && isMultiSelected(item),
+                                 'border-gray-100 hover:border-gray-300': !((!multiSelect && selected && selected.filename === item.filename) || (multiSelect && isMultiSelected(item)))
+                             }">
                             {{-- Thumbnail (portrait 4:5) --}}
                             <div class="aspect-[4/5] bg-gray-100 relative overflow-hidden">
+                                {{-- Multi-select checkbox --}}
+                                <div x-show="multiSelect" x-cloak
+                                     class="absolute top-2 right-2 z-10">
+                                    <div class="w-6 h-6 rounded-full border-2 flex items-center justify-center transition-colors"
+                                         :class="isMultiSelected(item) ? 'bg-amber-500 border-amber-500' : 'bg-white/80 border-gray-300 backdrop-blur-sm'">
+                                        <svg x-show="isMultiSelected(item)" class="w-3.5 h-3.5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="3">
+                                            <path stroke-linecap="round" stroke-linejoin="round" d="m4.5 12.75 6 6 9-13.5" />
+                                        </svg>
+                                    </div>
+                                </div>
                                 <template x-if="item.is_image">
                                     <img :src="item.url" :alt="item.filename" class="w-full h-full object-cover" loading="lazy">
                                 </template>
@@ -256,6 +615,14 @@
                                          :class="item.status_class" x-text="item.status_label"></div>
                                 </template>
 
+                                {{-- Folder badge --}}
+                                <template x-if="item.folder_color && !currentFolder">
+                                    <div class="absolute top-1.5 left-1.5 flex items-center gap-1 px-1.5 py-0.5 bg-black/60 rounded text-[10px] text-white">
+                                        <span class="w-2 h-2 rounded-sm flex-shrink-0" :style="'background-color: ' + item.folder_color"></span>
+                                        <span x-text="item.folder_name" class="truncate max-w-[60px]"></span>
+                                    </div>
+                                </template>
+
                                 {{-- Size badge --}}
                                 <div class="absolute bottom-1.5 left-1.5 px-1.5 py-0.5 bg-black/60 text-white text-[10px] rounded" x-text="item.size_human"></div>
                             </div>
@@ -275,8 +642,8 @@
                 </div>
             </div>
 
-            {{-- Right: detail panel (1/3, sticky) --}}
-            <div class="hidden lg:block flex-shrink-0" style="flex: 1">
+            {{-- Right: detail panel (sticky) --}}
+            <div class="hidden lg:block w-80 flex-shrink-0">
                 <div class="sticky top-20">
                     <div class="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
                         {{-- No selection --}}
@@ -312,6 +679,18 @@
 
                                     {{-- Filename --}}
                                     <h3 class="text-sm font-semibold text-gray-900 break-all" x-text="selected.filename"></h3>
+
+                                    {{-- Folder selector --}}
+                                    <div>
+                                        <label class="text-xs text-gray-400 block mb-1">Dossier</label>
+                                        <select @change="moveToFolder($event.target.value || null)"
+                                                class="w-full text-sm border border-gray-200 rounded-lg px-2.5 py-1.5 focus:border-indigo-400 focus:ring-1 focus:ring-indigo-400">
+                                            <option value="" :selected="!selected.folder_id">Non classe</option>
+                                            <template x-for="folder in folders" :key="folder.id">
+                                                <option :value="folder.id" :selected="selected.folder_id == folder.id" x-text="folder.name"></option>
+                                            </template>
+                                        </select>
+                                    </div>
 
                                     {{-- File details --}}
                                     <div class="grid grid-cols-2 gap-3 text-xs">
@@ -399,7 +778,7 @@
             </div>
         </div>
 
-        {{-- Delete confirmation modal --}}
+        {{-- Delete file confirmation modal --}}
         <div x-show="deleteConfirm" x-cloak class="fixed inset-0 z-50 flex items-center justify-center bg-black/50" @click.self="deleteConfirm = false">
             <div class="bg-white rounded-2xl shadow-xl w-full max-w-sm mx-4 p-6">
                 <div class="flex items-center gap-3 mb-4">
@@ -420,6 +799,34 @@
                         Annuler
                     </button>
                     <button type="button" @click="deleteFile()"
+                        class="px-4 py-2 text-sm font-medium text-white bg-red-600 rounded-xl hover:bg-red-700 transition-colors">
+                        Supprimer
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        {{-- Delete folder confirmation modal --}}
+        <div x-show="deleteFolderConfirm" x-cloak class="fixed inset-0 z-50 flex items-center justify-center bg-black/50" @click.self="deleteFolderConfirm = null">
+            <div class="bg-white rounded-2xl shadow-xl w-full max-w-sm mx-4 p-6">
+                <div class="flex items-center gap-3 mb-4">
+                    <div class="w-10 h-10 bg-red-100 rounded-full flex items-center justify-center flex-shrink-0">
+                        <svg class="w-5 h-5 text-red-600" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1.5">
+                            <path stroke-linecap="round" stroke-linejoin="round" d="M3.75 9.776c.112-.017.227-.026.344-.026h15.812c.117 0 .232.009.344.026m-16.5 0a2.25 2.25 0 0 0-1.883 2.542l.857 6a2.25 2.25 0 0 0 2.227 1.932H19.05a2.25 2.25 0 0 0 2.227-1.932l.857-6a2.25 2.25 0 0 0-1.883-2.542m-16.5 0V6A2.25 2.25 0 0 1 6 3.75h3.879a1.5 1.5 0 0 1 1.06.44l2.122 2.12a1.5 1.5 0 0 0 1.06.44H18A2.25 2.25 0 0 1 20.25 9v.776" />
+                        </svg>
+                    </div>
+                    <div>
+                        <h3 class="text-base font-semibold text-gray-900">Supprimer ce dossier ?</h3>
+                        <p class="text-sm text-gray-500 mt-0.5">Les fichiers seront deplaces vers "Non classe".</p>
+                    </div>
+                </div>
+                <p class="text-sm text-gray-600 mb-4" x-text="deleteFolderConfirm ? deleteFolderConfirm.name : ''"></p>
+                <div class="flex justify-end gap-3">
+                    <button type="button" @click="deleteFolderConfirm = null"
+                        class="px-4 py-2 text-sm font-medium text-gray-700 bg-gray-100 rounded-xl hover:bg-gray-200 transition-colors">
+                        Annuler
+                    </button>
+                    <button type="button" @click="deleteFolder(deleteFolderConfirm)"
                         class="px-4 py-2 text-sm font-medium text-white bg-red-600 rounded-xl hover:bg-red-700 transition-colors">
                         Supprimer
                     </button>
@@ -450,6 +857,19 @@
                         </div>
                         <div class="p-4 space-y-4">
                             <span class="inline-flex items-center px-2.5 py-1 text-xs font-semibold rounded-full" :class="statusColor" x-text="statusLabel"></span>
+
+                            {{-- Mobile folder selector --}}
+                            <div>
+                                <label class="text-xs text-gray-400 block mb-1">Dossier</label>
+                                <select @change="moveToFolder($event.target.value || null)"
+                                        class="w-full text-sm border border-gray-200 rounded-lg px-2.5 py-1.5">
+                                    <option value="" :selected="!selected.folder_id">Non classe</option>
+                                    <template x-for="folder in folders" :key="folder.id">
+                                        <option :value="folder.id" :selected="selected.folder_id == folder.id" x-text="folder.name"></option>
+                                    </template>
+                                </select>
+                            </div>
+
                             <div class="grid grid-cols-2 gap-3 text-xs">
                                 <div><span class="text-gray-400 block">Taille</span><span class="text-gray-700 font-medium" x-text="selected.size_human"></span></div>
                                 <div><span class="text-gray-400 block">Date</span><span class="text-gray-700 font-medium" x-text="selected.date"></span></div>
@@ -463,21 +883,6 @@
                                                 <span class="w-2 h-2 rounded-full flex-shrink-0" :class="post.status_dot"></span>
                                                 <span class="truncate" x-text="post.preview"></span>
                                             </div>
-                                            <template x-if="post.platforms && post.platforms.length > 0">
-                                                <div class="flex items-center gap-1 mt-1 ml-4">
-                                                    <template x-for="pf in post.platforms" :key="pf.slug">
-                                                        <span class="px-1.5 py-0.5 rounded text-[10px] font-medium"
-                                                              :class="pf.status === 'published' ? 'bg-green-100 text-green-700' : pf.status === 'failed' ? 'bg-red-100 text-red-700' : pf.status === 'scheduled' ? 'bg-blue-100 text-blue-700' : 'bg-gray-100 text-gray-600'"
-                                                              x-text="pf.name"></span>
-                                                    </template>
-                                                </div>
-                                            </template>
-                                            <template x-if="post.published_at || post.scheduled_at">
-                                                <div class="flex items-center gap-1 mt-1 ml-4 text-[10px] text-gray-400">
-                                                    <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1.5"><path stroke-linecap="round" stroke-linejoin="round" d="M6.75 3v2.25M17.25 3v2.25M3 18.75V7.5a2.25 2.25 0 0 1 2.25-2.25h13.5A2.25 2.25 0 0 1 21 7.5v11.25m-18 0A2.25 2.25 0 0 0 5.25 21h13.5A2.25 2.25 0 0 0 21 18.75m-18 0v-7.5A2.25 2.25 0 0 1 5.25 9h13.5A2.25 2.25 0 0 1 21 11.25v7.5" /></svg>
-                                                    <span x-text="post.published_at ? post.published_at : ('Prevu : ' + post.scheduled_at)"></span>
-                                                </div>
-                                            </template>
                                         </a>
                                     </template>
                                 </div>

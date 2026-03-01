@@ -33,7 +33,9 @@ class ThreadPublishingService
         }
 
         $previousExternalId = null;
+        $firstExternalId = null;
         $results = [];
+        $lastPosition = $segments->max('position');
 
         // Update pivot status.
         $thread->socialAccounts()->updateExistingPivot($account->id, ['status' => 'publishing']);
@@ -50,12 +52,23 @@ class ThreadPublishingService
             // Resume support: skip already published segments.
             if ($segmentPlatform->status === 'published' && $segmentPlatform->external_id) {
                 $previousExternalId = $segmentPlatform->external_id;
+                if ($firstExternalId === null) {
+                    $firstExternalId = $segmentPlatform->external_id;
+                }
                 $results[] = ['success' => true, 'external_id' => $previousExternalId, 'skipped' => true];
                 continue;
             }
 
             $content = $segment->getContentForPlatform($account->platform->slug);
             $media = $this->resolveMediaUrls($segment->media);
+
+            // Inject the first post's URL into the last segment.
+            if ($segment->position === $lastPosition && $firstExternalId) {
+                $firstPostUrl = $this->buildPostUrl($account->platform->slug, $account->platform_account_id, $firstExternalId);
+                if ($firstPostUrl) {
+                    $content .= "\n\n" . $firstPostUrl;
+                }
+            }
 
             $segmentPlatform->update(['status' => 'publishing']);
 
@@ -75,6 +88,9 @@ class ThreadPublishingService
                         'published_at' => now(),
                     ]);
                     $previousExternalId = $result['external_id'];
+                    if ($firstExternalId === null) {
+                        $firstExternalId = $result['external_id'];
+                    }
                     $results[] = $result;
                 } else {
                     $segmentPlatform->update([
@@ -139,7 +155,7 @@ class ThreadPublishingService
             $compiledParts[] = $segment->getContentForPlatform($account->platform->slug);
         }
 
-        $compiledContent = implode("\n\n---\n\n", $compiledParts);
+        $compiledContent = implode("\n\n", $compiledParts);
 
         // Collect all media from all segments.
         $allMedia = [];
@@ -290,6 +306,15 @@ class ThreadPublishingService
         } elseif ($pivotStatuses->every(fn ($s) => $s === 'failed')) {
             $thread->update(['status' => 'failed']);
         }
+    }
+
+    private function buildPostUrl(string $platformSlug, string $handle, string $externalId): ?string
+    {
+        return match ($platformSlug) {
+            'twitter' => "https://x.com/{$handle}/status/{$externalId}",
+            'threads' => "https://www.threads.net/@{$handle}/post/{$externalId}",
+            default => null,
+        };
     }
 
     private function getAdapter(string $slug): ?PlatformAdapterInterface

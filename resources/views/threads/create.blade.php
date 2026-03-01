@@ -33,11 +33,55 @@
         <div class="bg-white rounded-2xl shadow-sm border border-gray-100 p-6 lg:p-8">
             <h2 class="text-base font-semibold text-gray-900 mb-4">Source et generation</h2>
 
+            {{-- Hidden source_url for both modes --}}
+            <input type="hidden" name="source_url" :value="sourceUrl">
+
             <div class="space-y-4">
                 <div>
-                    <label for="source_url" class="block text-sm font-medium text-gray-700 mb-1">URL source</label>
-                    <div class="flex gap-3">
-                        <input type="url" name="source_url" id="source_url" x-model="sourceUrl"
+                    <label class="block text-sm font-medium text-gray-700 mb-2">Source du contenu</label>
+
+                    {{-- Source mode tabs --}}
+                    @if(auth()->user()->is_admin && !empty(array_filter($sourceTypeCounts ?? [])))
+                    <div class="flex flex-wrap items-center gap-1.5 mb-3">
+                        <button type="button" @click="switchSourceMode('url')"
+                                class="px-3 py-1.5 text-xs font-medium rounded-lg transition-colors"
+                                :class="sourceMode === 'url' ? 'bg-indigo-600 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'">
+                            URL
+                        </button>
+                        @if(($sourceTypeCounts['wordpress'] ?? 0) > 0)
+                        <button type="button" @click="switchSourceMode('wordpress')"
+                                class="px-3 py-1.5 text-xs font-medium rounded-lg transition-colors"
+                                :class="sourceMode === 'wordpress' ? 'bg-indigo-600 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'">
+                            WordPress
+                        </button>
+                        @endif
+                        @if(($sourceTypeCounts['rss'] ?? 0) > 0)
+                        <button type="button" @click="switchSourceMode('rss')"
+                                class="px-3 py-1.5 text-xs font-medium rounded-lg transition-colors"
+                                :class="sourceMode === 'rss' ? 'bg-indigo-600 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'">
+                            RSS
+                        </button>
+                        @endif
+                        @if(($sourceTypeCounts['youtube'] ?? 0) > 0)
+                        <button type="button" @click="switchSourceMode('youtube')"
+                                class="px-3 py-1.5 text-xs font-medium rounded-lg transition-colors"
+                                :class="sourceMode === 'youtube' ? 'bg-indigo-600 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'">
+                            YouTube
+                        </button>
+                        @endif
+                        @if(($sourceTypeCounts['reddit'] ?? 0) > 0)
+                        <button type="button" @click="switchSourceMode('reddit')"
+                                class="px-3 py-1.5 text-xs font-medium rounded-lg transition-colors"
+                                :class="sourceMode === 'reddit' ? 'bg-indigo-600 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'">
+                            Reddit
+                        </button>
+                        @endif
+                    </div>
+                    @endif
+
+                    {{-- URL mode --}}
+                    <div x-show="sourceMode === 'url'" class="flex gap-3">
+                        <input type="url" x-model="sourceUrl"
                                placeholder="https://example.com/article..."
                                class="flex-1 rounded-xl border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 text-sm">
                         <button type="button" @click="generateFromUrl()"
@@ -57,9 +101,101 @@
                             <span x-text="generating ? 'Generation...' : 'Generer le fil'"></span>
                         </button>
                     </div>
+
+                    {{-- Source browser mode --}}
+                    <div x-show="sourceMode !== 'url'" x-cloak>
+                        {{-- Source dropdown --}}
+                        <div class="flex gap-3 mb-3">
+                            <select x-model="sourceBrowserSourceId" @change="onSourceSelected()"
+                                    class="flex-1 rounded-xl border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 text-sm">
+                                <option value="">-- Choisir une source --</option>
+                                <template x-for="source in sourceBrowserSources" :key="source.id">
+                                    <option :value="source.id" x-text="source.name + ' (' + source.subtitle + ')'"></option>
+                                </template>
+                            </select>
+                            <div x-show="sourceBrowserLoading" class="flex items-center">
+                                <svg class="w-5 h-5 text-gray-400 animate-spin" fill="none" viewBox="0 0 24 24">
+                                    <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                                    <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path>
+                                </svg>
+                            </div>
+                        </div>
+
+                        {{-- Search --}}
+                        <div x-show="sourceBrowserSourceId" class="mb-3">
+                            <input type="text" x-model="sourceBrowserSearch" @input="onSourceSearch()"
+                                   placeholder="Rechercher par titre..."
+                                   class="w-full rounded-xl border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 text-sm">
+                        </div>
+
+                        {{-- Items list --}}
+                        <div x-show="sourceBrowserSourceId" class="max-h-64 overflow-y-auto border border-gray-200 rounded-xl">
+                            <div x-show="sourceBrowserLoadingItems" class="text-center py-6">
+                                <svg class="w-6 h-6 text-gray-400 mx-auto animate-spin" fill="none" viewBox="0 0 24 24">
+                                    <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                                    <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path>
+                                </svg>
+                            </div>
+                            <div x-show="!sourceBrowserLoadingItems && sourceBrowserItems.length === 0" class="text-center py-6 text-sm text-gray-400">
+                                Aucun article trouve.
+                            </div>
+                            <template x-for="item in sourceBrowserItems" :key="item.id">
+                                <button type="button" @click="selectSourceItem(item)"
+                                        class="w-full text-left px-4 py-3 flex items-start gap-3 hover:bg-indigo-50 transition-colors border-b border-gray-100 last:border-0"
+                                        :class="selectedSourceItem && selectedSourceItem.url === item.url ? 'bg-indigo-50' : ''">
+                                    <template x-if="item.image_url">
+                                        <img :src="item.image_url" alt="" class="w-12 h-9 object-cover rounded-lg flex-shrink-0 border border-gray-200">
+                                    </template>
+                                    <template x-if="!item.image_url">
+                                        <div class="w-12 h-9 bg-gray-100 rounded-lg flex-shrink-0 flex items-center justify-center">
+                                            <svg class="w-4 h-4 text-gray-300" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1.5">
+                                                <path stroke-linecap="round" stroke-linejoin="round" d="m2.25 15.75 5.159-5.159a2.25 2.25 0 0 1 3.182 0l5.159 5.159m-1.5-1.5 1.409-1.409a2.25 2.25 0 0 1 3.182 0l2.909 2.909M3.75 21h16.5A2.25 2.25 0 0 0 22.5 18.75V5.25A2.25 2.25 0 0 0 20.25 3H3.75A2.25 2.25 0 0 0 1.5 5.25v13.5A2.25 2.25 0 0 0 3.75 21Z" />
+                                            </svg>
+                                        </div>
+                                    </template>
+                                    <div class="flex-1 min-w-0">
+                                        <p class="text-sm font-medium text-gray-900 line-clamp-1" x-text="item.title"></p>
+                                        <div class="flex items-center gap-2 mt-0.5">
+                                            <span class="text-xs text-gray-400" x-text="item.published_at"></span>
+                                            <span x-show="item.extra" class="text-xs text-gray-400" x-text="item.extra"></span>
+                                        </div>
+                                    </div>
+                                    <template x-if="selectedSourceItem && selectedSourceItem.url === item.url">
+                                        <svg class="w-5 h-5 text-indigo-600 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2">
+                                            <path stroke-linecap="round" stroke-linejoin="round" d="m4.5 12.75 6 6 9-13.5" />
+                                        </svg>
+                                    </template>
+                                </button>
+                            </template>
+                        </div>
+
+                        {{-- Selected item + generate button --}}
+                        <div x-show="selectedSourceItem" class="mt-3 flex items-center gap-3">
+                            <div class="flex-1 px-3 py-2 bg-indigo-50 border border-indigo-200 rounded-xl min-w-0">
+                                <p class="text-sm font-medium text-indigo-700 truncate" x-text="selectedSourceItem?.title"></p>
+                                <p class="text-xs text-indigo-500 truncate" x-text="selectedSourceItem?.url"></p>
+                            </div>
+                            <button type="button" @click="generateFromUrl()"
+                                    :disabled="generating || !sourceUrl || !selectedPersonaId || selectedAccounts.length === 0"
+                                    class="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-medium bg-indigo-600 text-white hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors shadow-sm flex-shrink-0">
+                                <template x-if="!generating">
+                                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2">
+                                        <path stroke-linecap="round" stroke-linejoin="round" d="M9.813 15.904 9 18.75l-.813-2.846a4.5 4.5 0 0 0-3.09-3.09L2.25 12l2.846-.813a4.5 4.5 0 0 0 3.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 0 0 3.09 3.09L15.75 12l-2.846.813a4.5 4.5 0 0 0-3.09 3.09ZM18.259 8.715 18 9.75l-.259-1.035a3.375 3.375 0 0 0-2.455-2.456L14.25 6l1.036-.259a3.375 3.375 0 0 0 2.455-2.456L18 2.25l.259 1.035a3.375 3.375 0 0 0 2.455 2.456L21.75 6l-1.036.259a3.375 3.375 0 0 0-2.455 2.456Z" />
+                                    </svg>
+                                </template>
+                                <template x-if="generating">
+                                    <svg class="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24">
+                                        <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                                        <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path>
+                                    </svg>
+                                </template>
+                                <span x-text="generating ? 'Generation...' : 'Generer le fil'"></span>
+                            </button>
+                        </div>
+                    </div>
                 </div>
 
-                <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
                     <div>
                         <label for="persona_id" class="block text-sm font-medium text-gray-700 mb-1">Persona</label>
                         <select id="persona_id" x-model="selectedPersonaId"
@@ -67,6 +203,16 @@
                             <option value="">-- Choisir une persona --</option>
                             @foreach($personas as $persona)
                                 <option value="{{ $persona->id }}">{{ $persona->name }}</option>
+                            @endforeach
+                        </select>
+                    </div>
+                    <div>
+                        <label for="hook_category_id" class="block text-sm font-medium text-gray-700 mb-1">Hook d'accroche</label>
+                        <select id="hook_category_id" x-model="selectedHookCategoryId"
+                                class="w-full rounded-xl border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 text-sm">
+                            <option value="">-- Aucun (libre) --</option>
+                            @foreach($hookCategories as $hc)
+                                <option value="{{ $hc->id }}">{{ $hc->name }} ({{ $hc->active_hooks_count }})</option>
                             @endforeach
                         </select>
                     </div>
@@ -225,11 +371,40 @@
                                           rows="3"
                                           class="w-full rounded-xl border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 text-sm resize-y"
                                           placeholder="Contenu du segment..."></textarea>
-                                <div class="flex justify-end mt-1">
+                                <input type="hidden" :name="'segments[' + index + '][media_json]'"
+                                       :value="segment.media ? JSON.stringify(segment.media) : ''">
+                                <div class="flex items-center justify-between mt-1">
+                                    <button type="button" @click="openMediaLibrary(index)"
+                                            class="inline-flex items-center gap-1 px-2 py-1 text-xs font-medium rounded-lg text-indigo-600 hover:bg-indigo-50 transition-colors">
+                                        <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1.5">
+                                            <path stroke-linecap="round" stroke-linejoin="round" d="m2.25 15.75 5.159-5.159a2.25 2.25 0 0 1 3.182 0l5.159 5.159m-1.5-1.5 1.409-1.409a2.25 2.25 0 0 1 3.182 0l2.909 2.909M3.75 21h16.5A2.25 2.25 0 0 0 22.5 18.75V5.25A2.25 2.25 0 0 0 20.25 3H3.75A2.25 2.25 0 0 0 1.5 5.25v13.5A2.25 2.25 0 0 0 3.75 21Z" />
+                                        </svg>
+                                        Image
+                                        <span x-show="segment.media && segment.media.length > 0"
+                                              class="px-1.5 py-0.5 text-[10px] bg-indigo-100 text-indigo-700 rounded-full"
+                                              x-text="segment.media.length"></span>
+                                    </button>
                                     <span class="text-xs" :class="(segment.content_fr || '').length > 500 ? 'text-red-500' : 'text-gray-400'"
                                           x-text="(segment.content_fr || '').length + ' car.'"></span>
                                 </div>
                             </div>
+
+                            {{-- Media preview (multi-image) --}}
+                            <template x-if="segment.media && segment.media.length > 0">
+                                <div class="flex flex-wrap gap-2 p-3 bg-gray-50 rounded-xl">
+                                    <template x-for="(m, mi) in segment.media" :key="mi">
+                                        <div class="relative group">
+                                            <img :src="m.url" alt="" class="w-20 h-14 object-cover rounded-lg border border-gray-200">
+                                            <button type="button" @click="removeSegmentMedia(index, mi)"
+                                                    class="absolute -top-1.5 -right-1.5 w-5 h-5 bg-red-500 text-white rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
+                                                <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2">
+                                                    <path stroke-linecap="round" stroke-linejoin="round" d="M6 18 18 6M6 6l12 12" />
+                                                </svg>
+                                            </button>
+                                        </div>
+                                    </template>
+                                </div>
+                            </template>
 
                             {{-- Platform-specific overrides (collapsible) --}}
                             <div x-data="{ showOverrides: Object.keys(segment.platform_contents || {}).length > 0 }">
@@ -349,6 +524,99 @@
             </button>
         </div>
 
+        {{-- Media library modal --}}
+        <template x-if="showMediaLibrary">
+            <div class="fixed inset-0 z-50 flex items-center justify-center bg-black/50" @click.self="showMediaLibrary = false">
+                <div class="bg-white rounded-2xl shadow-xl w-full max-w-3xl max-h-[80vh] flex flex-col mx-4">
+                    <div class="flex items-center justify-between px-6 py-4 border-b border-gray-200">
+                        <h3 class="text-base font-semibold text-gray-900">
+                            Mediatheque
+                            <span class="text-sm font-normal text-gray-500" x-text="'— Segment ' + (activeMediaSegmentIndex + 1)"></span>
+                        </h3>
+                        <button type="button" @click="showMediaLibrary = false" class="text-gray-400 hover:text-gray-600">
+                            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1.5">
+                                <path stroke-linecap="round" stroke-linejoin="round" d="M6 18 18 6M6 6l12 12" />
+                            </svg>
+                        </button>
+                    </div>
+
+                    <div class="flex-1 overflow-y-auto p-6">
+                        {{-- Upload zone --}}
+                        <div class="mb-4">
+                            <label class="flex items-center justify-center gap-2 px-4 py-3 border-2 border-dashed border-gray-300 rounded-xl cursor-pointer hover:border-indigo-400 hover:bg-indigo-50/50 transition-colors">
+                                <template x-if="!mediaUploading">
+                                    <svg class="w-5 h-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1.5">
+                                        <path stroke-linecap="round" stroke-linejoin="round" d="M3 16.5v2.25A2.25 2.25 0 0 0 5.25 21h13.5A2.25 2.25 0 0 0 21 18.75V16.5m-13.5-9L12 3m0 0 4.5 4.5M12 3v13.5" />
+                                    </svg>
+                                </template>
+                                <template x-if="mediaUploading">
+                                    <svg class="w-5 h-5 text-indigo-500 animate-spin" fill="none" viewBox="0 0 24 24">
+                                        <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                                        <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path>
+                                    </svg>
+                                </template>
+                                <span class="text-sm text-gray-600" x-text="mediaUploading ? 'Upload en cours...' : 'Uploader une image'"></span>
+                                <input type="file" class="hidden" accept="image/*" multiple @change="uploadMediaForSegment($event)">
+                            </label>
+                        </div>
+
+                        {{-- Folder pills --}}
+                        <div class="flex flex-wrap items-center gap-2 mb-4" x-show="mediaLibraryFolders.length > 0">
+                            <button type="button" @click="filterMediaFolder(null)"
+                                    class="px-3 py-1 text-xs font-medium rounded-full transition-colors"
+                                    :class="!mediaLibraryFolder ? 'bg-indigo-600 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'">
+                                Tous
+                            </button>
+                            <template x-for="folder in mediaLibraryFolders" :key="folder.id">
+                                <button type="button" @click="filterMediaFolder(folder.id)"
+                                        class="inline-flex items-center gap-1.5 px-3 py-1 text-xs font-medium rounded-full transition-colors"
+                                        :class="mediaLibraryFolder == folder.id ? 'bg-indigo-600 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'">
+                                    <span class="w-2 h-2 rounded-sm" :style="'background-color: ' + folder.color" x-show="mediaLibraryFolder != folder.id"></span>
+                                    <span x-text="folder.name"></span>
+                                    <span class="text-[10px] opacity-70" x-text="'(' + folder.files_count + ')'"></span>
+                                </button>
+                            </template>
+                        </div>
+
+                        {{-- Loading --}}
+                        <div x-show="mediaLibraryLoading" class="text-center py-8">
+                            <svg class="w-8 h-8 text-gray-400 mx-auto animate-spin" fill="none" viewBox="0 0 24 24">
+                                <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                                <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path>
+                            </svg>
+                        </div>
+                        <div x-show="!mediaLibraryLoading && mediaLibraryItems.length === 0" class="text-center py-8 text-sm text-gray-400">
+                            Aucun media disponible.
+                        </div>
+
+                        {{-- Image grid --}}
+                        <div x-show="!mediaLibraryLoading" class="grid grid-cols-3 sm:grid-cols-4 gap-3">
+                            <template x-for="item in mediaLibraryItems" :key="item.url">
+                                <div @click="selectMediaForSegment(item)"
+                                     class="relative rounded-xl overflow-hidden border-2 aspect-square cursor-pointer transition-all"
+                                     :class="isMediaSelected(item) ? 'border-indigo-500 ring-2 ring-indigo-200' : 'border-gray-200 hover:border-indigo-300'">
+                                    <img :src="item.url" class="w-full h-full object-cover" loading="lazy">
+                                    <div x-show="isMediaSelected(item)" class="absolute top-1.5 right-1.5 w-5 h-5 bg-indigo-500 text-white rounded-full flex items-center justify-center">
+                                        <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2">
+                                            <path stroke-linecap="round" stroke-linejoin="round" d="m4.5 12.75 6 6 9-13.5" />
+                                        </svg>
+                                    </div>
+                                    <div class="absolute bottom-1 left-1 px-1.5 py-0.5 bg-black/60 text-white text-xs rounded" x-text="item.size_human"></div>
+                                </div>
+                            </template>
+                        </div>
+                    </div>
+
+                    <div class="px-6 py-3 border-t border-gray-200 flex justify-end">
+                        <button type="button" @click="showMediaLibrary = false"
+                                class="px-4 py-2 bg-indigo-600 text-white text-sm font-medium rounded-xl hover:bg-indigo-700 transition-colors">
+                            Fermer
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </template>
+
         {{-- Publishing progress overlay --}}
         <template x-if="isPublishing">
             <div class="fixed inset-0 z-50 flex items-center justify-center bg-gray-900/50">
@@ -409,6 +677,7 @@
                 sourceUrl: '',
                 title: '',
                 selectedPersonaId: '',
+                selectedHookCategoryId: '',
                 segments: [],
                 generating: false,
                 generateError: '',
@@ -420,23 +689,190 @@
                 publishErrors: [],
                 selectedAccounts: [],
 
+                // Source browser
+                sourceMode: 'url',
+                sourceBrowserSources: [],
+                sourceBrowserItems: [],
+                sourceBrowserSourceId: null,
+                sourceBrowserSearch: '',
+                sourceBrowserLoading: false,
+                sourceBrowserLoadingItems: false,
+                selectedSourceItem: null,
+                _sourceSearchTimeout: null,
+
+                // Media picker
+                showMediaLibrary: false,
+                activeMediaSegmentIndex: null,
+                mediaLibraryItems: [],
+                mediaLibraryFolders: [],
+                mediaLibraryFolder: null,
+                mediaLibraryLoading: false,
+                mediaUploading: false,
+
                 get hasCompiledPlatforms() {
                     const compiledSlugs = ['facebook', 'telegram'];
                     return this.selectedAccounts.some(el => compiledSlugs.includes(el.dataset.platform));
                 },
 
                 get compiledPreview() {
-                    return this.segments.map(s => s.content_fr || '').join('\n\n---\n\n');
+                    return this.segments.map(s => s.content_fr || '').join('\n\n');
                 },
 
                 updateSelectedAccounts() {
                     this.selectedAccounts = [...document.querySelectorAll('input[name="accounts[]"]:checked')];
                 },
 
+                // --- Source browser methods ---
+
+                async switchSourceMode(mode) {
+                    this.sourceMode = mode;
+                    this.sourceBrowserSourceId = null;
+                    this.sourceBrowserItems = [];
+                    this.sourceBrowserSearch = '';
+                    this.selectedSourceItem = null;
+                    if (mode !== 'url') {
+                        await this.fetchSources(mode);
+                    }
+                },
+
+                async fetchSources(type) {
+                    this.sourceBrowserLoading = true;
+                    this.sourceBrowserSources = [];
+                    try {
+                        const resp = await fetch(`{{ url('api/source-items/sources') }}?type=${type}`, {
+                            headers: { 'Accept': 'application/json' },
+                        });
+                        const data = await resp.json();
+                        this.sourceBrowserSources = data.sources || [];
+                    } catch (err) {}
+                    this.sourceBrowserLoading = false;
+                },
+
+                async onSourceSelected() {
+                    this.sourceBrowserItems = [];
+                    this.sourceBrowserSearch = '';
+                    this.selectedSourceItem = null;
+                    if (this.sourceBrowserSourceId) {
+                        await this.fetchSourceItems();
+                    }
+                },
+
+                async fetchSourceItems() {
+                    this.sourceBrowserLoadingItems = true;
+                    try {
+                        let url = `{{ url('api/source-items/items') }}?type=${this.sourceMode}&source_id=${this.sourceBrowserSourceId}`;
+                        if (this.sourceBrowserSearch) {
+                            url += `&search=${encodeURIComponent(this.sourceBrowserSearch)}`;
+                        }
+                        const resp = await fetch(url, {
+                            headers: { 'Accept': 'application/json' },
+                        });
+                        const data = await resp.json();
+                        this.sourceBrowserItems = data.items || [];
+                    } catch (err) {}
+                    this.sourceBrowserLoadingItems = false;
+                },
+
+                selectSourceItem(item) {
+                    this.selectedSourceItem = item;
+                    this.sourceUrl = item.url;
+                    this.title = this.title || item.title;
+                },
+
+                onSourceSearch() {
+                    clearTimeout(this._sourceSearchTimeout);
+                    this._sourceSearchTimeout = setTimeout(() => {
+                        this.fetchSourceItems();
+                    }, 300);
+                },
+
+                // --- Media picker methods ---
+
+                openMediaLibrary(index) {
+                    this.activeMediaSegmentIndex = index;
+                    this.showMediaLibrary = true;
+                    if (this.mediaLibraryItems.length === 0) {
+                        this.fetchMediaLibrary();
+                    }
+                },
+
+                async fetchMediaLibrary(folder) {
+                    this.mediaLibraryLoading = true;
+                    try {
+                        let url = '{{ route("media.list") }}';
+                        if (folder) url += '?folder=' + folder;
+                        const resp = await fetch(url, {
+                            headers: { 'Accept': 'application/json' },
+                        });
+                        const data = await resp.json();
+                        this.mediaLibraryItems = data.items || [];
+                        this.mediaLibraryFolders = data.folders || [];
+                    } catch (err) {}
+                    this.mediaLibraryLoading = false;
+                },
+
+                filterMediaFolder(folderId) {
+                    this.mediaLibraryFolder = folderId;
+                    this.fetchMediaLibrary(folderId);
+                },
+
+                selectMediaForSegment(item) {
+                    const seg = this.segments[this.activeMediaSegmentIndex];
+                    if (!seg.media) seg.media = [];
+                    if (seg.media.some(m => m.url === item.url)) {
+                        seg.media = seg.media.filter(m => m.url !== item.url);
+                    } else {
+                        seg.media.push({ type: item.is_video ? 'video' : 'image', url: item.url });
+                    }
+                },
+
+                isMediaSelected(item) {
+                    const seg = this.segments[this.activeMediaSegmentIndex];
+                    if (!seg || !seg.media) return false;
+                    return seg.media.some(m => m.url === item.url);
+                },
+
+                async uploadMediaForSegment(event) {
+                    const files = event.target.files;
+                    if (!files.length) return;
+                    this.mediaUploading = true;
+                    for (const file of files) {
+                        const formData = new FormData();
+                        formData.append('file', file);
+                        try {
+                            const resp = await fetch('{{ route("media.upload") }}', {
+                                method: 'POST',
+                                headers: {
+                                    'X-CSRF-TOKEN': document.querySelector('meta[name=csrf-token]').getAttribute('content'),
+                                    'Accept': 'application/json',
+                                },
+                                body: formData,
+                            });
+                            const data = await resp.json();
+                            if (data.url) {
+                                const seg = this.segments[this.activeMediaSegmentIndex];
+                                if (!seg.media) seg.media = [];
+                                seg.media.push({ type: data.is_video ? 'video' : 'image', url: data.url });
+                                this.fetchMediaLibrary(this.mediaLibraryFolder);
+                            }
+                        } catch (err) {}
+                    }
+                    this.mediaUploading = false;
+                    event.target.value = '';
+                },
+
+                removeSegmentMedia(segmentIndex, mediaIndex) {
+                    this.segments[segmentIndex].media.splice(mediaIndex, 1);
+                    if (this.segments[segmentIndex].media.length === 0) {
+                        this.segments[segmentIndex].media = null;
+                    }
+                },
+
                 addSegment() {
                     this.segments.push({
                         content_fr: '',
                         platform_contents: { twitter: '', threads: '' },
+                        media: null,
                         regenerating: false,
                     });
                 },
@@ -481,6 +917,7 @@
                             body: JSON.stringify({
                                 source_url: this.sourceUrl,
                                 persona_id: this.selectedPersonaId,
+                                hook_category_id: this.selectedHookCategoryId || null,
                                 accounts: accountIds,
                             }),
                         });
@@ -495,6 +932,7 @@
                                     twitter: s.platform_contents?.twitter || '',
                                     threads: s.platform_contents?.threads || '',
                                 },
+                                media: s.media || null,
                                 regenerating: false,
                             }));
                         } else {

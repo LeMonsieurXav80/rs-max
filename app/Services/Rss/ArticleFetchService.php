@@ -112,12 +112,21 @@ class ArticleFetchService
                 $title = trim($title) ?: null;
             }
 
+            // Extract og:image
+            $image = null;
+            if (preg_match('/<meta\s+(?:property|name)=["\']og:image["\']\s+content=["\']([^"\']+)["\']/i', $html, $imgMatch)) {
+                $image = trim($imgMatch[1]);
+            } elseif (preg_match('/<meta\s+content=["\']([^"\']+)["\']\s+(?:property|name)=["\']og:image["\']/i', $html, $imgMatch)) {
+                $image = trim($imgMatch[1]);
+            }
+
             return [
                 'title' => $title,
                 'content' => $this->extractContent($html),
+                'image' => $image,
             ];
         } catch (\Exception $e) {
-            return ['title' => null, 'content' => null];
+            return ['title' => null, 'content' => null, 'image' => null];
         }
     }
 

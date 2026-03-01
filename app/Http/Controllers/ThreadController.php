@@ -2,9 +2,14 @@
 
 namespace App\Http\Controllers;
 
+use App\Models\HookCategory;
 use App\Models\Persona;
 use App\Models\Platform;
+use App\Models\RedditSource;
+use App\Models\RssFeed;
 use App\Models\SocialAccount;
+use App\Models\WpSource;
+use App\Models\YtSource;
 use App\Models\Thread;
 use App\Models\ThreadSegment;
 use App\Models\ThreadSegmentPlatform;
@@ -61,8 +66,19 @@ class ThreadController extends Controller
 
         $platforms = Platform::where('is_active', true)->get();
         $personas = Persona::where('is_active', true)->orderBy('name')->get();
+        $hookCategories = HookCategory::active()->ordered()->withCount('activeHooks')->get();
 
-        return view('threads.create', compact('accounts', 'platforms', 'personas'));
+        $sourceTypeCounts = [];
+        if ($user->is_admin) {
+            $sourceTypeCounts = [
+                'wordpress' => WpSource::where('is_active', true)->count(),
+                'rss' => RssFeed::where('is_active', true)->count(),
+                'youtube' => YtSource::where('is_active', true)->count(),
+                'reddit' => RedditSource::where('is_active', true)->count(),
+            ];
+        }
+
+        return view('threads.create', compact('accounts', 'platforms', 'personas', 'hookCategories', 'sourceTypeCounts'));
     }
 
     /**
@@ -80,6 +96,7 @@ class ThreadController extends Controller
             'segments.*.content_fr' => 'required|string|max:10000',
             'segments.*.platform_contents' => 'nullable|array',
             'segments.*.platform_contents.*' => 'nullable|string|max:10000',
+            'segments.*.media_json' => 'nullable|string',
             'status' => 'required|in:draft,scheduled',
             'scheduled_at' => 'nullable|date|after_or_equal:now',
             'publish_now' => 'nullable|boolean',
@@ -103,11 +120,17 @@ class ThreadController extends Controller
                 $platformContents = $segmentData['platform_contents'] ?? [];
                 $platformContents = array_filter($platformContents, fn ($v) => ! empty($v));
 
+                $media = null;
+                if (! empty($segmentData['media_json'])) {
+                    $media = json_decode($segmentData['media_json'], true);
+                }
+
                 $segment = ThreadSegment::create([
                     'thread_id' => $thread->id,
                     'position' => $index + 1,
                     'content_fr' => $segmentData['content_fr'],
                     'platform_contents' => ! empty($platformContents) ? $platformContents : null,
+                    'media' => ! empty($media) ? $media : null,
                 ]);
 
                 // Create segment platform entries for each account.
@@ -238,6 +261,7 @@ class ThreadController extends Controller
             'segments.*.content_fr' => 'required|string|max:10000',
             'segments.*.platform_contents' => 'nullable|array',
             'segments.*.platform_contents.*' => 'nullable|string|max:10000',
+            'segments.*.media_json' => 'nullable|string',
             'status' => 'required|in:draft,scheduled',
             'scheduled_at' => 'nullable|date|after_or_equal:now',
         ]);
@@ -261,11 +285,17 @@ class ThreadController extends Controller
                 $platformContents = $segmentData['platform_contents'] ?? [];
                 $platformContents = array_filter($platformContents, fn ($v) => ! empty($v));
 
+                $media = null;
+                if (! empty($segmentData['media_json'])) {
+                    $media = json_decode($segmentData['media_json'], true);
+                }
+
                 $segment = ThreadSegment::create([
                     'thread_id' => $thread->id,
                     'position' => $index + 1,
                     'content_fr' => $segmentData['content_fr'],
                     'platform_contents' => ! empty($platformContents) ? $platformContents : null,
+                    'media' => ! empty($media) ? $media : null,
                 ]);
 
                 foreach ($validated['accounts'] as $accountId) {
@@ -326,6 +356,7 @@ class ThreadController extends Controller
         $validated = $request->validate([
             'source_url' => 'required|url|max:2048',
             'persona_id' => 'required|exists:personas,id',
+            'hook_category_id' => 'nullable|integer|exists:hook_categories,id',
             'accounts' => 'required|array|min:1',
             'accounts.*' => 'integer|exists:social_accounts,id',
         ]);
@@ -342,7 +373,8 @@ class ThreadController extends Controller
         $persona = Persona::findOrFail($validated['persona_id']);
         $service = new ThreadContentGenerationService;
 
-        $result = $service->generate($validated['source_url'], $persona, $platformSlugs);
+        $hookCategoryId = $validated['hook_category_id'] ?? null;
+        $result = $service->generate($validated['source_url'], $persona, $platformSlugs, $hookCategoryId);
 
         if (! $result) {
             return response()->json([

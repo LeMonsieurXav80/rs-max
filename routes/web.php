@@ -3,9 +3,11 @@
 use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\FacebookOAuthController;
 use App\Http\Controllers\HashtagController;
+use App\Http\Controllers\HookController;
 use App\Http\Controllers\ImportController;
 use App\Http\Controllers\LocationController;
 use App\Http\Controllers\MediaController;
+use App\Http\Controllers\MediaFolderController;
 use App\Http\Controllers\PersonaController;
 use App\Http\Controllers\PlatformController;
 use App\Http\Controllers\PostController;
@@ -14,6 +16,7 @@ use App\Http\Controllers\PublishController;
 use App\Http\Controllers\AiAssistController;
 use App\Http\Controllers\RssFeedController;
 use App\Http\Controllers\SettingsController;
+use App\Http\Controllers\SourceItemController;
 use App\Http\Controllers\RedditSourceController;
 use App\Http\Controllers\WordPressSiteController;
 use App\Http\Controllers\SocialAccountController;
@@ -105,6 +108,13 @@ Route::middleware(['auth', 'verified'])->group(function () {
     // Personas (admin)
     Route::resource('personas', PersonaController::class)->except(['show']);
 
+    // Hooks (admin)
+    Route::resource('hooks', HookController::class)->except(['show']);
+    Route::post('hooks/categories', [HookController::class, 'storeCategory'])->name('hooks.categories.store');
+    Route::patch('hooks/categories/{category}', [HookController::class, 'updateCategory'])->name('hooks.categories.update');
+    Route::delete('hooks/categories/{category}', [HookController::class, 'destroyCategory'])->name('hooks.categories.destroy');
+    Route::post('hooks/categories/{category}/reset', [HookController::class, 'resetCounters'])->name('hooks.categories.reset');
+
     // RSS Feeds (admin)
     Route::resource('rss-feeds', RssFeedController::class)->except(['show']);
     Route::post('rss-feeds/{rssFeed}/fetch', [RssFeedController::class, 'fetchNow'])->name('rss-feeds.fetch');
@@ -150,6 +160,17 @@ Route::middleware(['auth', 'verified'])->group(function () {
 
     // Hashtags (most used)
     Route::get('api/hashtags', [HashtagController::class, 'index'])->name('hashtags.index');
+
+    // Source items API (for thread creation source browser)
+    Route::get('api/source-items/sources', [SourceItemController::class, 'sources'])->name('sourceItems.sources');
+    Route::get('api/source-items/items', [SourceItemController::class, 'items'])->name('sourceItems.items');
+
+    // Media folders (BEFORE media/{filename} to avoid route conflict)
+    Route::get('media/folders', [MediaFolderController::class, 'index'])->name('media.folders.index');
+    Route::post('media/folders', [MediaFolderController::class, 'store'])->name('media.folders.store');
+    Route::patch('media/folders/{folder}', [MediaFolderController::class, 'update'])->name('media.folders.update');
+    Route::delete('media/folders/{folder}', [MediaFolderController::class, 'destroy'])->name('media.folders.destroy');
+    Route::post('media/folders/move', [MediaFolderController::class, 'moveFiles'])->name('media.folders.move');
 
     // Media library
     Route::get('media', [MediaController::class, 'index'])->name('media.index');
