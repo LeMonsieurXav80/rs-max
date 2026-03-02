@@ -179,20 +179,18 @@ class MediaController extends Controller
             ]);
         }
 
-        // Video: store, then ensure MP4 H.264/AAC for platform compatibility
+        // Video: store, then compress to MP4 H.264/AAC using app settings.
         $file->storeAs('media', $filename, 'local');
 
-        $needsConversion = $mimeType !== 'video/mp4' || $this->isHevc($filename);
-
-        if ($needsConversion) {
-            $converted = $this->convertToMp4($filename);
-            if ($converted) {
-                $filename = $converted['filename'];
-                $mimeType = 'video/mp4';
-            }
+        $compressed = $this->compressVideo($filename);
+        if ($compressed) {
+            $filename = $compressed['filename'];
+            $mimeType = 'video/mp4';
         }
 
+        $storedPath = Storage::disk('local')->path("media/{$filename}");
         $storedSize = Storage::disk('local')->size("media/{$filename}");
+        $resolution = $this->getVideoResolution($storedPath);
 
         MediaFile::create([
             'folder_id' => $folderId,
@@ -200,6 +198,8 @@ class MediaController extends Controller
             'original_name' => $originalName,
             'mime_type' => $mimeType,
             'size' => $storedSize,
+            'width' => $resolution['width'] ?: null,
+            'height' => $resolution['height'] ?: null,
             'source' => 'upload',
         ]);
 
@@ -363,55 +363,82 @@ class MediaController extends Controller
 
 
     /**
-     * Check if a video uses HEVC/H.265 codec (not supported for inline playback on Telegram).
+     * Get video resolution (width, height) using ffprobe.
      */
-    private function isHevc(string $filename): bool
+    private function getVideoResolution(string $filePath): array
     {
         $ffprobe = $this->findBinary('ffprobe');
         if (! $ffprobe) {
-            return false;
+            return ['width' => 0, 'height' => 0];
         }
 
-        $filePath = Storage::disk('local')->path("media/{$filename}");
         $output = [];
         exec(sprintf(
-            '%s -v quiet -select_streams v:0 -show_entries stream=codec_name -of csv=p=0 %s 2>/dev/null',
+            '%s -v quiet -select_streams v:0 -show_entries stream=width,height -of csv=p=0 %s 2>/dev/null',
             escapeshellarg($ffprobe),
             escapeshellarg($filePath)
         ), $output);
 
-        $codec = trim($output[0] ?? '');
+        $parts = explode(',', trim($output[0] ?? ''));
 
-        return in_array($codec, ['hevc', 'h265', 'vp9', 'av1']);
+        return [
+            'width' => (int) ($parts[0] ?? 0),
+            'height' => (int) ($parts[1] ?? 0),
+        ];
     }
 
     /**
-     * Convert a video to MP4 (H.264/AAC) using ffmpeg.
+     * Compress video to MP4 H.264/AAC using ffmpeg and app settings.
      */
-    private function convertToMp4(string $filename): ?array
+    private function compressVideo(string $filename): ?array
     {
-        $ffmpeg = $this->findFfmpeg();
+        $ffmpeg = $this->findBinary('ffmpeg');
         if (! $ffmpeg) {
             return null;
         }
 
         $originalPath = Storage::disk('local')->path("media/{$filename}");
+        $originalSize = filesize($originalPath);
         $mp4Filename = pathinfo($filename, PATHINFO_FILENAME) . '.mp4';
 
-        // If input is already .mp4 (HEVC re-encode), use a temp file
+        // Read compression settings.
+        $bitrate1080 = (int) Setting::get('video_bitrate_1080p', 6000);
+        $bitrate720 = (int) Setting::get('video_bitrate_720p', 2500);
+        $audioBitrate = (int) Setting::get('video_audio_bitrate', 128);
+
+        // Choose bitrate based on resolution.
+        $resolution = $this->getVideoResolution($originalPath);
+        $videoBitrate = $resolution['height'] >= 1080 ? $bitrate1080 : $bitrate720;
+        $maxRate = (int) ($videoBitrate * 1.5);
+        $bufSize = $videoBitrate * 2;
+
+        // Use temp file if input is already .mp4.
         $sameFile = strtolower(pathinfo($filename, PATHINFO_EXTENSION)) === 'mp4';
         $outputPath = $sameFile
             ? Storage::disk('local')->path("media/{$mp4Filename}.tmp.mp4")
             : Storage::disk('local')->path("media/{$mp4Filename}");
 
         exec(sprintf(
-            '%s -i %s -c:v libx264 -preset fast -crf 23 -c:a aac -b:a 128k -movflags +faststart -y %s 2>&1',
+            '%s -i %s -c:v libx264 -preset fast -b:v %dk -maxrate %dk -bufsize %dk -c:a aac -b:a %dk -movflags +faststart -y %s 2>&1',
             escapeshellarg($ffmpeg),
             escapeshellarg($originalPath),
+            $videoBitrate,
+            $maxRate,
+            $bufSize,
+            $audioBitrate,
             escapeshellarg($outputPath)
         ), $output, $returnCode);
 
         if ($returnCode === 0 && file_exists($outputPath) && filesize($outputPath) > 0) {
+            $compressedSize = filesize($outputPath);
+
+            // If compressed is larger, keep original (already well compressed).
+            if ($compressedSize >= $originalSize && strtolower(pathinfo($filename, PATHINFO_EXTENSION)) === 'mp4') {
+                @unlink($outputPath);
+
+                return null;
+            }
+
             if ($sameFile) {
                 @unlink($originalPath);
                 rename($outputPath, Storage::disk('local')->path("media/{$mp4Filename}"));
@@ -422,18 +449,10 @@ class MediaController extends Controller
             return ['filename' => $mp4Filename];
         }
 
-        // Conversion failed — keep original
+        // Compression failed — keep original.
         @unlink($outputPath);
 
         return null;
-    }
-
-    /**
-     * Locate the ffmpeg binary.
-     */
-    private function findFfmpeg(): ?string
-    {
-        return $this->findBinary('ffmpeg');
     }
 
     /**
