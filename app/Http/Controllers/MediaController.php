@@ -6,6 +6,7 @@ use App\Concerns\ProcessesImages;
 use App\Models\MediaFile;
 use App\Models\MediaFolder;
 use App\Models\Post;
+use App\Models\Setting;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Storage;
@@ -125,15 +126,21 @@ class MediaController extends Controller
      */
     public function upload(Request $request): JsonResponse
     {
+        $file = $request->file('file');
+        $mimeType = $file?->getMimeType() ?? '';
+        $isImage = str_starts_with($mimeType, 'image/');
+
+        // Read max upload size from app settings (MB → KB).
+        $maxKb = $isImage
+            ? (int) Setting::get('image_max_upload_mb', 50) * 1024
+            : (int) Setting::get('video_max_upload_mb', 500) * 1024;
+
         $request->validate([
-            'file' => 'required|file|max:51200|mimes:jpeg,jpg,png,gif,webp,mp4,mov,avi,webm',
+            'file' => "required|file|max:{$maxKb}|mimes:jpeg,jpg,png,gif,webp,mp4,mov,avi,webm",
             'folder_id' => 'nullable|exists:media_folders,id',
         ]);
 
-        $file = $request->file('file');
         $originalName = $file->getClientOriginalName();
-        $mimeType = $file->getMimeType();
-        $isImage = str_starts_with($mimeType, 'image/');
         $folderId = $request->input('folder_id');
 
         // Generate unique filename
