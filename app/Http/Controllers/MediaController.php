@@ -302,7 +302,7 @@ class MediaController extends Controller
         $thumbPath = $thumbDir . '/' . $thumbFilename;
 
         if (! file_exists($thumbPath)) {
-            $ffmpeg = $this->findFfmpeg();
+            $ffmpeg = $this->findBinary('ffmpeg');
             if (! $ffmpeg) {
                 abort(404);
             }
