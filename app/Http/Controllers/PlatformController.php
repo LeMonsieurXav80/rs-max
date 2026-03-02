@@ -500,6 +500,7 @@ class PlatformController extends Controller
             'telegram' => 'platforms.telegram',
             'twitter' => 'platforms.twitter',
             'youtube' => 'platforms.youtube',
+            'bluesky' => 'platforms.bluesky',
             default => 'platforms.facebook',
         };
 
@@ -564,6 +565,151 @@ class PlatformController extends Controller
         } catch (\Throwable $e) {
             return null;
         }
+    }
+
+    /**
+     * Bluesky configuration page.
+     */
+    public function bluesky(Request $request): View
+    {
+        $accounts = $this->accountsForSlugs($request, ['bluesky']);
+
+        return view('platforms.bluesky', compact('accounts'));
+    }
+
+    /**
+     * Add a Bluesky account (validate handle + app password via createSession).
+     */
+    public function addBlueskyAccount(Request $request): RedirectResponse
+    {
+        $validated = $request->validate([
+            'handle' => 'required|string|max:255',
+            'app_password' => 'required|string|max:255',
+        ]);
+
+        $handle = $validated['handle'];
+        $appPassword = $validated['app_password'];
+
+        // Authenticate via AT Protocol
+        $response = Http::post('https://bsky.social/xrpc/com.atproto.server.createSession', [
+            'identifier' => $handle,
+            'password' => $appPassword,
+        ]);
+
+        if ($response->failed()) {
+            $error = $response->json('message') ?? 'Identifiants invalides';
+
+            return back()
+                ->with('error', "Connexion Bluesky échouée : {$error}")
+                ->withInput(['handle' => $handle]);
+        }
+
+        $data = $response->json();
+        $did = $data['did'];
+        $resolvedHandle = $data['handle'] ?? $handle;
+        $displayName = $data['displayName'] ?? $resolvedHandle;
+
+        // Fetch profile picture
+        $profilePictureUrl = null;
+        try {
+            $profileResponse = Http::get('https://public.api.bsky.app/xrpc/app.bsky.actor.getProfile', [
+                'actor' => $did,
+            ]);
+            if ($profileResponse->successful()) {
+                $profilePictureUrl = $profileResponse->json('avatar');
+                $displayName = $profileResponse->json('displayName') ?? $displayName;
+            }
+        } catch (\Throwable $e) {
+            // Non-blocking: profile picture is optional
+        }
+
+        $blueskyPlatform = Platform::where('slug', 'bluesky')->firstOrFail();
+        $user = $request->user();
+
+        $credentials = [
+            'handle' => $resolvedHandle,
+            'app_password' => $appPassword,
+            'did' => $did,
+            'access_jwt' => $data['accessJwt'],
+            'refresh_jwt' => $data['refreshJwt'],
+        ];
+
+        // Check for existing account
+        $account = SocialAccount::where('platform_id', $blueskyPlatform->id)
+            ->where('platform_account_id', $did)
+            ->first();
+
+        if ($account) {
+            $account->update([
+                'name' => $displayName,
+                'credentials' => $credentials,
+                'profile_picture_url' => $profilePictureUrl ?? $account->profile_picture_url,
+            ]);
+        } else {
+            $account = SocialAccount::create([
+                'platform_id' => $blueskyPlatform->id,
+                'platform_account_id' => $did,
+                'name' => $displayName,
+                'credentials' => $credentials,
+                'profile_picture_url' => $profilePictureUrl,
+                'languages' => [$user->default_language ?? 'fr'],
+            ]);
+        }
+
+        if (! $account->users()->where('user_id', $user->id)->exists()) {
+            $account->users()->attach($user->id, ['is_active' => true]);
+        }
+
+        return redirect()->route('platforms.bluesky')
+            ->with('success', "Compte Bluesky \"{$displayName}\" connecté avec succès.");
+    }
+
+    /**
+     * Validate a Bluesky account's credentials (AJAX).
+     */
+    public function validateBlueskyAccount(Request $request): JsonResponse
+    {
+        $request->validate([
+            'handle' => 'required|string|max:255',
+            'app_password' => 'required|string|max:255',
+        ]);
+
+        $response = Http::post('https://bsky.social/xrpc/com.atproto.server.createSession', [
+            'identifier' => $request->input('handle'),
+            'password' => $request->input('app_password'),
+        ]);
+
+        if ($response->successful()) {
+            $data = $response->json();
+
+            // Fetch profile
+            $profilePic = null;
+            $displayName = $data['handle'];
+            try {
+                $profileResponse = Http::get('https://public.api.bsky.app/xrpc/app.bsky.actor.getProfile', [
+                    'actor' => $data['did'],
+                ]);
+                if ($profileResponse->successful()) {
+                    $profilePic = $profileResponse->json('avatar');
+                    $displayName = $profileResponse->json('displayName') ?? $displayName;
+                }
+            } catch (\Throwable $e) {
+                // Non-blocking
+            }
+
+            return response()->json([
+                'success' => true,
+                'handle' => $data['handle'],
+                'did' => $data['did'],
+                'display_name' => $displayName,
+                'profile_picture_url' => $profilePic,
+            ]);
+        }
+
+        return response()->json([
+            'success' => false,
+            'error' => $response->json('message') ?? 'Identifiants invalides.',
+        ], 422);
     }
 
     /**

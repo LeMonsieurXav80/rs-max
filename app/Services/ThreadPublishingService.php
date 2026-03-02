@@ -7,6 +7,7 @@ use App\Models\SocialAccount;
 use App\Models\Thread;
 use App\Models\ThreadSegment;
 use App\Models\ThreadSegmentPlatform;
+use App\Services\Adapters\BlueskyAdapter;
 use App\Services\Adapters\FacebookAdapter;
 use App\Services\Adapters\InstagramAdapter;
 use App\Services\Adapters\PlatformAdapterInterface;
@@ -127,6 +128,8 @@ class ThreadPublishingService
             // Rate limiting between segments.
             if ($account->platform->slug === 'threads') {
                 sleep(35);
+            } elseif ($account->platform->slug === 'bluesky') {
+                sleep(1);
             } else {
                 sleep(2);
             }
@@ -317,6 +320,7 @@ class ThreadPublishingService
         return match ($platformSlug) {
             'twitter' => "https://x.com/{$handle}/status/{$externalId}",
             'threads' => "https://www.threads.net/@{$handle}/post/{$externalId}",
+            'bluesky' => BlueskyAdapter::buildPostUrl($handle, $externalId),
             default => null,
         };
     }
@@ -330,6 +334,7 @@ class ThreadPublishingService
             'threads' => new ThreadsAdapter(),
             'twitter' => new TwitterAdapter(),
             'youtube' => new YouTubeAdapter(),
+            'bluesky' => new BlueskyAdapter(),
             default => null,
         };
     }

@@ -86,7 +86,7 @@ class SocialAccountController extends Controller
         }
 
         // Extract platform_account_id based on platform
-        $idFieldMap = ['facebook' => 'page_id', 'instagram' => 'account_id', 'telegram' => 'chat_id'];
+        $idFieldMap = ['facebook' => 'page_id', 'instagram' => 'account_id', 'telegram' => 'chat_id', 'bluesky' => 'did'];
         $idField = $idFieldMap[$platform->slug] ?? null;
         $platformAccountId = ($idField && isset($credentials[$idField])) ? $credentials[$idField] : null;
 

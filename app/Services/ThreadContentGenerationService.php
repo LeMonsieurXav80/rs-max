@@ -56,7 +56,7 @@ class ThreadContentGenerationService
         }
 
         // 3. Build the prompt.
-        $hasThreadPlatforms = ! empty(array_intersect($platformSlugs, ['twitter', 'threads']));
+        $hasThreadPlatforms = ! empty(array_intersect($platformSlugs, ['twitter', 'threads', 'bluesky']));
         $hasCompiledPlatforms = ! empty(array_intersect($platformSlugs, ['facebook', 'telegram']));
 
         $userPrompt = "Transforme cet article en un fil de discussion (thread) pour les réseaux sociaux.\n\n";
@@ -98,6 +98,9 @@ class ThreadContentGenerationService
             if (in_array('threads', $platformSlugs)) {
                 $userPrompt .= "- threads : ton conversationnel, max 500 caractères.\n";
             }
+            if (in_array('bluesky', $platformSlugs)) {
+                $userPrompt .= "- bluesky : ton concis et engageant, max 300 caractères (graphèmes).\n";
+            }
             $userPrompt .= "\n";
         }
 
@@ -112,7 +115,7 @@ class ThreadContentGenerationService
         $userPrompt .= "      \"content_fr\": \"Contenu principal en français\"";
 
         if ($hasThreadPlatforms) {
-            foreach (['twitter', 'threads'] as $slug) {
+            foreach (['twitter', 'threads', 'bluesky'] as $slug) {
                 if (in_array($slug, $platformSlugs)) {
                     $userPrompt .= ",\n      \"{$slug}\": \"Version adaptée pour {$slug}\"";
                 }
@@ -226,7 +229,7 @@ class ThreadContentGenerationService
         }
 
         $userPrompt .= "\nRéponds en JSON : {\"content_fr\": \"...\"";
-        foreach (['twitter', 'threads'] as $slug) {
+        foreach (['twitter', 'threads', 'bluesky'] as $slug) {
             if (in_array($slug, $platformSlugs)) {
                 $userPrompt .= ", \"{$slug}\": \"...\"";
             }
@@ -271,7 +274,7 @@ class ThreadContentGenerationService
                 'platform_contents' => [],
             ];
 
-            foreach (['twitter', 'threads'] as $slug) {
+            foreach (['twitter', 'threads', 'bluesky'] as $slug) {
                 if (in_array($slug, $platformSlugs) && ! empty($segment[$slug])) {
                     $normalized['platform_contents'][$slug] = $segment[$slug];
                 }
@@ -298,6 +301,7 @@ class ThreadContentGenerationService
                 'threads' => 500,
                 'youtube' => 5000,
                 'telegram' => 4096,
+                'bluesky' => 300,
                 default => 0,
             }
         );

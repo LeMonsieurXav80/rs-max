@@ -143,6 +143,7 @@ class AiAssistService
                 'twitter' => 'Twitter/X',
                 'telegram' => 'Telegram',
                 'youtube' => 'YouTube',
+                'bluesky' => 'Bluesky',
                 default => ucfirst($slug),
             };
             $platformDescriptions[] = "{$label} (max {$charLimit} caractères)";
@@ -262,6 +263,7 @@ class AiAssistService
                 'twitter' => 'Twitter/X',
                 'telegram' => 'Telegram',
                 'youtube' => 'YouTube',
+                'bluesky' => 'Bluesky',
                 default => ucfirst($slug),
             };
             $platformDescriptions[] = "{$label} (max {$charLimit} caractères)";
@@ -394,6 +396,7 @@ class AiAssistService
             'threads' => 500,
             'youtube' => 5000,
             'telegram' => 4096,
+            'bluesky' => 300,
             default => 0,
         };
     }

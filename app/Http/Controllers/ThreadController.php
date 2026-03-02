@@ -23,7 +23,7 @@ use Illuminate\View\View;
 
 class ThreadController extends Controller
 {
-    private const THREAD_PLATFORM_SLUGS = ['twitter', 'threads'];
+    private const THREAD_PLATFORM_SLUGS = ['twitter', 'threads', 'bluesky'];
 
     private const COMPILED_PLATFORM_SLUGS = ['facebook', 'telegram'];
 

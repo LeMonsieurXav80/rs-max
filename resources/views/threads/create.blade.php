@@ -241,10 +241,11 @@
                             'facebook' => 'Facebook',
                             'threads' => 'Threads',
                             'twitter' => 'Twitter / X',
+                            'bluesky' => 'Bluesky',
                             'telegram' => 'Telegram',
                         ];
-                        $platformOrder = ['twitter', 'threads', 'facebook', 'telegram'];
-                        $threadPlatforms = ['twitter', 'threads'];
+                        $platformOrder = ['twitter', 'threads', 'bluesky', 'facebook', 'telegram'];
+                        $threadPlatforms = ['twitter', 'threads', 'bluesky'];
                     @endphp
 
                     @foreach($platformOrder as $slug)
@@ -448,6 +449,23 @@
                                         <div class="flex justify-end">
                                             <span class="text-xs" :class="(segment.platform_contents.threads || '').length > 500 ? 'text-red-500' : 'text-gray-400'"
                                                   x-text="(segment.platform_contents.threads || '').length + '/500'"></span>
+                                        </div>
+                                    </div>
+
+                                    {{-- Bluesky override --}}
+                                    <div>
+                                        <label class="flex items-center gap-1.5 text-xs font-medium text-gray-500 mb-1">
+                                            <x-platform-icon platform="bluesky" size="xs" />
+                                            Bluesky (300 car.)
+                                        </label>
+                                        <textarea x-model="segment.platform_contents.bluesky"
+                                                  :name="'segments[' + index + '][platform_contents][bluesky]'"
+                                                  rows="2"
+                                                  class="w-full rounded-lg border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 text-xs resize-y"
+                                                  placeholder="Version Bluesky (optionnel)..."></textarea>
+                                        <div class="flex justify-end">
+                                            <span class="text-xs" :class="(segment.platform_contents.bluesky || '').length > 300 ? 'text-red-500' : 'text-gray-400'"
+                                                  x-text="(segment.platform_contents.bluesky || '').length + '/300'"></span>
                                         </div>
                                     </div>
                                 </div>
@@ -913,7 +931,7 @@
                 addSegment() {
                     this.segments.push({
                         content_fr: '',
-                        platform_contents: { twitter: '', threads: '' },
+                        platform_contents: { twitter: '', threads: '', bluesky: '' },
                         media: null,
                         regenerating: false,
                     });
@@ -973,6 +991,7 @@
                                 platform_contents: {
                                     twitter: s.platform_contents?.twitter || '',
                                     threads: s.platform_contents?.threads || '',
+                                    bluesky: s.platform_contents?.bluesky || '',
                                 },
                                 media: s.media || null,
                                 regenerating: false,
@@ -1022,6 +1041,7 @@
                             segment.content_fr = data.data.content_fr || segment.content_fr;
                             segment.platform_contents.twitter = data.data.twitter || '';
                             segment.platform_contents.threads = data.data.threads || '';
+                            segment.platform_contents.bluesky = data.data.bluesky || '';
                         }
                     } catch (err) {
                         // Silent fail

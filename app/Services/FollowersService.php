@@ -24,6 +24,7 @@ class FollowersService
             'youtube' => $this->fetchYouTubeFollowers($account),
             'telegram' => $this->fetchTelegramFollowers($account),
             'threads' => $this->fetchThreadsFollowers($account),
+            'bluesky' => $this->fetchBlueskyFollowers($account),
             default => null,
         };
 
@@ -264,6 +265,36 @@ class FollowersService
             ]);
         } catch (\Throwable $e) {
             Log::warning('FollowersService: Threads exception', ['error' => $e->getMessage()]);
+        }
+
+        return null;
+    }
+
+    // ── Bluesky ──────────────────────────────────────────────
+
+    private function fetchBlueskyFollowers(SocialAccount $account): ?int
+    {
+        $did = $account->platform_account_id;
+
+        if (! $did) {
+            return null;
+        }
+
+        try {
+            $response = Http::get('https://public.api.bsky.app/xrpc/app.bsky.actor.getProfile', [
+                'actor' => $did,
+            ]);
+
+            if ($response->successful()) {
+                return (int) ($response->json('followersCount') ?? 0);
+            }
+
+            Log::warning('FollowersService: Bluesky API error', [
+                'account' => $account->name,
+                'status' => $response->status(),
+            ]);
+        } catch (\Throwable $e) {
+            Log::warning('FollowersService: Bluesky exception', ['error' => $e->getMessage()]);
         }
 
         return null;

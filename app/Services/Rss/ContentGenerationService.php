@@ -238,6 +238,7 @@ class ContentGenerationService
             'threads' => 500,
             'youtube' => 5000,
             'telegram' => 4096,
+            'bluesky' => 300,
             default => 0,
         };
     }

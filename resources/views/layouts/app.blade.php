@@ -273,6 +273,15 @@
                                 </svg>
                                 YouTube
                             </a>
+
+                            {{-- Bluesky --}}
+                            <a href="{{ url('/platforms/bluesky') }}"
+                               class="flex items-center gap-3 px-3 py-2 rounded-lg text-sm transition-colors {{ $currentRoute === 'platforms/bluesky' ? 'bg-indigo-50 text-indigo-600 font-medium' : 'text-gray-500 hover:bg-gray-50 hover:text-gray-900' }}">
+                                <svg class="w-4 h-4" fill="currentColor" viewBox="0 0 24 24">
+                                    <path d="M12 10.8c-1.087-2.114-4.046-6.053-6.798-7.995C2.566.944 1.561 1.266.902 1.565.139 1.908 0 3.08 0 3.768c0 .69.378 5.65.6 6.432.784 2.766 3.462 3.379 5.982 3.147-3.584.558-6.545 2.329-3.97 7.458 3.907 5.865 8.399-1.022 9.388-3.844.989 2.822 4.086 9.29 9.388 3.844 2.574-5.13-.386-6.9-3.97-7.458 2.52.232 5.198-.381 5.982-3.147.222-.782.6-5.742.6-6.432 0-.688-.139-1.86-.902-2.203-.659-.3-1.664-.62-4.3 1.24C16.046 4.748 13.087 8.687 12 10.8Z"/>
+                                </svg>
+                                Bluesky
+                            </a>
                         </div>
                     </div>
 

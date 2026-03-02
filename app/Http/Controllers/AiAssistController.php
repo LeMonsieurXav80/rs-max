@@ -44,7 +44,7 @@ class AiAssistController extends Controller
         $validated = $request->validate([
             'content' => 'nullable|string|max:10000',
             'platforms' => 'required|array|min:1',
-            'platforms.*' => 'string|in:facebook,instagram,threads,twitter,telegram,youtube',
+            'platforms.*' => 'string|in:facebook,instagram,threads,twitter,telegram,youtube,bluesky',
             'account_id' => 'required|exists:social_accounts,id',
         ]);
 
@@ -80,7 +80,7 @@ class AiAssistController extends Controller
             'media_urls' => 'required|array|min:1',
             'media_urls.*' => 'required|string',
             'platforms' => 'required|array|min:1',
-            'platforms.*' => 'string|in:facebook,instagram,threads,twitter,telegram,youtube',
+            'platforms.*' => 'string|in:facebook,instagram,threads,twitter,telegram,youtube,bluesky',
             'account_id' => 'required|exists:social_accounts,id',
             'content' => 'nullable|string|max:10000',
         ]);

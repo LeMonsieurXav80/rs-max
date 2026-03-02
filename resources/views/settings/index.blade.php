@@ -142,6 +142,7 @@
                                         ['slug' => 'threads', 'name' => 'Threads', 'official' => '500'],
                                         ['slug' => 'youtube', 'name' => 'YouTube (description)', 'official' => '5 000'],
                                         ['slug' => 'telegram', 'name' => 'Telegram', 'official' => '4 096'],
+                                        ['slug' => 'bluesky', 'name' => 'Bluesky', 'official' => '300'],
                                     ];
                                 @endphp
                                 @foreach($charPlatforms as $p)
@@ -365,6 +366,7 @@
                                         ['slug' => 'twitter', 'name' => 'Twitter/X', 'limit' => '15K lectures/mois (Basic)'],
                                         ['slug' => 'youtube', 'name' => 'YouTube', 'limit' => '10K unites/jour'],
                                         ['slug' => 'threads', 'name' => 'Threads', 'limit' => '~200 appels/h'],
+                                        ['slug' => 'bluesky', 'name' => 'Bluesky', 'limit' => 'API publique (pas de limite stricte)'],
                                     ];
                                 @endphp
                                 @foreach($platforms as $p)

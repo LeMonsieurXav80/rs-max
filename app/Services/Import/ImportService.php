@@ -118,6 +118,7 @@ class ImportService
             'twitter' => app(TwitterImportService::class),
             'youtube' => app(YouTubeImportService::class),
             'threads' => app(ThreadsImportService::class),
+            'bluesky' => app(BlueskyImportService::class),
             default => null,
         };
     }

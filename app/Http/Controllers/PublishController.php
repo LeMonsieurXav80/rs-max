@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use App\Models\Post;
 use App\Models\PostLog;
 use App\Models\PostPlatform;
+use App\Services\Adapters\BlueskyAdapter;
 use App\Services\Adapters\FacebookAdapter;
 use App\Services\Adapters\InstagramAdapter;
 use App\Services\Adapters\PlatformAdapterInterface;
@@ -261,6 +262,7 @@ class PublishController extends Controller
             'threads' => new ThreadsAdapter(),
             'twitter' => new TwitterAdapter(),
             'youtube' => new YouTubeAdapter(),
+            'bluesky' => new BlueskyAdapter(),
             default => null,
         };
     }

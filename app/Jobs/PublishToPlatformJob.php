@@ -11,6 +11,7 @@ use App\Services\Adapters\PlatformAdapterInterface;
 use App\Services\Adapters\TelegramAdapter;
 use App\Services\Adapters\ThreadsAdapter;
 use App\Services\Adapters\TwitterAdapter;
+use App\Services\Adapters\BlueskyAdapter;
 use App\Services\Adapters\YouTubeAdapter;
 use App\Services\PublishingService;
 use Illuminate\Bus\Queueable;
@@ -102,6 +103,7 @@ class PublishToPlatformJob implements ShouldQueue
             'threads' => new ThreadsAdapter(),
             'twitter' => new TwitterAdapter(),
             'youtube' => new YouTubeAdapter(),
+            'bluesky' => new BlueskyAdapter(),
             default => null,
         };
     }
