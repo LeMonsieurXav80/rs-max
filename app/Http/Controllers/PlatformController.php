@@ -540,6 +540,7 @@ class PlatformController extends Controller
             'twitter' => 'platforms.twitter',
             'youtube' => 'platforms.youtube',
             'bluesky' => 'platforms.bluesky',
+            'reddit' => 'platforms.reddit',
             default => 'platforms.facebook',
         };
 
@@ -754,6 +755,316 @@ class PlatformController extends Controller
             'success' => false,
             'error' => $response->json('message') ?? 'Identifiants invalides.',
         ], 422);
+    }
+
+    // ─── Reddit ──────────────────────────────────────────────────────
+
+    /**
+     * Reddit configuration page.
+     * Accounts grouped by client_id, with app records separated from subreddits.
+     */
+    public function reddit(Request $request): View
+    {
+        $accounts = $this->accountsForSlugs($request, ['reddit']);
+
+        $grouped = $accounts->groupBy(fn ($a) => $a->credentials['client_id'] ?? 'unknown');
+
+        $apps = $grouped->map(function ($group, $clientId) {
+            $appRecord = $group->first(fn ($a) => ($a->credentials['type'] ?? null) === 'app');
+            $subreddits = $group->filter(fn ($a) => ($a->credentials['type'] ?? null) !== 'app')->values();
+
+            return (object) [
+                'record' => $appRecord,
+                'subreddits' => $subreddits,
+                'username' => $appRecord?->credentials['username']
+                    ?? $subreddits->first()?->credentials['username']
+                    ?? null,
+                'client_id' => $clientId,
+            ];
+        });
+
+        return view('platforms.reddit', compact('apps'));
+    }
+
+    /**
+     * Register a Reddit app (validate credentials + save app record).
+     */
+    public function registerRedditApp(Request $request): RedirectResponse
+    {
+        $validated = $request->validate([
+            'username' => 'required|string|max:255',
+            'password' => 'required|string|max:255',
+            'client_id' => 'required|string|max:255',
+            'client_secret' => 'required|string|max:255',
+        ]);
+
+        $username = $validated['username'];
+        $userAgent = "server:rs-max:v1.0.0 (by /u/{$username})";
+
+        // Authenticate via Reddit OAuth2.
+        $authResponse = Http::withBasicAuth($validated['client_id'], $validated['client_secret'])
+            ->withHeaders(['User-Agent' => $userAgent])
+            ->asForm()
+            ->post('https://www.reddit.com/api/v1/access_token', [
+                'grant_type' => 'password',
+                'username' => $username,
+                'password' => $validated['password'],
+            ]);
+
+        if ($authResponse->failed() || ! $authResponse->json('access_token')) {
+            $error = $authResponse->json('message') ?? $authResponse->json('error') ?? 'Identifiants invalides';
+
+            return back()
+                ->with('error', "Connexion Reddit échouée : {$error}")
+                ->withInput($request->except('password', 'client_secret'));
+        }
+
+        $accessToken = $authResponse->json('access_token');
+
+        // Fetch Reddit user profile picture.
+        $profilePictureUrl = null;
+        try {
+            $meResponse = Http::withToken($accessToken)
+                ->withHeaders(['User-Agent' => $userAgent])
+                ->get('https://oauth.reddit.com/api/v1/me');
+
+            if ($meResponse->successful()) {
+                $snoovatar = $meResponse->json('snoovatar_img');
+                $iconImg = $meResponse->json('icon_img');
+                $remoteUrl = $snoovatar ?: $iconImg;
+
+                if ($remoteUrl) {
+                    $cleanUrl = strtok($remoteUrl, '?');
+                    $profilePictureUrl = ProfilePictureService::download($cleanUrl, 'reddit', $username);
+                }
+            }
+        } catch (\Throwable $e) {
+            // Non-blocking.
+        }
+
+        $redditPlatform = Platform::where('slug', 'reddit')->firstOrFail();
+        $user = $request->user();
+
+        $credentials = [
+            'username' => $username,
+            'password' => $validated['password'],
+            'client_id' => $validated['client_id'],
+            'client_secret' => $validated['client_secret'],
+            'type' => 'app',
+        ];
+
+        $account = SocialAccount::where('platform_id', $redditPlatform->id)
+            ->where('platform_account_id', "app_{$validated['client_id']}")
+            ->first();
+
+        if ($account) {
+            $account->update([
+                'name' => "u/{$username}",
+                'credentials' => $credentials,
+                'profile_picture_url' => $profilePictureUrl ?? $account->profile_picture_url,
+            ]);
+        } else {
+            $account = SocialAccount::create([
+                'platform_id' => $redditPlatform->id,
+                'platform_account_id' => "app_{$validated['client_id']}",
+                'name' => "u/{$username}",
+                'credentials' => $credentials,
+                'profile_picture_url' => $profilePictureUrl,
+                'languages' => [$user->default_language ?? 'fr'],
+            ]);
+        }
+
+        if (! $account->users()->where('user_id', $user->id)->exists()) {
+            $account->users()->attach($user->id, ['is_active' => true]);
+        }
+
+        // Also update username on any existing subreddits with this client_id
+        SocialAccount::where('platform_id', $redditPlatform->id)
+            ->where('id', '!=', $account->id)
+            ->get()
+            ->filter(fn ($a) => ($a->credentials['client_id'] ?? null) === $validated['client_id'])
+            ->each(function ($a) use ($validated, $username) {
+                $creds = $a->credentials;
+                $creds['username'] = $username;
+                $creds['password'] = $validated['password'];
+                $creds['client_secret'] = $validated['client_secret'];
+                $a->update(['credentials' => $creds]);
+            });
+
+        return redirect()->route('platforms.reddit')
+            ->with('success', "App Reddit pour u/{$username} enregistrée avec succès.");
+    }
+
+    /**
+     * Add a subreddit to an existing Reddit app.
+     */
+    public function addRedditSubreddit(Request $request): RedirectResponse
+    {
+        $validated = $request->validate([
+            'client_id' => 'required|string|max:255',
+            'subreddit' => 'required|string|max:255',
+        ]);
+
+        $subreddit = ltrim($validated['subreddit'], 'r/');
+        $redditPlatform = Platform::where('slug', 'reddit')->firstOrFail();
+
+        // Find the app record to get credentials.
+        $appRecord = SocialAccount::where('platform_id', $redditPlatform->id)
+            ->where('platform_account_id', "app_{$validated['client_id']}")
+            ->first();
+
+        if (! $appRecord) {
+            return back()->with('error', 'App Reddit introuvable.');
+        }
+
+        $credentials = $appRecord->credentials;
+        $username = $credentials['username'];
+        $userAgent = "server:rs-max:v1.0.0 (by /u/{$username})";
+
+        // Authenticate.
+        $authResponse = Http::withBasicAuth($credentials['client_id'], $credentials['client_secret'])
+            ->withHeaders(['User-Agent' => $userAgent])
+            ->asForm()
+            ->post('https://www.reddit.com/api/v1/access_token', [
+                'grant_type' => 'password',
+                'username' => $username,
+                'password' => $credentials['password'],
+            ]);
+
+        if ($authResponse->failed() || ! $authResponse->json('access_token')) {
+            return back()->with('error', 'Authentification Reddit échouée. Vérifiez les identifiants de l\'app.');
+        }
+
+        $accessToken = $authResponse->json('access_token');
+
+        // Verify subreddit exists.
+        $subResponse = Http::withToken($accessToken)
+            ->withHeaders(['User-Agent' => $userAgent])
+            ->get("https://oauth.reddit.com/r/{$subreddit}/about");
+
+        if ($subResponse->failed() || ! $subResponse->json('data.display_name')) {
+            return back()
+                ->with('error', "Subreddit r/{$subreddit} introuvable ou inaccessible.")
+                ->withInput();
+        }
+
+        $subData = $subResponse->json('data');
+        $displayName = "r/{$subData['display_name']}";
+        $subscribers = (int) ($subData['subscribers'] ?? 0);
+
+        // Download subreddit icon.
+        $profilePictureUrl = null;
+        $iconImg = $subData['icon_img'] ?? $subData['community_icon'] ?? null;
+        if ($iconImg) {
+            try {
+                $cleanUrl = strtok($iconImg, '?');
+                $profilePictureUrl = ProfilePictureService::download($cleanUrl, 'reddit', $subreddit);
+            } catch (\Throwable $e) {
+                // Non-blocking.
+            }
+        }
+
+        $user = $request->user();
+
+        $subCredentials = [
+            'username' => $credentials['username'],
+            'password' => $credentials['password'],
+            'client_id' => $credentials['client_id'],
+            'client_secret' => $credentials['client_secret'],
+            'subreddit' => $subreddit,
+        ];
+
+        $platformAccountId = "{$username}_{$subreddit}";
+
+        $account = SocialAccount::where('platform_id', $redditPlatform->id)
+            ->where('platform_account_id', $platformAccountId)
+            ->first();
+
+        if ($account) {
+            $account->update([
+                'name' => $displayName,
+                'credentials' => $subCredentials,
+                'followers_count' => $subscribers,
+                'profile_picture_url' => $profilePictureUrl ?? $account->profile_picture_url,
+            ]);
+        } else {
+            $account = SocialAccount::create([
+                'platform_id' => $redditPlatform->id,
+                'platform_account_id' => $platformAccountId,
+                'name' => $displayName,
+                'credentials' => $subCredentials,
+                'followers_count' => $subscribers,
+                'profile_picture_url' => $profilePictureUrl,
+                'languages' => [$user->default_language ?? 'fr'],
+            ]);
+        }
+
+        if (! $account->users()->where('user_id', $user->id)->exists()) {
+            $account->users()->attach($user->id, ['is_active' => true]);
+        }
+
+        return redirect()->route('platforms.reddit')
+            ->with('success', "Subreddit \"{$displayName}\" ajouté avec succès ({$subscribers} membres).");
+    }
+
+    /**
+     * Delete a Reddit app and all its subreddits.
+     */
+    public function destroyRedditApp(Request $request): RedirectResponse
+    {
+        $request->validate(['client_id' => 'required|string']);
+
+        $clientId = $request->input('client_id');
+        $redditPlatform = Platform::where('slug', 'reddit')->firstOrFail();
+
+        // Delete all accounts (app + subreddits) with this client_id.
+        SocialAccount::where('platform_id', $redditPlatform->id)
+            ->get()
+            ->filter(fn ($a) => ($a->credentials['client_id'] ?? null) === $clientId)
+            ->each(function ($a) {
+                $a->users()->detach();
+                $a->delete();
+            });
+
+        return redirect()->route('platforms.reddit')
+            ->with('success', 'App Reddit et ses subreddits supprimés.');
+    }
+
+    /**
+     * Validate Reddit credentials (AJAX).
+     */
+    public function validateRedditAccount(Request $request): JsonResponse
+    {
+        $request->validate([
+            'username' => 'required|string|max:255',
+            'password' => 'required|string|max:255',
+            'client_id' => 'required|string|max:255',
+            'client_secret' => 'required|string|max:255',
+        ]);
+
+        $username = $request->input('username');
+        $userAgent = "server:rs-max:v1.0.0 (by /u/{$username})";
+
+        $authResponse = Http::withBasicAuth($request->input('client_id'), $request->input('client_secret'))
+            ->withHeaders(['User-Agent' => $userAgent])
+            ->asForm()
+            ->post('https://www.reddit.com/api/v1/access_token', [
+                'grant_type' => 'password',
+                'username' => $username,
+                'password' => $request->input('password'),
+            ]);
+
+        if ($authResponse->failed() || ! $authResponse->json('access_token')) {
+            return response()->json([
+                'success' => false,
+                'error' => $authResponse->json('message') ?? $authResponse->json('error') ?? 'Identifiants invalides.',
+            ], 422);
+        }
+
+        return response()->json([
+            'success' => true,
+            'username' => $username,
+        ]);
     }
 
     /**

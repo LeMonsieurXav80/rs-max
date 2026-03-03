@@ -59,11 +59,13 @@ Route::middleware(['auth', 'verified'])->group(function () {
     Route::get('platforms/twitter', [PlatformController::class, 'twitter'])->name('platforms.twitter');
     Route::get('platforms/youtube', [PlatformController::class, 'youtube'])->name('platforms.youtube');
     Route::get('platforms/bluesky', [PlatformController::class, 'bluesky'])->name('platforms.bluesky');
+    Route::get('platforms/reddit', [PlatformController::class, 'reddit'])->name('platforms.reddit');
 
     // Platform validation (AJAX test connection — read-only, no cost concern)
     Route::post('platforms/telegram/validate-bot', [PlatformController::class, 'validateTelegramBot'])->name('platforms.telegram.validateBot');
     Route::post('platforms/twitter/validate-account', [PlatformController::class, 'validateTwitterAccount'])->name('platforms.twitter.validateAccount');
     Route::post('platforms/bluesky/validate-account', [PlatformController::class, 'validateBlueskyAccount'])->name('platforms.bluesky.validateAccount');
+    Route::post('platforms/reddit/validate-account', [PlatformController::class, 'validateRedditAccount'])->name('platforms.reddit.validateAccount');
 
     // Save default account selection
     Route::post('posts/default-accounts', [PostController::class, 'saveDefaultAccounts'])->name('posts.defaultAccounts');
@@ -136,6 +138,9 @@ Route::middleware(['auth', 'verified'])->group(function () {
         Route::post('platforms/twitter/add-account', [PlatformController::class, 'addTwitterAccount'])->name('platforms.twitter.addAccount');
         Route::put('platforms/twitter/update-account/{account}', [PlatformController::class, 'updateTwitterAccount'])->name('platforms.twitter.updateAccount');
         Route::post('platforms/bluesky/add-account', [PlatformController::class, 'addBlueskyAccount'])->name('platforms.bluesky.addAccount');
+        Route::post('platforms/reddit/register-app', [PlatformController::class, 'registerRedditApp'])->name('platforms.reddit.registerApp');
+        Route::post('platforms/reddit/add-subreddit', [PlatformController::class, 'addRedditSubreddit'])->name('platforms.reddit.addSubreddit');
+        Route::delete('platforms/reddit/app', [PlatformController::class, 'destroyRedditApp'])->name('platforms.reddit.destroyApp');
         Route::delete('platforms/account/{account}', [PlatformController::class, 'destroyAccount'])->name('platforms.destroyAccount');
 
         // Historical import & followers sync
