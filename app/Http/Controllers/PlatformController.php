@@ -345,6 +345,39 @@ class PlatformController extends Controller
     }
 
     /**
+     * Update a Twitter/X account's credentials.
+     */
+    public function updateTwitterAccount(Request $request, SocialAccount $account): RedirectResponse
+    {
+        $user = $request->user();
+
+        if (! $user->is_admin && ! $account->users()->where('user_id', $user->id)->exists()) {
+            abort(403);
+        }
+
+        $validated = $request->validate([
+            'name' => 'required|string|max:255',
+            'api_key' => 'required|string|max:500',
+            'api_secret' => 'required|string|max:500',
+            'access_token' => 'required|string|max:500',
+            'access_token_secret' => 'required|string|max:500',
+        ]);
+
+        $account->update([
+            'name' => $validated['name'],
+            'credentials' => [
+                'api_key' => $validated['api_key'],
+                'api_secret' => $validated['api_secret'],
+                'access_token' => $validated['access_token'],
+                'access_token_secret' => $validated['access_token_secret'],
+            ],
+        ]);
+
+        return redirect()->route('platforms.twitter')
+            ->with('success', "Compte Twitter \"{$validated['name']}\" mis à jour.");
+    }
+
+    /**
      * Validate a Twitter account's credentials via OAuth 1.0a (AJAX).
      * Calls GET /2/users/me to verify and retrieve username + profile picture.
      */

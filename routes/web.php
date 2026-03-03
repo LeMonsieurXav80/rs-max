@@ -76,6 +76,7 @@ Route::middleware(['auth', 'verified'])->group(function () {
     Route::delete('platforms/telegram/bot', [PlatformController::class, 'destroyTelegramBot'])->name('platforms.telegram.destroyBot');
     Route::post('platforms/twitter/add-account', [PlatformController::class, 'addTwitterAccount'])->name('platforms.twitter.addAccount');
     Route::post('platforms/twitter/validate-account', [PlatformController::class, 'validateTwitterAccount'])->name('platforms.twitter.validateAccount');
+    Route::put('platforms/twitter/update-account/{account}', [PlatformController::class, 'updateTwitterAccount'])->name('platforms.twitter.updateAccount');
     Route::get('platforms/bluesky', [PlatformController::class, 'bluesky'])->name('platforms.bluesky');
     Route::post('platforms/bluesky/add-account', [PlatformController::class, 'addBlueskyAccount'])->name('platforms.bluesky.addAccount');
     Route::post('platforms/bluesky/validate-account', [PlatformController::class, 'validateBlueskyAccount'])->name('platforms.bluesky.validateAccount');

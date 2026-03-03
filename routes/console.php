@@ -7,8 +7,8 @@ use Illuminate\Support\Facades\Schedule;
 // Publish scheduled posts every minute
 Schedule::command('posts:publish-scheduled')->everyMinute()->withoutOverlapping();
 
-// Sync follower counts every 6 hours
-Schedule::command('followers:sync')->cron('0 */6 * * *')->withoutOverlapping();
+// Sync follower counts once daily at 6 AM (pay-per-use API cost optimization)
+Schedule::command('followers:sync')->dailyAt('06:00')->withoutOverlapping();
 
 // Stats sync - frequency configurable via Settings page
 $syncFreq = rescue(fn () => Setting::get('stats_sync_frequency', 'hourly'), 'hourly', false);

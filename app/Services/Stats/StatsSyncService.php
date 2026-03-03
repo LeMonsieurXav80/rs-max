@@ -105,8 +105,10 @@ class StatsSyncService
             return false;
         }
 
-        // Adaptive intervals: fresh posts need more frequent syncing
-        if ($daysSincePublished < 2) {
+        // Adaptive intervals: Twitter uses relaxed schedule (pay-per-use API)
+        if ($slug === 'twitter') {
+            $intervalHours = $daysSincePublished < 7 ? 12 : $configuredInterval;
+        } elseif ($daysSincePublished < 2) {
             $intervalHours = 1;          // < 48h: every hour
         } elseif ($daysSincePublished < 7) {
             $intervalHours = 6;          // 2-7 days: every 6 hours
