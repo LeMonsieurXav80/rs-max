@@ -18,6 +18,7 @@ use App\Http\Controllers\RssFeedController;
 use App\Http\Controllers\SettingsController;
 use App\Http\Controllers\SourceItemController;
 use App\Http\Controllers\RedditSourceController;
+use App\Http\Controllers\UserController;
 use App\Http\Controllers\WordPressSiteController;
 use App\Http\Controllers\SocialAccountController;
 use App\Http\Controllers\YouTubeChannelController;
@@ -32,6 +33,8 @@ Route::get('/', function () {
 });
 
 Route::middleware(['auth', 'verified'])->group(function () {
+    // ─── Accessible à tous les utilisateurs authentifiés ──────────
+
     // Dashboard
     Route::get('/dashboard', [DashboardController::class, 'index'])->name('dashboard');
 
@@ -43,60 +46,33 @@ Route::middleware(['auth', 'verified'])->group(function () {
     // Posts (resource CRUD)
     Route::resource('posts', PostController::class);
 
-    // Social accounts (resource CRUD + toggle active)
-    Route::resource('accounts', SocialAccountController::class)->except(['show']);
-    Route::patch('accounts/{account}/toggle', [SocialAccountController::class, 'toggleActive'])
-        ->name('accounts.toggle');
+    // Social accounts (listing, editing, toggle)
+    Route::get('accounts', [SocialAccountController::class, 'index'])->name('accounts.index');
+    Route::get('accounts/{account}/edit', [SocialAccountController::class, 'edit'])->name('accounts.edit');
+    Route::put('accounts/{account}', [SocialAccountController::class, 'update'])->name('accounts.update');
+    Route::patch('accounts/{account}/toggle', [SocialAccountController::class, 'toggleActive'])->name('accounts.toggle');
 
-    // Facebook/Instagram OAuth flow
-    Route::get('auth/facebook/redirect', [FacebookOAuthController::class, 'redirect'])->name('facebook.redirect');
-    Route::get('auth/facebook/callback', [FacebookOAuthController::class, 'callback'])->name('facebook.callback');
-    Route::get('auth/facebook/select', [FacebookOAuthController::class, 'select'])->name('facebook.select');
-    Route::post('auth/facebook/connect', [FacebookOAuthController::class, 'connect'])->name('facebook.connect');
-
-    // Threads OAuth flow
-    Route::get('auth/threads/redirect', [ThreadsOAuthController::class, 'redirect'])->name('threads.redirect');
-    Route::get('auth/threads/callback', [ThreadsOAuthController::class, 'callback'])->name('threads.callback');
-
-    // YouTube OAuth flow
-    Route::get('oauth/youtube/redirect', [YouTubeOAuthController::class, 'redirect'])->name('youtube.redirect');
-    Route::get('oauth/youtube/callback', [YouTubeOAuthController::class, 'callback'])->name('youtube.callback');
-    Route::get('oauth/youtube/select', [YouTubeOAuthController::class, 'select'])->name('youtube.select');
-    Route::post('oauth/youtube/store', [YouTubeOAuthController::class, 'store'])->name('youtube.store');
-
-    // Platforms management (one page per platform)
+    // Platform pages (view accounts per platform)
     Route::get('platforms/facebook', [PlatformController::class, 'facebook'])->name('platforms.facebook');
     Route::get('platforms/threads', [PlatformController::class, 'threads'])->name('platforms.threads');
     Route::get('platforms/telegram', [PlatformController::class, 'telegram'])->name('platforms.telegram');
     Route::get('platforms/twitter', [PlatformController::class, 'twitter'])->name('platforms.twitter');
     Route::get('platforms/youtube', [PlatformController::class, 'youtube'])->name('platforms.youtube');
-    Route::post('platforms/telegram/validate-bot', [PlatformController::class, 'validateTelegramBot'])->name('platforms.telegram.validateBot');
-    Route::post('platforms/telegram/register-bot', [PlatformController::class, 'registerTelegramBot'])->name('platforms.telegram.registerBot');
-    Route::post('platforms/telegram/add-channel', [PlatformController::class, 'addTelegramChannel'])->name('platforms.telegram.addChannel');
-    Route::delete('platforms/telegram/bot', [PlatformController::class, 'destroyTelegramBot'])->name('platforms.telegram.destroyBot');
-    Route::post('platforms/twitter/add-account', [PlatformController::class, 'addTwitterAccount'])->name('platforms.twitter.addAccount');
-    Route::post('platforms/twitter/validate-account', [PlatformController::class, 'validateTwitterAccount'])->name('platforms.twitter.validateAccount');
-    Route::put('platforms/twitter/update-account/{account}', [PlatformController::class, 'updateTwitterAccount'])->name('platforms.twitter.updateAccount');
     Route::get('platforms/bluesky', [PlatformController::class, 'bluesky'])->name('platforms.bluesky');
-    Route::post('platforms/bluesky/add-account', [PlatformController::class, 'addBlueskyAccount'])->name('platforms.bluesky.addAccount');
+
+    // Platform validation (AJAX test connection — read-only, no cost concern)
+    Route::post('platforms/telegram/validate-bot', [PlatformController::class, 'validateTelegramBot'])->name('platforms.telegram.validateBot');
+    Route::post('platforms/twitter/validate-account', [PlatformController::class, 'validateTwitterAccount'])->name('platforms.twitter.validateAccount');
     Route::post('platforms/bluesky/validate-account', [PlatformController::class, 'validateBlueskyAccount'])->name('platforms.bluesky.validateAccount');
-    Route::delete('platforms/account/{account}', [PlatformController::class, 'destroyAccount'])->name('platforms.destroyAccount');
 
     // Save default account selection
     Route::post('posts/default-accounts', [PostController::class, 'saveDefaultAccounts'])->name('posts.defaultAccounts');
 
-    // Stats management
+    // Stats
     Route::post('posts/{post}/sync-stats', [PostController::class, 'syncStats'])->name('posts.syncStats');
     Route::get('stats/dashboard', [StatsController::class, 'dashboard'])->name('stats.dashboard');
 
-    // Historical import
-    Route::get('accounts/{account}/import/info', [ImportController::class, 'info'])->name('accounts.import.info');
-    Route::post('accounts/{account}/import', [ImportController::class, 'import'])->name('accounts.import');
-
-    // Followers sync
-    Route::post('accounts/sync-followers', [ImportController::class, 'syncFollowers'])->name('accounts.syncFollowers');
-
-    // Manual publishing (test without scheduling)
+    // Manual publishing
     Route::post('posts/{post}/publish', [PublishController::class, 'publishAll'])->name('posts.publish');
     Route::post('posts/platform/{postPlatform}/publish', [PublishController::class, 'publishOne'])->name('posts.publishOne');
     Route::post('posts/platform/{postPlatform}/reset', [PublishController::class, 'resetOne'])->name('posts.resetOne');
@@ -109,67 +85,13 @@ Route::middleware(['auth', 'verified'])->group(function () {
     Route::post('threads/{thread}/publish/{socialAccount}', [ThreadController::class, 'publishOne'])->name('threads.publishOne');
     Route::post('threads/{thread}/reset/{socialAccount}', [ThreadController::class, 'resetAccount'])->name('threads.resetAccount');
 
-    // Personas (admin)
-    Route::resource('personas', PersonaController::class)->except(['show']);
-
-    // Hooks (admin)
-    Route::resource('hooks', HookController::class)->except(['show']);
-    Route::post('hooks/categories', [HookController::class, 'storeCategory'])->name('hooks.categories.store');
-    Route::patch('hooks/categories/{category}', [HookController::class, 'updateCategory'])->name('hooks.categories.update');
-    Route::delete('hooks/categories/{category}', [HookController::class, 'destroyCategory'])->name('hooks.categories.destroy');
-    Route::post('hooks/categories/{category}/reset', [HookController::class, 'resetCounters'])->name('hooks.categories.reset');
-
-    // RSS Feeds (admin)
-    Route::resource('rss-feeds', RssFeedController::class)->except(['show']);
-    Route::post('rss-feeds/{rssFeed}/fetch', [RssFeedController::class, 'fetchNow'])->name('rss-feeds.fetch');
-    Route::post('rss-feeds/{rssFeed}/generate', [RssFeedController::class, 'generateNow'])->name('rss-feeds.generate');
-    Route::get('rss-feeds/{rssFeed}/preview', [RssFeedController::class, 'preview'])->name('rss-feeds.preview');
-    Route::post('rss-feeds/{rssFeed}/generate-preview', [RssFeedController::class, 'generatePreview'])->name('rss-feeds.generatePreview');
-    Route::post('rss-feeds/{rssFeed}/regenerate-item', [RssFeedController::class, 'regenerateItem'])->name('rss-feeds.regenerateItem');
-    Route::post('rss-feeds/{rssFeed}/confirm-publications', [RssFeedController::class, 'confirmPublications'])->name('rss-feeds.confirmPublications');
-
-    // WordPress Sites (admin)
-    Route::resource('wordpress-sites', WordPressSiteController::class)->except(['show'])->parameters(['wordpress-sites' => 'wpSource']);
-    Route::post('wordpress-sites/test-connection', [WordPressSiteController::class, 'testConnection'])->name('wordpress-sites.testConnection');
-    Route::post('wordpress-sites/{wpSource}/fetch', [WordPressSiteController::class, 'fetchNow'])->name('wordpress-sites.fetch');
-    Route::get('wordpress-sites/{wpSource}/preview', [WordPressSiteController::class, 'preview'])->name('wordpress-sites.preview');
-    Route::post('wordpress-sites/{wpSource}/generate-preview', [WordPressSiteController::class, 'generatePreview'])->name('wordpress-sites.generatePreview');
-    Route::post('wordpress-sites/{wpSource}/regenerate-item', [WordPressSiteController::class, 'regenerateItem'])->name('wordpress-sites.regenerateItem');
-    Route::post('wordpress-sites/{wpSource}/confirm-publications', [WordPressSiteController::class, 'confirmPublications'])->name('wordpress-sites.confirmPublications');
-
-    // YouTube Channels (admin)
-    Route::resource('youtube-channels', YouTubeChannelController::class)->except(['show'])->parameters(['youtube-channels' => 'ytSource']);
-    Route::post('youtube-channels/test-connection', [YouTubeChannelController::class, 'testConnection'])->name('youtube-channels.testConnection');
-    Route::post('youtube-channels/{ytSource}/fetch', [YouTubeChannelController::class, 'fetchNow'])->name('youtube-channels.fetch');
-    Route::get('youtube-channels/{ytSource}/preview', [YouTubeChannelController::class, 'preview'])->name('youtube-channels.preview');
-    Route::post('youtube-channels/{ytSource}/generate-preview', [YouTubeChannelController::class, 'generatePreview'])->name('youtube-channels.generatePreview');
-    Route::post('youtube-channels/{ytSource}/regenerate-item', [YouTubeChannelController::class, 'regenerateItem'])->name('youtube-channels.regenerateItem');
-    Route::post('youtube-channels/{ytSource}/confirm-publications', [YouTubeChannelController::class, 'confirmPublications'])->name('youtube-channels.confirmPublications');
-
-    // Reddit Sources (admin)
-    Route::resource('reddit-sources', RedditSourceController::class)->except(['show'])->parameters(['reddit-sources' => 'redditSource']);
-    Route::post('reddit-sources/test-connection', [RedditSourceController::class, 'testConnection'])->name('reddit-sources.testConnection');
-    Route::post('reddit-sources/{redditSource}/fetch', [RedditSourceController::class, 'fetchNow'])->name('reddit-sources.fetch');
-    Route::get('reddit-sources/{redditSource}/preview', [RedditSourceController::class, 'preview'])->name('reddit-sources.preview');
-    Route::post('reddit-sources/{redditSource}/generate-preview', [RedditSourceController::class, 'generatePreview'])->name('reddit-sources.generatePreview');
-    Route::post('reddit-sources/{redditSource}/regenerate-item', [RedditSourceController::class, 'regenerateItem'])->name('reddit-sources.regenerateItem');
-    Route::post('reddit-sources/{redditSource}/confirm-publications', [RedditSourceController::class, 'confirmPublications'])->name('reddit-sources.confirmPublications');
-
-    // Settings (admin only)
-    Route::get('settings', [SettingsController::class, 'index'])->name('settings.index');
-    Route::patch('settings', [SettingsController::class, 'update'])->name('settings.update');
-
     // Location search (Facebook Places API)
     Route::get('api/locations/search', [LocationController::class, 'search'])->name('locations.search');
 
     // Hashtags (most used)
     Route::get('api/hashtags', [HashtagController::class, 'index'])->name('hashtags.index');
 
-    // Source items API (for thread creation source browser)
-    Route::get('api/source-items/sources', [SourceItemController::class, 'sources'])->name('sourceItems.sources');
-    Route::get('api/source-items/items', [SourceItemController::class, 'items'])->name('sourceItems.items');
-
-    // Media folders (BEFORE media/{filename} to avoid route conflict)
+    // Media folders
     Route::get('media/folders', [MediaFolderController::class, 'index'])->name('media.folders.index');
     Route::post('media/folders', [MediaFolderController::class, 'store'])->name('media.folders.store');
     Route::patch('media/folders/{folder}', [MediaFolderController::class, 'update'])->name('media.folders.update');
@@ -182,6 +104,99 @@ Route::middleware(['auth', 'verified'])->group(function () {
     Route::get('media/list', [MediaController::class, 'list'])->name('media.list');
     Route::get('media/thumbnail/{filename}', [MediaController::class, 'thumbnail'])->name('media.thumbnail');
     Route::delete('media/{filename}', [MediaController::class, 'destroy'])->name('media.destroy');
+
+    // ─── Admin seulement ──────────────────────────────────────────
+
+    Route::middleware('admin')->group(function () {
+        // User management
+        Route::resource('users', UserController::class)->except(['show']);
+        Route::patch('users/{user}/toggle-admin', [UserController::class, 'toggleAdmin'])->name('users.toggleAdmin');
+
+        // Social account creation & deletion (admin only)
+        Route::get('accounts/create', [SocialAccountController::class, 'create'])->name('accounts.create');
+        Route::post('accounts', [SocialAccountController::class, 'store'])->name('accounts.store');
+        Route::delete('accounts/{account}', [SocialAccountController::class, 'destroy'])->name('accounts.destroy');
+
+        // OAuth flows (connecting new accounts)
+        Route::get('auth/facebook/redirect', [FacebookOAuthController::class, 'redirect'])->name('facebook.redirect');
+        Route::get('auth/facebook/callback', [FacebookOAuthController::class, 'callback'])->name('facebook.callback');
+        Route::get('auth/facebook/select', [FacebookOAuthController::class, 'select'])->name('facebook.select');
+        Route::post('auth/facebook/connect', [FacebookOAuthController::class, 'connect'])->name('facebook.connect');
+        Route::get('auth/threads/redirect', [ThreadsOAuthController::class, 'redirect'])->name('threads.redirect');
+        Route::get('auth/threads/callback', [ThreadsOAuthController::class, 'callback'])->name('threads.callback');
+        Route::get('oauth/youtube/redirect', [YouTubeOAuthController::class, 'redirect'])->name('youtube.redirect');
+        Route::get('oauth/youtube/callback', [YouTubeOAuthController::class, 'callback'])->name('youtube.callback');
+        Route::get('oauth/youtube/select', [YouTubeOAuthController::class, 'select'])->name('youtube.select');
+        Route::post('oauth/youtube/store', [YouTubeOAuthController::class, 'store'])->name('youtube.store');
+
+        // Platform account management (add/update/delete)
+        Route::post('platforms/telegram/register-bot', [PlatformController::class, 'registerTelegramBot'])->name('platforms.telegram.registerBot');
+        Route::post('platforms/telegram/add-channel', [PlatformController::class, 'addTelegramChannel'])->name('platforms.telegram.addChannel');
+        Route::delete('platforms/telegram/bot', [PlatformController::class, 'destroyTelegramBot'])->name('platforms.telegram.destroyBot');
+        Route::post('platforms/twitter/add-account', [PlatformController::class, 'addTwitterAccount'])->name('platforms.twitter.addAccount');
+        Route::put('platforms/twitter/update-account/{account}', [PlatformController::class, 'updateTwitterAccount'])->name('platforms.twitter.updateAccount');
+        Route::post('platforms/bluesky/add-account', [PlatformController::class, 'addBlueskyAccount'])->name('platforms.bluesky.addAccount');
+        Route::delete('platforms/account/{account}', [PlatformController::class, 'destroyAccount'])->name('platforms.destroyAccount');
+
+        // Historical import & followers sync
+        Route::get('accounts/{account}/import/info', [ImportController::class, 'info'])->name('accounts.import.info');
+        Route::post('accounts/{account}/import', [ImportController::class, 'import'])->name('accounts.import');
+        Route::post('accounts/sync-followers', [ImportController::class, 'syncFollowers'])->name('accounts.syncFollowers');
+
+        // Personas
+        Route::resource('personas', PersonaController::class)->except(['show']);
+
+        // Hooks
+        Route::resource('hooks', HookController::class)->except(['show']);
+        Route::post('hooks/categories', [HookController::class, 'storeCategory'])->name('hooks.categories.store');
+        Route::patch('hooks/categories/{category}', [HookController::class, 'updateCategory'])->name('hooks.categories.update');
+        Route::delete('hooks/categories/{category}', [HookController::class, 'destroyCategory'])->name('hooks.categories.destroy');
+        Route::post('hooks/categories/{category}/reset', [HookController::class, 'resetCounters'])->name('hooks.categories.reset');
+
+        // RSS Feeds
+        Route::resource('rss-feeds', RssFeedController::class)->except(['show']);
+        Route::post('rss-feeds/{rssFeed}/fetch', [RssFeedController::class, 'fetchNow'])->name('rss-feeds.fetch');
+        Route::post('rss-feeds/{rssFeed}/generate', [RssFeedController::class, 'generateNow'])->name('rss-feeds.generate');
+        Route::get('rss-feeds/{rssFeed}/preview', [RssFeedController::class, 'preview'])->name('rss-feeds.preview');
+        Route::post('rss-feeds/{rssFeed}/generate-preview', [RssFeedController::class, 'generatePreview'])->name('rss-feeds.generatePreview');
+        Route::post('rss-feeds/{rssFeed}/regenerate-item', [RssFeedController::class, 'regenerateItem'])->name('rss-feeds.regenerateItem');
+        Route::post('rss-feeds/{rssFeed}/confirm-publications', [RssFeedController::class, 'confirmPublications'])->name('rss-feeds.confirmPublications');
+
+        // WordPress Sites
+        Route::resource('wordpress-sites', WordPressSiteController::class)->except(['show'])->parameters(['wordpress-sites' => 'wpSource']);
+        Route::post('wordpress-sites/test-connection', [WordPressSiteController::class, 'testConnection'])->name('wordpress-sites.testConnection');
+        Route::post('wordpress-sites/{wpSource}/fetch', [WordPressSiteController::class, 'fetchNow'])->name('wordpress-sites.fetch');
+        Route::get('wordpress-sites/{wpSource}/preview', [WordPressSiteController::class, 'preview'])->name('wordpress-sites.preview');
+        Route::post('wordpress-sites/{wpSource}/generate-preview', [WordPressSiteController::class, 'generatePreview'])->name('wordpress-sites.generatePreview');
+        Route::post('wordpress-sites/{wpSource}/regenerate-item', [WordPressSiteController::class, 'regenerateItem'])->name('wordpress-sites.regenerateItem');
+        Route::post('wordpress-sites/{wpSource}/confirm-publications', [WordPressSiteController::class, 'confirmPublications'])->name('wordpress-sites.confirmPublications');
+
+        // YouTube Channels
+        Route::resource('youtube-channels', YouTubeChannelController::class)->except(['show'])->parameters(['youtube-channels' => 'ytSource']);
+        Route::post('youtube-channels/test-connection', [YouTubeChannelController::class, 'testConnection'])->name('youtube-channels.testConnection');
+        Route::post('youtube-channels/{ytSource}/fetch', [YouTubeChannelController::class, 'fetchNow'])->name('youtube-channels.fetch');
+        Route::get('youtube-channels/{ytSource}/preview', [YouTubeChannelController::class, 'preview'])->name('youtube-channels.preview');
+        Route::post('youtube-channels/{ytSource}/generate-preview', [YouTubeChannelController::class, 'generatePreview'])->name('youtube-channels.generatePreview');
+        Route::post('youtube-channels/{ytSource}/regenerate-item', [YouTubeChannelController::class, 'regenerateItem'])->name('youtube-channels.regenerateItem');
+        Route::post('youtube-channels/{ytSource}/confirm-publications', [YouTubeChannelController::class, 'confirmPublications'])->name('youtube-channels.confirmPublications');
+
+        // Reddit Sources
+        Route::resource('reddit-sources', RedditSourceController::class)->except(['show'])->parameters(['reddit-sources' => 'redditSource']);
+        Route::post('reddit-sources/test-connection', [RedditSourceController::class, 'testConnection'])->name('reddit-sources.testConnection');
+        Route::post('reddit-sources/{redditSource}/fetch', [RedditSourceController::class, 'fetchNow'])->name('reddit-sources.fetch');
+        Route::get('reddit-sources/{redditSource}/preview', [RedditSourceController::class, 'preview'])->name('reddit-sources.preview');
+        Route::post('reddit-sources/{redditSource}/generate-preview', [RedditSourceController::class, 'generatePreview'])->name('reddit-sources.generatePreview');
+        Route::post('reddit-sources/{redditSource}/regenerate-item', [RedditSourceController::class, 'regenerateItem'])->name('reddit-sources.regenerateItem');
+        Route::post('reddit-sources/{redditSource}/confirm-publications', [RedditSourceController::class, 'confirmPublications'])->name('reddit-sources.confirmPublications');
+
+        // Settings
+        Route::get('settings', [SettingsController::class, 'index'])->name('settings.index');
+        Route::patch('settings', [SettingsController::class, 'update'])->name('settings.update');
+
+        // Source items API (admin — for thread creation source browser)
+        Route::get('api/source-items/sources', [SourceItemController::class, 'sources'])->name('sourceItems.sources');
+        Route::get('api/source-items/items', [SourceItemController::class, 'items'])->name('sourceItems.items');
+    });
 });
 
 Route::middleware('auth')->group(function () {

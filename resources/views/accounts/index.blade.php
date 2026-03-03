@@ -2,6 +2,7 @@
 
 @section('title', 'Comptes sociaux')
 
+@if(auth()->user()->is_admin)
 @section('actions')
     <div class="flex items-center gap-3">
         <a href="{{ route('accounts.create') }}" class="inline-flex items-center gap-2 px-4 py-2 bg-indigo-600 text-white text-sm font-medium rounded-xl hover:bg-indigo-700 transition-colors shadow-sm">
@@ -12,6 +13,7 @@
         </a>
     </div>
 @endsection
+@endif
 
 @section('content')
     @if($accounts->isEmpty())
@@ -157,6 +159,7 @@
                                             Modifier
                                         </a>
 
+                                        @if(auth()->user()->is_admin)
                                         <form
                                             method="POST"
                                             action="{{ route('accounts.destroy', $account) }}"
@@ -174,6 +177,7 @@
                                                 Supprimer
                                             </button>
                                         </form>
+                                        @endif
                                     </div>
                                 </div>
                             @endforeach
