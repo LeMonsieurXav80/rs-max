@@ -96,7 +96,7 @@ class PostController extends Controller
         if ($request->input('status') === 'scheduled') {
             $listQuery->orderBy('scheduled_at');
         } else {
-            $listQuery->orderByDesc('created_at');
+            $listQuery->orderByRaw('COALESCE(published_at, scheduled_at, created_at) DESC');
         }
         $posts = $listQuery->paginate(15)->withQueryString();
 
