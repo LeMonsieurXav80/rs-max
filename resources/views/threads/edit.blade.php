@@ -151,26 +151,36 @@
                                           placeholder="Contenu du segment..."></textarea>
                                 <input type="hidden" :name="'segments[' + index + '][media_json]'"
                                        :value="segment.media ? JSON.stringify(segment.media) : ''">
-                                <div class="flex justify-end mt-1">
+                                <div class="flex items-center justify-between mt-1">
+                                    <button type="button" @click="openMediaLibrary(index)"
+                                            class="inline-flex items-center gap-1 px-2 py-1 text-xs font-medium rounded-lg text-indigo-600 hover:bg-indigo-50 transition-colors">
+                                        <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1.5">
+                                            <path stroke-linecap="round" stroke-linejoin="round" d="m2.25 15.75 5.159-5.159a2.25 2.25 0 0 1 3.182 0l5.159 5.159m-1.5-1.5 1.409-1.409a2.25 2.25 0 0 1 3.182 0l2.909 2.909M3.75 21h16.5A2.25 2.25 0 0 0 22.5 18.75V5.25A2.25 2.25 0 0 0 20.25 3H3.75A2.25 2.25 0 0 0 1.5 5.25v13.5A2.25 2.25 0 0 0 3.75 21Z" />
+                                        </svg>
+                                        Image
+                                        <span x-show="segment.media && segment.media.length > 0"
+                                              class="px-1.5 py-0.5 text-[10px] bg-indigo-100 text-indigo-700 rounded-full"
+                                              x-text="segment.media.length"></span>
+                                    </button>
                                     <span class="text-xs" :class="(segment.content_fr || '').length > 500 ? 'text-red-500' : 'text-gray-400'"
                                           x-text="(segment.content_fr || '').length + ' car.'"></span>
                                 </div>
                             </div>
 
-                            {{-- Image preview --}}
+                            {{-- Media preview (multi-image) --}}
                             <template x-if="segment.media && segment.media.length > 0">
-                                <div class="flex items-center gap-3 p-3 bg-gray-50 rounded-xl">
-                                    <img :src="segment.media[0].url" alt="" class="w-20 h-14 object-cover rounded-lg border border-gray-200">
-                                    <div class="flex-1 min-w-0">
-                                        <p class="text-xs font-medium text-gray-700">Image attachee</p>
-                                        <p class="text-xs text-gray-400 truncate" x-text="segment.media[0].url"></p>
-                                    </div>
-                                    <button type="button" @click="segment.media = null"
-                                            class="p-1 text-gray-400 hover:text-red-500 transition-colors">
-                                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2">
-                                            <path stroke-linecap="round" stroke-linejoin="round" d="M6 18 18 6M6 6l12 12" />
-                                        </svg>
-                                    </button>
+                                <div class="flex flex-wrap gap-2 p-3 bg-gray-50 rounded-xl">
+                                    <template x-for="(m, mi) in segment.media" :key="mi">
+                                        <div class="relative group">
+                                            <img :src="m.url" alt="" class="w-20 h-14 object-cover rounded-lg border border-gray-200">
+                                            <button type="button" @click="removeSegmentMedia(index, mi)"
+                                                    class="absolute -top-1.5 -right-1.5 w-5 h-5 bg-red-500 text-white rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
+                                                <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2">
+                                                    <path stroke-linecap="round" stroke-linejoin="round" d="M6 18 18 6M6 6l12 12" />
+                                                </svg>
+                                            </button>
+                                        </div>
+                                    </template>
                                 </div>
                             </template>
 
@@ -265,6 +275,110 @@
                 Enregistrer
             </button>
         </div>
+        {{-- Media library modal --}}
+        <template x-if="showMediaLibrary">
+            <div class="fixed inset-0 z-50 flex items-center justify-center bg-black/50" @click.self="showMediaLibrary = false">
+                <div class="bg-white rounded-2xl shadow-xl w-full max-w-3xl max-h-[80vh] flex flex-col mx-4">
+                    <div class="flex items-center justify-between px-6 py-4 border-b border-gray-200">
+                        <h3 class="text-base font-semibold text-gray-900">
+                            Mediatheque
+                            <span class="text-sm font-normal text-gray-500" x-text="'— Segment ' + (activeMediaSegmentIndex + 1)"></span>
+                        </h3>
+                        <button type="button" @click="showMediaLibrary = false" class="text-gray-400 hover:text-gray-600">
+                            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1.5">
+                                <path stroke-linecap="round" stroke-linejoin="round" d="M6 18 18 6M6 6l12 12" />
+                            </svg>
+                        </button>
+                    </div>
+
+                    <div class="flex-1 overflow-y-auto p-6">
+                        {{-- Upload zone --}}
+                        <div class="mb-4">
+                            <label class="flex flex-col items-center justify-center gap-2 px-4 py-3 border-2 border-dashed rounded-xl transition-colors"
+                                   :class="mediaUploading ? 'border-indigo-400 bg-indigo-50/50' : 'border-gray-300 cursor-pointer hover:border-indigo-400 hover:bg-indigo-50/50'">
+                                <div class="flex items-center gap-2">
+                                    <template x-if="!mediaUploading">
+                                        <svg class="w-5 h-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1.5">
+                                            <path stroke-linecap="round" stroke-linejoin="round" d="M3 16.5v2.25A2.25 2.25 0 0 0 5.25 21h13.5A2.25 2.25 0 0 0 21 18.75V16.5m-13.5-9L12 3m0 0 4.5 4.5M12 3v13.5" />
+                                        </svg>
+                                    </template>
+                                    <template x-if="mediaUploading">
+                                        <svg class="w-5 h-5 text-indigo-500 animate-spin" fill="none" viewBox="0 0 24 24">
+                                            <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                                            <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path>
+                                        </svg>
+                                    </template>
+                                    <span class="text-sm text-gray-600" x-show="!mediaUploading">Uploader un fichier</span>
+                                    <span class="text-sm text-indigo-600 font-medium" x-show="mediaUploading && mediaUploadPhase === 'upload'" x-text="'Upload en cours... ' + mediaUploadProgress + '%'"></span>
+                                    <span class="text-sm text-indigo-600 font-medium" x-show="mediaUploading && mediaUploadPhase === 'processing'">Traitement en cours...</span>
+                                </div>
+                                <template x-if="mediaUploading">
+                                    <div class="w-full bg-gray-200 rounded-full h-1.5 mt-1">
+                                        <div class="h-1.5 rounded-full transition-all duration-300"
+                                             :class="mediaUploadPhase === 'processing' ? 'bg-amber-500 animate-pulse' : 'bg-indigo-600'"
+                                             :style="'width: ' + (mediaUploadPhase === 'processing' ? '100' : mediaUploadProgress) + '%'"></div>
+                                    </div>
+                                </template>
+                                <input type="file" class="hidden" accept="image/*,video/*" multiple @change="uploadMediaForSegment($event)" :disabled="mediaUploading">
+                            </label>
+                        </div>
+
+                        {{-- Folder pills --}}
+                        <div class="flex flex-wrap items-center gap-2 mb-4" x-show="mediaLibraryFolders.length > 0">
+                            <button type="button" @click="filterMediaFolder(null)"
+                                    class="px-3 py-1 text-xs font-medium rounded-full transition-colors"
+                                    :class="!mediaLibraryFolder ? 'bg-indigo-600 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'">
+                                Tous
+                            </button>
+                            <template x-for="folder in mediaLibraryFolders" :key="folder.id">
+                                <button type="button" @click="filterMediaFolder(folder.id)"
+                                        class="inline-flex items-center gap-1.5 px-3 py-1 text-xs font-medium rounded-full transition-colors"
+                                        :class="mediaLibraryFolder == folder.id ? 'bg-indigo-600 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'">
+                                    <span class="w-2 h-2 rounded-sm" :style="'background-color: ' + folder.color" x-show="mediaLibraryFolder != folder.id"></span>
+                                    <span x-text="folder.name"></span>
+                                    <span class="text-[10px] opacity-70" x-text="'(' + folder.files_count + ')'"></span>
+                                </button>
+                            </template>
+                        </div>
+
+                        {{-- Loading --}}
+                        <div x-show="mediaLibraryLoading" class="text-center py-8">
+                            <svg class="w-8 h-8 text-gray-400 mx-auto animate-spin" fill="none" viewBox="0 0 24 24">
+                                <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                                <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path>
+                            </svg>
+                        </div>
+                        <div x-show="!mediaLibraryLoading && mediaLibraryItems.length === 0" class="text-center py-8 text-sm text-gray-400">
+                            Aucun media disponible.
+                        </div>
+
+                        {{-- Image grid --}}
+                        <div x-show="!mediaLibraryLoading" class="grid grid-cols-3 sm:grid-cols-4 gap-3">
+                            <template x-for="item in mediaLibraryItems" :key="item.url">
+                                <div @click="selectMediaForSegment(item)"
+                                     class="relative rounded-xl overflow-hidden border-2 aspect-square cursor-pointer transition-all"
+                                     :class="isMediaSelected(item) ? 'border-indigo-500 ring-2 ring-indigo-200' : 'border-gray-200 hover:border-indigo-300'">
+                                    <img :src="item.url" class="w-full h-full object-cover" loading="lazy">
+                                    <div x-show="isMediaSelected(item)" class="absolute top-1.5 right-1.5 w-5 h-5 bg-indigo-500 text-white rounded-full flex items-center justify-center">
+                                        <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2">
+                                            <path stroke-linecap="round" stroke-linejoin="round" d="m4.5 12.75 6 6 9-13.5" />
+                                        </svg>
+                                    </div>
+                                    <div class="absolute bottom-1 left-1 px-1.5 py-0.5 bg-black/60 text-white text-xs rounded" x-text="item.size_human"></div>
+                                </div>
+                            </template>
+                        </div>
+                    </div>
+
+                    <div class="px-6 py-3 border-t border-gray-200 flex justify-end">
+                        <button type="button" @click="showMediaLibrary = false"
+                                class="px-4 py-2 bg-indigo-600 text-white text-sm font-medium rounded-xl hover:bg-indigo-700 transition-colors">
+                            Fermer
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </template>
     </form>
 
     <script>
@@ -279,6 +393,17 @@
                     ],
                     'media' => $s->media,
                 ])->values()),
+
+                // Media picker state
+                showMediaLibrary: false,
+                activeMediaSegmentIndex: null,
+                mediaLibraryItems: [],
+                mediaLibraryFolders: [],
+                mediaLibraryFolder: null,
+                mediaLibraryLoading: false,
+                mediaUploading: false,
+                mediaUploadProgress: 0,
+                mediaUploadPhase: '',
 
                 addSegment() {
                     this.segments.push({
@@ -301,6 +426,116 @@
                     this.segments[index] = this.segments[newIndex];
                     this.segments[newIndex] = temp;
                     this.segments = [...this.segments];
+                },
+
+                // --- Media picker methods ---
+
+                openMediaLibrary(index) {
+                    this.activeMediaSegmentIndex = index;
+                    this.showMediaLibrary = true;
+                    if (this.mediaLibraryItems.length === 0) {
+                        this.fetchMediaLibrary();
+                    }
+                },
+
+                async fetchMediaLibrary(folder) {
+                    this.mediaLibraryLoading = true;
+                    try {
+                        let url = '{{ route("media.list") }}';
+                        if (folder) url += '?folder=' + folder;
+                        const resp = await fetch(url, {
+                            headers: { 'Accept': 'application/json' },
+                        });
+                        const data = await resp.json();
+                        this.mediaLibraryItems = data.items || [];
+                        this.mediaLibraryFolders = data.folders || [];
+                    } catch (err) {}
+                    this.mediaLibraryLoading = false;
+                },
+
+                filterMediaFolder(folderId) {
+                    this.mediaLibraryFolder = folderId;
+                    this.fetchMediaLibrary(folderId);
+                },
+
+                selectMediaForSegment(item) {
+                    const seg = this.segments[this.activeMediaSegmentIndex];
+                    if (!seg.media) seg.media = [];
+                    if (seg.media.some(m => m.url === item.url)) {
+                        seg.media = seg.media.filter(m => m.url !== item.url);
+                    } else {
+                        seg.media.push({ type: item.is_video ? 'video' : 'image', url: item.url });
+                    }
+                },
+
+                isMediaSelected(item) {
+                    const seg = this.segments[this.activeMediaSegmentIndex];
+                    if (!seg || !seg.media) return false;
+                    return seg.media.some(m => m.url === item.url);
+                },
+
+                uploadMediaForSegment(event) {
+                    const files = event.target.files;
+                    if (!files.length) return;
+                    const self = this;
+
+                    const uploadNext = (index) => {
+                        if (index >= files.length) {
+                            self.mediaUploading = false;
+                            self.mediaUploadProgress = 0;
+                            self.mediaUploadPhase = '';
+                            event.target.value = '';
+                            return;
+                        }
+
+                        self.mediaUploading = true;
+                        self.mediaUploadProgress = 0;
+                        self.mediaUploadPhase = 'upload';
+
+                        const formData = new FormData();
+                        formData.append('file', files[index]);
+
+                        const xhr = new XMLHttpRequest();
+                        xhr.open('POST', '{{ route("media.upload") }}');
+                        xhr.setRequestHeader('X-CSRF-TOKEN', document.querySelector('meta[name=csrf-token]').getAttribute('content'));
+                        xhr.setRequestHeader('Accept', 'application/json');
+
+                        xhr.upload.addEventListener('progress', (e) => {
+                            if (e.lengthComputable) {
+                                self.mediaUploadProgress = Math.round((e.loaded / e.total) * 100);
+                                if (self.mediaUploadProgress >= 100) {
+                                    self.mediaUploadPhase = 'processing';
+                                }
+                            }
+                        });
+
+                        xhr.onload = () => {
+                            if (xhr.status >= 200 && xhr.status < 300) {
+                                try {
+                                    const data = JSON.parse(xhr.responseText);
+                                    if (data.url) {
+                                        const seg = self.segments[self.activeMediaSegmentIndex];
+                                        if (!seg.media) seg.media = [];
+                                        seg.media.push({ type: data.mimetype?.startsWith('video/') ? 'video' : 'image', url: data.url });
+                                        self.fetchMediaLibrary(self.mediaLibraryFolder);
+                                    }
+                                } catch (err) {}
+                            }
+                            uploadNext(index + 1);
+                        };
+
+                        xhr.onerror = () => uploadNext(index + 1);
+                        xhr.send(formData);
+                    };
+
+                    uploadNext(0);
+                },
+
+                removeSegmentMedia(segmentIndex, mediaIndex) {
+                    this.segments[segmentIndex].media.splice(mediaIndex, 1);
+                    if (this.segments[segmentIndex].media.length === 0) {
+                        this.segments[segmentIndex].media = null;
+                    }
                 },
             };
         }
