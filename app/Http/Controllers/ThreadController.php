@@ -453,7 +453,7 @@ class ThreadController extends Controller
             return response()->json(['success' => false, 'error' => 'Non autorisé.'], 403);
         }
 
-        $service = new ThreadPublishingService;
+        $service = app(ThreadPublishingService::class);
         $results = $service->publishAll($thread);
 
         $thread->refresh();
@@ -479,7 +479,7 @@ class ThreadController extends Controller
             return response()->json(['success' => false, 'error' => 'Non autorisé.'], 403);
         }
 
-        $service = new ThreadPublishingService;
+        $service = app(ThreadPublishingService::class);
         $results = $service->publishToAccount($thread, $socialAccount);
 
         $thread->refresh();
@@ -504,7 +504,7 @@ class ThreadController extends Controller
             return response()->json(['success' => false, 'error' => 'Non autorisé.'], 403);
         }
 
-        $service = new ThreadPublishingService;
+        $service = app(ThreadPublishingService::class);
         $service->resetAccount($thread, $socialAccount);
 
         if (in_array($thread->status, ['published', 'failed', 'partial'])) {

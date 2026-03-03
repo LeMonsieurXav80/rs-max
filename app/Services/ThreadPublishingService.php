@@ -3,6 +3,7 @@
 namespace App\Services;
 
 use App\Models\MediaFile;
+use App\Models\Setting;
 use App\Models\SocialAccount;
 use App\Models\Thread;
 use App\Models\ThreadSegment;
@@ -21,6 +22,18 @@ use Illuminate\Support\Facades\URL;
 
 class ThreadPublishingService
 {
+    private const LANGUAGE_FLAGS = [
+        'fr' => "\u{1F1EB}\u{1F1F7}",
+        'en' => "\u{1F1EC}\u{1F1E7}",
+        'pt' => "\u{1F1F5}\u{1F1F9}",
+        'es' => "\u{1F1EA}\u{1F1F8}",
+        'de' => "\u{1F1E9}\u{1F1EA}",
+        'it' => "\u{1F1EE}\u{1F1F9}",
+    ];
+
+    public function __construct(
+        private TranslationService $translationService,
+    ) {}
     /**
      * Publish a thread as a multi-post sequence (Twitter, Threads).
      * Each segment is published as a reply to the previous one.
@@ -62,7 +75,7 @@ class ThreadPublishingService
                 continue;
             }
 
-            $content = $segment->getContentForPlatform($account->platform->slug);
+            $content = $this->getSegmentContentForAccount($segment, $account);
             $media = $this->resolveMediaUrls($segment->media);
 
             // Inject the first post's URL into the last segment.
@@ -156,13 +169,8 @@ class ThreadPublishingService
         // Update pivot status.
         $thread->socialAccounts()->updateExistingPivot($account->id, ['status' => 'publishing']);
 
-        // Compile all segments into one text.
-        $compiledParts = [];
-        foreach ($segments as $segment) {
-            $compiledParts[] = $segment->getContentForPlatform($account->platform->slug);
-        }
-
-        $compiledContent = implode("\n\n", $compiledParts);
+        // Compile all segments, grouped by language.
+        $compiledContent = $this->compileSegmentsForAccount($segments, $account);
 
         // Collect all media from all segments.
         $allMedia = [];
@@ -254,6 +262,112 @@ class ThreadPublishingService
         }
 
         $thread->socialAccounts()->updateExistingPivot($account->id, ['status' => 'pending']);
+    }
+
+    // -------------------------------------------------------------------------
+    //  Translation
+    // -------------------------------------------------------------------------
+
+    private function getSegmentContentForAccount(ThreadSegment $segment, SocialAccount $account): string
+    {
+        $languages = $account->languages ?? ['fr'];
+        $platformSlug = $account->platform->slug;
+        $baseContent = $segment->getContentForPlatform($platformSlug);
+        $parts = [];
+
+        foreach ($languages as $lang) {
+            if ($lang === 'fr') {
+                $text = $baseContent;
+            } else {
+                $text = $this->getSegmentTranslation($segment, $lang, $platformSlug);
+            }
+
+            if ($text) {
+                $parts[] = ['lang' => $lang, 'text' => $text];
+            }
+        }
+
+        $multiLang = count($parts) > 1;
+        $sections = array_map(function ($part) use ($multiLang) {
+            $flag = self::LANGUAGE_FLAGS[$part['lang']] ?? '';
+
+            return $multiLang && $flag ? "{$flag} {$part['text']}" : $part['text'];
+        }, $parts);
+
+        return implode("\n\n", $sections);
+    }
+
+    /**
+     * Compile all segments grouped by language for compiled mode (Facebook, Telegram).
+     * Result: 🇫🇷 Seg1 FR\n\nSeg2 FR\n\n🇬🇧 Seg1 EN\n\nSeg2 EN
+     */
+    private function compileSegmentsForAccount($segments, SocialAccount $account): string
+    {
+        $languages = $account->languages ?? ['fr'];
+        $platformSlug = $account->platform->slug;
+        $multiLang = count($languages) > 1;
+
+        $languageBlocks = [];
+
+        foreach ($languages as $lang) {
+            $segmentTexts = [];
+
+            foreach ($segments as $segment) {
+                if ($lang === 'fr') {
+                    $text = $segment->getContentForPlatform($platformSlug);
+                } else {
+                    $text = $this->getSegmentTranslation($segment, $lang, $platformSlug);
+                }
+
+                if ($text) {
+                    $segmentTexts[] = $text;
+                }
+            }
+
+            if (! empty($segmentTexts)) {
+                $block = implode("\n\n", $segmentTexts);
+
+                if ($multiLang) {
+                    $flag = self::LANGUAGE_FLAGS[$lang] ?? '';
+                    if ($flag) {
+                        $block = "{$flag} {$block}";
+                    }
+                }
+
+                $languageBlocks[] = $block;
+            }
+        }
+
+        return implode("\n\n", $languageBlocks);
+    }
+
+    private function getSegmentTranslation(ThreadSegment $segment, string $lang, string $platformSlug): ?string
+    {
+        $translations = $segment->translations ?? [];
+        $cacheKey = "{$platformSlug}_{$lang}";
+
+        if (! empty($translations[$cacheKey])) {
+            return $translations[$cacheKey];
+        }
+
+        $sourceText = $segment->getContentForPlatform($platformSlug);
+        if (empty($sourceText)) {
+            return null;
+        }
+
+        $apiKey = Setting::getEncrypted('openai_api_key') ?: config('services.openai.api_key');
+        if (! $apiKey) {
+            return null;
+        }
+
+        $translated = $this->translationService->translate($sourceText, 'fr', $lang, $apiKey);
+
+        if ($translated) {
+            $translations[$cacheKey] = $translated;
+            $segment->update(['translations' => $translations]);
+        }
+
+        return $translated;
     }
 
     // -------------------------------------------------------------------------

@@ -13,6 +13,7 @@ class ThreadSegment extends Model
         'position',
         'content_fr',
         'platform_contents',
+        'translations',
         'media',
     ];
 
@@ -20,6 +21,7 @@ class ThreadSegment extends Model
     {
         return [
             'platform_contents' => 'array',
+            'translations' => 'array',
             'media' => 'array',
         ];
     }
