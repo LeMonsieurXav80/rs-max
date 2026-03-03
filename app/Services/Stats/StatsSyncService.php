@@ -131,6 +131,7 @@ class StatsSyncService
             'twitter' => new TwitterStatsService,
             'youtube' => new YouTubeStatsService,
             'threads' => new ThreadsStatsService,
+            'bluesky' => new BlueskyStatsService,
             default => null,
         };
     }
