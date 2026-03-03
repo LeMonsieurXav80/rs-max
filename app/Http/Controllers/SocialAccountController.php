@@ -37,6 +37,9 @@ class SocialAccountController extends Controller
             }
         }
 
+        // Filter out Telegram bot records (only show channels)
+        $accounts = $accounts->reject(fn (SocialAccount $a) => str_starts_with($a->platform_account_id ?? '', 'bot_'));
+
         $accounts = $accounts->groupBy(fn (SocialAccount $account) => $account->platform->name);
 
         return view('accounts.index', compact('accounts'));

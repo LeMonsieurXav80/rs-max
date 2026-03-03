@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Models\Platform;
 use App\Models\SocialAccount;
+use App\Services\ProfilePictureService;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Http;
@@ -148,6 +149,10 @@ class YouTubeOAuthController extends Controller
             ->first();
 
         if ($existingAccount) {
+            $ytLocalPic = ! empty($channelData['channel_thumbnail'])
+                ? ProfilePictureService::download($channelData['channel_thumbnail'], 'youtube', $channelData['channel_id'])
+                : null;
+
             // Update tokens
             $existingAccount->update([
                 'credentials' => [
@@ -156,7 +161,7 @@ class YouTubeOAuthController extends Controller
                     'refresh_token' => $channelData['refresh_token'],
                     'expires_in' => $channelData['expires_in'],
                 ],
-                'profile_picture_url' => $channelData['channel_thumbnail'],
+                'profile_picture_url' => $ytLocalPic ?? $existingAccount->profile_picture_url,
             ]);
 
             // Attach to user if not already attached
@@ -171,6 +176,10 @@ class YouTubeOAuthController extends Controller
         }
 
         // Create new account
+        $newLocalPic = ! empty($channelData['channel_thumbnail'])
+            ? ProfilePictureService::download($channelData['channel_thumbnail'], 'youtube', $channelData['channel_id'])
+            : null;
+
         $account = SocialAccount::create([
             'platform_id' => $platform->id,
             'platform_account_id' => $channelData['channel_id'],
@@ -181,7 +190,7 @@ class YouTubeOAuthController extends Controller
                 'refresh_token' => $channelData['refresh_token'],
                 'expires_in' => $channelData['expires_in'],
             ],
-            'profile_picture_url' => $channelData['channel_thumbnail'],
+            'profile_picture_url' => $newLocalPic,
         ]);
 
         // Attach to user

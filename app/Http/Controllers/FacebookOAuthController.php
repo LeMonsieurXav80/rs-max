@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Models\Platform;
 use App\Models\SocialAccount;
+use App\Services\ProfilePictureService;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Http;
@@ -172,10 +173,14 @@ class FacebookOAuthController extends Controller
                     $creds['user_access_token'] = $userToken;
                 }
 
+                $localPic = isset($page['picture_url'])
+                    ? ProfilePictureService::download($page['picture_url'], 'facebook', $page['id'])
+                    : null;
+
                 if ($account) {
                     $account->update([
                         'name' => $page['name'],
-                        'profile_picture_url' => $page['picture_url'] ?? $account->profile_picture_url,
+                        'profile_picture_url' => $localPic ?? $account->profile_picture_url,
                         'credentials' => $creds,
                     ]);
                     $updated++;
@@ -184,7 +189,7 @@ class FacebookOAuthController extends Controller
                         'platform_id' => $facebookPlatform->id,
                         'platform_account_id' => $page['id'],
                         'name' => $page['name'],
-                        'profile_picture_url' => $page['picture_url'] ?? null,
+                        'profile_picture_url' => $localPic,
                         'credentials' => $creds,
                         'languages' => [$user->default_language ?? 'fr'],
                     ]);
@@ -203,7 +208,7 @@ class FacebookOAuthController extends Controller
                 $igName = $page['instagram']['username']
                     ?? $page['instagram']['name']
                     ?? $page['name'] . ' (Instagram)';
-                $igPicture = $page['instagram']['profile_picture_url'] ?? null;
+                $igRemotePic = $page['instagram']['profile_picture_url'] ?? null;
 
                 $account = SocialAccount::where('platform_id', $instagramPlatform->id)
                     ->where('platform_account_id', $page['instagram']['id'])
@@ -217,10 +222,14 @@ class FacebookOAuthController extends Controller
                     $igCreds['user_access_token'] = $userToken;
                 }
 
+                $igLocalPic = $igRemotePic
+                    ? ProfilePictureService::download($igRemotePic, 'instagram', $page['instagram']['id'])
+                    : null;
+
                 if ($account) {
                     $account->update([
                         'name' => $igName,
-                        'profile_picture_url' => $igPicture ?? $account->profile_picture_url,
+                        'profile_picture_url' => $igLocalPic ?? $account->profile_picture_url,
                         'credentials' => $igCreds,
                     ]);
                     $updated++;
@@ -229,7 +238,7 @@ class FacebookOAuthController extends Controller
                         'platform_id' => $instagramPlatform->id,
                         'platform_account_id' => $page['instagram']['id'],
                         'name' => $igName,
-                        'profile_picture_url' => $igPicture,
+                        'profile_picture_url' => $igLocalPic,
                         'credentials' => $igCreds,
                         'languages' => [$user->default_language ?? 'fr'],
                     ]);

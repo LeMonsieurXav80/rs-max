@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Models\Platform;
 use App\Models\SocialAccount;
+use App\Services\ProfilePictureService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -425,17 +426,22 @@ class PlatformController extends Controller
                 $profilePic = str_replace('_normal', '', $profilePic);
             }
 
+            // Download profile picture locally
+            $localPic = $profilePic
+                ? ProfilePictureService::download($profilePic, 'twitter', $data['id'] ?? $account->platform_account_id)
+                : null;
+
             $account->update([
                 'platform_account_id' => $data['id'] ?? $account->platform_account_id,
                 'name' => $twitterName,
-                'profile_picture_url' => $profilePic,
+                'profile_picture_url' => $localPic ?? $account->profile_picture_url,
             ]);
 
             return response()->json([
                 'success' => true,
                 'username' => $twitterUsername,
                 'name' => $twitterName,
-                'profile_picture_url' => $profilePic,
+                'profile_picture_url' => $localPic ?? $account->profile_picture_url,
             ]);
         }
 
@@ -667,6 +673,11 @@ class PlatformController extends Controller
             'refresh_jwt' => $data['refreshJwt'],
         ];
 
+        // Download profile picture locally
+        $localPic = $profilePictureUrl
+            ? ProfilePictureService::download($profilePictureUrl, 'bluesky', $did)
+            : null;
+
         // Check for existing account
         $account = SocialAccount::where('platform_id', $blueskyPlatform->id)
             ->where('platform_account_id', $did)
@@ -676,7 +687,7 @@ class PlatformController extends Controller
             $account->update([
                 'name' => $displayName,
                 'credentials' => $credentials,
-                'profile_picture_url' => $profilePictureUrl ?? $account->profile_picture_url,
+                'profile_picture_url' => $localPic ?? $account->profile_picture_url,
             ]);
         } else {
             $account = SocialAccount::create([
@@ -684,7 +695,7 @@ class PlatformController extends Controller
                 'platform_account_id' => $did,
                 'name' => $displayName,
                 'credentials' => $credentials,
-                'profile_picture_url' => $profilePictureUrl,
+                'profile_picture_url' => $localPic,
                 'languages' => [$user->default_language ?? 'fr'],
             ]);
         }

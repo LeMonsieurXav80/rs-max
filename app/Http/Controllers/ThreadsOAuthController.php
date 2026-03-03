@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Models\Platform;
 use App\Models\SocialAccount;
+use App\Services\ProfilePictureService;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Http;
@@ -79,7 +80,7 @@ class ThreadsOAuthController extends Controller
             // Fetch user profile
             $profile = $this->fetchProfile($longLivedToken);
             $username = $profile['username'] ?? 'Threads User';
-            $profilePicture = $profile['threads_profile_picture_url'] ?? null;
+            $remoteProfilePic = $profile['threads_profile_picture_url'] ?? null;
 
             // Create or update social account
             $threadsPlatform = Platform::where('slug', 'threads')->firstOrFail();
@@ -89,10 +90,15 @@ class ThreadsOAuthController extends Controller
                 ->where('platform_account_id', $userId)
                 ->first();
 
+            // Download profile picture locally (CDN URLs expire)
+            $localPic = $remoteProfilePic
+                ? ProfilePictureService::download($remoteProfilePic, 'threads', $userId)
+                : null;
+
             if ($account) {
                 $account->update([
                     'name' => $username,
-                    'profile_picture_url' => $profilePicture ?? $account->profile_picture_url,
+                    'profile_picture_url' => $localPic ?? $account->profile_picture_url,
                     'credentials' => [
                         'user_id' => $userId,
                         'access_token' => $longLivedToken,
@@ -103,7 +109,7 @@ class ThreadsOAuthController extends Controller
                     'platform_id' => $threadsPlatform->id,
                     'platform_account_id' => $userId,
                     'name' => $username,
-                    'profile_picture_url' => $profilePicture,
+                    'profile_picture_url' => $localPic,
                     'credentials' => [
                         'user_id' => $userId,
                         'access_token' => $longLivedToken,
