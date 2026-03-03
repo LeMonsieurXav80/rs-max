@@ -221,10 +221,14 @@ class ThreadPublishingService
         $publishMode = $pivot->pivot->publish_mode;
 
         if ($publishMode === 'thread') {
-            return $this->publishThreadMode($thread, $account);
+            $results = $this->publishThreadMode($thread, $account);
+        } else {
+            $results = $this->publishCompiledMode($thread, $account);
         }
 
-        return $this->publishCompiledMode($thread, $account);
+        $this->updateThreadStatus($thread);
+
+        return $results;
     }
 
     /**
