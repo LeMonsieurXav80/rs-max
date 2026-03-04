@@ -357,12 +357,23 @@
             @endif
         </div>
 
-        {{-- Pagination --}}
-        @if($conversations->hasPages())
-            <div class="mt-4">
-                {{ $conversations->withQueryString()->links() }}
+        {{-- Pagination + per page --}}
+        <div class="mt-4 flex items-center justify-between gap-4">
+            <div class="flex-1">
+                @if($conversations->hasPages())
+                    {{ $conversations->withQueryString()->links() }}
+                @endif
             </div>
-        @endif
+            <div class="flex items-center gap-2 text-sm text-gray-500">
+                <span>Par page :</span>
+                <select onchange="const url = new URL(window.location); url.searchParams.set('per_page', this.value); url.searchParams.delete('page'); window.location = url;"
+                        class="rounded-lg border-gray-200 text-sm py-1 pl-2 pr-7">
+                    @foreach([15, 25, 50, 100] as $opt)
+                        <option value="{{ $opt }}" {{ (int) request('per_page', 15) === $opt ? 'selected' : '' }}>{{ $opt }}</option>
+                    @endforeach
+                </select>
+            </div>
+        </div>
 
         {{-- Reply modal --}}
         <div x-show="replyModalOpen" x-cloak

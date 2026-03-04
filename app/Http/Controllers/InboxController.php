@@ -103,9 +103,9 @@ class InboxController extends Controller
             ];
         })->sortByDesc('latest_at')->values();
 
-        // Manual pagination by conversations (15 per page)
+        // Manual pagination by conversations
         $page = (int) $request->input('page', 1);
-        $perPage = 15;
+        $perPage = (int) ($request->input('per_page') ?: Setting::get('inbox_per_page', 15));
         $conversations = new LengthAwarePaginator(
             $conversationList->forPage($page, $perPage)->values(),
             $conversationList->count(),
