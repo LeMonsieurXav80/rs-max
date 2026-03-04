@@ -23,30 +23,39 @@
 
         {{-- Scheduled replies progress banner --}}
         @if($scheduledInfo)
-            <div class="bg-indigo-50 border border-indigo-200 rounded-2xl p-4 flex items-center gap-4"
+            <div class="bg-indigo-50 border border-indigo-200 rounded-2xl p-4"
                  x-data="scheduledCountdown({{ json_encode($scheduledInfo) }})"
-                 x-init="startCountdown()">
-                <div class="flex-shrink-0">
-                    <svg class="w-6 h-6 text-indigo-600 animate-pulse" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1.5">
-                        <path stroke-linecap="round" stroke-linejoin="round" d="M12 6v6h4.5m4.5 0a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z" />
-                    </svg>
+                 x-init="startCountdown()"
+                 x-show="pending > 0"
+                 x-transition>
+                <div class="flex items-center gap-4">
+                    <div class="flex-shrink-0">
+                        <svg class="w-6 h-6 text-indigo-600 animate-pulse" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1.5">
+                            <path stroke-linecap="round" stroke-linejoin="round" d="M12 6v6h4.5m4.5 0a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z" />
+                        </svg>
+                    </div>
+                    <div class="flex-1 min-w-0">
+                        <p class="text-sm font-semibold text-indigo-900">
+                            <span x-text="pending"></span>/<span x-text="initialCount"></span> réponse(s) restante(s)
+                        </p>
+                        <p class="text-xs text-indigo-700 mt-0.5">
+                            Prochaine dans <span x-text="nextIn" class="font-medium"></span>
+                            <template x-if="pending > 1">
+                                <span> &middot; Dernière dans <span x-text="lastIn" class="font-medium"></span></span>
+                            </template>
+                        </p>
+                    </div>
+                    <div class="flex-shrink-0">
+                        <span class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium bg-indigo-100 text-indigo-700">
+                            <span class="w-2 h-2 rounded-full bg-indigo-500 animate-pulse"></span>
+                            En cours
+                        </span>
+                    </div>
                 </div>
-                <div class="flex-1 min-w-0">
-                    <p class="text-sm font-semibold text-indigo-900">
-                        <span x-text="pending"></span> réponse(s) planifiée(s) en attente
-                    </p>
-                    <p class="text-xs text-indigo-700 mt-0.5">
-                        Prochaine dans <span x-text="nextIn" class="font-medium"></span>
-                        <template x-if="pending > 1">
-                            <span> &middot; Dernière dans <span x-text="lastIn" class="font-medium"></span></span>
-                        </template>
-                    </p>
-                </div>
-                <div class="flex-shrink-0">
-                    <span class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium bg-indigo-100 text-indigo-700">
-                        <span class="w-2 h-2 rounded-full bg-indigo-500 animate-pulse"></span>
-                        En cours
-                    </span>
+                {{-- Progress bar --}}
+                <div class="mt-3 w-full bg-indigo-100 rounded-full h-1.5">
+                    <div class="bg-indigo-500 h-1.5 rounded-full transition-all duration-500"
+                         :style="'width: ' + Math.round(((initialCount - pending) / initialCount) * 100) + '%'"></div>
                 </div>
             </div>
         @endif
@@ -805,20 +814,41 @@ function inboxManager() {
 function scheduledCountdown(info) {
     return {
         pending: info.pending,
+        initialCount: info.pending,
         nextAt: new Date(info.next_at),
         lastAt: new Date(info.last_at),
         nextIn: '',
         lastIn: '',
-        timer: null,
+        countdownTimer: null,
+        pollTimer: null,
 
         startCountdown() {
             this.updateLabels();
-            this.timer = setInterval(() => this.updateLabels(), 30000); // update every 30s
+            this.countdownTimer = setInterval(() => this.updateLabels(), 10000);
+            this.pollTimer = setInterval(() => this.pollStatus(), 30000);
         },
 
         updateLabels() {
             this.nextIn = this.formatDiff(this.nextAt);
             this.lastIn = this.formatDiff(this.lastAt);
+        },
+
+        async pollStatus() {
+            try {
+                const resp = await fetch('/inbox/scheduled-status', {
+                    headers: { 'Accept': 'application/json' },
+                });
+                const data = await resp.json();
+                this.pending = data.pending;
+                if (data.pending > 0) {
+                    this.nextAt = new Date(data.next_at);
+                    this.lastAt = new Date(data.last_at);
+                    this.updateLabels();
+                } else {
+                    if (this.countdownTimer) clearInterval(this.countdownTimer);
+                    if (this.pollTimer) clearInterval(this.pollTimer);
+                }
+            } catch (e) { /* silent */ }
         },
 
         formatDiff(date) {
@@ -832,7 +862,8 @@ function scheduledCountdown(info) {
         },
 
         destroy() {
-            if (this.timer) clearInterval(this.timer);
+            if (this.countdownTimer) clearInterval(this.countdownTimer);
+            if (this.pollTimer) clearInterval(this.pollTimer);
         }
     }
 }

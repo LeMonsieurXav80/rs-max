@@ -329,6 +329,30 @@ class InboxController extends Controller
         return response()->json(['results' => $results]);
     }
 
+    public function scheduledStatus(Request $request): JsonResponse
+    {
+        $user = $request->user();
+
+        $accountIds = ($user->is_admin ? SocialAccount::query() : $user->socialAccounts())
+            ->pluck('social_accounts.id');
+
+        $pending = InboxItem::whereIn('social_account_id', $accountIds)
+            ->whereNotNull('reply_scheduled_at')
+            ->whereNull('replied_at')
+            ->orderBy('reply_scheduled_at', 'asc')
+            ->get(['id', 'reply_scheduled_at']);
+
+        if ($pending->isEmpty()) {
+            return response()->json(['pending' => 0]);
+        }
+
+        return response()->json([
+            'pending' => $pending->count(),
+            'next_at' => $pending->first()->reply_scheduled_at,
+            'last_at' => $pending->last()->reply_scheduled_at,
+        ]);
+    }
+
     public function sync(Request $request): JsonResponse
     {
         $syncService = app(InboxSyncService::class);

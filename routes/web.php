@@ -79,6 +79,7 @@ Route::middleware(['auth', 'verified'])->group(function () {
     Route::post('inbox/{inboxItem}/ai-suggest', [InboxController::class, 'aiSuggest'])->name('inbox.aiSuggest');
     Route::post('inbox/bulk-ai-reply', [InboxController::class, 'bulkAiReply'])->name('inbox.bulkAiReply');
     Route::post('inbox/bulk-send', [InboxController::class, 'bulkSend'])->name('inbox.bulkSend');
+    Route::get('inbox/scheduled-status', [InboxController::class, 'scheduledStatus'])->name('inbox.scheduledStatus');
 
     // Stats
     Route::post('posts/{post}/sync-stats', [PostController::class, 'syncStats'])->name('posts.syncStats');
