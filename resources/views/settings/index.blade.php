@@ -44,6 +44,11 @@
                             class="px-4 py-3 text-sm font-medium border-b-2 transition-colors whitespace-nowrap">
                         Statistiques
                     </button>
+                    <button type="button" @click="activeTab = 'inbox'"
+                            :class="activeTab === 'inbox' ? 'border-indigo-500 text-indigo-600' : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'"
+                            class="px-4 py-3 text-sm font-medium border-b-2 transition-colors whitespace-nowrap">
+                        Messagerie
+                    </button>
                 </nav>
             </div>
 
@@ -401,6 +406,88 @@
                         </table>
                     </div>
                     <p class="text-xs text-gray-400 mt-3">Intervalle : temps minimum entre deux syncs pour un meme post. Age max : les posts plus anciens ne sont plus synchronises automatiquement.</p>
+                </div>
+            </div>
+
+            {{-- ═══════════════════════════════════════ --}}
+            {{-- TAB: Messagerie                       --}}
+            {{-- ═══════════════════════════════════════ --}}
+            <div x-show="activeTab === 'inbox'" x-cloak>
+                <div class="bg-white rounded-2xl border border-gray-100 shadow-sm p-6">
+                    <div class="flex items-center gap-3 mb-1">
+                        <svg class="w-5 h-5 text-indigo-500" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1.5">
+                            <path stroke-linecap="round" stroke-linejoin="round" d="M2.25 13.5h3.86a2.25 2.25 0 0 1 2.012 1.244l.256.512a2.25 2.25 0 0 0 2.013 1.244h3.218a2.25 2.25 0 0 0 2.013-1.244l.256-.512a2.25 2.25 0 0 1 2.013-1.244h3.859m-19.5.338V18a2.25 2.25 0 0 0 2.25 2.25h15A2.25 2.25 0 0 0 21.75 18v-4.162c0-.224-.034-.447-.1-.661L19.24 5.338a2.25 2.25 0 0 0-2.15-1.588H6.911a2.25 2.25 0 0 0-2.15 1.588L2.35 13.177a2.25 2.25 0 0 0-.1.661Z" />
+                        </svg>
+                        <h2 class="text-base font-semibold text-gray-900">Messagerie / Inbox</h2>
+                    </div>
+                    <p class="text-sm text-gray-500 mb-5">Configuration de la synchronisation des commentaires, reponses et messages prives depuis les plateformes sociales.</p>
+
+                    {{-- Sync frequency --}}
+                    <div class="mb-6">
+                        <label for="inbox_sync_frequency" class="block text-sm font-medium text-gray-700 mb-1">Frequence de synchronisation</label>
+                        <select id="inbox_sync_frequency" name="inbox_sync_frequency"
+                                class="w-full sm:w-1/2 rounded-xl border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 text-sm">
+                            <option value="every_15_min" {{ $settings['inbox_sync_frequency'] === 'every_15_min' ? 'selected' : '' }}>Toutes les 15 minutes</option>
+                            <option value="every_30_min" {{ $settings['inbox_sync_frequency'] === 'every_30_min' ? 'selected' : '' }}>Toutes les 30 minutes</option>
+                            <option value="hourly" {{ $settings['inbox_sync_frequency'] === 'hourly' ? 'selected' : '' }}>Toutes les heures</option>
+                            <option value="every_2_hours" {{ $settings['inbox_sync_frequency'] === 'every_2_hours' ? 'selected' : '' }}>Toutes les 2 heures</option>
+                            <option value="every_6_hours" {{ $settings['inbox_sync_frequency'] === 'every_6_hours' ? 'selected' : '' }}>Toutes les 6 heures</option>
+                            <option value="every_12_hours" {{ $settings['inbox_sync_frequency'] === 'every_12_hours' ? 'selected' : '' }}>Toutes les 12 heures</option>
+                            <option value="daily" {{ $settings['inbox_sync_frequency'] === 'daily' ? 'selected' : '' }}>Une fois par jour</option>
+                        </select>
+                        <p class="text-xs text-gray-400 mt-1">A quelle frequence le systeme recupere les nouveaux commentaires et messages. Recommande : 15 min</p>
+                        @error('inbox_sync_frequency')
+                            <p class="text-sm text-red-600 mt-1">{{ $message }}</p>
+                        @enderror
+                    </div>
+
+                    {{-- Platform toggles --}}
+                    <div class="border-t border-gray-100 pt-6 mb-6">
+                        <h3 class="text-sm font-semibold text-gray-900 mb-4">Plateformes actives</h3>
+                        <div class="space-y-3">
+                            @php
+                                $inboxPlatforms = [
+                                    ['slug' => 'facebook', 'name' => 'Facebook', 'desc' => 'Commentaires sur les publications de la Page'],
+                                    ['slug' => 'instagram', 'name' => 'Instagram', 'desc' => 'Commentaires sur les publications et reels'],
+                                    ['slug' => 'threads', 'name' => 'Threads', 'desc' => 'Reponses aux threads publies'],
+                                    ['slug' => 'youtube', 'name' => 'YouTube', 'desc' => 'Commentaires sur les videos'],
+                                    ['slug' => 'bluesky', 'name' => 'Bluesky', 'desc' => 'Commentaires et messages prives'],
+                                    ['slug' => 'telegram', 'name' => 'Telegram', 'desc' => 'Messages recus par le bot'],
+                                    ['slug' => 'reddit', 'name' => 'Reddit', 'desc' => 'Commentaires et messages prives'],
+                                ];
+                            @endphp
+                            @foreach($inboxPlatforms as $p)
+                                <label class="flex items-center gap-3 cursor-pointer">
+                                    <input type="checkbox" name="inbox_platform_{{ $p['slug'] }}_enabled" value="1"
+                                           {{ $settings['inbox_platform_'.$p['slug'].'_enabled'] ? 'checked' : '' }}
+                                           class="rounded border-gray-300 text-indigo-600 shadow-sm focus:ring-indigo-500">
+                                    <div>
+                                        <span class="text-sm font-medium text-gray-900">{{ $p['name'] }}</span>
+                                        <span class="text-xs text-gray-400 ml-1">{{ $p['desc'] }}</span>
+                                    </div>
+                                </label>
+                            @endforeach
+                        </div>
+                    </div>
+
+                    {{-- AI model for inbox --}}
+                    @if(!empty($availableModels))
+                    <div class="border-t border-gray-100 pt-6">
+                        <h3 class="text-sm font-semibold text-gray-900 mb-4">Modele IA pour les reponses</h3>
+                        <div class="w-full sm:w-1/2">
+                            <select id="ai_model_inbox" name="ai_model_inbox"
+                                    class="w-full rounded-xl border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 text-sm">
+                                @foreach($availableModels as $model)
+                                    <option value="{{ $model }}" {{ $settings['ai_model_inbox'] === $model ? 'selected' : '' }}>{{ $model }}</option>
+                                @endforeach
+                            </select>
+                            <p class="text-xs text-gray-400 mt-1">Modele utilise pour generer les suggestions de reponses IA dans la messagerie</p>
+                            @error('ai_model_inbox')
+                                <p class="text-xs text-red-600 mt-1">{{ $message }}</p>
+                            @enderror
+                        </div>
+                    </div>
+                    @endif
                 </div>
             </div>
 

@@ -23,5 +23,18 @@ match ($syncFreq) {
     default => $statsSchedule->hourly(),
 };
 
+// Inbox sync - frequency configurable via Settings page
+$inboxFreq = rescue(fn () => Setting::get('inbox_sync_frequency', 'every_15_min'), 'every_15_min', false);
+$inboxSchedule = Schedule::command('inbox:sync')->withoutOverlapping();
+match ($inboxFreq) {
+    'every_30_min' => $inboxSchedule->everyThirtyMinutes(),
+    'hourly' => $inboxSchedule->hourly(),
+    'every_2_hours' => $inboxSchedule->everyTwoHours(),
+    'every_6_hours' => $inboxSchedule->cron('0 */6 * * *'),
+    'every_12_hours' => $inboxSchedule->twiceDaily(0, 12),
+    'daily' => $inboxSchedule->daily(),
+    default => $inboxSchedule->everyFifteenMinutes(),
+};
+
 // Downsample follower snapshots (1st of each month at 3 AM)
 Schedule::command('snapshots:downsample')->monthlyOn(1, '03:00');

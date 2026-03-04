@@ -27,7 +27,7 @@ class FacebookOAuthController extends Controller
         $params = http_build_query([
             'client_id' => config('services.facebook.client_id'),
             'redirect_uri' => route('facebook.callback'),
-            'scope' => 'pages_show_list,pages_read_engagement,pages_read_user_content,pages_manage_posts,instagram_basic,instagram_content_publish',
+            'scope' => 'pages_show_list,pages_read_engagement,pages_read_user_content,pages_manage_posts,pages_manage_engagement,instagram_basic,instagram_content_publish,instagram_manage_comments',
             'response_type' => 'code',
             'state' => $state,
         ]);

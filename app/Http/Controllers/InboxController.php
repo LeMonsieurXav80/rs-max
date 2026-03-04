@@ -1,0 +1,281 @@
+<?php
+
+namespace App\Http\Controllers;
+
+use App\Models\InboxItem;
+use App\Models\Setting;
+use App\Models\SocialAccount;
+use App\Services\Inbox\InboxSyncService;
+use Illuminate\Http\JsonResponse;
+use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Log;
+use Illuminate\View\View;
+
+class InboxController extends Controller
+{
+    public function index(Request $request): View
+    {
+        $user = $request->user();
+
+        $accountIds = $user->is_admin
+            ? SocialAccount::pluck('id')
+            : $user->socialAccounts()->pluck('social_accounts.id');
+
+        $query = InboxItem::whereIn('social_account_id', $accountIds)
+            ->with(['socialAccount.platform', 'platform']);
+
+        // Filters
+        if ($status = $request->input('status')) {
+            $query->where('status', $status);
+        } else {
+            // By default, hide archived
+            $query->where('status', '!=', 'archived');
+        }
+
+        if ($type = $request->input('type')) {
+            $query->where('type', $type);
+        }
+        if ($platform = $request->input('platform')) {
+            $query->whereHas('platform', fn ($q) => $q->where('slug', $platform));
+        }
+        if ($accountId = $request->input('account')) {
+            $query->where('social_account_id', $accountId);
+        }
+
+        $items = $query->orderByDesc('posted_at')->paginate(50);
+
+        $counts = [
+            'total' => InboxItem::whereIn('social_account_id', $accountIds)->where('status', '!=', 'archived')->count(),
+            'unread' => InboxItem::whereIn('social_account_id', $accountIds)->where('status', 'unread')->count(),
+            'read' => InboxItem::whereIn('social_account_id', $accountIds)->where('status', 'read')->count(),
+            'replied' => InboxItem::whereIn('social_account_id', $accountIds)->where('status', 'replied')->count(),
+        ];
+
+        $socialAccounts = $user->is_admin
+            ? SocialAccount::with('platform')->orderBy('name')->get()
+            : $user->socialAccounts()->with('platform')->orderBy('name')->get();
+
+        return view('inbox.index', compact('items', 'counts', 'socialAccounts'));
+    }
+
+    public function markRead(Request $request): JsonResponse
+    {
+        $validated = $request->validate([
+            'ids' => 'required|array',
+            'ids.*' => 'integer|exists:inbox_items,id',
+        ]);
+
+        InboxItem::whereIn('id', $validated['ids'])
+            ->where('status', 'unread')
+            ->update(['status' => 'read']);
+
+        return response()->json(['success' => true]);
+    }
+
+    public function archive(Request $request): JsonResponse
+    {
+        $validated = $request->validate([
+            'ids' => 'required|array',
+            'ids.*' => 'integer|exists:inbox_items,id',
+        ]);
+
+        InboxItem::whereIn('id', $validated['ids'])->update(['status' => 'archived']);
+
+        return response()->json(['success' => true]);
+    }
+
+    public function reply(Request $request, InboxItem $inboxItem): JsonResponse
+    {
+        $validated = $request->validate([
+            'reply_text' => 'required|string|max:5000',
+        ]);
+
+        $account = $inboxItem->socialAccount()->with('platform')->first();
+        $syncService = app(InboxSyncService::class);
+        $service = $syncService->getServiceForPlatform($account->platform->slug);
+
+        if (! $service) {
+            return response()->json(['success' => false, 'error' => 'Service non disponible'], 422);
+        }
+
+        $result = $service->sendReply($account, $inboxItem, $validated['reply_text']);
+
+        if ($result['success']) {
+            $inboxItem->update([
+                'status' => 'replied',
+                'reply_content' => $validated['reply_text'],
+                'reply_external_id' => $result['external_id'],
+                'replied_at' => now(),
+            ]);
+        }
+
+        return response()->json($result);
+    }
+
+    public function aiSuggest(Request $request, InboxItem $inboxItem): JsonResponse
+    {
+        $account = $inboxItem->socialAccount()->with(['platform', 'persona'])->first();
+
+        $reply = $this->generateAiReplyText($inboxItem, $account);
+
+        if (! $reply) {
+            return response()->json(['error' => 'Impossible de générer une réponse. Vérifiez la clé API et la persona du compte.'], 422);
+        }
+
+        return response()->json(['reply' => $reply]);
+    }
+
+    public function bulkAiReply(Request $request): JsonResponse
+    {
+        $validated = $request->validate([
+            'ids' => 'required|array|min:1|max:20',
+            'ids.*' => 'integer|exists:inbox_items,id',
+        ]);
+
+        $items = InboxItem::with(['socialAccount.platform', 'socialAccount.persona'])
+            ->whereIn('id', $validated['ids'])
+            ->get();
+
+        $suggestions = [];
+
+        foreach ($items as $item) {
+            $account = $item->socialAccount;
+            $reply = $this->generateAiReplyText($item, $account);
+
+            $suggestions[] = [
+                'id' => $item->id,
+                'content' => $item->content,
+                'author' => $item->author_name ?? $item->author_username,
+                'platform' => $account->platform->slug,
+                'reply' => $reply,
+                'error' => $reply ? null : 'Impossible de générer',
+            ];
+
+            usleep(500000); // 500ms between API calls
+        }
+
+        return response()->json(['suggestions' => $suggestions]);
+    }
+
+    public function bulkSend(Request $request): JsonResponse
+    {
+        $validated = $request->validate([
+            'items' => 'required|array|min:1',
+            'items.*.id' => 'required|integer|exists:inbox_items,id',
+            'items.*.reply_text' => 'required|string|max:5000',
+        ]);
+
+        $syncService = app(InboxSyncService::class);
+        $results = [];
+
+        foreach ($validated['items'] as $itemData) {
+            $item = InboxItem::with('socialAccount.platform')->find($itemData['id']);
+
+            if (! $item) {
+                $results[] = ['id' => $itemData['id'], 'success' => false, 'error' => 'Not found'];
+
+                continue;
+            }
+
+            $account = $item->socialAccount;
+            $service = $syncService->getServiceForPlatform($account->platform->slug);
+
+            if (! $service) {
+                $results[] = ['id' => $item->id, 'success' => false, 'error' => 'Service non disponible'];
+
+                continue;
+            }
+
+            $result = $service->sendReply($account, $item, $itemData['reply_text']);
+
+            if ($result['success']) {
+                $item->update([
+                    'status' => 'replied',
+                    'reply_content' => $itemData['reply_text'],
+                    'reply_external_id' => $result['external_id'],
+                    'replied_at' => now(),
+                ]);
+            }
+
+            $results[] = ['id' => $item->id, 'success' => $result['success'], 'error' => $result['error'] ?? null];
+
+            usleep(500000); // 500ms between sends
+        }
+
+        return response()->json(['results' => $results]);
+    }
+
+    public function sync(Request $request): JsonResponse
+    {
+        $syncService = app(InboxSyncService::class);
+
+        if ($accountId = $request->input('account_id')) {
+            $account = SocialAccount::with('platform')->findOrFail($accountId);
+            $result = $syncService->syncAccount($account);
+        } else {
+            $result = $syncService->syncAll();
+        }
+
+        return response()->json($result);
+    }
+
+    private function generateAiReplyText(InboxItem $item, SocialAccount $account): ?string
+    {
+        $apiKey = Setting::getEncrypted('openai_api_key');
+
+        if (! $apiKey) {
+            return null;
+        }
+
+        $persona = $account->persona;
+
+        if (! $persona) {
+            return null;
+        }
+
+        $language = $account->languages[0] ?? 'fr';
+        $languageLabel = match ($language) {
+            'fr' => 'français',
+            'en' => 'anglais',
+            'pt' => 'portugais',
+            'es' => 'espagnol',
+            'de' => 'allemand',
+            'it' => 'italien',
+            default => $language,
+        };
+
+        $typeLabel = match ($item->type) {
+            'dm' => 'message privé',
+            'comment' => 'commentaire',
+            'reply' => 'réponse',
+            default => 'message',
+        };
+
+        $prompt = "Réponds à ce {$typeLabel} en {$languageLabel}.\n\n";
+        $prompt .= "{$typeLabel} de {$item->author_name} :\n\"{$item->content}\"\n\n";
+        $prompt .= "Réponds de manière courte, authentique et engageante. Maximum 280 caractères. Pas de hashtags. Ne commence pas par une formule de politesse générique.";
+
+        try {
+            $response = Http::withHeaders([
+                'Authorization' => "Bearer {$apiKey}",
+            ])->timeout(30)->post('https://api.openai.com/v1/chat/completions', [
+                'model' => Setting::get('ai_model_inbox', Setting::get('ai_model_text', 'gpt-4o-mini')),
+                'messages' => [
+                    ['role' => 'system', 'content' => $persona->system_prompt],
+                    ['role' => 'user', 'content' => $prompt],
+                ],
+                'temperature' => 0.7,
+                'max_tokens' => 500,
+            ]);
+
+            if ($response->successful()) {
+                return trim($response->json('choices.0.message.content', ''));
+            }
+        } catch (\Throwable $e) {
+            Log::error('InboxController: AI reply generation failed', ['error' => $e->getMessage()]);
+        }
+
+        return null;
+    }
+}

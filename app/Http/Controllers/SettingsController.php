@@ -47,6 +47,16 @@ class SettingsController extends Controller
         'ai_model_vision',
         'ai_model_translation',
         'ai_model_rss',
+        // Inbox / Messagerie
+        'inbox_sync_frequency',
+        'inbox_platform_facebook_enabled',
+        'inbox_platform_instagram_enabled',
+        'inbox_platform_threads_enabled',
+        'inbox_platform_youtube_enabled',
+        'inbox_platform_bluesky_enabled',
+        'inbox_platform_telegram_enabled',
+        'inbox_platform_reddit_enabled',
+        'ai_model_inbox',
     ];
 
     private const DEFAULTS = [
@@ -87,6 +97,16 @@ class SettingsController extends Controller
         'ai_model_vision' => 'gpt-4o',
         'ai_model_translation' => 'gpt-4o-mini',
         'ai_model_rss' => 'gpt-4o-mini',
+        // Inbox / Messagerie
+        'inbox_sync_frequency' => 'every_15_min',
+        'inbox_platform_facebook_enabled' => true,
+        'inbox_platform_instagram_enabled' => true,
+        'inbox_platform_threads_enabled' => true,
+        'inbox_platform_youtube_enabled' => true,
+        'inbox_platform_bluesky_enabled' => true,
+        'inbox_platform_telegram_enabled' => true,
+        'inbox_platform_reddit_enabled' => true,
+        'ai_model_inbox' => 'gpt-4o-mini',
     ];
 
     public function index(Request $request): View
@@ -178,6 +198,16 @@ class SettingsController extends Controller
             'ai_model_vision' => 'required|string|max:50',
             'ai_model_translation' => 'required|string|max:50',
             'ai_model_rss' => 'required|string|max:50',
+            // Inbox / Messagerie
+            'inbox_sync_frequency' => 'required|in:every_15_min,every_30_min,hourly,every_2_hours,every_6_hours,every_12_hours,daily',
+            'inbox_platform_facebook_enabled' => 'nullable',
+            'inbox_platform_instagram_enabled' => 'nullable',
+            'inbox_platform_threads_enabled' => 'nullable',
+            'inbox_platform_youtube_enabled' => 'nullable',
+            'inbox_platform_bluesky_enabled' => 'nullable',
+            'inbox_platform_telegram_enabled' => 'nullable',
+            'inbox_platform_reddit_enabled' => 'nullable',
+            'ai_model_inbox' => 'required|string|max:50',
         ]);
 
         // Handle encrypted keys separately
@@ -185,6 +215,13 @@ class SettingsController extends Controller
             Setting::setEncrypted('openai_api_key', $validated['openai_api_key']);
         }
         unset($validated['openai_api_key']);
+
+        // Handle inbox platform toggles (checkboxes: absent = false)
+        $inboxPlatforms = ['facebook', 'instagram', 'threads', 'youtube', 'bluesky', 'telegram', 'reddit'];
+        foreach ($inboxPlatforms as $slug) {
+            $key = "inbox_platform_{$slug}_enabled";
+            $validated[$key] = $request->has($key) ? true : false;
+        }
 
         foreach ($validated as $key => $value) {
             Setting::set($key, $value);

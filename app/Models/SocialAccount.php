@@ -67,6 +67,11 @@ class SocialAccount extends Model
         return $this->hasMany(SocialAccountSnapshot::class);
     }
 
+    public function inboxItems(): HasMany
+    {
+        return $this->hasMany(InboxItem::class);
+    }
+
     public function rssFeeds(): BelongsToMany
     {
         return $this->belongsToMany(RssFeed::class, 'rss_feed_social_account')

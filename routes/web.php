@@ -14,6 +14,7 @@ use App\Http\Controllers\PostController;
 use App\Http\Controllers\ProfileController;
 use App\Http\Controllers\PublishController;
 use App\Http\Controllers\AiAssistController;
+use App\Http\Controllers\InboxController;
 use App\Http\Controllers\RssFeedController;
 use App\Http\Controllers\SettingsController;
 use App\Http\Controllers\SourceItemController;
@@ -69,6 +70,15 @@ Route::middleware(['auth', 'verified'])->group(function () {
 
     // Save default account selection
     Route::post('posts/default-accounts', [PostController::class, 'saveDefaultAccounts'])->name('posts.defaultAccounts');
+
+    // Messagerie (inbox)
+    Route::get('inbox', [InboxController::class, 'index'])->name('inbox.index');
+    Route::post('inbox/mark-read', [InboxController::class, 'markRead'])->name('inbox.markRead');
+    Route::post('inbox/archive', [InboxController::class, 'archive'])->name('inbox.archive');
+    Route::post('inbox/{inboxItem}/reply', [InboxController::class, 'reply'])->name('inbox.reply');
+    Route::post('inbox/{inboxItem}/ai-suggest', [InboxController::class, 'aiSuggest'])->name('inbox.aiSuggest');
+    Route::post('inbox/bulk-ai-reply', [InboxController::class, 'bulkAiReply'])->name('inbox.bulkAiReply');
+    Route::post('inbox/bulk-send', [InboxController::class, 'bulkSend'])->name('inbox.bulkSend');
 
     // Stats
     Route::post('posts/{post}/sync-stats', [PostController::class, 'syncStats'])->name('posts.syncStats');
@@ -145,6 +155,9 @@ Route::middleware(['auth', 'verified'])->group(function () {
         Route::post('platforms/reddit/add-subreddit', [PlatformController::class, 'addRedditSubreddit'])->name('platforms.reddit.addSubreddit');
         Route::delete('platforms/reddit/app', [PlatformController::class, 'destroyRedditApp'])->name('platforms.reddit.destroyApp');
         Route::delete('platforms/account/{account}', [PlatformController::class, 'destroyAccount'])->name('platforms.destroyAccount');
+
+        // Inbox sync (admin only)
+        Route::post('inbox/sync', [InboxController::class, 'sync'])->name('inbox.sync');
 
         // Historical import & followers sync
         Route::get('accounts/{account}/import/info', [ImportController::class, 'info'])->name('accounts.import.info');
