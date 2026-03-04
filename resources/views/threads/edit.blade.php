@@ -381,18 +381,24 @@
         </template>
     </form>
 
+    @php
+        $segmentsJson = $thread->segments->map(function ($s) {
+            $pc = $s->platform_contents ?? [];
+            return [
+                'content_fr' => $s->content_fr,
+                'platform_contents' => [
+                    'twitter' => $pc['twitter'] ?? '',
+                    'threads' => $pc['threads'] ?? '',
+                    'bluesky' => $pc['bluesky'] ?? '',
+                ],
+                'media' => $s->media,
+            ];
+        })->values();
+    @endphp
     <script>
         function threadEditForm() {
             return {
-                segments: @json($thread->segments->map(fn ($s) => [
-                    'content_fr' => $s->content_fr,
-                    'platform_contents' => [
-                        'twitter' => data_get($s->platform_contents, 'twitter', ''),
-                        'threads' => data_get($s->platform_contents, 'threads', ''),
-                        'bluesky' => data_get($s->platform_contents, 'bluesky', ''),
-                    ],
-                    'media' => $s->media,
-                ])->values()),
+                segments: @json($segmentsJson),
 
                 // Media picker state
                 showMediaLibrary: false,
