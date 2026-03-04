@@ -13,7 +13,7 @@ class TelegramAdapter implements PlatformAdapterInterface
      *
      * @param  SocialAccount  $account  Credentials: bot_token, chat_id.
      * @param  string  $content  The message text.
-     * @param  array|null  $media  Optional media items (each with url, mimetype, size, title).
+     * @param  array|null  $media  Optional media items (each with url, mimetype, size, title, local_path).
      * @return array{success: bool, external_id: string|null, error: string|null}
      */
     public function publish(SocialAccount $account, string $content, ?array $media = null, ?array $options = null): array
@@ -43,8 +43,8 @@ class TelegramAdapter implements PlatformAdapterInterface
                 if (count($media) === 1) {
                     $item = $media[0];
                     $mediaResult = $this->isVideo($item['mimetype'], $item['url'])
-                        ? $this->sendVideo($baseUrl, $chatId, $item['url'], '')
-                        : $this->sendPhoto($baseUrl, $chatId, $item['url'], '');
+                        ? $this->sendVideo($baseUrl, $chatId, $item, '')
+                        : $this->sendPhoto($baseUrl, $chatId, $item, '');
                 } else {
                     $mediaResult = $this->sendMediaGroup($baseUrl, $chatId, $media, '');
                 }
@@ -63,10 +63,10 @@ class TelegramAdapter implements PlatformAdapterInterface
                 $item = $media[0];
 
                 if ($this->isVideo($item['mimetype'], $item['url'])) {
-                    return $this->sendVideo($baseUrl, $chatId, $item['url'], $content);
+                    return $this->sendVideo($baseUrl, $chatId, $item, $content);
                 }
 
-                return $this->sendPhoto($baseUrl, $chatId, $item['url'], $content);
+                return $this->sendPhoto($baseUrl, $chatId, $item, $content);
             }
 
             // Multiple media items -- use sendMediaGroup.
@@ -103,14 +103,25 @@ class TelegramAdapter implements PlatformAdapterInterface
     /**
      * Send a single photo with an optional caption.
      */
-    private function sendPhoto(string $baseUrl, string $chatId, string $photoUrl, string $caption): array
+    private function sendPhoto(string $baseUrl, string $chatId, array $item, string $caption): array
     {
-        $response = Http::post("{$baseUrl}/sendPhoto", [
-            'chat_id' => $chatId,
-            'photo' => $photoUrl,
-            'caption' => $caption,
-            'parse_mode' => 'HTML',
-        ]);
+        $localPath = $item['local_path'] ?? null;
+
+        if ($localPath && file_exists($localPath)) {
+            $response = Http::attach('photo', fopen($localPath, 'r'), basename($localPath))
+                ->post("{$baseUrl}/sendPhoto", [
+                    'chat_id' => $chatId,
+                    'caption' => $caption,
+                    'parse_mode' => 'HTML',
+                ]);
+        } else {
+            $response = Http::post("{$baseUrl}/sendPhoto", [
+                'chat_id' => $chatId,
+                'photo' => $item['url'],
+                'caption' => $caption,
+                'parse_mode' => 'HTML',
+            ]);
+        }
 
         return $this->parseResponse($response);
     }
@@ -118,15 +129,27 @@ class TelegramAdapter implements PlatformAdapterInterface
     /**
      * Send a single video with an optional caption.
      */
-    private function sendVideo(string $baseUrl, string $chatId, string $videoUrl, string $caption): array
+    private function sendVideo(string $baseUrl, string $chatId, array $item, string $caption): array
     {
-        $response = Http::post("{$baseUrl}/sendVideo", [
-            'chat_id' => $chatId,
-            'video' => $videoUrl,
-            'caption' => $caption,
-            'parse_mode' => 'HTML',
-            'supports_streaming' => true,
-        ]);
+        $localPath = $item['local_path'] ?? null;
+
+        if ($localPath && file_exists($localPath)) {
+            $response = Http::attach('video', fopen($localPath, 'r'), basename($localPath))
+                ->post("{$baseUrl}/sendVideo", [
+                    'chat_id' => $chatId,
+                    'caption' => $caption,
+                    'parse_mode' => 'HTML',
+                    'supports_streaming' => true,
+                ]);
+        } else {
+            $response = Http::post("{$baseUrl}/sendVideo", [
+                'chat_id' => $chatId,
+                'video' => $item['url'],
+                'caption' => $caption,
+                'parse_mode' => 'HTML',
+                'supports_streaming' => true,
+            ]);
+        }
 
         return $this->parseResponse($response);
     }
@@ -137,14 +160,23 @@ class TelegramAdapter implements PlatformAdapterInterface
     private function sendMediaGroup(string $baseUrl, string $chatId, array $media, string $caption): array
     {
         $inputMedia = [];
+        $hasLocalFiles = false;
+        $attachments = [];
 
         foreach ($media as $index => $item) {
             $type = $this->isVideo($item['mimetype'], $item['url'] ?? '') ? 'video' : 'photo';
+            $localPath = $item['local_path'] ?? null;
 
-            $entry = [
-                'type' => $type,
-                'media' => $item['url'],
-            ];
+            $entry = ['type' => $type];
+
+            if ($localPath && file_exists($localPath)) {
+                $attachName = "file_{$index}";
+                $entry['media'] = "attach://{$attachName}";
+                $attachments[$attachName] = [$localPath, basename($localPath)];
+                $hasLocalFiles = true;
+            } else {
+                $entry['media'] = $item['url'];
+            }
 
             // Attach the caption only to the first item in the group.
             if ($index === 0) {
@@ -155,10 +187,21 @@ class TelegramAdapter implements PlatformAdapterInterface
             $inputMedia[] = $entry;
         }
 
-        $response = Http::post("{$baseUrl}/sendMediaGroup", [
-            'chat_id' => $chatId,
-            'media' => json_encode($inputMedia),
-        ]);
+        if ($hasLocalFiles) {
+            $request = Http::asMultipart();
+            foreach ($attachments as $name => [$path, $filename]) {
+                $request = $request->attach($name, fopen($path, 'r'), $filename);
+            }
+            $response = $request->post("{$baseUrl}/sendMediaGroup", [
+                ['name' => 'chat_id', 'contents' => $chatId],
+                ['name' => 'media', 'contents' => json_encode($inputMedia)],
+            ]);
+        } else {
+            $response = Http::post("{$baseUrl}/sendMediaGroup", [
+                'chat_id' => $chatId,
+                'media' => json_encode($inputMedia),
+            ]);
+        }
 
         return $this->parseResponse($response);
     }
