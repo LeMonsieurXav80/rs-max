@@ -161,7 +161,16 @@
                                             <span class="px-1.5 py-0.5 rounded-full bg-green-100 text-green-700 text-xs font-medium">Répondu</span>
                                         @endif
                                     </div>
-                                    <p class="text-sm text-gray-700 line-clamp-2">{{ $firstItem->content }}</p>
+                                    @if($firstItem->content)
+                                        <p class="text-sm text-gray-700 line-clamp-2">{{ $firstItem->content }}</p>
+                                    @endif
+                                    @if($firstItem->media_url)
+                                        <div class="mt-1">
+                                            <img src="{{ $firstItem->media_url }}" alt="{{ $firstItem->media_type }}" class="max-h-20 rounded-lg object-cover">
+                                        </div>
+                                    @elseif(! $firstItem->content)
+                                        <p class="text-sm text-gray-400 italic">Media sans texte</p>
+                                    @endif
                                     @if($firstItem->reply_content)
                                         <div class="mt-2 pl-3 border-l-2 border-indigo-200">
                                             <p class="text-xs text-indigo-600 font-medium mb-0.5">Votre réponse :</p>
@@ -170,7 +179,11 @@
                                     @endif
                                 @else
                                     {{-- Multi-item: show preview --}}
-                                    <p class="text-sm text-gray-500 line-clamp-1">{{ Str::limit($firstItem->content, 100) }}</p>
+                                    @if($firstItem->content)
+                                        <p class="text-sm text-gray-500 line-clamp-1">{{ Str::limit($firstItem->content, 100) }}</p>
+                                    @elseif($firstItem->media_url)
+                                        <p class="text-sm text-gray-400 italic">[{{ $firstItem->media_type === 'gif' ? 'GIF' : ($firstItem->media_type === 'sticker' ? 'Sticker' : 'Image') }}]</p>
+                                    @endif
                                 @endif
                             </div>
 
@@ -228,7 +241,16 @@
                                                             <span class="px-1.5 py-0.5 rounded-full bg-green-100 text-green-700 text-xs font-medium">Répondu</span>
                                                         @endif
                                                     </div>
-                                                    <p class="text-sm text-gray-700">{{ $item->content }}</p>
+                                                    @if($item->content)
+                                                        <p class="text-sm text-gray-700">{{ $item->content }}</p>
+                                                    @endif
+                                                    @if($item->media_url)
+                                                        <div class="mt-1">
+                                                            <img src="{{ $item->media_url }}" alt="{{ $item->media_type }}" class="max-h-32 rounded-lg object-cover cursor-pointer hover:opacity-90 transition-opacity" onclick="window.open(this.src, '_blank')">
+                                                        </div>
+                                                    @elseif(! $item->content)
+                                                        <p class="text-sm text-gray-400 italic">Media sans texte</p>
+                                                    @endif
                                                     @if($item->reply_content)
                                                         <div class="mt-2 pl-3 border-l-2 border-indigo-200">
                                                             <p class="text-xs text-indigo-600 font-medium mb-0.5">Votre réponse :</p>
@@ -317,7 +339,16 @@
                                                             <span class="px-1.5 py-0.5 rounded-full bg-green-100 text-green-700 text-xs font-medium">Répondu</span>
                                                         @endif
                                                     </div>
-                                                    <p class="text-sm text-gray-700">{{ $item->content }}</p>
+                                                    @if($item->content)
+                                                        <p class="text-sm text-gray-700">{{ $item->content }}</p>
+                                                    @endif
+                                                    @if($item->media_url)
+                                                        <div class="mt-1">
+                                                            <img src="{{ $item->media_url }}" alt="{{ $item->media_type }}" class="max-h-32 rounded-lg object-cover cursor-pointer hover:opacity-90 transition-opacity" onclick="window.open(this.src, '_blank')">
+                                                        </div>
+                                                    @elseif(! $item->content)
+                                                        <p class="text-sm text-gray-400 italic">Media sans texte</p>
+                                                    @endif
                                                     @if($item->reply_content)
                                                         <div class="mt-2 pl-3 border-l-2 border-indigo-200">
                                                             <p class="text-xs text-indigo-600 font-medium mb-0.5">Votre réponse :</p>

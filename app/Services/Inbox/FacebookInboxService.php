@@ -22,7 +22,7 @@ class FacebookInboxService implements PlatformInboxInterface
 
         try {
             $params = [
-                'fields' => 'id,message,created_time,comments{id,message,from,created_time}',
+                'fields' => 'id,message,created_time,comments{id,message,from,created_time,attachment{type,media{image{src}}}}',
                 'access_token' => $accessToken,
                 'limit' => 20,
             ];
@@ -50,6 +50,16 @@ class FacebookInboxService implements PlatformInboxInterface
                         continue;
                     }
 
+                    $attachment = $comment['attachment'] ?? null;
+                    $mediaUrl = $attachment['media']['image']['src'] ?? null;
+                    $mediaType = match ($attachment['type'] ?? null) {
+                        'animated_image_autoplay' => 'gif',
+                        'sticker' => 'sticker',
+                        'photo' => 'image',
+                        'video_inline' => 'video',
+                        default => $mediaUrl ? 'image' : null,
+                    };
+
                     $items->push([
                         'type' => 'comment',
                         'external_id' => $comment['id'],
@@ -57,6 +67,8 @@ class FacebookInboxService implements PlatformInboxInterface
                         'author_name' => $comment['from']['name'] ?? null,
                         'author_external_id' => $fromId,
                         'content' => $comment['message'] ?? null,
+                        'media_url' => $mediaUrl,
+                        'media_type' => $mediaType,
                         'post_url' => "https://facebook.com/{$comment['id']}",
                         'posted_at' => isset($comment['created_time']) ? Carbon::parse($comment['created_time']) : null,
                     ]);

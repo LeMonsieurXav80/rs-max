@@ -100,6 +100,18 @@ class BlueskyInboxService implements PlatformInboxInterface
             $rkey = basename($replyUri);
             $replyHandle = $replyPost['author']['handle'] ?? '';
 
+            // Check for embedded images
+            $embed = $replyPost['embed'] ?? null;
+            $mediaUrl = null;
+            $mediaType = null;
+            if ($embed) {
+                $embedType = $embed['$type'] ?? '';
+                if ($embedType === 'app.bsky.embed.images#view' && ! empty($embed['images'])) {
+                    $mediaUrl = $embed['images'][0]['fullsize'] ?? $embed['images'][0]['thumb'] ?? null;
+                    $mediaType = 'image';
+                }
+            }
+
             $items->push([
                 'type' => 'comment',
                 'external_id' => "{$replyUri}|{$replyCid}",
@@ -109,6 +121,8 @@ class BlueskyInboxService implements PlatformInboxInterface
                 'author_avatar_url' => $replyPost['author']['avatar'] ?? null,
                 'author_external_id' => $authorDid,
                 'content' => $replyPost['record']['text'] ?? null,
+                'media_url' => $mediaUrl,
+                'media_type' => $mediaType,
                 'post_url' => "https://bsky.app/profile/{$replyHandle}/post/{$rkey}",
                 'posted_at' => isset($replyPost['record']['createdAt']) ? Carbon::parse($replyPost['record']['createdAt']) : null,
             ]);

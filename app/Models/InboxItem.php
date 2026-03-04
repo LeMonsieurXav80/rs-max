@@ -19,6 +19,8 @@ class InboxItem extends Model
         'author_avatar_url',
         'author_external_id',
         'content',
+        'media_url',
+        'media_type',
         'post_url',
         'posted_at',
         'status',

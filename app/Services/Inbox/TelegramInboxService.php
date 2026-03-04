@@ -50,7 +50,14 @@ class TelegramInboxService implements PlatformInboxInterface
                 $maxUpdateId = max($maxUpdateId, $updateId);
 
                 $message = $update['message'] ?? null;
-                if (! $message || empty($message['text'])) {
+                if (! $message) {
+                    continue;
+                }
+
+                $hasText = ! empty($message['text']) || ! empty($message['caption']);
+                $hasMedia = isset($message['animation']) || isset($message['sticker']) || isset($message['photo']);
+
+                if (! $hasText && ! $hasMedia) {
                     continue;
                 }
 
@@ -67,6 +74,33 @@ class TelegramInboxService implements PlatformInboxInterface
                 $lastName = $from['last_name'] ?? '';
                 $authorName = trim("{$firstName} {$lastName}");
 
+                // Detect media type
+                $mediaType = null;
+                $mediaFileId = null;
+                if (isset($message['animation'])) {
+                    $mediaType = 'gif';
+                    $mediaFileId = $message['animation']['file_id'];
+                } elseif (isset($message['sticker'])) {
+                    $mediaType = 'sticker';
+                    $mediaFileId = $message['sticker']['file_id'];
+                } elseif (isset($message['photo'])) {
+                    $mediaType = 'image';
+                    // Use the largest photo size (last in array)
+                    $mediaFileId = end($message['photo'])['file_id'] ?? null;
+                }
+
+                // Resolve file_id to URL
+                $mediaUrl = null;
+                if ($mediaFileId) {
+                    $fileResponse = Http::get("{$baseUrl}/getFile", ['file_id' => $mediaFileId]);
+                    if ($fileResponse->successful()) {
+                        $filePath = $fileResponse->json('result.file_path');
+                        if ($filePath) {
+                            $mediaUrl = "https://api.telegram.org/file/bot{$botToken}/{$filePath}";
+                        }
+                    }
+                }
+
                 $items->push([
                     'type' => 'dm',
                     'external_id' => (string) $message['message_id'],
@@ -74,7 +108,9 @@ class TelegramInboxService implements PlatformInboxInterface
                     'author_name' => $authorName ?: null,
                     'author_username' => $from['username'] ?? null,
                     'author_external_id' => isset($from['id']) ? (string) $from['id'] : null,
-                    'content' => $message['text'],
+                    'content' => $message['text'] ?? $message['caption'] ?? null,
+                    'media_url' => $mediaUrl,
+                    'media_type' => $mediaType,
                     'posted_at' => $postedAt,
                 ]);
             }
