@@ -26,6 +26,11 @@ class FacebookAdapter implements PlatformAdapterInterface
             $accessToken = $credentials['access_token'];
             $placeId = $options['location_id'] ?? null;
 
+            Log::info('FacebookAdapter: publish media debug', [
+                'total_media' => $media ? count($media) : 0,
+                'media_types' => $media ? array_map(fn ($m) => ($m['mimetype'] ?? 'NO_MIMETYPE') . ' | type=' . ($m['type'] ?? 'none'), $media) : [],
+            ]);
+
             // No media -- text-only post (optionally with a link).
             if (empty($media)) {
                 return $this->publishTextPost($pageId, $accessToken, $content, $placeId);
