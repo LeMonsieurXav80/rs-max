@@ -78,6 +78,12 @@ class ThreadPublishingService
             $content = $this->getSegmentContentForAccount($segment, $account);
             $media = $this->resolveMediaUrls($segment->media);
 
+            // Threads API: video replies break the thread chain, so strip videos from replies.
+            if ($account->platform->slug === 'threads' && $previousExternalId !== null && ! empty($media)) {
+                $media = array_values(array_filter($media, fn ($m) => ! str_starts_with($m['mimetype'] ?? '', 'video/')));
+                $media = ! empty($media) ? $media : null;
+            }
+
             // Inject the first post's URL into the last segment.
             if ($segment->position === $lastPosition && $firstExternalId) {
                 $firstPostUrl = $firstPostPermalink
