@@ -26,68 +26,39 @@ class FacebookAdapter implements PlatformAdapterInterface
             $accessToken = $credentials['access_token'];
             $placeId = $options['location_id'] ?? null;
 
-            Log::info('FacebookAdapter: publish called', [
-                'total_media' => $media ? count($media) : 0,
-                'media_details' => $media ? array_map(fn ($m) => [
-                    'mimetype' => $m['mimetype'] ?? 'NO_MIMETYPE',
-                    'type' => $m['type'] ?? 'none',
-                    'url_prefix' => substr($m['url'] ?? '', 0, 60),
-                ], $media) : [],
-            ]);
-
             // No media -- text-only post (optionally with a link).
             if (empty($media)) {
-                Log::info('FacebookAdapter: branch → textPost');
-
                 return $this->publishTextPost($pageId, $accessToken, $content, $placeId);
             }
 
             // Single image.
             if (count($media) === 1 && $this->isImage($media[0]['mimetype'])) {
-                Log::info('FacebookAdapter: branch → singlePhoto');
-
                 return $this->publishSinglePhoto($pageId, $accessToken, $content, $media[0]['url'], $placeId);
             }
 
             // Single video.
             if (count($media) === 1 && $this->isVideo($media[0]['mimetype'])) {
-                Log::info('FacebookAdapter: branch → singleVideo');
-
                 return $this->publishSingleVideo($pageId, $accessToken, $content, $media[0]['url'], $placeId);
             }
 
             // Multiple images -- unpublished photo upload then multi-photo post.
             $images = array_filter($media, fn ($item) => $this->isImage($item['mimetype']));
 
-            Log::info('FacebookAdapter: filtering', [
-                'total_media' => count($media),
-                'images_count' => count($images),
-                'videos_count' => count($media) - count($images),
-            ]);
-
             if (count($images) === count($media)) {
-                Log::info('FacebookAdapter: branch → multiPhoto (all images)');
-
                 return $this->publishMultiPhoto($pageId, $accessToken, $content, $images, $placeId);
             }
 
             // Mixed media -- publish all images together, skip videos
             // (Facebook API does not support photos + videos in a single post).
             if (count($images) > 1) {
-                Log::info('FacebookAdapter: branch → multiPhoto (mixed, images only)');
-
                 return $this->publishMultiPhoto($pageId, $accessToken, $content, array_values($images), $placeId);
             }
 
             if (count($images) === 1) {
-                Log::info('FacebookAdapter: branch → singlePhoto (mixed)');
-
                 return $this->publishSinglePhoto($pageId, $accessToken, $content, reset($images)['url'], $placeId);
             }
 
             // No images at all -- publish first video.
-            Log::info('FacebookAdapter: branch → singleVideo (fallback)');
-
             return $this->publishSingleVideo($pageId, $accessToken, $content, $media[0]['url'], $placeId);
 
         } catch (\Throwable $e) {
@@ -229,15 +200,9 @@ class FacebookAdapter implements PlatformAdapterInterface
      */
     private function publishMultiPhoto(string $pageId, string $accessToken, string $content, array $images, ?string $placeId = null): array
     {
-        Log::info('FacebookAdapter: publishMultiPhoto start', ['image_count' => count($images)]);
-
         $photoIds = [];
 
-        foreach ($images as $idx => $image) {
-            Log::info("FacebookAdapter: uploading unpublished photo {$idx}", [
-                'url_prefix' => substr($image['url'] ?? '', 0, 80),
-            ]);
-
+        foreach ($images as $image) {
             $response = Http::post(self::API_BASE . "/{$pageId}/photos", [
                 'url' => $image['url'],
                 'published' => 'false',
@@ -245,11 +210,6 @@ class FacebookAdapter implements PlatformAdapterInterface
             ]);
 
             $body = $response->json();
-
-            Log::info("FacebookAdapter: unpublished photo {$idx} response", [
-                'status' => $response->status(),
-                'body' => $body,
-            ]);
 
             if (! $response->successful() || empty($body['id'])) {
                 $error = $body['error']['message'] ?? 'Failed to upload unpublished photo';
@@ -269,7 +229,8 @@ class FacebookAdapter implements PlatformAdapterInterface
             $photoIds[] = $body['id'];
         }
 
-        // Build the attached_media parameters.
+        // Build the attached_media parameters (must use asForm so that
+        // attached_media[N] keys are parsed as array elements by Facebook).
         $params = [
             'message' => $content,
             'access_token' => $accessToken,
@@ -283,17 +244,7 @@ class FacebookAdapter implements PlatformAdapterInterface
             $params["attached_media[{$index}]"] = json_encode(['media_fbid' => $photoId]);
         }
 
-        Log::info('FacebookAdapter: creating multi-photo feed post', [
-            'photo_ids' => $photoIds,
-            'attached_media_keys' => array_keys(array_filter($params, fn ($k) => str_starts_with($k, 'attached_media'), ARRAY_FILTER_USE_KEY)),
-        ]);
-
-        $response = Http::post(self::API_BASE . "/{$pageId}/feed", $params);
-
-        Log::info('FacebookAdapter: multi-photo feed post response', [
-            'status' => $response->status(),
-            'body' => $response->json(),
-        ]);
+        $response = Http::asForm()->post(self::API_BASE . "/{$pageId}/feed", $params);
 
         return $this->parseResponse($response);
     }
