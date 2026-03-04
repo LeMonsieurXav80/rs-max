@@ -132,23 +132,26 @@ class TelegramAdapter implements PlatformAdapterInterface
     private function sendVideo(string $baseUrl, string $chatId, array $item, string $caption): array
     {
         $localPath = $item['local_path'] ?? null;
+        $dimensions = $localPath ? $this->getVideoDimensions($localPath) : null;
+
+        $params = [
+            'chat_id' => $chatId,
+            'caption' => $caption,
+            'parse_mode' => 'HTML',
+            'supports_streaming' => true,
+        ];
+
+        if ($dimensions) {
+            $params['width'] = $dimensions['width'];
+            $params['height'] = $dimensions['height'];
+        }
 
         if ($localPath && file_exists($localPath)) {
             $response = Http::attach('video', fopen($localPath, 'r'), basename($localPath))
-                ->post("{$baseUrl}/sendVideo", [
-                    'chat_id' => $chatId,
-                    'caption' => $caption,
-                    'parse_mode' => 'HTML',
-                    'supports_streaming' => true,
-                ]);
+                ->post("{$baseUrl}/sendVideo", $params);
         } else {
-            $response = Http::post("{$baseUrl}/sendVideo", [
-                'chat_id' => $chatId,
-                'video' => $item['url'],
-                'caption' => $caption,
-                'parse_mode' => 'HTML',
-                'supports_streaming' => true,
-            ]);
+            $params['video'] = $item['url'];
+            $response = Http::post("{$baseUrl}/sendVideo", $params);
         }
 
         return $this->parseResponse($response);
@@ -168,6 +171,14 @@ class TelegramAdapter implements PlatformAdapterInterface
             $localPath = $item['local_path'] ?? null;
 
             $entry = ['type' => $type];
+
+            if ($type === 'video' && $localPath) {
+                $dimensions = $this->getVideoDimensions($localPath);
+                if ($dimensions) {
+                    $entry['width'] = $dimensions['width'];
+                    $entry['height'] = $dimensions['height'];
+                }
+            }
 
             if ($localPath && file_exists($localPath)) {
                 $attachName = "file_{$index}";
@@ -239,6 +250,40 @@ class TelegramAdapter implements PlatformAdapterInterface
             'external_id' => null,
             'error' => $error,
         ];
+    }
+
+    /**
+     * Extract video width/height via ffprobe.
+     */
+    private function getVideoDimensions(string $path): ?array
+    {
+        if (! file_exists($path)) {
+            return null;
+        }
+
+        $ffprobe = trim(shell_exec('which ffprobe 2>/dev/null') ?: '');
+        if (! $ffprobe) {
+            return null;
+        }
+
+        $output = shell_exec(sprintf(
+            '%s -v quiet -select_streams v:0 -show_entries stream=width,height -of json %s 2>/dev/null',
+            escapeshellarg($ffprobe),
+            escapeshellarg($path)
+        ));
+
+        if (! $output) {
+            return null;
+        }
+
+        $data = json_decode($output, true);
+        $stream = $data['streams'][0] ?? null;
+
+        if (! $stream || empty($stream['width']) || empty($stream['height'])) {
+            return null;
+        }
+
+        return ['width' => (int) $stream['width'], 'height' => (int) $stream['height']];
     }
 
     /**
