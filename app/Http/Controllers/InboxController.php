@@ -198,6 +198,7 @@ class InboxController extends Controller
                 'reply_content' => $validated['reply_text'],
                 'reply_external_id' => $result['external_id'],
                 'replied_at' => now(),
+                'reply_scheduled_at' => null,
             ]);
         }
 
@@ -318,6 +319,7 @@ class InboxController extends Controller
                     'reply_content' => $itemData['reply_text'],
                     'reply_external_id' => $result['external_id'],
                     'replied_at' => now(),
+                    'reply_scheduled_at' => null,
                 ]);
             }
 

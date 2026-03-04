@@ -18,6 +18,7 @@ class SendScheduledInboxReplies extends Command
         $items = InboxItem::whereNotNull('reply_scheduled_at')
             ->whereNotNull('reply_content')
             ->whereNull('replied_at')
+            ->where('status', '!=', 'replied')
             ->where('reply_scheduled_at', '<=', now())
             ->with('socialAccount.platform')
             ->orderBy('reply_scheduled_at', 'asc')
