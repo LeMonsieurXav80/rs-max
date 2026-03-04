@@ -387,9 +387,9 @@
                 segments: @json($thread->segments->map(fn ($s) => [
                     'content_fr' => $s->content_fr,
                     'platform_contents' => [
-                        'twitter' => ($s->platform_contents ?? [])['twitter'] ?? '',
-                        'threads' => ($s->platform_contents ?? [])['threads'] ?? '',
-                        'bluesky' => ($s->platform_contents ?? [])['bluesky'] ?? '',
+                        'twitter' => data_get($s->platform_contents, 'twitter', ''),
+                        'threads' => data_get($s->platform_contents, 'threads', ''),
+                        'bluesky' => data_get($s->platform_contents, 'bluesky', ''),
                     ],
                     'media' => $s->media,
                 ])->values()),
