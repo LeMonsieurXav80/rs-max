@@ -8,6 +8,7 @@ use App\Models\SocialAccount;
 use App\Services\Inbox\InboxSyncService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Pagination\LengthAwarePaginator;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 use Illuminate\View\View;
@@ -25,25 +26,72 @@ class InboxController extends Controller
         $query = InboxItem::whereIn('social_account_id', $accountIds)
             ->with(['socialAccount.platform', 'platform']);
 
-        // Filters
+        // Status filter (single value, mutually exclusive)
         if ($status = $request->input('status')) {
             $query->where('status', $status);
         } else {
-            // By default, hide archived
             $query->where('status', '!=', 'archived');
         }
 
-        if ($type = $request->input('type')) {
-            $query->where('type', $type);
+        // Type filter (multi-select)
+        $types = $request->input('type', []);
+        if (! is_array($types)) {
+            $types = [$types];
         }
-        if ($platform = $request->input('platform')) {
-            $query->whereHas('platform', fn ($q) => $q->where('slug', $platform));
+        $types = array_filter($types);
+        if (! empty($types)) {
+            $query->whereIn('type', $types);
         }
+
+        // Platform filter (multi-select)
+        $platforms = $request->input('platform', []);
+        if (! is_array($platforms)) {
+            $platforms = [$platforms];
+        }
+        $platforms = array_filter($platforms);
+        if (! empty($platforms)) {
+            $query->whereHas('platform', fn ($q) => $q->whereIn('slug', $platforms));
+        }
+
         if ($accountId = $request->input('account')) {
             $query->where('social_account_id', $accountId);
         }
 
-        $items = $query->orderByDesc('posted_at')->paginate(50);
+        // Fetch all filtered items and group by conversation
+        $allItems = $query->orderBy('posted_at', 'asc')->get();
+
+        $conversations = $allItems->groupBy(function ($item) {
+            return $item->social_account_id . ':' . ($item->external_post_id ?: 'single:' . $item->id);
+        });
+
+        $conversationList = $conversations->map(function ($items, $key) {
+            $first = $items->first();
+            $latest = $items->sortByDesc('posted_at')->first();
+
+            return (object) [
+                'key' => $key,
+                'items' => $items->sortBy('posted_at')->values(),
+                'platform' => $first->platform,
+                'socialAccount' => $first->socialAccount,
+                'type' => $first->type,
+                'latest_at' => $latest->posted_at,
+                'unread_count' => $items->where('status', 'unread')->count(),
+                'total_count' => $items->count(),
+                'post_url' => $first->post_url,
+                'external_post_id' => $first->external_post_id,
+            ];
+        })->sortByDesc('latest_at')->values();
+
+        // Manual pagination by conversations (15 per page)
+        $page = (int) $request->input('page', 1);
+        $perPage = 15;
+        $conversations = new LengthAwarePaginator(
+            $conversationList->forPage($page, $perPage)->values(),
+            $conversationList->count(),
+            $perPage,
+            $page,
+            ['path' => $request->url(), 'query' => $request->query()]
+        );
 
         $counts = [
             'total' => InboxItem::whereIn('social_account_id', $accountIds)->where('status', '!=', 'archived')->count(),
@@ -56,7 +104,7 @@ class InboxController extends Controller
             ? SocialAccount::with('platform')->orderBy('name')->get()
             : $user->socialAccounts()->with('platform')->orderBy('name')->get();
 
-        return view('inbox.index', compact('items', 'counts', 'socialAccounts'));
+        return view('inbox.index', compact('conversations', 'counts', 'socialAccounts'));
     }
 
     public function markRead(Request $request): JsonResponse

@@ -25,40 +25,26 @@
             </div>
         </div>
 
-        {{-- Filters + Actions --}}
-        <div class="bg-white rounded-2xl shadow-sm border border-gray-100 p-4">
+        {{-- Filters --}}
+        <form method="GET" action="{{ route('inbox.index') }}" x-ref="filterForm" class="bg-white rounded-2xl shadow-sm border border-gray-100 p-4 space-y-3">
+            {{-- Row 1: Status pills + sync button --}}
             <div class="flex flex-wrap items-center gap-3">
-                {{-- Status pills --}}
                 <div class="flex items-center gap-1 bg-gray-100 rounded-xl p-1">
-                    <a href="{{ route('inbox.index') }}" class="px-3 py-1.5 rounded-lg text-sm font-medium transition-colors {{ !request('status') ? 'bg-white text-indigo-600 shadow-sm' : 'text-gray-500 hover:text-gray-700' }}">Tous</a>
-                    <a href="{{ route('inbox.index', ['status' => 'unread'] + request()->except('status', 'page')) }}" class="px-3 py-1.5 rounded-lg text-sm font-medium transition-colors {{ request('status') === 'unread' ? 'bg-white text-indigo-600 shadow-sm' : 'text-gray-500 hover:text-gray-700' }}">Non lus</a>
-                    <a href="{{ route('inbox.index', ['status' => 'read'] + request()->except('status', 'page')) }}" class="px-3 py-1.5 rounded-lg text-sm font-medium transition-colors {{ request('status') === 'read' ? 'bg-white text-indigo-600 shadow-sm' : 'text-gray-500 hover:text-gray-700' }}">Lus</a>
-                    <a href="{{ route('inbox.index', ['status' => 'replied'] + request()->except('status', 'page')) }}" class="px-3 py-1.5 rounded-lg text-sm font-medium transition-colors {{ request('status') === 'replied' ? 'bg-white text-green-600 shadow-sm' : 'text-gray-500 hover:text-gray-700' }}">Répondus</a>
-                    <a href="{{ route('inbox.index', ['status' => 'archived'] + request()->except('status', 'page')) }}" class="px-3 py-1.5 rounded-lg text-sm font-medium transition-colors {{ request('status') === 'archived' ? 'bg-white text-gray-600 shadow-sm' : 'text-gray-500 hover:text-gray-700' }}">Archivés</a>
+                    @php $currentStatus = request('status', ''); @endphp
+                    <input type="hidden" name="status" x-ref="statusInput" value="{{ $currentStatus }}">
+                    @foreach(['' => 'Tous', 'unread' => 'Non lus', 'read' => 'Lus', 'replied' => 'Répondus', 'archived' => 'Archivés'] as $val => $label)
+                        <button type="submit"
+                                @click.prevent="$refs.statusInput.value = '{{ $val }}'; $refs.filterForm.submit()"
+                                class="px-3 py-1.5 rounded-lg text-sm font-medium transition-colors {{ $currentStatus === $val ? 'bg-white shadow-sm' . ($val === 'replied' ? ' text-green-600' : ($val === 'archived' ? ' text-gray-600' : ' text-indigo-600')) : 'text-gray-500 hover:text-gray-700' }}">
+                            {{ $label }}
+                        </button>
+                    @endforeach
                 </div>
 
-                {{-- Type filter --}}
-                <select onchange="window.location.href=this.value || '{{ route('inbox.index', request()->except('type', 'page')) }}'" class="rounded-xl border-gray-300 text-sm shadow-sm focus:border-indigo-500 focus:ring-indigo-500">
-                    <option value="{{ route('inbox.index', request()->except('type', 'page')) }}">Tous types</option>
-                    <option value="{{ route('inbox.index', ['type' => 'comment'] + request()->except('type', 'page')) }}" {{ request('type') === 'comment' ? 'selected' : '' }}>Commentaires</option>
-                    <option value="{{ route('inbox.index', ['type' => 'reply'] + request()->except('type', 'page')) }}" {{ request('type') === 'reply' ? 'selected' : '' }}>Réponses</option>
-                    <option value="{{ route('inbox.index', ['type' => 'dm'] + request()->except('type', 'page')) }}" {{ request('type') === 'dm' ? 'selected' : '' }}>Messages privés</option>
-                </select>
-
-                {{-- Platform filter --}}
-                <select onchange="window.location.href=this.value || '{{ route('inbox.index', request()->except('platform', 'page')) }}'" class="rounded-xl border-gray-300 text-sm shadow-sm focus:border-indigo-500 focus:ring-indigo-500">
-                    <option value="{{ route('inbox.index', request()->except('platform', 'page')) }}">Toutes plateformes</option>
-                    @foreach(['facebook', 'instagram', 'threads', 'youtube', 'bluesky', 'telegram', 'reddit'] as $slug)
-                        <option value="{{ route('inbox.index', ['platform' => $slug] + request()->except('platform', 'page')) }}" {{ request('platform') === $slug ? 'selected' : '' }}>{{ ucfirst($slug) }}</option>
-                    @endforeach
-                </select>
-
-                {{-- Spacer --}}
                 <div class="flex-1"></div>
 
-                {{-- Admin sync button --}}
                 @if(auth()->user()->is_admin)
-                    <button @click="syncInbox()" :disabled="syncing" class="inline-flex items-center gap-2 px-4 py-2 bg-indigo-600 text-white text-sm font-medium rounded-xl hover:bg-indigo-700 transition-colors disabled:opacity-50">
+                    <button type="button" @click="syncInbox()" :disabled="syncing" class="inline-flex items-center gap-2 px-4 py-2 bg-indigo-600 text-white text-sm font-medium rounded-xl hover:bg-indigo-700 transition-colors disabled:opacity-50">
                         <svg x-show="!syncing" class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1.5">
                             <path stroke-linecap="round" stroke-linejoin="round" d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0 3.181 3.183a8.25 8.25 0 0 0 13.803-3.7M4.031 9.865a8.25 8.25 0 0 1 13.803-3.7l3.181 3.182M2.985 19.644l3.181-3.183" />
                         </svg>
@@ -70,7 +56,35 @@
                     </button>
                 @endif
             </div>
-        </div>
+
+            {{-- Row 2: Type checkboxes --}}
+            <div class="flex flex-wrap items-center gap-2">
+                <span class="text-xs text-gray-400 font-medium mr-1">Type :</span>
+                @php $activeTypes = request('type', []); if (!is_array($activeTypes)) $activeTypes = [$activeTypes]; @endphp
+                @foreach(['comment' => 'Commentaires', 'reply' => 'Réponses', 'dm' => 'Messages privés'] as $val => $label)
+                    <label class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium cursor-pointer transition-colors {{ in_array($val, $activeTypes) ? 'bg-indigo-100 text-indigo-700' : 'bg-gray-100 text-gray-500 hover:bg-gray-200' }}">
+                        <input type="checkbox" name="type[]" value="{{ $val }}" class="sr-only"
+                               {{ in_array($val, $activeTypes) ? 'checked' : '' }}
+                               onchange="this.form.submit()">
+                        {{ $label }}
+                    </label>
+                @endforeach
+            </div>
+
+            {{-- Row 3: Platform checkboxes --}}
+            <div class="flex flex-wrap items-center gap-2">
+                <span class="text-xs text-gray-400 font-medium mr-1">Plateforme :</span>
+                @php $activePlatforms = request('platform', []); if (!is_array($activePlatforms)) $activePlatforms = [$activePlatforms]; @endphp
+                @foreach(['facebook' => 'Facebook', 'instagram' => 'Instagram', 'threads' => 'Threads', 'youtube' => 'YouTube', 'bluesky' => 'Bluesky', 'telegram' => 'Telegram', 'reddit' => 'Reddit'] as $slug => $name)
+                    <label class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium cursor-pointer transition-colors {{ in_array($slug, $activePlatforms) ? 'bg-indigo-100 text-indigo-700' : 'bg-gray-100 text-gray-500 hover:bg-gray-200' }}">
+                        <input type="checkbox" name="platform[]" value="{{ $slug }}" class="sr-only"
+                               {{ in_array($slug, $activePlatforms) ? 'checked' : '' }}
+                               onchange="this.form.submit()">
+                        {{ $name }}
+                    </label>
+                @endforeach
+            </div>
+        </form>
 
         {{-- Bulk action bar --}}
         <div x-show="selectedIds.length > 0" x-cloak x-transition class="bg-indigo-50 rounded-2xl border border-indigo-200 p-4 flex flex-wrap items-center justify-between gap-3">
@@ -85,84 +99,250 @@
             </div>
         </div>
 
-        {{-- Items list --}}
-        <div class="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
-            @if($items->count() > 0)
-                <div class="divide-y divide-gray-100">
-                    @foreach($items as $item)
-                        <div class="p-4 flex items-start gap-3 hover:bg-gray-50/60 transition-colors"
-                             :class="{ 'bg-indigo-50/30': selectedIds.includes({{ $item->id }}) }">
+        {{-- Conversation list --}}
+        <div class="space-y-3">
+            @if($conversations->count() > 0)
+                @foreach($conversations as $convo)
+                    @php
+                        $items = $convo->items;
+                        $isSingle = $items->count() === 1;
+                        $firstItem = $items->first();
+                        $latestItem = $items->sortByDesc('posted_at')->first();
+                        $itemIds = $items->pluck('id')->toArray();
+                        $convoKey = 'convo_' . md5($convo->key);
+                    @endphp
+                    <div class="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden"
+                         x-data="{ open: {{ $isSingle ? 'true' : 'false' }} }">
+
+                        {{-- Conversation header --}}
+                        <div class="p-4 flex items-start gap-3 cursor-pointer hover:bg-gray-50/60 transition-colors"
+                             @click="open = !open"
+                             :class="{ 'border-b border-gray-100': open && !{{ $isSingle ? 'true' : 'false' }} }">
 
                             {{-- Checkbox --}}
                             <input type="checkbox" class="mt-1 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500"
-                                   @change="toggleSelect({{ $item->id }})" :checked="selectedIds.includes({{ $item->id }})">
+                                   @click.stop
+                                   @change="toggleConversation({{ json_encode($itemIds) }})"
+                                   :checked="{{ json_encode($itemIds) }}.every(id => selectedIds.includes(id))">
 
                             {{-- Platform icon --}}
                             <div class="flex-shrink-0 mt-0.5">
-                                <x-platform-icon :platform="$item->platform->slug" size="sm" />
+                                <x-platform-icon :platform="$convo->platform->slug" size="sm" />
                             </div>
 
-                            {{-- Content --}}
+                            {{-- Conversation summary --}}
                             <div class="flex-1 min-w-0">
                                 <div class="flex items-center gap-2 mb-1">
-                                    <span class="font-medium text-sm text-gray-900">{{ $item->author_name ?: $item->author_username ?: 'Anonyme' }}</span>
-                                    @if($item->author_username && $item->author_name && $item->author_username !== $item->author_name)
-                                        <span class="text-xs text-gray-400">@{{ $item->author_username }}</span>
+                                    <span class="font-medium text-sm text-gray-900">{{ $convo->socialAccount->name }}</span>
+                                    @if(!$isSingle)
+                                        <span class="text-xs text-gray-400">{{ $convo->total_count }} message{{ $convo->total_count > 1 ? 's' : '' }}</span>
                                     @endif
-                                    <span class="text-xs text-gray-400">{{ $item->posted_at?->diffForHumans() }}</span>
-                                    @if($item->type === 'dm')
+                                    <span class="text-xs text-gray-400">{{ $convo->latest_at?->diffForHumans() }}</span>
+                                    @if($convo->unread_count > 0)
+                                        <span class="inline-flex items-center justify-center px-1.5 py-0.5 rounded-full text-xs font-bold bg-indigo-500 text-white">{{ $convo->unread_count }}</span>
+                                    @endif
+                                    @if($firstItem->type === 'dm')
                                         <span class="px-1.5 py-0.5 rounded-full bg-purple-100 text-purple-700 text-xs font-medium">MP</span>
-                                    @elseif($item->type === 'reply')
-                                        <span class="px-1.5 py-0.5 rounded-full bg-blue-100 text-blue-700 text-xs font-medium">Réponse</span>
-                                    @endif
-                                    @if($item->status === 'unread')
-                                        <span class="w-2 h-2 rounded-full bg-indigo-500 flex-shrink-0"></span>
-                                    @endif
-                                    @if($item->status === 'replied')
-                                        <span class="px-1.5 py-0.5 rounded-full bg-green-100 text-green-700 text-xs font-medium">Répondu</span>
                                     @endif
                                 </div>
-                                <p class="text-sm text-gray-700 line-clamp-2">{{ $item->content }}</p>
-                                @if($item->reply_content)
-                                    <div class="mt-2 pl-3 border-l-2 border-indigo-200">
-                                        <p class="text-xs text-indigo-600 font-medium mb-0.5">Votre réponse :</p>
-                                        <p class="text-sm text-gray-600 line-clamp-2">{{ $item->reply_content }}</p>
+                                @if($isSingle)
+                                    {{-- Single item: show full details inline --}}
+                                    <div class="flex items-center gap-2 mb-1">
+                                        <span class="text-sm font-medium text-gray-700">{{ $firstItem->author_name ?: $firstItem->author_username ?: 'Anonyme' }}</span>
+                                        @if($firstItem->author_username && $firstItem->author_name && $firstItem->author_username !== $firstItem->author_name)
+                                            <span class="text-xs text-gray-400">@{{ $firstItem->author_username }}</span>
+                                        @endif
+                                        @if($firstItem->type === 'reply')
+                                            <span class="px-1.5 py-0.5 rounded-full bg-blue-100 text-blue-700 text-xs font-medium">Réponse</span>
+                                        @endif
+                                        @if($firstItem->status === 'replied')
+                                            <span class="px-1.5 py-0.5 rounded-full bg-green-100 text-green-700 text-xs font-medium">Répondu</span>
+                                        @endif
                                     </div>
+                                    <p class="text-sm text-gray-700 line-clamp-2">{{ $firstItem->content }}</p>
+                                    @if($firstItem->reply_content)
+                                        <div class="mt-2 pl-3 border-l-2 border-indigo-200">
+                                            <p class="text-xs text-indigo-600 font-medium mb-0.5">Votre réponse :</p>
+                                            <p class="text-sm text-gray-600 line-clamp-2">{{ $firstItem->reply_content }}</p>
+                                        </div>
+                                    @endif
+                                @else
+                                    {{-- Multi-item: show preview --}}
+                                    <p class="text-sm text-gray-500 line-clamp-1">{{ Str::limit($firstItem->content, 100) }}</p>
                                 @endif
-                                <div class="mt-1 text-xs text-gray-400">
-                                    {{ $item->socialAccount->name }}
-                                </div>
                             </div>
 
                             {{-- Actions --}}
-                            <div class="flex items-center gap-1 flex-shrink-0">
-                                @if($item->status !== 'replied')
-                                    <button @click="openReplyModal({{ $item->id }}, {{ json_encode($item->content) }}, {{ json_encode($item->author_name ?: $item->author_username) }})"
+                            <div class="flex items-center gap-1 flex-shrink-0" @click.stop>
+                                @if($isSingle && $firstItem->status !== 'replied')
+                                    <button @click="openReplyModal({{ $firstItem->id }}, {{ json_encode($firstItem->content) }}, {{ json_encode($firstItem->author_name ?: $firstItem->author_username) }})"
                                             class="p-1.5 text-gray-400 hover:text-indigo-600 transition-colors rounded-lg hover:bg-indigo-50" title="Répondre">
                                         <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1.5">
                                             <path stroke-linecap="round" stroke-linejoin="round" d="M9 15 3 9m0 0 6-6M3 9h12a6 6 0 0 1 0 12h-3" />
                                         </svg>
                                     </button>
-                                    <button @click="generateAiSingle({{ $item->id }})"
-                                            class="p-1.5 text-gray-400 hover:text-indigo-600 transition-colors rounded-lg hover:bg-indigo-50" title="Suggestion IA">
-                                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1.5">
-                                            <path stroke-linecap="round" stroke-linejoin="round" d="M9.813 15.904 9 18.75l-.813-2.846a4.5 4.5 0 0 0-3.09-3.09L2.25 12l2.846-.813a4.5 4.5 0 0 0 3.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 0 0 3.09 3.09L15.75 12l-2.846.813a4.5 4.5 0 0 0-3.09 3.09ZM18.259 8.715 18 9.75l-.259-1.035a3.375 3.375 0 0 0-2.455-2.456L14.25 6l1.036-.259a3.375 3.375 0 0 0 2.455-2.456L18 2.25l.259 1.035a3.375 3.375 0 0 0 2.455 2.456L21.75 6l-1.036.259a3.375 3.375 0 0 0-2.455 2.456Z" />
-                                        </svg>
-                                    </button>
                                 @endif
-                                @if($item->post_url)
-                                    <a href="{{ $item->post_url }}" target="_blank" class="p-1.5 text-gray-400 hover:text-gray-600 transition-colors rounded-lg hover:bg-gray-100" title="Voir sur la plateforme">
+                                @if($convo->post_url)
+                                    <a href="{{ $convo->post_url }}" target="_blank" class="p-1.5 text-gray-400 hover:text-gray-600 transition-colors rounded-lg hover:bg-gray-100" title="Voir sur la plateforme">
                                         <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1.5">
                                             <path stroke-linecap="round" stroke-linejoin="round" d="M13.5 6H5.25A2.25 2.25 0 0 0 3 8.25v10.5A2.25 2.25 0 0 0 5.25 21h10.5A2.25 2.25 0 0 0 18 18.75V10.5m-10.5 6L21 3m0 0h-5.25M21 3v5.25" />
                                         </svg>
                                     </a>
                                 @endif
+                                @if(!$isSingle)
+                                    <button class="p-1.5 text-gray-400 hover:text-gray-600 transition-colors rounded-lg hover:bg-gray-100" @click.stop="open = !open">
+                                        <svg class="w-5 h-5 transition-transform" :class="open && 'rotate-180'" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1.5">
+                                            <path stroke-linecap="round" stroke-linejoin="round" d="m19.5 8.25-7.5 7.5-7.5-7.5" />
+                                        </svg>
+                                    </button>
+                                @endif
                             </div>
                         </div>
-                    @endforeach
-                </div>
+
+                        {{-- Conversation messages (collapsible for multi-item) --}}
+                        @if(!$isSingle)
+                            <div x-show="open" x-collapse>
+                                <div class="divide-y divide-gray-50">
+                                    @php
+                                        // Separate top-level and nested items
+                                        $topLevel = $items->filter(fn($i) => empty($i->parent_id));
+                                        $nested = $items->filter(fn($i) => !empty($i->parent_id))->groupBy('parent_id');
+                                    @endphp
+                                    @foreach($topLevel as $item)
+                                        {{-- Top-level message --}}
+                                        <div class="px-4 py-3 pl-12 hover:bg-gray-50/60 transition-colors">
+                                            <div class="flex items-start gap-3">
+                                                <div class="flex-1 min-w-0">
+                                                    <div class="flex items-center gap-2 mb-1">
+                                                        <span class="font-medium text-sm text-gray-900">{{ $item->author_name ?: $item->author_username ?: 'Anonyme' }}</span>
+                                                        @if($item->author_username && $item->author_name && $item->author_username !== $item->author_name)
+                                                            <span class="text-xs text-gray-400">@{{ $item->author_username }}</span>
+                                                        @endif
+                                                        <span class="text-xs text-gray-400">{{ $item->posted_at?->diffForHumans() }}</span>
+                                                        @if($item->status === 'unread')
+                                                            <span class="w-2 h-2 rounded-full bg-indigo-500 flex-shrink-0"></span>
+                                                        @endif
+                                                        @if($item->status === 'replied')
+                                                            <span class="px-1.5 py-0.5 rounded-full bg-green-100 text-green-700 text-xs font-medium">Répondu</span>
+                                                        @endif
+                                                    </div>
+                                                    <p class="text-sm text-gray-700">{{ $item->content }}</p>
+                                                    @if($item->reply_content)
+                                                        <div class="mt-2 pl-3 border-l-2 border-indigo-200">
+                                                            <p class="text-xs text-indigo-600 font-medium mb-0.5">Votre réponse :</p>
+                                                            <p class="text-sm text-gray-600">{{ $item->reply_content }}</p>
+                                                        </div>
+                                                    @endif
+                                                </div>
+                                                @if($item->status !== 'replied')
+                                                    <div class="flex items-center gap-1 flex-shrink-0">
+                                                        <button @click="openReplyModal({{ $item->id }}, {{ json_encode($item->content) }}, {{ json_encode($item->author_name ?: $item->author_username) }})"
+                                                                class="p-1.5 text-gray-400 hover:text-indigo-600 transition-colors rounded-lg hover:bg-indigo-50" title="Répondre">
+                                                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1.5">
+                                                                <path stroke-linecap="round" stroke-linejoin="round" d="M9 15 3 9m0 0 6-6M3 9h12a6 6 0 0 1 0 12h-3" />
+                                                            </svg>
+                                                        </button>
+                                                        <button @click="generateAiSingle({{ $item->id }})"
+                                                                class="p-1.5 text-gray-400 hover:text-indigo-600 transition-colors rounded-lg hover:bg-indigo-50" title="Suggestion IA">
+                                                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1.5">
+                                                                <path stroke-linecap="round" stroke-linejoin="round" d="M9.813 15.904 9 18.75l-.813-2.846a4.5 4.5 0 0 0-3.09-3.09L2.25 12l2.846-.813a4.5 4.5 0 0 0 3.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 0 0 3.09 3.09L15.75 12l-2.846.813a4.5 4.5 0 0 0-3.09 3.09ZM18.259 8.715 18 9.75l-.259-1.035a3.375 3.375 0 0 0-2.455-2.456L14.25 6l1.036-.259a3.375 3.375 0 0 0 2.455-2.456L18 2.25l.259 1.035a3.375 3.375 0 0 0 2.455 2.456L21.75 6l-1.036.259a3.375 3.375 0 0 0-2.455 2.456Z" />
+                                                            </svg>
+                                                        </button>
+                                                    </div>
+                                                @endif
+                                            </div>
+
+                                            {{-- Nested replies --}}
+                                            @if($nested->has($item->external_id))
+                                                <div class="mt-2 ml-4 border-l-2 border-gray-200 pl-3 space-y-2">
+                                                    @foreach($nested->get($item->external_id) as $reply)
+                                                        <div class="py-2">
+                                                            <div class="flex items-start gap-3">
+                                                                <div class="flex-1 min-w-0">
+                                                                    <div class="flex items-center gap-2 mb-1">
+                                                                        <span class="font-medium text-xs text-gray-800">{{ $reply->author_name ?: $reply->author_username ?: 'Anonyme' }}</span>
+                                                                        <span class="text-xs text-gray-400">{{ $reply->posted_at?->diffForHumans() }}</span>
+                                                                        @if($reply->status === 'unread')
+                                                                            <span class="w-1.5 h-1.5 rounded-full bg-indigo-500"></span>
+                                                                        @endif
+                                                                        @if($reply->status === 'replied')
+                                                                            <span class="px-1 py-0.5 rounded-full bg-green-100 text-green-700 text-xs font-medium">Répondu</span>
+                                                                        @endif
+                                                                    </div>
+                                                                    <p class="text-sm text-gray-600">{{ $reply->content }}</p>
+                                                                    @if($reply->reply_content)
+                                                                        <div class="mt-1 pl-3 border-l-2 border-indigo-200">
+                                                                            <p class="text-xs text-indigo-600 font-medium mb-0.5">Votre réponse :</p>
+                                                                            <p class="text-xs text-gray-600">{{ $reply->reply_content }}</p>
+                                                                        </div>
+                                                                    @endif
+                                                                </div>
+                                                                @if($reply->status !== 'replied')
+                                                                    <button @click="openReplyModal({{ $reply->id }}, {{ json_encode($reply->content) }}, {{ json_encode($reply->author_name ?: $reply->author_username) }})"
+                                                                            class="p-1 text-gray-400 hover:text-indigo-600 transition-colors rounded-lg hover:bg-indigo-50 flex-shrink-0" title="Répondre">
+                                                                        <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1.5">
+                                                                            <path stroke-linecap="round" stroke-linejoin="round" d="M9 15 3 9m0 0 6-6M3 9h12a6 6 0 0 1 0 12h-3" />
+                                                                        </svg>
+                                                                    </button>
+                                                                @endif
+                                                            </div>
+                                                        </div>
+                                                    @endforeach
+                                                </div>
+                                            @endif
+                                        </div>
+                                    @endforeach
+
+                                    {{-- Items with parent_id that don't match any top-level external_id (orphaned nested items) --}}
+                                    @php
+                                        $topLevelExternalIds = $topLevel->pluck('external_id')->filter()->toArray();
+                                        $orphanedNested = $items->filter(fn($i) => !empty($i->parent_id) && !in_array($i->parent_id, $topLevelExternalIds));
+                                    @endphp
+                                    @foreach($orphanedNested as $item)
+                                        <div class="px-4 py-3 pl-12 hover:bg-gray-50/60 transition-colors">
+                                            <div class="flex items-start gap-3">
+                                                <div class="flex-1 min-w-0">
+                                                    <div class="flex items-center gap-2 mb-1">
+                                                        <span class="font-medium text-sm text-gray-900">{{ $item->author_name ?: $item->author_username ?: 'Anonyme' }}</span>
+                                                        <span class="text-xs text-gray-400">{{ $item->posted_at?->diffForHumans() }}</span>
+                                                        @if($item->type === 'reply')
+                                                            <span class="px-1.5 py-0.5 rounded-full bg-blue-100 text-blue-700 text-xs font-medium">Réponse</span>
+                                                        @endif
+                                                        @if($item->status === 'unread')
+                                                            <span class="w-2 h-2 rounded-full bg-indigo-500 flex-shrink-0"></span>
+                                                        @endif
+                                                        @if($item->status === 'replied')
+                                                            <span class="px-1.5 py-0.5 rounded-full bg-green-100 text-green-700 text-xs font-medium">Répondu</span>
+                                                        @endif
+                                                    </div>
+                                                    <p class="text-sm text-gray-700">{{ $item->content }}</p>
+                                                    @if($item->reply_content)
+                                                        <div class="mt-2 pl-3 border-l-2 border-indigo-200">
+                                                            <p class="text-xs text-indigo-600 font-medium mb-0.5">Votre réponse :</p>
+                                                            <p class="text-sm text-gray-600">{{ $item->reply_content }}</p>
+                                                        </div>
+                                                    @endif
+                                                </div>
+                                                @if($item->status !== 'replied')
+                                                    <div class="flex items-center gap-1 flex-shrink-0">
+                                                        <button @click="openReplyModal({{ $item->id }}, {{ json_encode($item->content) }}, {{ json_encode($item->author_name ?: $item->author_username) }})"
+                                                                class="p-1.5 text-gray-400 hover:text-indigo-600 transition-colors rounded-lg hover:bg-indigo-50" title="Répondre">
+                                                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1.5">
+                                                                <path stroke-linecap="round" stroke-linejoin="round" d="M9 15 3 9m0 0 6-6M3 9h12a6 6 0 0 1 0 12h-3" />
+                                                            </svg>
+                                                        </button>
+                                                    </div>
+                                                @endif
+                                            </div>
+                                        </div>
+                                    @endforeach
+                                </div>
+                            </div>
+                        @endif
+                    </div>
+                @endforeach
             @else
-                <div class="p-12 text-center">
+                <div class="bg-white rounded-2xl shadow-sm border border-gray-100 p-12 text-center">
                     <div class="w-16 h-16 rounded-2xl bg-gray-50 flex items-center justify-center mx-auto mb-4">
                         <svg class="w-8 h-8 text-gray-300" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1">
                             <path stroke-linecap="round" stroke-linejoin="round" d="M2.25 13.5h3.86a2.25 2.25 0 0 1 2.012 1.244l.256.512a2.25 2.25 0 0 0 2.013 1.244h2.21a2.25 2.25 0 0 0 2.013-1.244l.256-.512a2.25 2.25 0 0 1 2.013-1.244h3.859m-17.06 0a1.772 1.772 0 0 0-1.543 2.575l1.838 3.524A2.25 2.25 0 0 0 5.8 21h12.4c.856 0 1.638-.486 2.018-1.257l1.838-3.524a1.772 1.772 0 0 0-1.543-2.575m-17.06 0V4.932c0-.67.588-1.182 1.25-1.12a59.015 59.015 0 0 1 11.57 0c.662.063 1.25.45 1.25 1.12v8.568" />
@@ -175,9 +355,9 @@
         </div>
 
         {{-- Pagination --}}
-        @if($items->hasPages())
+        @if($conversations->hasPages())
             <div class="mt-4">
-                {{ $items->withQueryString()->links() }}
+                {{ $conversations->withQueryString()->links() }}
             </div>
         @endif
 
@@ -279,12 +459,16 @@ function inboxManager() {
 
         csrfToken: document.querySelector('meta[name="csrf-token"]').getAttribute('content'),
 
-        toggleSelect(id) {
-            const idx = this.selectedIds.indexOf(id);
-            if (idx > -1) {
-                this.selectedIds.splice(idx, 1);
+        toggleConversation(ids) {
+            const allSelected = ids.every(id => this.selectedIds.includes(id));
+            if (allSelected) {
+                this.selectedIds = this.selectedIds.filter(id => !ids.includes(id));
             } else {
-                this.selectedIds.push(id);
+                ids.forEach(id => {
+                    if (!this.selectedIds.includes(id)) {
+                        this.selectedIds.push(id);
+                    }
+                });
             }
         },
 
@@ -354,9 +538,8 @@ function inboxManager() {
 
         async generateAiSingle(id) {
             this.openReplyModal(id, '', '');
-
-            // Find the item content from the DOM
             this.aiLoading = true;
+
             try {
                 const resp = await fetch(`/inbox/${id}/ai-suggest`, {
                     method: 'POST',
@@ -460,7 +643,6 @@ function inboxManager() {
                     },
                     body: JSON.stringify({ items }),
                 });
-                const data = await resp.json();
 
                 this.bulkModalOpen = false;
                 location.reload();
@@ -475,7 +657,7 @@ function inboxManager() {
             this.syncing = true;
 
             try {
-                const resp = await fetch('/inbox/sync', {
+                await fetch('/inbox/sync', {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json',
@@ -483,8 +665,6 @@ function inboxManager() {
                         'Accept': 'application/json',
                     },
                 });
-                const data = await resp.json();
-
                 location.reload();
             } catch (e) {
                 alert('Erreur de connexion');
