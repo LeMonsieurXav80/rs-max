@@ -397,7 +397,7 @@
             </div>
             <div class="flex items-center gap-2 text-sm text-gray-500">
                 <span>Par page :</span>
-                <select onchange="const url = new URL(window.location.href); url.searchParams.set('per_page', this.value); url.searchParams.delete('page'); window.location.href = url.toString();"
+                <select onchange="var p = new URLSearchParams(window.location.search); p.set('per_page', this.value); p.delete('page'); window.location.href = window.location.pathname + '?' + p.toString();"
                         class="rounded-lg border-gray-200 text-sm py-1 pl-2 pr-7">
                     @foreach([15, 25, 50, 100] as $opt)
                         <option value="{{ $opt }}" {{ (int) request('per_page', 15) === $opt ? 'selected' : '' }}>{{ $opt }}</option>
