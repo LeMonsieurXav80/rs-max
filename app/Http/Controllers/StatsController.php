@@ -4,38 +4,170 @@ namespace App\Http\Controllers;
 
 use App\Models\ExternalPost;
 use App\Models\PostPlatform;
+use App\Models\SocialAccountSnapshot;
 use Illuminate\Http\Request;
 use Illuminate\View\View;
 
 class StatsController extends Controller
 {
     /**
-     * Display the statistics dashboard with filters.
+     * Vue d'ensemble — KPIs + filtres.
      */
-    public function dashboard(Request $request): View
+    public function overview(Request $request): View
     {
         $user = $request->user();
-
-        // Get user's active social accounts for filter (per-user is_active)
         $socialAccounts = $user->activeSocialAccounts()->with('platform')->orderBy('name')->get();
 
-        // Get filters
-        $selectedAccounts = $request->input('accounts', []);
-        $period = $request->input('period', '30');
-        $startDate = $request->input('start_date');
-        $endDate = $request->input('end_date');
+        [$selectedAccounts, $period, $startDate, $endDate] = $this->getFilters($request);
+        $allPosts = $this->getFilteredPosts($user, $selectedAccounts, $period, $startDate, $endDate);
 
-        // Build PostPlatform query (posts published via the app)
+        $stats = $this->calculateAggregateStats($allPosts);
+        $statsByPlatform = $this->getStatsByPlatform($allPosts);
+        $statsByAccount = $this->getStatsByAccount($allPosts);
+
+        return view('stats.overview', compact(
+            'socialAccounts',
+            'selectedAccounts',
+            'period',
+            'startDate',
+            'endDate',
+            'stats',
+            'statsByPlatform',
+            'statsByAccount',
+        ));
+    }
+
+    /**
+     * Audience — évolution followers par compte.
+     */
+    public function audience(Request $request): View
+    {
+        $user = $request->user();
+        $socialAccounts = $user->activeSocialAccounts()->with('platform')->orderBy('name')->get();
+
+        $selectedAccounts = $request->input('accounts', []);
+        $period = $request->input('period', '90');
+        $accountIds = ! empty($selectedAccounts)
+            ? $selectedAccounts
+            : $socialAccounts->pluck('id')->toArray();
+
+        // Determine date range for snapshots
+        if ($period === 'all') {
+            $fromDate = null;
+        } else {
+            $fromDate = now()->subDays((int) $period)->toDateString();
+        }
+
+        // Fetch snapshots
+        $snapshotsQuery = SocialAccountSnapshot::whereIn('social_account_id', $accountIds)
+            ->orderBy('date');
+
+        if ($fromDate) {
+            $snapshotsQuery->where('date', '>=', $fromDate);
+        }
+
+        $snapshots = $snapshotsQuery->get();
+
+        // Prepare chart data: group by account
+        $chartData = [];
+        foreach ($socialAccounts as $account) {
+            if (! empty($selectedAccounts) && ! in_array($account->id, $selectedAccounts)) {
+                continue;
+            }
+
+            $accountSnapshots = $snapshots->where('social_account_id', $account->id)->values();
+            $chartData[] = [
+                'account' => $account,
+                'labels' => $accountSnapshots->pluck('date')->map(fn ($d) => $d->format('Y-m-d'))->toArray(),
+                'data' => $accountSnapshots->pluck('followers_count')->toArray(),
+            ];
+        }
+
+        $totalFollowers = $socialAccounts->sum('followers_count');
+
+        return view('stats.audience', compact(
+            'socialAccounts',
+            'selectedAccounts',
+            'period',
+            'chartData',
+            'totalFollowers',
+        ));
+    }
+
+    /**
+     * Publications — top posts + tendances engagement.
+     */
+    public function publications(Request $request): View
+    {
+        $user = $request->user();
+        $socialAccounts = $user->activeSocialAccounts()->with('platform')->orderBy('name')->get();
+
+        [$selectedAccounts, $period, $startDate, $endDate] = $this->getFilters($request);
+        $allPosts = $this->getFilteredPosts($user, $selectedAccounts, $period, $startDate, $endDate);
+
+        $stats = $this->calculateAggregateStats($allPosts);
+        $topPosts = $this->getTopPosts($allPosts, 10);
+        $timeline = $this->getTimelineData($allPosts);
+
+        return view('stats.publications', compact(
+            'socialAccounts',
+            'selectedAccounts',
+            'period',
+            'startDate',
+            'endDate',
+            'stats',
+            'topPosts',
+            'timeline',
+        ));
+    }
+
+    /**
+     * Plateformes — comparaison cross-platform.
+     */
+    public function platforms(Request $request): View
+    {
+        $user = $request->user();
+        $socialAccounts = $user->activeSocialAccounts()->with('platform')->orderBy('name')->get();
+
+        [$selectedAccounts, $period, $startDate, $endDate] = $this->getFilters($request);
+        $allPosts = $this->getFilteredPosts($user, $selectedAccounts, $period, $startDate, $endDate);
+
+        $statsByPlatform = $this->getStatsByPlatform($allPosts);
+        $statsByAccount = $this->getStatsByAccount($allPosts);
+
+        return view('stats.platforms', compact(
+            'socialAccounts',
+            'selectedAccounts',
+            'period',
+            'startDate',
+            'endDate',
+            'statsByPlatform',
+            'statsByAccount',
+        ));
+    }
+
+    // ── Shared helpers ───────────────────────────────────────
+
+    private function getFilters(Request $request): array
+    {
+        return [
+            $request->input('accounts', []),
+            $request->input('period', '30'),
+            $request->input('start_date'),
+            $request->input('end_date'),
+        ];
+    }
+
+    private function getFilteredPosts($user, array $selectedAccounts, string $period, ?string $startDate, ?string $endDate)
+    {
         $ppQuery = PostPlatform::with(['post', 'platform', 'socialAccount'])
             ->where('status', 'published')
             ->whereNotNull('external_id')
             ->whereNotNull('metrics');
 
-        // Build ExternalPost query (imported historical posts)
         $epQuery = ExternalPost::with(['platform', 'socialAccount'])
             ->whereNotNull('metrics');
 
-        // Filter by accounts (only show data for active accounts)
         if (! empty($selectedAccounts)) {
             $ppQuery->whereIn('social_account_id', $selectedAccounts);
             $epQuery->whereIn('social_account_id', $selectedAccounts);
@@ -45,7 +177,6 @@ class StatsController extends Controller
             $epQuery->whereIn('social_account_id', $accountIds);
         }
 
-        // Filter by date range
         if ($startDate && $endDate) {
             $ppQuery->whereBetween('published_at', [$startDate, $endDate]);
             $epQuery->whereBetween('published_at', [$startDate, $endDate]);
@@ -58,47 +189,12 @@ class StatsController extends Controller
         $postPlatforms = $ppQuery->orderBy('published_at', 'desc')->get();
         $externalPosts = $epQuery->orderBy('published_at', 'desc')->get();
 
-        // Deduplicate: remove external posts that already exist as PostPlatform
-        // (same platform + same external_id)
-        $ppExternalIds = $postPlatforms->map(fn ($pp) => $pp->platform_id.'_'.$pp->external_id)->filter()->toArray();
-        $externalPosts = $externalPosts->reject(fn ($ep) => in_array($ep->platform_id.'_'.$ep->external_id, $ppExternalIds));
+        $ppExternalIds = $postPlatforms->map(fn ($pp) => $pp->platform_id . '_' . $pp->external_id)->filter()->toArray();
+        $externalPosts = $externalPosts->reject(fn ($ep) => in_array($ep->platform_id . '_' . $ep->external_id, $ppExternalIds));
 
-        // Merge into unified collection
-        $allPosts = $postPlatforms->concat($externalPosts);
-
-        // Calculate aggregate stats
-        $stats = $this->calculateAggregateStats($allPosts);
-
-        // Get top posts (by engagement)
-        $topPosts = $this->getTopPosts($allPosts, 10);
-
-        // Get stats by platform
-        $statsByPlatform = $this->getStatsByPlatform($allPosts);
-
-        // Get stats by account
-        $statsByAccount = $this->getStatsByAccount($allPosts);
-
-        // Get timeline data for chart (daily aggregates)
-        $timeline = $this->getTimelineData($allPosts);
-
-        return view('stats.dashboard', compact(
-            'socialAccounts',
-            'selectedAccounts',
-            'period',
-            'startDate',
-            'endDate',
-            'stats',
-            'topPosts',
-            'statsByPlatform',
-            'statsByAccount',
-            'timeline',
-            'postPlatforms'
-        ));
+        return $postPlatforms->concat($externalPosts);
     }
 
-    /**
-     * Calculate aggregate statistics.
-     */
     private function calculateAggregateStats($posts): array
     {
         $totalViews = 0;
@@ -131,9 +227,6 @@ class StatsController extends Controller
         ];
     }
 
-    /**
-     * Get top posts by engagement.
-     */
     private function getTopPosts($posts, int $limit = 10): array
     {
         $postStats = [];
@@ -142,8 +235,7 @@ class StatsController extends Controller
             $metrics = $item->metrics ?? [];
 
             if ($item instanceof ExternalPost) {
-                // External posts: each is unique, use 'ext_{id}' as key
-                $key = 'ext_'.$item->id;
+                $key = 'ext_' . $item->id;
                 $postStats[$key] = [
                     'content' => $item->content,
                     'url' => $item->post_url,
@@ -157,10 +249,10 @@ class StatsController extends Controller
                     'engagement' => 0,
                 ];
             } else {
-                // PostPlatform: group by post_id
                 $postId = $item->post_id;
                 if (! isset($postStats[$postId])) {
                     $thumbnail = null;
+                    $isVideo = false;
                     $media = $item->post->media ?? [];
                     if (! empty($media) && isset($media[0]['url'])) {
                         $filename = basename($media[0]['url']);
@@ -177,7 +269,7 @@ class StatsController extends Controller
                         'post' => $item->post,
                         'is_external' => false,
                         'thumbnail' => $thumbnail,
-                        'is_video' => $isVideo ?? false,
+                        'is_video' => $isVideo,
                         'views' => 0,
                         'likes' => 0,
                         'comments' => 0,
@@ -193,20 +285,15 @@ class StatsController extends Controller
             }
         }
 
-        // Calculate engagement for each post
         foreach ($postStats as &$stat) {
             $stat['engagement'] = $stat['likes'] + $stat['comments'] + $stat['shares'];
         }
 
-        // Sort by engagement
         usort($postStats, fn ($a, $b) => $b['engagement'] <=> $a['engagement']);
 
         return array_slice($postStats, 0, $limit);
     }
 
-    /**
-     * Get stats grouped by platform.
-     */
     private function getStatsByPlatform($posts): array
     {
         $platformStats = [];
@@ -237,9 +324,6 @@ class StatsController extends Controller
         return array_values($platformStats);
     }
 
-    /**
-     * Get stats grouped by account.
-     */
     private function getStatsByAccount($posts): array
     {
         $accountStats = [];
@@ -267,7 +351,6 @@ class StatsController extends Controller
             $accountStats[$accountId]['shares'] += $metrics['shares'] ?? 0;
         }
 
-        // Sort by total engagement
         usort($accountStats, function ($a, $b) {
             $engagementA = $a['likes'] + $a['comments'] + $a['shares'];
             $engagementB = $b['likes'] + $b['comments'] + $b['shares'];
@@ -278,9 +361,6 @@ class StatsController extends Controller
         return $accountStats;
     }
 
-    /**
-     * Get timeline data for charts (daily aggregates).
-     */
     private function getTimelineData($posts): array
     {
         $timeline = [];

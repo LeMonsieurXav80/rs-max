@@ -3,19 +3,22 @@
 namespace App\Console\Commands;
 
 use App\Models\SocialAccount;
+use App\Models\SocialAccountSnapshot;
 use App\Services\FollowersService;
 use Illuminate\Console\Command;
 
 class SyncFollowersCommand extends Command
 {
     protected $signature = 'followers:sync
-                            {--account= : Sync followers for a specific social account ID}';
+                            {--account= : Sync followers for a specific social account ID}
+                            {--no-snapshot : Skip snapshot creation (useful for manual updates)}';
 
     protected $description = 'Sync follower counts from all social media platforms';
 
     public function handle(FollowersService $followersService): int
     {
         $this->info('Starting followers sync...');
+        $shouldSnapshot = ! $this->option('no-snapshot');
 
         if ($accountId = $this->option('account')) {
             $account = SocialAccount::with('platform')->find($accountId);
@@ -28,6 +31,10 @@ class SyncFollowersCommand extends Command
 
             $count = $followersService->syncFollowers($account);
             $this->info("{$account->name} ({$account->platform->slug}): " . ($count !== null ? number_format($count) : 'failed'));
+
+            if ($shouldSnapshot && $count !== null) {
+                $this->createSnapshot($account, $count);
+            }
 
             return self::SUCCESS;
         }
@@ -53,6 +60,9 @@ class SyncFollowersCommand extends Command
 
             if ($count !== null) {
                 $synced++;
+                if ($shouldSnapshot) {
+                    $this->createSnapshot($account, $count);
+                }
             } else {
                 $failed++;
             }
@@ -74,5 +84,20 @@ class SyncFollowersCommand extends Command
         $this->info('Followers sync complete!');
 
         return self::SUCCESS;
+    }
+
+    private function createSnapshot(SocialAccount $account, int $count): void
+    {
+        SocialAccountSnapshot::updateOrCreate(
+            [
+                'social_account_id' => $account->id,
+                'date' => now()->toDateString(),
+                'granularity' => 'daily',
+            ],
+            [
+                'followers_count' => $count,
+                'created_at' => now(),
+            ]
+        );
     }
 }

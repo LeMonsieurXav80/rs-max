@@ -72,7 +72,10 @@ Route::middleware(['auth', 'verified'])->group(function () {
 
     // Stats
     Route::post('posts/{post}/sync-stats', [PostController::class, 'syncStats'])->name('posts.syncStats');
-    Route::get('stats/dashboard', [StatsController::class, 'dashboard'])->name('stats.dashboard');
+    Route::get('stats', [StatsController::class, 'overview'])->name('stats.overview');
+    Route::get('stats/audience', [StatsController::class, 'audience'])->name('stats.audience');
+    Route::get('stats/publications', [StatsController::class, 'publications'])->name('stats.publications');
+    Route::get('stats/platforms', [StatsController::class, 'platforms'])->name('stats.platforms');
 
     // Manual publishing
     Route::post('posts/{post}/publish', [PublishController::class, 'publishAll'])->name('posts.publish');

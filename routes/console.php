@@ -22,3 +22,6 @@ match ($syncFreq) {
     'daily' => $statsSchedule->daily(),
     default => $statsSchedule->hourly(),
 };
+
+// Downsample follower snapshots (1st of each month at 3 AM)
+Schedule::command('snapshots:downsample')->monthlyOn(1, '03:00');
