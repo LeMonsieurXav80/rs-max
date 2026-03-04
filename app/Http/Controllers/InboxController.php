@@ -339,17 +339,6 @@ class InboxController extends Controller
             return null;
         }
 
-        $language = $account->languages[0] ?? 'fr';
-        $languageLabel = match ($language) {
-            'fr' => 'français',
-            'en' => 'anglais',
-            'pt' => 'portugais',
-            'es' => 'espagnol',
-            'de' => 'allemand',
-            'it' => 'italien',
-            default => $language,
-        };
-
         $typeLabel = match ($item->type) {
             'dm' => 'message privé',
             'comment' => 'commentaire',
@@ -380,7 +369,7 @@ class InboxController extends Controller
                 ->get();
         }
 
-        $prompt = "Réponds à ce {$typeLabel} en {$languageLabel}.\n\n";
+        $prompt = "Réponds à ce {$typeLabel} dans la même langue que le message de l'utilisateur.\n\n";
 
         if ($threadItems->isNotEmpty()) {
             $prompt .= "Contexte de la conversation :\n";
