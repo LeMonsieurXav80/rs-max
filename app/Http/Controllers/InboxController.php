@@ -36,7 +36,10 @@ class InboxController extends Controller
             ->with(['socialAccount.platform', 'platform']);
 
         // Status filter (single value, mutually exclusive)
-        if ($status = $request->input('status')) {
+        $status = $request->input('status', '');
+        if ($status === 'unreplied') {
+            $query->whereIn('status', ['unread', 'read']);
+        } elseif ($status !== '') {
             $query->where('status', $status);
         } else {
             $query->where('status', '!=', 'archived');
@@ -116,10 +119,25 @@ class InboxController extends Controller
 
         $counts = [
             'total' => InboxItem::whereIn('social_account_id', $accountIds)->where('status', '!=', 'archived')->count(),
-            'unread' => InboxItem::whereIn('social_account_id', $accountIds)->where('status', 'unread')->count(),
-            'read' => InboxItem::whereIn('social_account_id', $accountIds)->where('status', 'read')->count(),
+            'unreplied' => InboxItem::whereIn('social_account_id', $accountIds)->whereIn('status', ['unread', 'read'])->count(),
             'replied' => InboxItem::whereIn('social_account_id', $accountIds)->where('status', 'replied')->count(),
         ];
+
+        // Scheduled replies progress
+        $scheduledPending = InboxItem::whereIn('social_account_id', $accountIds)
+            ->whereNotNull('reply_scheduled_at')
+            ->whereNull('replied_at')
+            ->orderBy('reply_scheduled_at', 'asc')
+            ->get(['id', 'reply_scheduled_at']);
+
+        $scheduledInfo = null;
+        if ($scheduledPending->isNotEmpty()) {
+            $scheduledInfo = [
+                'pending' => $scheduledPending->count(),
+                'next_at' => $scheduledPending->first()->reply_scheduled_at,
+                'last_at' => $scheduledPending->last()->reply_scheduled_at,
+            ];
+        }
 
         $socialAccounts = ($user->is_admin
             ? SocialAccount::query()
@@ -129,7 +147,7 @@ class InboxController extends Controller
             ->orderBy('name')
             ->get();
 
-        return view('inbox.index', compact('conversations', 'counts', 'socialAccounts', 'enabledSlugs'));
+        return view('inbox.index', compact('conversations', 'counts', 'socialAccounts', 'enabledSlugs', 'scheduledInfo'));
     }
 
     public function markRead(Request $request): JsonResponse

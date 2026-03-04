@@ -6,24 +6,50 @@
     <div x-data="inboxManager()" class="space-y-6">
 
         {{-- KPI cards --}}
-        <div class="grid grid-cols-2 lg:grid-cols-4 gap-4">
+        <div class="grid grid-cols-3 gap-4">
             <div class="bg-white rounded-2xl shadow-sm border border-gray-100 p-6">
                 <p class="text-3xl font-bold text-gray-900">{{ number_format($counts['total']) }}</p>
                 <p class="text-sm text-gray-500 mt-1">Total</p>
             </div>
             <div class="bg-white rounded-2xl shadow-sm border border-gray-100 p-6">
-                <p class="text-3xl font-bold text-indigo-600">{{ number_format($counts['unread']) }}</p>
-                <p class="text-sm text-gray-500 mt-1">Non lus</p>
-            </div>
-            <div class="bg-white rounded-2xl shadow-sm border border-gray-100 p-6">
-                <p class="text-3xl font-bold text-gray-900">{{ number_format($counts['read']) }}</p>
-                <p class="text-sm text-gray-500 mt-1">Lus</p>
+                <p class="text-3xl font-bold text-amber-600">{{ number_format($counts['unreplied']) }}</p>
+                <p class="text-sm text-gray-500 mt-1">Non répondus</p>
             </div>
             <div class="bg-white rounded-2xl shadow-sm border border-gray-100 p-6">
                 <p class="text-3xl font-bold text-green-600">{{ number_format($counts['replied']) }}</p>
                 <p class="text-sm text-gray-500 mt-1">Répondus</p>
             </div>
         </div>
+
+        {{-- Scheduled replies progress banner --}}
+        @if($scheduledInfo)
+            <div class="bg-indigo-50 border border-indigo-200 rounded-2xl p-4 flex items-center gap-4"
+                 x-data="scheduledCountdown({{ json_encode($scheduledInfo) }})"
+                 x-init="startCountdown()">
+                <div class="flex-shrink-0">
+                    <svg class="w-6 h-6 text-indigo-600 animate-pulse" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1.5">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M12 6v6h4.5m4.5 0a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z" />
+                    </svg>
+                </div>
+                <div class="flex-1 min-w-0">
+                    <p class="text-sm font-semibold text-indigo-900">
+                        <span x-text="pending"></span> réponse(s) planifiée(s) en attente
+                    </p>
+                    <p class="text-xs text-indigo-700 mt-0.5">
+                        Prochaine dans <span x-text="nextIn" class="font-medium"></span>
+                        <template x-if="pending > 1">
+                            <span> &middot; Dernière dans <span x-text="lastIn" class="font-medium"></span></span>
+                        </template>
+                    </p>
+                </div>
+                <div class="flex-shrink-0">
+                    <span class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium bg-indigo-100 text-indigo-700">
+                        <span class="w-2 h-2 rounded-full bg-indigo-500 animate-pulse"></span>
+                        En cours
+                    </span>
+                </div>
+            </div>
+        @endif
 
         {{-- Filters --}}
         <form method="GET" action="{{ route('inbox.index') }}" x-ref="filterForm" class="bg-white rounded-2xl shadow-sm border border-gray-100 p-4 space-y-3">
@@ -32,10 +58,10 @@
                 <div class="flex items-center gap-1 bg-gray-100 rounded-xl p-1">
                     @php $currentStatus = request('status', ''); @endphp
                     <input type="hidden" name="status" x-ref="statusInput" value="{{ $currentStatus }}">
-                    @foreach(['' => 'Tous', 'unread' => 'Non lus', 'read' => 'Lus', 'replied' => 'Répondus', 'archived' => 'Archivés'] as $val => $label)
+                    @foreach(['' => 'Tous', 'unreplied' => 'Non répondus', 'replied' => 'Répondus', 'archived' => 'Archivés'] as $val => $label)
                         <button type="submit"
                                 @click.prevent="$refs.statusInput.value = '{{ $val }}'; $refs.filterForm.submit()"
-                                class="px-3 py-1.5 rounded-lg text-sm font-medium transition-colors {{ $currentStatus === $val ? 'bg-white shadow-sm' . ($val === 'replied' ? ' text-green-600' : ($val === 'archived' ? ' text-gray-600' : ' text-indigo-600')) : 'text-gray-500 hover:text-gray-700' }}">
+                                class="px-3 py-1.5 rounded-lg text-sm font-medium transition-colors {{ $currentStatus === $val ? 'bg-white shadow-sm' . ($val === 'replied' ? ' text-green-600' : ($val === 'archived' ? ' text-gray-600' : ($val === 'unreplied' ? ' text-amber-600' : ' text-indigo-600'))) : 'text-gray-500 hover:text-gray-700' }}">
                             {{ $label }}
                         </button>
                     @endforeach
@@ -773,6 +799,41 @@ function inboxManager() {
                 this.syncing = false;
             }
         },
+    }
+}
+
+function scheduledCountdown(info) {
+    return {
+        pending: info.pending,
+        nextAt: new Date(info.next_at),
+        lastAt: new Date(info.last_at),
+        nextIn: '',
+        lastIn: '',
+        timer: null,
+
+        startCountdown() {
+            this.updateLabels();
+            this.timer = setInterval(() => this.updateLabels(), 30000); // update every 30s
+        },
+
+        updateLabels() {
+            this.nextIn = this.formatDiff(this.nextAt);
+            this.lastIn = this.formatDiff(this.lastAt);
+        },
+
+        formatDiff(date) {
+            const diff = Math.max(0, Math.floor((date - Date.now()) / 1000));
+            if (diff <= 0) return 'quelques secondes';
+            const h = Math.floor(diff / 3600);
+            const m = Math.floor((diff % 3600) / 60);
+            if (h > 0) return h + 'h ' + m + 'min';
+            if (m > 0) return m + ' min';
+            return diff + 's';
+        },
+
+        destroy() {
+            if (this.timer) clearInterval(this.timer);
+        }
     }
 }
 </script>
