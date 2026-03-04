@@ -48,11 +48,6 @@ class BlueskyInboxService implements PlatformInboxInterface
                 $postCid = $post['cid'];
                 $postCreatedAt = $post['record']['createdAt'] ?? null;
 
-                // Skip old posts if since is set
-                if ($since && $postCreatedAt && Carbon::parse($postCreatedAt)->lt($since)) {
-                    continue;
-                }
-
                 $replyCount = $post['replyCount'] ?? 0;
                 if ($replyCount === 0) {
                     continue;
@@ -167,9 +162,6 @@ class BlueskyInboxService implements PlatformInboxInterface
                     }
 
                     $sentAt = isset($msg['sentAt']) ? Carbon::parse($msg['sentAt']) : null;
-                    if ($since && $sentAt && $sentAt->lt($since)) {
-                        continue;
-                    }
 
                     $items->push([
                         'type' => 'dm',

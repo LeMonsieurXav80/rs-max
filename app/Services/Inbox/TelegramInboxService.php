@@ -63,11 +63,6 @@ class TelegramInboxService implements PlatformInboxInterface
 
                 $postedAt = isset($message['date']) ? Carbon::createFromTimestamp($message['date']) : null;
 
-                // Skip old messages if since is set
-                if ($since && $postedAt && $postedAt->lt($since)) {
-                    continue;
-                }
-
                 $firstName = $from['first_name'] ?? '';
                 $lastName = $from['last_name'] ?? '';
                 $authorName = trim("{$firstName} {$lastName}");

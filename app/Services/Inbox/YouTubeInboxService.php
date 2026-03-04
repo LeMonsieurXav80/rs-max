@@ -28,7 +28,7 @@ class YouTubeInboxService implements PlatformInboxInterface
         }
 
         try {
-            // Fetch recent videos
+            // Fetch recent videos (always fetch latest to catch new comments on existing videos)
             $searchParams = [
                 'part' => 'id',
                 'channelId' => $channelId,
@@ -36,9 +36,6 @@ class YouTubeInboxService implements PlatformInboxInterface
                 'order' => 'date',
                 'type' => 'video',
             ];
-            if ($since) {
-                $searchParams['publishedAfter'] = $since->toIso8601ZuluString();
-            }
 
             $searchResponse = Http::withToken($accessToken)->get(self::API_BASE . '/search', $searchParams);
 

@@ -21,15 +21,12 @@ class ThreadsInboxService implements PlatformInboxInterface
         $accessToken = $credentials['access_token'];
 
         try {
-            // Fetch our recent threads
+            // Fetch our recent threads (always fetch latest to catch new replies on existing threads)
             $params = [
                 'fields' => 'id,text,timestamp,permalink',
                 'access_token' => $accessToken,
                 'limit' => 25,
             ];
-            if ($since) {
-                $params['since'] = $since->timestamp;
-            }
 
             $threadsResponse = Http::get(self::API_BASE . "/{$userId}/threads", $params);
 

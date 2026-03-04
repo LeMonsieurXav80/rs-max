@@ -59,10 +59,6 @@ class RedditInboxService implements PlatformInboxInterface
 
                 $createdAt = isset($data['created_utc']) ? Carbon::createFromTimestamp($data['created_utc']) : null;
 
-                if ($since && $createdAt && $createdAt->lt($since)) {
-                    continue;
-                }
-
                 $type = $kind === 't4' ? 'dm' : 'comment';
                 $context = $data['context'] ?? null;
 

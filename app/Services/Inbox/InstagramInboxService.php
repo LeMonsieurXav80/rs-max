@@ -21,15 +21,12 @@ class InstagramInboxService implements PlatformInboxInterface
         $accessToken = $credentials['access_token'];
 
         try {
-            // Fetch recent media
+            // Fetch recent media (always fetch latest to catch new comments on existing posts)
             $params = [
                 'fields' => 'id,timestamp,permalink',
                 'access_token' => $accessToken,
                 'limit' => 20,
             ];
-            if ($since) {
-                $params['since'] = $since->timestamp;
-            }
 
             $mediaResponse = Http::get(self::API_BASE . "/{$accountId}/media", $params);
 

@@ -26,9 +26,6 @@ class FacebookInboxService implements PlatformInboxInterface
                 'access_token' => $accessToken,
                 'limit' => 20,
             ];
-            if ($since) {
-                $params['since'] = $since->timestamp;
-            }
 
             $feedResponse = Http::get(self::API_BASE . "/{$pageId}/feed", $params);
 

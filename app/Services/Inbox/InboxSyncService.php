@@ -5,7 +5,6 @@ namespace App\Services\Inbox;
 use App\Models\InboxItem;
 use App\Models\Setting;
 use App\Models\SocialAccount;
-use Carbon\Carbon;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Log;
 
@@ -62,8 +61,7 @@ class InboxSyncService
             return ['fetched' => 0, 'error' => "No inbox service for {$account->platform->slug}"];
         }
 
-        $since = $this->getLastFetchTime($account);
-        $items = $service->fetchInbox($account, $since);
+        $items = $service->fetchInbox($account);
         $stored = $this->storeItems($account, $items);
 
         Setting::set("inbox_last_fetch_{$account->id}", now()->toIso8601String());
@@ -89,30 +87,37 @@ class InboxSyncService
     }
 
     /**
-     * Store fetched items using updateOrCreate for deduplication.
+     * Store fetched items, skipping those already in the database.
      */
     private function storeItems(SocialAccount $account, Collection $items): int
     {
+        $externalIds = $items->pluck('external_id')->filter()->unique()->values();
+
+        if ($externalIds->isEmpty()) {
+            return 0;
+        }
+
+        // Fetch existing external_ids in one query
+        $existing = InboxItem::where('platform_id', $account->platform_id)
+            ->whereIn('external_id', $externalIds)
+            ->pluck('external_id')
+            ->flip();
+
         $stored = 0;
 
         foreach ($items as $itemData) {
             $externalId = $itemData['external_id'] ?? null;
 
-            if (! $externalId) {
+            if (! $externalId || $existing->has($externalId)) {
                 continue;
             }
 
-            InboxItem::updateOrCreate(
-                [
-                    'platform_id' => $account->platform_id,
-                    'external_id' => $externalId,
-                ],
-                array_merge($itemData, [
-                    'social_account_id' => $account->id,
-                    'platform_id' => $account->platform_id,
-                ])
-            );
+            InboxItem::create(array_merge($itemData, [
+                'social_account_id' => $account->id,
+                'platform_id' => $account->platform_id,
+            ]));
 
+            $existing[$externalId] = true;
             $stored++;
         }
 
@@ -131,13 +136,4 @@ class InboxSyncService
         }));
     }
 
-    /**
-     * Get the last fetch time for an account.
-     */
-    private function getLastFetchTime(SocialAccount $account): ?Carbon
-    {
-        $timestamp = Setting::get("inbox_last_fetch_{$account->id}");
-
-        return $timestamp ? Carbon::parse($timestamp) : null;
-    }
 }
