@@ -48,15 +48,18 @@ class FacebookAdapter implements PlatformAdapterInterface
                 return $this->publishMultiPhoto($pageId, $accessToken, $content, $images, $placeId);
             }
 
-            // Fallback: mixed media -- publish each individually isn't well-supported,
-            // so post the first video/photo with text.
-            $first = $media[0];
-
-            if ($this->isVideo($first['mimetype'])) {
-                return $this->publishSingleVideo($pageId, $accessToken, $content, $first['url'], $placeId);
+            // Mixed media -- publish all images together, skip videos
+            // (Facebook API does not support photos + videos in a single post).
+            if (count($images) > 1) {
+                return $this->publishMultiPhoto($pageId, $accessToken, $content, array_values($images), $placeId);
             }
 
-            return $this->publishSinglePhoto($pageId, $accessToken, $content, $first['url'], $placeId);
+            if (count($images) === 1) {
+                return $this->publishSinglePhoto($pageId, $accessToken, $content, reset($images)['url'], $placeId);
+            }
+
+            // No images at all -- publish first video.
+            return $this->publishSingleVideo($pageId, $accessToken, $content, $media[0]['url'], $placeId);
 
         } catch (\Throwable $e) {
             Log::error('FacebookAdapter: publish failed', [
