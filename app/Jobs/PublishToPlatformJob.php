@@ -125,7 +125,7 @@ class PublishToPlatformJob implements ShouldQueue
             // Private media: generate a temporary signed URL (valid 4 hours)
             if (str_starts_with($url, '/media/')) {
                 $filename = basename($url);
-                $item['local_path'] = storage_path("app/media/{$filename}");
+                $item['local_path'] = storage_path("app/private/media/{$filename}");
                 $item['url'] = URL::temporarySignedRoute(
                     'media.show',
                     now()->addHours(4),
