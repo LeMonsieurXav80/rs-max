@@ -60,8 +60,20 @@ class InboxController extends Controller
         // Fetch all filtered items and group by conversation
         $allItems = $query->orderBy('posted_at', 'asc')->get();
 
+        // Group by conversation thread:
+        // - DMs: group by chat/conversation (external_post_id = chat_id)
+        // - Comments with parent_id: group with their root comment (parent_id = root's external_id)
+        // - Top-level comments: group by their own external_id (so child items join them)
         $conversations = $allItems->groupBy(function ($item) {
-            return $item->social_account_id . ':' . ($item->external_post_id ?: 'single:' . $item->id);
+            if ($item->type === 'dm') {
+                return $item->social_account_id . ':dm:' . ($item->external_post_id ?: 'single:' . $item->id);
+            }
+
+            if ($item->parent_id) {
+                return $item->social_account_id . ':thread:' . $item->parent_id;
+            }
+
+            return $item->social_account_id . ':thread:' . ($item->external_id ?: 'single:' . $item->id);
         });
 
         $conversationList = $conversations->map(function ($items, $key) {
@@ -300,9 +312,51 @@ class InboxController extends Controller
             default => 'message',
         };
 
+        // Build conversation context: find other items in the same thread
+        $threadItems = collect();
+        if ($item->type === 'dm' && $item->external_post_id) {
+            $threadItems = InboxItem::where('social_account_id', $item->social_account_id)
+                ->where('external_post_id', $item->external_post_id)
+                ->where('type', 'dm')
+                ->where('id', '!=', $item->id)
+                ->orderBy('posted_at', 'asc')
+                ->limit(10)
+                ->get();
+        } elseif ($item->parent_id || $item->external_id) {
+            $rootId = $item->parent_id ?: $item->external_id;
+            $threadItems = InboxItem::where('social_account_id', $item->social_account_id)
+                ->where(function ($q) use ($rootId, $item) {
+                    $q->where('external_id', $rootId)      // the root comment
+                      ->orWhere('parent_id', $rootId);      // other replies to root
+                })
+                ->where('id', '!=', $item->id)
+                ->orderBy('posted_at', 'asc')
+                ->limit(10)
+                ->get();
+        }
+
         $prompt = "Réponds à ce {$typeLabel} en {$languageLabel}.\n\n";
-        $prompt .= "{$typeLabel} de {$item->author_name} :\n\"{$item->content}\"\n\n";
-        $prompt .= "Réponds de manière courte, authentique et engageante. Maximum 280 caractères. Pas de hashtags. Ne commence pas par une formule de politesse générique.";
+
+        if ($threadItems->isNotEmpty()) {
+            $prompt .= "Contexte de la conversation :\n";
+            foreach ($threadItems as $ti) {
+                $author = $ti->author_name ?? $ti->author_username ?? 'Inconnu';
+                $prompt .= "- {$author} : \"{$ti->content}\"\n";
+                if ($ti->reply_content) {
+                    $prompt .= "- [Notre réponse] : \"{$ti->reply_content}\"\n";
+                }
+            }
+            $prompt .= "\n";
+        }
+
+        $prompt .= "{$typeLabel} de {$item->author_name} :\n\"{$item->content}\"";
+
+        // Build system prompt: persona + inbox reply wrapper
+        $replyWrapper = Setting::get('inbox_reply_prompt', '');
+        $systemPrompt = $persona->system_prompt;
+        if ($replyWrapper) {
+            $systemPrompt .= "\n\n" . $replyWrapper;
+        }
 
         try {
             $response = Http::withHeaders([
@@ -310,7 +364,7 @@ class InboxController extends Controller
             ])->timeout(30)->post('https://api.openai.com/v1/chat/completions', [
                 'model' => Setting::get('ai_model_inbox', Setting::get('ai_model_text', 'gpt-4o-mini')),
                 'messages' => [
-                    ['role' => 'system', 'content' => $persona->system_prompt],
+                    ['role' => 'system', 'content' => $systemPrompt],
                     ['role' => 'user', 'content' => $prompt],
                 ],
                 'temperature' => 0.7,

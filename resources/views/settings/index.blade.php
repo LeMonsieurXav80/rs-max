@@ -488,6 +488,18 @@
                         </div>
                     </div>
                     @endif
+
+                    {{-- Inbox reply prompt --}}
+                    <div class="border-t border-gray-100 pt-6 mt-6">
+                        <h3 class="text-sm font-semibold text-gray-900 mb-1">Instructions pour les reponses IA</h3>
+                        <p class="text-xs text-gray-400 mb-3">Ce texte est ajoute au prompt systeme du persona pour adapter les reponses au contexte des commentaires et messages. Il definit comment l'IA doit ajuster la longueur et le style selon le type de message recu.</p>
+                        <textarea id="inbox_reply_prompt" name="inbox_reply_prompt" rows="10"
+                                  class="w-full rounded-xl border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 text-sm font-mono"
+                                  placeholder="Instructions pour adapter les reponses IA aux commentaires...">{{ $settings['inbox_reply_prompt'] }}</textarea>
+                        @error('inbox_reply_prompt')
+                            <p class="text-xs text-red-600 mt-1">{{ $message }}</p>
+                        @enderror
+                    </div>
                 </div>
             </div>
 

@@ -57,6 +57,7 @@ class SettingsController extends Controller
         'inbox_platform_telegram_enabled',
         'inbox_platform_reddit_enabled',
         'ai_model_inbox',
+        'inbox_reply_prompt',
     ];
 
     private const DEFAULTS = [
@@ -107,6 +108,7 @@ class SettingsController extends Controller
         'inbox_platform_telegram_enabled' => true,
         'inbox_platform_reddit_enabled' => true,
         'ai_model_inbox' => 'gpt-4o-mini',
+        'inbox_reply_prompt' => "Tu reponds a des commentaires et messages sur les reseaux sociaux. Adapte la longueur et le style de ta reponse au message recu :\n- Emoji seul ou reaction simple (coeur, flamme, applaudissements...) → reponds par 1-2 emojis adaptes, rien d'autre\n- Compliment court (\"bravo\", \"top\", \"j'adore\", \"genial\") → remercie en 2-5 mots max, tu peux ajouter un emoji\n- Question → reponds brievement et precisement, 1-2 phrases max\n- Commentaire developpe ou avis → 1-2 phrases engageantes max\n- Message prive → reponds de maniere naturelle et conversationnelle\n\nRegles absolues :\n- Ne fais JAMAIS une reponse plus longue que le message original\n- Pas de hashtags\n- Pas de formule de politesse generique (\"Merci pour votre commentaire !\")\n- Sois authentique, pas corporate\n- Garde le ton et la personnalite definis dans ton profil",
     ];
 
     public function index(Request $request): View
@@ -208,6 +210,7 @@ class SettingsController extends Controller
             'inbox_platform_telegram_enabled' => 'nullable',
             'inbox_platform_reddit_enabled' => 'nullable',
             'ai_model_inbox' => 'required|string|max:50',
+            'inbox_reply_prompt' => 'nullable|string|max:5000',
         ]);
 
         // Handle encrypted keys separately
