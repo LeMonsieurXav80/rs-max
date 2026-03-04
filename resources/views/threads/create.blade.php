@@ -395,7 +395,7 @@
                                 <div class="flex flex-wrap gap-2 p-3 bg-gray-50 rounded-xl">
                                     <template x-for="(m, mi) in segment.media" :key="mi">
                                         <div class="relative group">
-                                            <img :src="m.url" alt="" class="w-20 h-14 object-cover rounded-lg border border-gray-200">
+                                            <img :src="m.thumbnail_url || m.url" alt="" class="w-20 h-14 object-cover rounded-lg border border-gray-200">
                                             <button type="button" @click="removeSegmentMedia(index, mi)"
                                                     class="absolute -top-1.5 -right-1.5 w-5 h-5 bg-red-500 text-white rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
                                                 <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2">
@@ -625,7 +625,7 @@
                                 <div @click="selectMediaForSegment(item)"
                                      class="relative rounded-xl overflow-hidden border-2 aspect-square cursor-pointer transition-all"
                                      :class="isMediaSelected(item) ? 'border-indigo-500 ring-2 ring-indigo-200' : 'border-gray-200 hover:border-indigo-300'">
-                                    <img :src="item.url" class="w-full h-full object-cover" loading="lazy">
+                                    <img :src="item.thumbnail_url || item.url" class="w-full h-full object-cover" loading="lazy">
                                     <div x-show="isMediaSelected(item)" class="absolute top-1.5 right-1.5 w-5 h-5 bg-indigo-500 text-white rounded-full flex items-center justify-center">
                                         <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2">
                                             <path stroke-linecap="round" stroke-linejoin="round" d="m4.5 12.75 6 6 9-13.5" />
@@ -854,7 +854,9 @@
                     if (seg.media.some(m => m.url === item.url)) {
                         seg.media = seg.media.filter(m => m.url !== item.url);
                     } else {
-                        seg.media.push({ type: item.is_video ? 'video' : 'image', url: item.url });
+                        const entry = { type: item.is_video ? 'video' : 'image', url: item.url };
+                        if (item.thumbnail_url) entry.thumbnail_url = item.thumbnail_url;
+                        seg.media.push(entry);
                     }
                 },
 
@@ -906,7 +908,9 @@
                                     if (data.url) {
                                         const seg = self.segments[self.activeMediaSegmentIndex];
                                         if (!seg.media) seg.media = [];
-                                        seg.media.push({ type: data.mimetype?.startsWith('video/') ? 'video' : 'image', url: data.url });
+                                        const entry = { type: data.mimetype?.startsWith('video/') ? 'video' : 'image', url: data.url };
+                                        if (data.thumbnail_url) entry.thumbnail_url = data.thumbnail_url;
+                                        seg.media.push(entry);
                                         self.fetchMediaLibrary(self.mediaLibraryFolder);
                                     }
                                 } catch (err) {}
