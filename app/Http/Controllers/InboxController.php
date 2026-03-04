@@ -202,7 +202,7 @@ class InboxController extends Controller
     public function bulkAiReply(Request $request): JsonResponse
     {
         $validated = $request->validate([
-            'ids' => 'required|array|min:1|max:20',
+            'ids' => 'required|array|min:1|max:50',
             'ids.*' => 'integer|exists:inbox_items,id',
         ]);
 

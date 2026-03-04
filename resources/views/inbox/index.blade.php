@@ -700,6 +700,12 @@ function inboxManager() {
                 });
                 const data = await resp.json();
 
+                if (!resp.ok) {
+                    const msg = data.message || Object.values(data.errors || {}).flat().join('\n') || 'Erreur serveur';
+                    alert(msg);
+                    return;
+                }
+
                 if (data.suggestions) {
                     this.bulkSuggestions = data.suggestions;
                     this.bulkModalOpen = true;
