@@ -91,8 +91,6 @@
                     <div class="divide-y divide-gray-50">
                         @foreach($appAccounts as $account)
                             <div class="px-6 py-4" x-data="{
-                                active: {{ $account->is_active ? 'true' : 'false' }},
-                                toggling: false,
                                 testing: false,
                                 testOk: null,
                                 testError: null,
@@ -166,34 +164,6 @@
                                             <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1.5">
                                                 <path stroke-linecap="round" stroke-linejoin="round" d="m16.862 4.487 1.687-1.688a1.875 1.875 0 1 1 2.652 2.652L6.832 19.82a4.5 4.5 0 0 1-1.897 1.13l-2.685.8.8-2.685a4.5 4.5 0 0 1 1.13-1.897L16.863 4.487Zm0 0L19.5 7.125" />
                                             </svg>
-                                        </button>
-
-                                        {{-- Toggle --}}
-                                        <button
-                                            type="button"
-                                            @click="
-                                                if (toggling) return;
-                                                toggling = true;
-                                                fetch('{{ route('accounts.toggle', $account) }}', {
-                                                    method: 'PATCH',
-                                                    headers: {
-                                                        'Content-Type': 'application/json',
-                                                        'X-CSRF-TOKEN': document.querySelector('meta[name=csrf-token]').getAttribute('content'),
-                                                        'Accept': 'application/json',
-                                                    },
-                                                })
-                                                .then(r => r.json())
-                                                .then(d => { if (d.success) active = d.is_active; })
-                                                .catch(() => {})
-                                                .finally(() => { toggling = false; });
-                                            "
-                                            :class="active ? 'bg-indigo-600' : 'bg-gray-200'"
-                                            class="relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none"
-                                            role="switch"
-                                            :aria-checked="active"
-                                            :title="active ? 'Désactiver' : 'Activer'"
-                                        >
-                                            <span :class="active ? 'translate-x-5' : 'translate-x-0'" class="pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out"></span>
                                         </button>
 
                                         {{-- Delete account --}}

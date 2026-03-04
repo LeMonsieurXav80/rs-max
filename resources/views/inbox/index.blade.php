@@ -76,12 +76,14 @@
                 <span class="text-xs text-gray-400 font-medium mr-1">Plateforme :</span>
                 @php $activePlatforms = request('platform', []); if (!is_array($activePlatforms)) $activePlatforms = [$activePlatforms]; @endphp
                 @foreach(['facebook' => 'Facebook', 'instagram' => 'Instagram', 'threads' => 'Threads', 'youtube' => 'YouTube', 'bluesky' => 'Bluesky', 'telegram' => 'Telegram', 'reddit' => 'Reddit'] as $slug => $name)
+                    @if($enabledSlugs->contains($slug))
                     <label class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium cursor-pointer transition-colors {{ in_array($slug, $activePlatforms) ? 'bg-indigo-100 text-indigo-700' : 'bg-gray-100 text-gray-500 hover:bg-gray-200' }}">
                         <input type="checkbox" name="platform[]" value="{{ $slug }}" class="sr-only"
                                {{ in_array($slug, $activePlatforms) ? 'checked' : '' }}
                                onchange="this.form.submit()">
                         {{ $name }}
                     </label>
+                    @endif
                 @endforeach
             </div>
         </form>
@@ -102,6 +104,7 @@
         {{-- Conversation list --}}
         <div class="space-y-3">
             @if($conversations->count() > 0)
+                @php $convoIndex = 0; @endphp
                 @foreach($conversations as $convo)
                     @php
                         $items = $convo->items;
@@ -121,8 +124,7 @@
 
                             {{-- Checkbox --}}
                             <input type="checkbox" class="mt-1 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500"
-                                   @click.stop
-                                   @change="toggleConversation({{ json_encode($itemIds) }})"
+                                   @click.stop="toggleConversation({{ json_encode($itemIds) }}, {{ $convoIndex }}, $event)"
                                    :checked="{{ json_encode($itemIds) }}.every(id => selectedIds.includes(id))">
 
                             {{-- Platform icon --}}
@@ -340,6 +342,7 @@
                             </div>
                         @endif
                     </div>
+                    @php $convoIndex++; @endphp
                 @endforeach
             @else
                 <div class="bg-white rounded-2xl shadow-sm border border-gray-100 p-12 text-center">
@@ -426,12 +429,31 @@
                     </template>
                 </div>
 
-                <div class="p-6 border-t border-gray-100 flex justify-end gap-2">
-                    <button @click="bulkModalOpen = false" class="px-4 py-2 text-sm font-medium text-gray-700 bg-gray-100 rounded-xl hover:bg-gray-200 transition-colors">Annuler</button>
-                    <button @click="sendBulkReplies()" :disabled="bulkSending" class="px-4 py-2 text-sm font-medium text-white bg-indigo-600 rounded-xl hover:bg-indigo-700 transition-colors disabled:opacity-50">
-                        <span x-show="!bulkSending">Envoyer tout</span>
-                        <span x-show="bulkSending" x-cloak>Envoi...</span>
-                    </button>
+                <div class="p-6 border-t border-gray-100">
+                    <div class="flex items-center gap-3 mb-4">
+                        <span class="text-sm text-gray-600 whitespace-nowrap">Etaler sur :</span>
+                        <div class="flex items-center gap-1">
+                            <input type="number" x-model.number="spreadHours" min="0" max="24" class="w-16 rounded-lg border-gray-300 text-sm text-center shadow-sm focus:border-indigo-500 focus:ring-indigo-500">
+                            <span class="text-sm text-gray-500">h</span>
+                        </div>
+                        <div class="flex items-center gap-1">
+                            <input type="number" x-model.number="spreadMinutes" min="0" max="59" class="w-16 rounded-lg border-gray-300 text-sm text-center shadow-sm focus:border-indigo-500 focus:ring-indigo-500">
+                            <span class="text-sm text-gray-500">min</span>
+                        </div>
+                        <span class="text-xs text-gray-400 ml-1" x-show="spreadHours > 0 || spreadMinutes > 0" x-cloak>
+                            (1 reponse toutes les <span x-text="Math.round((spreadHours * 60 + spreadMinutes) / Math.max(bulkSuggestions.filter(s => s.reply && s.reply.trim()).length, 1))"></span> min)
+                        </span>
+                    </div>
+                    <div class="flex justify-end gap-2">
+                        <button @click="bulkModalOpen = false" class="px-4 py-2 text-sm font-medium text-gray-700 bg-gray-100 rounded-xl hover:bg-gray-200 transition-colors">Annuler</button>
+                        <button @click="sendBulkReplies()" :disabled="bulkSending" class="px-4 py-2 text-sm font-medium text-white bg-indigo-600 rounded-xl hover:bg-indigo-700 transition-colors disabled:opacity-50">
+                            <span x-show="!bulkSending">
+                                <span x-show="spreadHours > 0 || spreadMinutes > 0">Planifier</span>
+                                <span x-show="spreadHours === 0 && spreadMinutes === 0">Envoyer tout</span>
+                            </span>
+                            <span x-show="bulkSending" x-cloak>Envoi...</span>
+                        </button>
+                    </div>
                 </div>
             </div>
         </div>
@@ -444,6 +466,8 @@
 function inboxManager() {
     return {
         selectedIds: [],
+        lastClickedConvoIndex: null,
+        allConvoIds: @json($conversations->map(fn ($c) => $c->items->pluck('id')->toArray())->values()->toArray()),
         replyModalOpen: false,
         replyToId: null,
         replyToContent: '',
@@ -456,10 +480,29 @@ function inboxManager() {
         bulkModalOpen: false,
         bulkSuggestions: [],
         bulkSending: false,
+        spreadHours: 0,
+        spreadMinutes: 0,
 
         csrfToken: document.querySelector('meta[name="csrf-token"]').getAttribute('content'),
 
-        toggleConversation(ids) {
+        toggleConversation(ids, index, event) {
+            // Shift+Click: select range between last clicked and current
+            if (event && event.shiftKey && this.lastClickedConvoIndex !== null) {
+                const from = Math.min(this.lastClickedConvoIndex, index);
+                const to = Math.max(this.lastClickedConvoIndex, index);
+                for (let i = from; i <= to; i++) {
+                    if (this.allConvoIds[i]) {
+                        this.allConvoIds[i].forEach(id => {
+                            if (!this.selectedIds.includes(id)) {
+                                this.selectedIds.push(id);
+                            }
+                        });
+                    }
+                }
+                this.lastClickedConvoIndex = index;
+                return;
+            }
+
             const allSelected = ids.every(id => this.selectedIds.includes(id));
             if (allSelected) {
                 this.selectedIds = this.selectedIds.filter(id => !ids.includes(id));
@@ -470,6 +513,7 @@ function inboxManager() {
                     }
                 });
             }
+            this.lastClickedConvoIndex = index;
         },
 
         openReplyModal(id, content, author) {
@@ -633,6 +677,8 @@ function inboxManager() {
             if (items.length === 0) return;
             this.bulkSending = true;
 
+            const spreadMinutes = (this.spreadHours * 60) + this.spreadMinutes;
+
             try {
                 const resp = await fetch('/inbox/bulk-send', {
                     method: 'POST',
@@ -641,10 +687,17 @@ function inboxManager() {
                         'X-CSRF-TOKEN': this.csrfToken,
                         'Accept': 'application/json',
                     },
-                    body: JSON.stringify({ items }),
+                    body: JSON.stringify({ items, spread_minutes: spreadMinutes }),
                 });
 
+                const data = await resp.json();
+
                 this.bulkModalOpen = false;
+
+                if (data.scheduled) {
+                    alert(`${items.length} reponses planifiees sur ${spreadMinutes} minutes.`);
+                }
+
                 location.reload();
             } catch (e) {
                 alert('Erreur de connexion');

@@ -25,6 +25,7 @@ class InboxItem extends Model
         'reply_content',
         'reply_external_id',
         'replied_at',
+        'reply_scheduled_at',
     ];
 
     protected function casts(): array
@@ -32,6 +33,7 @@ class InboxItem extends Model
         return [
             'posted_at' => 'datetime',
             'replied_at' => 'datetime',
+            'reply_scheduled_at' => 'datetime',
         ];
     }
 

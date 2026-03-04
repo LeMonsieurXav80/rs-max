@@ -122,7 +122,7 @@
                 @if($bot->channels->isNotEmpty())
                     <div class="divide-y divide-gray-50">
                         @foreach($bot->channels as $channel)
-                            <div class="px-6 py-4 flex items-center justify-between gap-3" x-data="{ active: {{ $channel->is_active ? 'true' : 'false' }}, toggling: false }">
+                            <div class="px-6 py-4 flex items-center justify-between gap-3">
                                 <div class="flex items-center gap-3 min-w-0 flex-1">
                                     @if($channel->profile_picture_url)
                                         <img src="{{ $channel->profile_picture_url }}" alt="{{ $channel->name }}" class="w-8 h-8 rounded-lg object-cover flex-shrink-0">
@@ -140,34 +140,6 @@
                                 </div>
 
                                 <div class="flex items-center gap-3">
-                                    {{-- Toggle --}}
-                                    <button
-                                        type="button"
-                                        @click="
-                                            if (toggling) return;
-                                            toggling = true;
-                                            fetch('{{ route('accounts.toggle', $channel) }}', {
-                                                method: 'PATCH',
-                                                headers: {
-                                                    'Content-Type': 'application/json',
-                                                    'X-CSRF-TOKEN': document.querySelector('meta[name=csrf-token]').getAttribute('content'),
-                                                    'Accept': 'application/json',
-                                                },
-                                            })
-                                            .then(r => r.json())
-                                            .then(d => { if (d.success) active = d.is_active; })
-                                            .catch(() => {})
-                                            .finally(() => { toggling = false; });
-                                        "
-                                        :class="active ? 'bg-indigo-600' : 'bg-gray-200'"
-                                        class="relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none"
-                                        role="switch"
-                                        :aria-checked="active"
-                                        :title="active ? 'Désactiver' : 'Activer'"
-                                    >
-                                        <span :class="active ? 'translate-x-5' : 'translate-x-0'" class="pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out"></span>
-                                    </button>
-
                                     {{-- Delete channel --}}
                                     <form action="{{ route('platforms.destroyAccount', $channel) }}" method="POST" onsubmit="return confirm('Supprimer ce canal ?')">
                                         @csrf

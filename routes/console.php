@@ -23,6 +23,9 @@ match ($syncFreq) {
     default => $statsSchedule->hourly(),
 };
 
+// Send scheduled inbox replies every minute
+Schedule::command('inbox:send-scheduled')->everyMinute()->withoutOverlapping();
+
 // Inbox sync - frequency configurable via Settings page
 $inboxFreq = rescue(fn () => Setting::get('inbox_sync_frequency', 'every_15_min'), 'every_15_min', false);
 $inboxSchedule = Schedule::command('inbox:sync')->withoutOverlapping();

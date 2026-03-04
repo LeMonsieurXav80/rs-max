@@ -19,9 +19,18 @@ class InboxController extends Controller
     {
         $user = $request->user();
 
-        $accountIds = $user->is_admin
-            ? SocialAccount::pluck('id')
-            : $user->socialAccounts()->pluck('social_accounts.id');
+        // Only include accounts from platforms that are enabled in inbox settings
+        $enabledSlugs = collect(['facebook', 'instagram', 'threads', 'youtube', 'bluesky', 'telegram', 'reddit'])
+            ->filter(fn ($slug) => Setting::get("inbox_platform_{$slug}_enabled", true))
+            ->values();
+
+        $accountQuery = $user->is_admin
+            ? SocialAccount::query()
+            : $user->socialAccounts();
+
+        $accountIds = $accountQuery
+            ->whereHas('platform', fn ($q) => $q->whereIn('slug', $enabledSlugs))
+            ->pluck('social_accounts.id');
 
         $query = InboxItem::whereIn('social_account_id', $accountIds)
             ->with(['socialAccount.platform', 'platform']);
@@ -112,11 +121,15 @@ class InboxController extends Controller
             'replied' => InboxItem::whereIn('social_account_id', $accountIds)->where('status', 'replied')->count(),
         ];
 
-        $socialAccounts = $user->is_admin
-            ? SocialAccount::with('platform')->orderBy('name')->get()
-            : $user->socialAccounts()->with('platform')->orderBy('name')->get();
+        $socialAccounts = ($user->is_admin
+            ? SocialAccount::query()
+            : $user->socialAccounts())
+            ->whereHas('platform', fn ($q) => $q->whereIn('slug', $enabledSlugs))
+            ->with('platform')
+            ->orderBy('name')
+            ->get();
 
-        return view('inbox.index', compact('conversations', 'counts', 'socialAccounts'));
+        return view('inbox.index', compact('conversations', 'counts', 'socialAccounts', 'enabledSlugs'));
     }
 
     public function markRead(Request $request): JsonResponse
@@ -224,8 +237,40 @@ class InboxController extends Controller
             'items' => 'required|array|min:1',
             'items.*.id' => 'required|integer|exists:inbox_items,id',
             'items.*.reply_text' => 'required|string|max:5000',
+            'spread_minutes' => 'nullable|integer|min:0|max:1440',
         ]);
 
+        $spreadMinutes = (int) ($validated['spread_minutes'] ?? 0);
+        $itemCount = count($validated['items']);
+
+        // If spread is set, schedule replies over the period instead of sending now
+        if ($spreadMinutes > 0 && $itemCount > 0) {
+            $intervalSeconds = ($spreadMinutes * 60) / $itemCount;
+            $results = [];
+
+            foreach ($validated['items'] as $i => $itemData) {
+                $item = InboxItem::find($itemData['id']);
+
+                if (! $item) {
+                    $results[] = ['id' => $itemData['id'], 'success' => false, 'error' => 'Not found'];
+
+                    continue;
+                }
+
+                $scheduledAt = now()->addSeconds((int) ($intervalSeconds * $i));
+
+                $item->update([
+                    'reply_content' => $itemData['reply_text'],
+                    'reply_scheduled_at' => $scheduledAt,
+                ]);
+
+                $results[] = ['id' => $item->id, 'success' => true, 'scheduled_at' => $scheduledAt->toDateTimeString()];
+            }
+
+            return response()->json(['results' => $results, 'scheduled' => true, 'spread_minutes' => $spreadMinutes]);
+        }
+
+        // No spread: send immediately
         $syncService = app(InboxSyncService::class);
         $results = [];
 
