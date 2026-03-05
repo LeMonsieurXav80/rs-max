@@ -72,25 +72,43 @@ class InboxController extends Controller
         // Fetch all filtered items and group by conversation
         $allItems = $query->orderBy('posted_at', 'asc')->get();
 
+        // Build a set of external_ids that are referenced as parent_id by other items.
+        // These are "root comments" that have sub-replies grouped under them.
+        $parentIds = $allItems->pluck('parent_id')->filter()->unique()->flip();
+
         // Group by conversation thread:
         // - DMs: group by chat/conversation (external_post_id = chat_id)
-        // - Comments with parent_id: group with their root comment (parent_id = root's external_id)
-        // - Comments with external_post_id: group by post/conversation (Twitter conversation_id, FB post_id, etc.)
-        // - Fallback: group by own external_id
-        $conversations = $allItems->groupBy(function ($item) {
+        // - Replies with parent_id: group under their parent comment
+        // - Root comments (their external_id is referenced as parent_id): group by own external_id
+        // - Other items with external_post_id (Twitter, Bluesky, Threads): group by conversation/post
+        // - Fallback: each item is its own conversation
+        $conversations = $allItems->groupBy(function ($item) use ($parentIds) {
             if ($item->type === 'dm') {
                 return $item->social_account_id . ':dm:' . ($item->external_post_id ?: 'single:' . $item->id);
             }
 
+            // This is a reply to a parent comment
             if ($item->parent_id) {
                 return $item->social_account_id . ':thread:' . $item->parent_id;
             }
 
-            if ($item->external_post_id) {
+            // This is a root comment that has replies — group by its own external_id
+            if ($item->external_id && $parentIds->has($item->external_id)) {
+                return $item->social_account_id . ':thread:' . $item->external_id;
+            }
+
+            // Platforms that use parent_id threading (Instagram, YouTube, Reddit):
+            // standalone comments (no replies) should each be their own conversation.
+            // Other platforms (Twitter, Bluesky, Threads, Facebook, Telegram):
+            // external_post_id represents the conversation/thread, so group by it.
+            $parentIdPlatforms = ['instagram', 'youtube', 'reddit'];
+            $slug = $item->platform->slug ?? '';
+
+            if ($item->external_post_id && ! in_array($slug, $parentIdPlatforms)) {
                 return $item->social_account_id . ':post:' . $item->external_post_id;
             }
 
-            return $item->social_account_id . ':thread:' . ($item->external_id ?: 'single:' . $item->id);
+            return $item->social_account_id . ':single:' . ($item->external_id ?: $item->id);
         });
 
         $conversationList = $conversations->map(function ($items, $key) {
