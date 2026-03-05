@@ -432,7 +432,7 @@ class InboxController extends Controller
 
         $prompt = "Réponds à ce {$typeLabel} dans la même langue que le message de l'utilisateur.\n"
             . "N'entoure JAMAIS ta réponse de guillemets.\n"
-            . "Si le message ne contient QUE des emojis (aucun texte), réponds avec un emoji adapté. Sinon, réponds toujours avec du texte.\n\n";
+            . "Adapte le style de ta réponse au message reçu : si le message ne contient que des emojis, réponds uniquement avec des emojis. Si le message mélange texte et emojis, réponds avec du texte et des emojis dans des proportions similaires. Si le message est uniquement du texte, réponds avec du texte (tu peux ajouter un emoji en fin de message).\n\n";
 
         if ($threadItems->isNotEmpty()) {
             $prompt .= "Contexte de la conversation :\n";

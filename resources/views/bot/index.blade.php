@@ -90,18 +90,14 @@
                                     <option value="daily">1x par jour</option>
                                 </select>
                             </div>
-                            <div x-data="botButton('bluesky', {{ $bsAccount->id }}, {{ ($botActiveStates["bluesky_{$bsAccount->id}"] ?? false) ? 'true' : 'false' }})" x-init="init()">
+                            <div x-data="botButton('bluesky', {{ $bsAccount->id }}, {{ ($botActiveStates["bluesky_{$bsAccount->id}"] ?? false) ? 'true' : 'false' }}, '{{ route('bot.runBluesky') }}')" x-init="init()">
                                 <template x-if="!active">
-                                    <form method="POST" action="{{ route('bot.runBluesky') }}" @submit="activate()">
-                                        @csrf
-                                        <input type="hidden" name="social_account_id" value="{{ $bsAccount->id }}">
-                                        <button type="submit" class="inline-flex items-center gap-1.5 px-3 py-1.5 bg-indigo-600 text-white text-xs font-medium rounded-lg hover:bg-indigo-700 transition-colors">
-                                            <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2">
-                                                <path stroke-linecap="round" stroke-linejoin="round" d="M5.25 5.653c0-.856.917-1.398 1.667-.986l11.54 6.347a1.125 1.125 0 0 1 0 1.972l-11.54 6.347a1.125 1.125 0 0 1-1.667-.986V5.653Z" />
-                                            </svg>
-                                            Activer le bot
-                                        </button>
-                                    </form>
+                                    <button type="button" @click="activate()" class="inline-flex items-center gap-1.5 px-3 py-1.5 bg-indigo-600 text-white text-xs font-medium rounded-lg hover:bg-indigo-700 transition-colors">
+                                        <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2">
+                                            <path stroke-linecap="round" stroke-linejoin="round" d="M5.25 5.653c0-.856.917-1.398 1.667-.986l11.54 6.347a1.125 1.125 0 0 1 0 1.972l-11.54 6.347a1.125 1.125 0 0 1-1.667-.986V5.653Z" />
+                                        </svg>
+                                        Activer le bot
+                                    </button>
                                 </template>
                                 <template x-if="active">
                                     <div class="flex items-center gap-2">
@@ -275,18 +271,14 @@
                                         <option value="daily">1x par jour</option>
                                     </select>
                                 </div>
-                                <div x-data="botButton('facebook', {{ $fbAccount->id }}, {{ ($botActiveStates["facebook_{$fbAccount->id}"] ?? false) ? 'true' : 'false' }})" x-init="init()">
+                                <div x-data="botButton('facebook', {{ $fbAccount->id }}, {{ ($botActiveStates["facebook_{$fbAccount->id}"] ?? false) ? 'true' : 'false' }}, '{{ route('bot.runFacebook') }}')" x-init="init()">
                                     <template x-if="!active">
-                                        <form method="POST" action="{{ route('bot.runFacebook') }}" @submit="activate()">
-                                            @csrf
-                                            <input type="hidden" name="social_account_id" value="{{ $fbAccount->id }}">
-                                            <button type="submit" class="inline-flex items-center gap-1.5 px-3 py-1.5 bg-blue-600 text-white text-xs font-medium rounded-lg hover:bg-blue-700 transition-colors">
-                                                <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2">
-                                                    <path stroke-linecap="round" stroke-linejoin="round" d="M6.633 10.25c.806 0 1.533-.446 2.031-1.08a9.041 9.041 0 0 1 2.861-2.4c.723-.384 1.35-.956 1.653-1.715a4.498 4.498 0 0 0 .322-1.672V2.75a.75.75 0 0 1 .75-.75 2.25 2.25 0 0 1 2.25 2.25c0 1.152-.26 2.243-.723 3.218-.266.558.107 1.282.725 1.282m0 0h3.126c1.026 0 1.945.694 2.054 1.715.045.422.068.85.068 1.285a11.95 11.95 0 0 1-2.649 7.521c-.388.482-.987.729-1.605.729H13.48c-.483 0-.964-.078-1.423-.23l-3.114-1.04a4.501 4.501 0 0 0-1.423-.23H5.904m7.846 2.354-3.114-1.04a4.501 4.501 0 0 0-1.423-.23H3.75a.75.75 0 0 1-.75-.75V8.322a.75.75 0 0 1 .75-.75h2.154c.489 0 .954-.21 1.282-.579l.218-.273a4.5 4.5 0 0 0 .729-3.469" />
-                                                </svg>
-                                                Activer le bot
-                                            </button>
-                                        </form>
+                                        <button type="button" @click="activate()" class="inline-flex items-center gap-1.5 px-3 py-1.5 bg-blue-600 text-white text-xs font-medium rounded-lg hover:bg-blue-700 transition-colors">
+                                            <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2">
+                                                <path stroke-linecap="round" stroke-linejoin="round" d="M6.633 10.25c.806 0 1.533-.446 2.031-1.08a9.041 9.041 0 0 1 2.861-2.4c.723-.384 1.35-.956 1.653-1.715a4.498 4.498 0 0 0 .322-1.672V2.75a.75.75 0 0 1 .75-.75 2.25 2.25 0 0 1 2.25 2.25c0 1.152-.26 2.243-.723 3.218-.266.558.107 1.282.725 1.282m0 0h3.126c1.026 0 1.945.694 2.054 1.715.045.422.068.85.068 1.285a11.95 11.95 0 0 1-2.649 7.521c-.388.482-.987.729-1.605.729H13.48c-.483 0-.964-.078-1.423-.23l-3.114-1.04a4.501 4.501 0 0 0-1.423-.23H5.904m7.846 2.354-3.114-1.04a4.501 4.501 0 0 0-1.423-.23H3.75a.75.75 0 0 1-.75-.75V8.322a.75.75 0 0 1 .75-.75h2.154c.489 0 .954-.21 1.282-.579l.218-.273a4.5 4.5 0 0 0 .729-3.469" />
+                                            </svg>
+                                            Activer le bot
+                                        </button>
                                     </template>
                                     <template x-if="active">
                                         <div class="flex items-center gap-2">
@@ -427,7 +419,7 @@ function freqSelector(platform, accountId, initial) {
     };
 }
 
-function botButton(platform, accountId, initialActive) {
+function botButton(platform, accountId, initialActive, runUrl) {
     return {
         active: initialActive,
         running: false,
@@ -456,6 +448,12 @@ function botButton(platform, accountId, initialActive) {
             this.active = true;
             this.running = true;
             this.startPolling();
+            // Trigger the bot run via AJAX
+            fetch(runUrl, {
+                method: 'POST',
+                headers: { 'X-CSRF-TOKEN': '{{ csrf_token() }}', 'Content-Type': 'application/json' },
+                body: JSON.stringify({ social_account_id: accountId })
+            }).catch(() => {});
         },
 
         startPolling() {

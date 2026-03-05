@@ -106,30 +106,26 @@ class BotController extends Controller
         return response()->json(['is_active' => $term->is_active]);
     }
 
-    public function runBluesky(Request $request): RedirectResponse
+    public function runBluesky(Request $request): JsonResponse
     {
         $accountId = $request->input('social_account_id');
         SocialAccount::findOrFail($accountId);
 
-        // Activate bot persistently
         Setting::set("bot_active_bluesky_{$accountId}", '1');
-
         Artisan::queue('bot:run', ['--platform' => 'bluesky', '--account' => $accountId]);
 
-        return back()->with('success', 'Bot Bluesky activé et lancé.');
+        return response()->json(['activated' => true]);
     }
 
-    public function runFacebook(Request $request): RedirectResponse
+    public function runFacebook(Request $request): JsonResponse
     {
         $accountId = $request->input('social_account_id');
         SocialAccount::findOrFail($accountId);
 
-        // Activate bot persistently
         Setting::set("bot_active_facebook_{$accountId}", '1');
-
         Artisan::queue('bot:run', ['--platform' => 'facebook', '--account' => $accountId]);
 
-        return back()->with('success', 'Bot Facebook activé et lancé.');
+        return response()->json(['activated' => true]);
     }
 
     public function botStatus(Request $request): JsonResponse
