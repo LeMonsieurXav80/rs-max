@@ -27,15 +27,20 @@ class TwitterInboxService implements PlatformInboxInterface
 
         try {
             $params = [
-                'max_results' => '100',
+                'max_results' => '25',
                 'tweet.fields' => 'created_at,author_id,in_reply_to_user_id,conversation_id,referenced_tweets,public_metrics',
                 'user.fields' => 'name,username,profile_image_url',
                 'expansions' => 'author_id',
             ];
 
-            // Only fetch since last sync if we have a timestamp
-            if ($since) {
-                $params['start_time'] = $since->toIso8601ZuluString();
+            // Use since_id to only fetch new mentions (saves API costs)
+            $lastExternalId = InboxItem::where('social_account_id', $account->id)
+                ->whereNotNull('external_id')
+                ->orderByDesc('posted_at')
+                ->value('external_id');
+
+            if ($lastExternalId) {
+                $params['since_id'] = $lastExternalId;
             }
 
             $url = self::API_BASE . "/users/{$userId}/mentions";
