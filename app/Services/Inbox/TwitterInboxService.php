@@ -28,7 +28,7 @@ class TwitterInboxService implements PlatformInboxInterface
         try {
             $params = [
                 'max_results' => '100',
-                'tweet.fields' => 'created_at,author_id,in_reply_to_user_id,conversation_id,public_metrics',
+                'tweet.fields' => 'created_at,author_id,in_reply_to_user_id,conversation_id,referenced_tweets,public_metrics',
                 'user.fields' => 'name,username,profile_image_url',
                 'expansions' => 'author_id',
             ];
@@ -70,10 +70,26 @@ class TwitterInboxService implements PlatformInboxInterface
                 $conversationId = $tweet['conversation_id'] ?? $tweetId;
                 $username = $author['username'] ?? null;
 
+                // Find the tweet this is replying to (parent_id for threading)
+                $repliedToId = null;
+                foreach ($tweet['referenced_tweets'] ?? [] as $ref) {
+                    if ($ref['type'] === 'replied_to') {
+                        $repliedToId = $ref['id'];
+                        break;
+                    }
+                }
+
+                // If replying directly to our own tweet (conversation root), no parent_id
+                // so it stays as a standalone item. Only set parent_id for reply chains.
+                if ($repliedToId === $conversationId) {
+                    $repliedToId = null;
+                }
+
                 $items->push([
                     'type' => 'comment',
                     'external_id' => $tweetId,
                     'external_post_id' => $conversationId,
+                    'parent_id' => $repliedToId,
                     'author_name' => $author['name'] ?? null,
                     'author_username' => $username,
                     'author_avatar_url' => $author['profile_image_url'] ?? null,

@@ -97,11 +97,11 @@ class InboxController extends Controller
                 return $item->social_account_id . ':thread:' . $item->external_id;
             }
 
-            // Platforms that use parent_id threading (Instagram, YouTube, Reddit):
+            // Platforms that use parent_id threading (Instagram, YouTube, Reddit, Twitter):
             // standalone comments (no replies) should each be their own conversation.
-            // Other platforms (Twitter, Bluesky, Threads, Facebook, Telegram):
+            // Other platforms (Bluesky, Threads, Facebook, Telegram):
             // external_post_id represents the conversation/thread, so group by it.
-            $parentIdPlatforms = ['instagram', 'youtube', 'reddit'];
+            $parentIdPlatforms = ['instagram', 'youtube', 'reddit', 'twitter'];
             $slug = $item->platform->slug ?? '';
 
             if ($item->external_post_id && ! in_array($slug, $parentIdPlatforms)) {
@@ -453,8 +453,7 @@ class InboxController extends Controller
                 ->get();
         }
 
-        $prompt = "Réponds à ce {$typeLabel} dans la même langue que le message de l'utilisateur.\n"
-            . "N'entoure JAMAIS ta réponse de guillemets.\n"
+        $prompt = "N'entoure JAMAIS ta réponse de guillemets.\n"
             . "Adapte le style de ta réponse au message reçu : si le message ne contient que des emojis, réponds uniquement avec des emojis. Si le message mélange texte et emojis, réponds avec du texte et des emojis dans des proportions similaires. Si le message est uniquement du texte, réponds avec du texte (tu peux ajouter un emoji en fin de message).\n\n";
 
         if ($threadItems->isNotEmpty()) {
@@ -469,7 +468,8 @@ class InboxController extends Controller
             $prompt .= "\n";
         }
 
-        $prompt .= "{$typeLabel} de {$item->author_name} :\n\"{$item->content}\"";
+        $prompt .= "{$typeLabel} de {$item->author_name} :\n\"{$item->content}\"\n\n"
+            . "IMPORTANT: You MUST reply in the same language as the message above. If the message is in English, reply in English. If in Italian, reply in Italian. Match the language exactly.";
 
         // Build system prompt: persona + inbox reply wrapper
         $replyWrapper = Setting::get('inbox_reply_prompt', '');
