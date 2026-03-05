@@ -96,13 +96,18 @@ class BotController extends Controller
         $accountId = $request->input('social_account_id');
         $account = SocialAccount::findOrFail($accountId);
 
-        $service = new BlueskyBotService;
-        $result = $service->runForAccount($account);
+        try {
+            $service = new BlueskyBotService;
+            $result = $service->runForAccount($account);
 
-        $likebackInfo = isset($result['likeback_likes']) ? " (dont {$result['likeback_likes']} like-backs)" : '';
-        $message = "Bluesky bot : {$result['total_likes']} likes effectués{$likebackInfo}.";
-        if (isset($result['error'])) {
-            $message .= " Erreur : {$result['error']}";
+            $likebackInfo = isset($result['likeback_likes']) ? " (dont {$result['likeback_likes']} like-backs)" : '';
+            $message = "Bluesky bot : {$result['total_likes']} likes effectués{$likebackInfo}.";
+            if (isset($result['error'])) {
+                $message .= " Erreur : {$result['error']}";
+            }
+        } catch (\Throwable $e) {
+            \Illuminate\Support\Facades\Log::error('BlueskyBot: exception', ['error' => $e->getMessage()]);
+            $message = "Bluesky bot : erreur - {$e->getMessage()}";
         }
 
         return back()->with('success', $message);
@@ -113,12 +118,17 @@ class BotController extends Controller
         $accountId = $request->input('social_account_id');
         $account = SocialAccount::findOrFail($accountId);
 
-        $service = new FacebookBotService;
-        $result = $service->runForAccount($account);
+        try {
+            $service = new FacebookBotService;
+            $result = $service->runForAccount($account);
 
-        $message = "Facebook bot : {$result['total_likes']} commentaires likés.";
-        if (isset($result['error'])) {
-            $message .= " Erreur : {$result['error']}";
+            $message = "Facebook bot : {$result['total_likes']} commentaires likés.";
+            if (isset($result['error'])) {
+                $message .= " Erreur : {$result['error']}";
+            }
+        } catch (\Throwable $e) {
+            \Illuminate\Support\Facades\Log::error('FacebookBot: exception', ['error' => $e->getMessage()]);
+            $message = "Facebook bot : erreur - {$e->getMessage()}";
         }
 
         return back()->with('success', $message);

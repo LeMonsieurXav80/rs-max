@@ -11,42 +11,58 @@ class FacebookBotService
 {
     private const API_BASE = 'https://graph.facebook.com/v21.0';
 
+    private const MAX_LIKES_PER_RUN = 50;
+
     public function runForAccount(SocialAccount $account): array
     {
         $credentials = $account->credentials;
-        $pageId = $credentials['page_id'];
-        $accessToken = $credentials['access_token'];
+        $pageId = $credentials['page_id'] ?? $account->platform_account_id;
+        $accessToken = $credentials['access_token'] ?? null;
+
+        if (! $accessToken) {
+            return ['total_likes' => 0, 'error' => 'Pas de token d\'accès configuré'];
+        }
 
         $params = [
-            'fields' => 'id,comments{id,from,message,created_time,user_likes}',
+            'fields' => 'id,comments.limit(50){id,from,message,created_time,user_likes}',
             'access_token' => $accessToken,
             'limit' => 25,
         ];
 
-        $response = Http::get(self::API_BASE . "/{$pageId}/feed", $params);
+        $response = Http::timeout(30)->get(self::API_BASE . "/{$pageId}/feed", $params);
 
         if (! $response->successful()) {
+            $errorMsg = $response->json('error.message', 'Feed fetch failed');
             Log::warning('FacebookBotService: failed to fetch feed', [
                 'account_id' => $account->id,
                 'status' => $response->status(),
-                'error' => $response->json('error.message'),
+                'error' => $errorMsg,
             ]);
 
-            return ['total_likes' => 0, 'error' => $response->json('error.message', 'Feed fetch failed')];
+            return ['total_likes' => 0, 'error' => $errorMsg];
         }
 
         $posts = $response->json('data', []);
         $totalLikes = 0;
+        $errors = 0;
 
         foreach ($posts as $post) {
+            if ($totalLikes >= self::MAX_LIKES_PER_RUN) {
+                break;
+            }
+
             $comments = $post['comments']['data'] ?? [];
 
             foreach ($comments as $comment) {
+                if ($totalLikes >= self::MAX_LIKES_PER_RUN) {
+                    break;
+                }
+
                 $commentId = $comment['id'];
                 $fromId = $comment['from']['id'] ?? null;
 
                 // Skip comments from the page itself
-                if ($fromId === $pageId) {
+                if ($fromId && $fromId === $pageId) {
                     continue;
                 }
 
@@ -73,13 +89,24 @@ class FacebookBotService
 
                 if ($success) {
                     $totalLikes++;
+                } else {
+                    $errors++;
+                    // Stop if too many consecutive errors (likely permission/rate limit issue)
+                    if ($errors >= 5 && $totalLikes === 0) {
+                        return ['total_likes' => 0, 'error' => 'Trop d\'erreurs consécutives - vérifiez la permission pages_manage_engagement'];
+                    }
                 }
 
                 usleep(300_000); // 300ms between likes
             }
         }
 
-        return ['total_likes' => $totalLikes];
+        $result = ['total_likes' => $totalLikes];
+        if ($errors > 0) {
+            $result['error'] = "{$errors} commentaire(s) n'ont pas pu être likés";
+        }
+
+        return $result;
     }
 
     private function likeComment(string $commentId, string $accessToken): bool
