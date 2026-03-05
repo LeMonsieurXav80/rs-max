@@ -5,11 +5,10 @@ namespace App\Http\Controllers;
 use App\Models\BotActionLog;
 use App\Models\BotSearchTerm;
 use App\Models\SocialAccount;
-use App\Services\Bot\BlueskyBotService;
-use App\Services\Bot\FacebookBotService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Artisan;
 use Illuminate\View\View;
 
 class BotController extends Controller
@@ -94,44 +93,21 @@ class BotController extends Controller
     public function runBluesky(Request $request): RedirectResponse
     {
         $accountId = $request->input('social_account_id');
-        $account = SocialAccount::findOrFail($accountId);
+        SocialAccount::findOrFail($accountId);
 
-        try {
-            $service = new BlueskyBotService;
-            $result = $service->runForAccount($account);
+        Artisan::queue('bot:run', ['--platform' => 'bluesky', '--account' => $accountId]);
 
-            $likebackInfo = isset($result['likeback_likes']) ? " (dont {$result['likeback_likes']} like-backs)" : '';
-            $message = "Bluesky bot : {$result['total_likes']} likes effectués{$likebackInfo}.";
-            if (isset($result['error'])) {
-                $message .= " Erreur : {$result['error']}";
-            }
-        } catch (\Throwable $e) {
-            \Illuminate\Support\Facades\Log::error('BlueskyBot: exception', ['error' => $e->getMessage()]);
-            $message = "Bluesky bot : erreur - {$e->getMessage()}";
-        }
-
-        return back()->with('success', $message);
+        return back()->with('success', 'Bot Bluesky lancé en arrière-plan. Les résultats apparaîtront dans l\'historique.');
     }
 
     public function runFacebook(Request $request): RedirectResponse
     {
         $accountId = $request->input('social_account_id');
-        $account = SocialAccount::findOrFail($accountId);
+        SocialAccount::findOrFail($accountId);
 
-        try {
-            $service = new FacebookBotService;
-            $result = $service->runForAccount($account);
+        Artisan::queue('bot:run', ['--platform' => 'facebook', '--account' => $accountId]);
 
-            $message = "Facebook bot : {$result['total_likes']} commentaires likés.";
-            if (isset($result['error'])) {
-                $message .= " Erreur : {$result['error']}";
-            }
-        } catch (\Throwable $e) {
-            \Illuminate\Support\Facades\Log::error('FacebookBot: exception', ['error' => $e->getMessage()]);
-            $message = "Facebook bot : erreur - {$e->getMessage()}";
-        }
-
-        return back()->with('success', $message);
+        return back()->with('success', 'Bot Facebook lancé en arrière-plan. Les résultats apparaîtront dans l\'historique.');
     }
 
     public function clearLogs(): RedirectResponse

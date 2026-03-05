@@ -454,6 +454,7 @@
                                     ['slug' => 'bluesky', 'name' => 'Bluesky', 'desc' => 'Commentaires et messages prives'],
                                     ['slug' => 'telegram', 'name' => 'Telegram', 'desc' => 'Messages recus par le bot'],
                                     ['slug' => 'reddit', 'name' => 'Reddit', 'desc' => 'Commentaires et messages prives'],
+                                    ['slug' => 'twitter', 'name' => 'X / Twitter', 'desc' => 'Mentions et reponses aux tweets (API payante)'],
                                 ];
                             @endphp
                             @foreach($inboxPlatforms as $p)
