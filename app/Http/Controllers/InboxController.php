@@ -37,10 +37,13 @@ class InboxController extends Controller
 
         // Status filter (single value, mutually exclusive)
         $status = $request->input('status') ?? '';
+        $statusIsFiltered = false;
         if ($status === 'unreplied') {
             $query->whereIn('status', ['unread', 'read']);
+            $statusIsFiltered = true;
         } elseif ($status !== '') {
             $query->where('status', $status);
+            $statusIsFiltered = true;
         } else {
             $query->where('status', '!=', 'archived');
         }
@@ -69,8 +72,31 @@ class InboxController extends Controller
             $query->where('social_account_id', $accountId);
         }
 
-        // Fetch all filtered items and group by conversation
-        $allItems = $query->orderBy('posted_at', 'asc')->get();
+        // Fetch filtered items
+        $filteredItems = $query->orderBy('posted_at', 'asc')->get();
+
+        // When status is filtered, fetch related thread items for context.
+        // This ensures conversations show the full thread, not just the filtered items.
+        $allItems = $filteredItems;
+        if ($statusIsFiltered && $filteredItems->isNotEmpty()) {
+            $threadIds = $filteredItems->pluck('parent_id')
+                ->merge($filteredItems->pluck('external_id'))
+                ->merge($filteredItems->pluck('external_post_id'))
+                ->filter()->unique()->values();
+
+            $relatedItems = InboxItem::whereIn('social_account_id', $accountIds)
+                ->where('status', '!=', 'archived')
+                ->where(function ($q) use ($threadIds) {
+                    $q->whereIn('external_id', $threadIds)
+                      ->orWhereIn('parent_id', $threadIds)
+                      ->orWhereIn('reply_external_id', $threadIds);
+                })
+                ->with(['socialAccount.platform', 'platform'])
+                ->orderBy('posted_at', 'asc')
+                ->get();
+
+            $allItems = $filteredItems->merge($relatedItems)->unique('id')->sortBy('posted_at')->values();
+        }
 
         // Lookup sets for fast grouping
         $parentIds = $allItems->pluck('parent_id')->filter()->unique()->flip();
@@ -139,6 +165,10 @@ class InboxController extends Controller
             return $item->social_account_id . ':single:' . ($item->external_id ?: $item->id);
         });
 
+        // When status is filtered, only keep conversations that contain at least one
+        // item from the original filtered set (context items alone don't qualify).
+        $filteredIds = $statusIsFiltered ? $filteredItems->pluck('id')->flip() : null;
+
         $conversationList = $conversations->map(function ($items, $key) {
             $first = $items->first();
             $latest = $items->sortByDesc('posted_at')->first();
@@ -156,7 +186,15 @@ class InboxController extends Controller
                 'external_post_id' => $first->external_post_id,
                 'latest_author' => $latest->author_name ?? $latest->author_username,
             ];
-        })->sortByDesc('latest_at')->values();
+        });
+
+        if ($filteredIds) {
+            $conversationList = $conversationList->filter(function ($convo) use ($filteredIds) {
+                return $convo->items->contains(fn ($item) => $filteredIds->has($item->id));
+            });
+        }
+
+        $conversationList = $conversationList->sortByDesc('latest_at')->values();
 
         // For "unreplied" filter: exclude conversations where the latest message
         // is from the account owner (we already replied, no new message from others)
