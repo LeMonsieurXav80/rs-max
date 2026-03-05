@@ -103,8 +103,23 @@ class InboxController extends Controller
                 'total_count' => $items->count(),
                 'post_url' => $first->post_url,
                 'external_post_id' => $first->external_post_id,
+                'latest_author' => $latest->author_name ?? $latest->author_username,
             ];
         })->sortByDesc('latest_at')->values();
+
+        // For "unreplied" filter: exclude conversations where the latest message
+        // is from the account owner (we already replied, no new message from others)
+        if ($status === 'unreplied') {
+            $accountNames = SocialAccount::whereIn('id', $accountIds)
+                ->pluck('name', 'id')
+                ->map(fn ($n) => mb_strtolower($n));
+
+            $conversationList = $conversationList->filter(function ($convo) use ($accountNames) {
+                $ownName = $accountNames[$convo->socialAccount->id] ?? null;
+
+                return ! $ownName || mb_strtolower($convo->latest_author ?? '') !== $ownName;
+            })->values();
+        }
 
         // Manual pagination by conversations
         $page = (int) $request->input('page', 1);
