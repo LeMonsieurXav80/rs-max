@@ -157,6 +157,6 @@ class RunBotActions extends Command
             return true;
         }
 
-        return now()->diffInMinutes(\Carbon\Carbon::parse($lastRun)) >= $minutes;
+        return abs(now()->diffInMinutes(\Carbon\Carbon::parse($lastRun))) >= $minutes;
     }
 }
