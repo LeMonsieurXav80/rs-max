@@ -20,7 +20,7 @@ class InboxController extends Controller
         $user = $request->user();
 
         // Only include accounts from platforms that are enabled in inbox settings
-        $enabledSlugs = collect(['facebook', 'instagram', 'threads', 'youtube', 'bluesky', 'telegram', 'reddit'])
+        $enabledSlugs = collect(['facebook', 'instagram', 'threads', 'youtube', 'bluesky', 'telegram', 'reddit', 'twitter'])
             ->filter(fn ($slug) => Setting::get("inbox_platform_{$slug}_enabled", true))
             ->values();
 
