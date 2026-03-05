@@ -67,10 +67,10 @@
                 <div class="flex items-center gap-1 bg-gray-100 rounded-xl p-1">
                     @php $currentStatus = request('status', ''); @endphp
                     <input type="hidden" name="status" x-ref="statusInput" value="{{ $currentStatus }}">
-                    @foreach(['' => 'Tous', 'unreplied' => 'Non répondus', 'replied' => 'Répondus', 'archived' => 'Archivés'] as $val => $label)
+                    @foreach(['' => 'Tous', 'new' => 'Nouveau', 'followup' => 'Relance', 'unreplied' => 'Non répondus', 'replied' => 'Répondus', 'archived' => 'Archivés'] as $val => $label)
                         <button type="submit"
                                 @click.prevent="$refs.statusInput.value = '{{ $val }}'; $refs.filterForm.submit()"
-                                class="px-3 py-1.5 rounded-lg text-sm font-medium transition-colors {{ $currentStatus === $val ? 'bg-white shadow-sm' . ($val === 'replied' ? ' text-green-600' : ($val === 'archived' ? ' text-gray-600' : ($val === 'unreplied' ? ' text-amber-600' : ' text-indigo-600'))) : 'text-gray-500 hover:text-gray-700' }}">
+                                class="px-3 py-1.5 rounded-lg text-sm font-medium transition-colors {{ $currentStatus === $val ? 'bg-white shadow-sm' . ($val === 'replied' ? ' text-green-600' : ($val === 'archived' ? ' text-gray-600' : (in_array($val, ['unreplied', 'new']) ? ' text-amber-600' : ($val === 'followup' ? ' text-orange-600' : ' text-indigo-600')))) : 'text-gray-500 hover:text-gray-700' }}">
                             {{ $label }}
                         </button>
                     @endforeach
@@ -152,7 +152,7 @@
                         $latestItem = $items->sortByDesc('posted_at')->first();
                         $allItemIds = $items->pluck('id')->toArray();
                         $itemIds = match($currentStatus) {
-                            'unreplied' => array_filter([$items->whereIn('status', ['unread', 'read'])->last()?->id]),
+                            'unreplied', 'new', 'followup' => array_filter([$items->whereIn('status', ['unread', 'read'])->last()?->id]),
                             '' => $items->where('status', '!=', 'archived')->pluck('id')->toArray(),
                             default => $items->where('status', $currentStatus)->pluck('id')->toArray(),
                         };

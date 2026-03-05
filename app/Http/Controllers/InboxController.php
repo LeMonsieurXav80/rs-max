@@ -38,7 +38,7 @@ class InboxController extends Controller
         // Status filter (single value, mutually exclusive)
         $status = $request->input('status') ?? '';
         $statusIsFiltered = false;
-        if ($status === 'unreplied') {
+        if (in_array($status, ['unreplied', 'new', 'followup'])) {
             $query->whereIn('status', ['unread', 'read']);
             $statusIsFiltered = true;
         } elseif ($status !== '') {
@@ -138,9 +138,9 @@ class InboxController extends Controller
 
         $conversationList = $conversationList->sortByDesc('latest_at')->values();
 
-        // For "unreplied" filter: exclude conversations where the latest message
+        // For unreplied-type filters: exclude conversations where the latest message
         // is from the account owner (we already replied, no new message from others)
-        if ($status === 'unreplied') {
+        if (in_array($status, ['unreplied', 'new', 'followup'])) {
             $accountNames = SocialAccount::whereIn('id', $accountIds)
                 ->pluck('name', 'id')
                 ->map(fn ($n) => mb_strtolower($n));
@@ -150,6 +150,16 @@ class InboxController extends Controller
 
                 return ! $ownName || mb_strtolower($convo->latest_author ?? '') !== $ownName;
             })->values();
+
+            // "new" = never replied in this conversation; "followup" = replied before, new message since
+            if ($status === 'new' || $status === 'followup') {
+                $wantNew = $status === 'new';
+                $conversationList = $conversationList->filter(function ($convo) use ($wantNew) {
+                    $hasReply = $convo->items->contains(fn ($i) => $i->status === 'replied' || $i->reply_content);
+
+                    return $wantNew ? ! $hasReply : $hasReply;
+                })->values();
+            }
         }
 
         // Manual pagination by conversations
