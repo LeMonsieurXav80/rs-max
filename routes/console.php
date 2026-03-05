@@ -5,14 +5,14 @@ use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Schedule;
 
 // Publish scheduled posts every minute
-Schedule::command('posts:publish-scheduled')->everyMinute()->withoutOverlapping();
+Schedule::command('posts:publish-scheduled')->everyMinute()->withoutOverlapping(5);
 
 // Sync follower counts once daily at 6 AM (pay-per-use API cost optimization)
-Schedule::command('followers:sync')->dailyAt('06:00')->withoutOverlapping();
+Schedule::command('followers:sync')->dailyAt('06:00')->withoutOverlapping(30);
 
 // Stats sync - frequency configurable via Settings page
 $syncFreq = rescue(fn () => Setting::get('stats_sync_frequency', 'hourly'), 'hourly', false);
-$statsSchedule = Schedule::command('stats:sync')->withoutOverlapping();
+$statsSchedule = Schedule::command('stats:sync')->withoutOverlapping(15);
 match ($syncFreq) {
     'every_15_min' => $statsSchedule->everyFifteenMinutes(),
     'every_30_min' => $statsSchedule->everyThirtyMinutes(),
@@ -24,11 +24,11 @@ match ($syncFreq) {
 };
 
 // Send scheduled inbox replies every minute
-Schedule::command('inbox:send-scheduled')->everyMinute()->withoutOverlapping();
+Schedule::command('inbox:send-scheduled')->everyMinute()->withoutOverlapping(5);
 
 // Inbox sync - frequency configurable via Settings page
 $inboxFreq = rescue(fn () => Setting::get('inbox_sync_frequency', 'every_15_min'), 'every_15_min', false);
-$inboxSchedule = Schedule::command('inbox:sync')->withoutOverlapping();
+$inboxSchedule = Schedule::command('inbox:sync')->withoutOverlapping(10);
 match ($inboxFreq) {
     'every_30_min' => $inboxSchedule->everyThirtyMinutes(),
     'hourly' => $inboxSchedule->hourly(),
@@ -40,8 +40,8 @@ match ($inboxFreq) {
 };
 
 // Bot actions - Bluesky auto-like every hour, Facebook comment likes every 30 min
-Schedule::command('bot:run --platform=bluesky')->hourly()->withoutOverlapping();
-Schedule::command('bot:run --platform=facebook')->everyThirtyMinutes()->withoutOverlapping();
+Schedule::command('bot:run --platform=bluesky')->hourly()->withoutOverlapping(15);
+Schedule::command('bot:run --platform=facebook')->everyThirtyMinutes()->withoutOverlapping(10);
 
 // Downsample follower snapshots (1st of each month at 3 AM)
 Schedule::command('snapshots:downsample')->monthlyOn(1, '03:00');
