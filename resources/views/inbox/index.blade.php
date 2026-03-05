@@ -615,6 +615,15 @@ function inboxManager() {
                     },
                     body: JSON.stringify({ reply_text: this.replyText }),
                 });
+
+                if (!resp.ok) {
+                    const text = await resp.text();
+                    let msg = 'Erreur serveur (' + resp.status + ')';
+                    try { msg = JSON.parse(text).error || JSON.parse(text).message || msg; } catch {}
+                    alert(msg);
+                    return;
+                }
+
                 const data = await resp.json();
 
                 if (data.success) {
@@ -624,7 +633,7 @@ function inboxManager() {
                     alert('Erreur : ' + (data.error || 'Échec de l\'envoi'));
                 }
             } catch (e) {
-                alert('Erreur de connexion');
+                alert('Erreur de connexion : ' + e.message);
             } finally {
                 this.sendingReply = false;
             }
@@ -773,6 +782,14 @@ function inboxManager() {
                     body: JSON.stringify({ items, spread_minutes: spreadMinutes }),
                 });
 
+                if (!resp.ok) {
+                    const text = await resp.text();
+                    let msg = 'Erreur serveur (' + resp.status + ')';
+                    try { msg = JSON.parse(text).error || JSON.parse(text).message || msg; } catch {}
+                    alert(msg);
+                    return;
+                }
+
                 const data = await resp.json();
 
                 this.bulkModalOpen = false;
@@ -783,7 +800,7 @@ function inboxManager() {
 
                 location.reload();
             } catch (e) {
-                alert('Erreur de connexion');
+                alert('Erreur de connexion : ' + e.message);
             } finally {
                 this.bulkSending = false;
             }
@@ -824,8 +841,9 @@ function scheduledCountdown(info) {
 
         startCountdown() {
             this.updateLabels();
+            this.pollStatus();
             this.countdownTimer = setInterval(() => this.updateLabels(), 10000);
-            this.pollTimer = setInterval(() => this.pollStatus(), 30000);
+            this.pollTimer = setInterval(() => this.pollStatus(), 15000);
         },
 
         updateLabels() {
@@ -847,6 +865,8 @@ function scheduledCountdown(info) {
                 } else {
                     if (this.countdownTimer) clearInterval(this.countdownTimer);
                     if (this.pollTimer) clearInterval(this.pollTimer);
+                    // Reload to refresh conversation statuses
+                    setTimeout(() => location.reload(), 1500);
                 }
             } catch (e) { /* silent */ }
         },

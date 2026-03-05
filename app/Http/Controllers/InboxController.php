@@ -142,6 +142,7 @@ class InboxController extends Controller
         $scheduledPending = InboxItem::whereIn('social_account_id', $accountIds)
             ->whereNotNull('reply_scheduled_at')
             ->whereNull('replied_at')
+            ->where('status', '!=', 'replied')
             ->orderBy('reply_scheduled_at', 'asc')
             ->get(['id', 'reply_scheduled_at']);
 
@@ -356,6 +357,7 @@ class InboxController extends Controller
         $pending = InboxItem::whereIn('social_account_id', $accountIds)
             ->whereNotNull('reply_scheduled_at')
             ->whereNull('replied_at')
+            ->where('status', '!=', 'replied')
             ->orderBy('reply_scheduled_at', 'asc')
             ->get(['id', 'reply_scheduled_at']);
 

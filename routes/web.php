@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Controllers\BotController;
 use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\FacebookOAuthController;
 use App\Http\Controllers\HashtagController;
@@ -210,6 +211,15 @@ Route::middleware(['auth', 'verified'])->group(function () {
         Route::post('reddit-sources/{redditSource}/generate-preview', [RedditSourceController::class, 'generatePreview'])->name('reddit-sources.generatePreview');
         Route::post('reddit-sources/{redditSource}/regenerate-item', [RedditSourceController::class, 'regenerateItem'])->name('reddit-sources.regenerateItem');
         Route::post('reddit-sources/{redditSource}/confirm-publications', [RedditSourceController::class, 'confirmPublications'])->name('reddit-sources.confirmPublications');
+
+        // Bot actions
+        Route::get('bot', [BotController::class, 'index'])->name('bot.index');
+        Route::post('bot/terms', [BotController::class, 'addTerm'])->name('bot.addTerm');
+        Route::delete('bot/terms/{term}', [BotController::class, 'removeTerm'])->name('bot.removeTerm');
+        Route::patch('bot/terms/{term}/toggle', [BotController::class, 'toggleTerm'])->name('bot.toggleTerm');
+        Route::post('bot/run/bluesky', [BotController::class, 'runBluesky'])->name('bot.runBluesky');
+        Route::post('bot/run/facebook', [BotController::class, 'runFacebook'])->name('bot.runFacebook');
+        Route::delete('bot/logs', [BotController::class, 'clearLogs'])->name('bot.clearLogs');
 
         // Settings
         Route::get('settings', [SettingsController::class, 'index'])->name('settings.index');
