@@ -72,28 +72,41 @@ class InboxController extends Controller
         // Fetch all filtered items and group by conversation
         $allItems = $query->orderBy('posted_at', 'asc')->get();
 
-        // Build a set of external_ids that are referenced as parent_id by other items.
-        // These are "root comments" that have sub-replies grouped under them.
+        // Lookup sets for fast grouping
         $parentIds = $allItems->pluck('parent_id')->filter()->unique()->flip();
+        $externalIds = $allItems->pluck('external_id')->filter()->unique()->flip();
 
-        // Group by conversation thread:
-        // - DMs: group by chat/conversation (external_post_id = chat_id)
-        // - Replies with parent_id: group under their parent comment
-        // - Root comments (their external_id is referenced as parent_id): group by own external_id
-        // - Other items with external_post_id (Twitter, Bluesky, Threads): group by conversation/post
-        // - Fallback: each item is its own conversation
-        $conversations = $allItems->groupBy(function ($item) use ($parentIds) {
+        // Map reply_external_id → external_id: resolves "reply to OUR reply" back to original item
+        $replyExternalToExternal = $allItems
+            ->filter(fn ($i) => $i->reply_external_id)
+            ->pluck('external_id', 'reply_external_id');
+
+        // Set of reply_external_ids that are referenced as parent_id by some item
+        $replyIdsAsParent = $parentIds->intersectByKeys($replyExternalToExternal);
+
+        $conversations = $allItems->groupBy(function ($item) use ($parentIds, $externalIds, $replyExternalToExternal, $replyIdsAsParent) {
             if ($item->type === 'dm') {
                 return $item->social_account_id . ':dm:' . ($item->external_post_id ?: 'single:' . $item->id);
             }
 
             // This is a reply to a parent comment
             if ($item->parent_id) {
+                // parent_id points to OUR reply → resolve to the original item's external_id
+                if ($replyExternalToExternal->has($item->parent_id)) {
+                    return $item->social_account_id . ':thread:' . $replyExternalToExternal->get($item->parent_id);
+                }
+
+                // parent_id points to another item's external_id (normal case)
                 return $item->social_account_id . ':thread:' . $item->parent_id;
             }
 
-            // This is a root comment that has replies — group by its own external_id
+            // This is a root comment that has direct replies
             if ($item->external_id && $parentIds->has($item->external_id)) {
+                return $item->social_account_id . ':thread:' . $item->external_id;
+            }
+
+            // This item has a reply from us, and someone replied to our reply
+            if ($item->reply_external_id && $replyIdsAsParent->has($item->reply_external_id)) {
                 return $item->social_account_id . ':thread:' . $item->external_id;
             }
 
