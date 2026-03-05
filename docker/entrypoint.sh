@@ -95,6 +95,9 @@ if [ ! -f "$DATE_FILE" ]; then
     date '+%Y-%m-%d %H:%M:%S %z' > "$DATE_FILE"
 fi
 
+# Clear schedule locks (prevents stale locks from killed processes during redeploy)
+php artisan schedule:clear-cache
+
 # Clear and optimize caches
 echo "Optimizing application..."
 php artisan config:cache
