@@ -139,7 +139,10 @@
         {{-- Conversation list --}}
         <div class="space-y-3">
             @if($conversations->count() > 0)
-                @php $convoIndex = 0; @endphp
+                @php
+                    $convoIndex = 0;
+                    $selectableIdsByConvo = [];
+                @endphp
                 @foreach($conversations as $convo)
                     @php
                         $items = $convo->items;
@@ -147,8 +150,14 @@
                         $previewItem = $items->last();
                         $firstItem = $items->first();
                         $latestItem = $items->sortByDesc('posted_at')->first();
-                        $itemIds = $items->pluck('id')->toArray();
+                        $allItemIds = $items->pluck('id')->toArray();
+                        $itemIds = match($currentStatus) {
+                            'unreplied' => $items->whereIn('status', ['unread', 'read'])->pluck('id')->toArray(),
+                            '' => $items->where('status', '!=', 'archived')->pluck('id')->toArray(),
+                            default => $items->where('status', $currentStatus)->pluck('id')->toArray(),
+                        };
                         $convoKey = 'convo_' . md5($convo->key);
+                        $selectableIdsByConvo[] = $itemIds;
                     @endphp
                     <div class="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden"
                          x-data="{ open: {{ $isSingle ? 'true' : 'false' }} }">
@@ -556,7 +565,7 @@ function inboxManager() {
     return {
         selectedIds: [],
         lastClickedConvoIndex: null,
-        allConvoIds: @json($conversations->map(fn ($c) => $c->items->pluck('id')->toArray())->values()->toArray()),
+        allConvoIds: @json($selectableIdsByConvo),
         replyModalOpen: false,
         replyToId: null,
         replyToContent: '',
