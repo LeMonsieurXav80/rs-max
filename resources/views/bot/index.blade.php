@@ -16,7 +16,7 @@
         @endif
 
         {{-- Stats du jour --}}
-        <div class="grid grid-cols-2 sm:grid-cols-4 gap-4">
+        <div class="grid grid-cols-2 sm:grid-cols-5 gap-4">
             <div class="bg-white rounded-2xl border border-gray-100 shadow-sm p-4 text-center">
                 <p class="text-2xl font-bold text-indigo-600">{{ $todayStats->get('like_post', 0) }}</p>
                 <p class="text-xs text-gray-500 mt-1">Posts likes (BS)</p>
@@ -24,6 +24,10 @@
             <div class="bg-white rounded-2xl border border-gray-100 shadow-sm p-4 text-center">
                 <p class="text-2xl font-bold text-indigo-600">{{ $todayStats->get('like_reply', 0) }}</p>
                 <p class="text-xs text-gray-500 mt-1">Replies likes (BS)</p>
+            </div>
+            <div class="bg-white rounded-2xl border border-gray-100 shadow-sm p-4 text-center">
+                <p class="text-2xl font-bold text-purple-600">{{ $todayStats->get('like_back', 0) }}</p>
+                <p class="text-xs text-gray-500 mt-1">Like-backs (BS)</p>
             </div>
             <div class="bg-white rounded-2xl border border-gray-100 shadow-sm p-4 text-center">
                 <p class="text-2xl font-bold text-blue-600">{{ $todayStats->get('like_comment', 0) }}</p>
@@ -278,6 +282,7 @@
                                         @switch($log->action_type)
                                             @case('like_post') Like post @break
                                             @case('like_reply') Like reply @break
+                                            @case('like_back') Like-back @break
                                             @case('like_comment') Like commentaire @break
                                             @default {{ $log->action_type }}
                                         @endswitch

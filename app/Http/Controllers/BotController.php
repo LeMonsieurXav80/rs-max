@@ -99,7 +99,8 @@ class BotController extends Controller
         $service = new BlueskyBotService;
         $result = $service->runForAccount($account);
 
-        $message = "Bluesky bot : {$result['total_likes']} likes effectués.";
+        $likebackInfo = isset($result['likeback_likes']) ? " (dont {$result['likeback_likes']} like-backs)" : '';
+        $message = "Bluesky bot : {$result['total_likes']} likes effectués{$likebackInfo}.";
         if (isset($result['error'])) {
             $message .= " Erreur : {$result['error']}";
         }

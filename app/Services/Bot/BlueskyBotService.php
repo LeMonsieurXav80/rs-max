@@ -16,30 +16,33 @@ class BlueskyBotService
 
     public function runForAccount(SocialAccount $account): array
     {
-        $terms = BotSearchTerm::where('social_account_id', $account->id)
-            ->where('is_active', true)
-            ->get();
-
-        if ($terms->isEmpty()) {
-            return ['total_likes' => 0, 'terms_processed' => 0];
-        }
-
         $auth = $this->getAuth($account);
         if (! $auth) {
             Log::error('BlueskyBotService: authentication failed', ['account_id' => $account->id]);
 
-            return ['total_likes' => 0, 'terms_processed' => 0, 'error' => 'Auth failed'];
+            return ['total_likes' => 0, 'terms_processed' => 0, 'likeback_likes' => 0, 'error' => 'Auth failed'];
         }
 
         $totalLikes = 0;
+        $termsProcessed = 0;
+
+        // 1. Search terms: like posts + replies
+        $terms = BotSearchTerm::where('social_account_id', $account->id)
+            ->where('is_active', true)
+            ->get();
 
         foreach ($terms as $term) {
             $likes = $this->processSearchTerm($account, $auth, $term);
             $totalLikes += $likes;
+            $termsProcessed++;
             $term->update(['last_run_at' => now()]);
         }
 
-        return ['total_likes' => $totalLikes, 'terms_processed' => $terms->count()];
+        // 2. Like-back: like posts from people who liked our posts
+        $likebackLikes = $this->processLikeback($account, $auth);
+        $totalLikes += $likebackLikes;
+
+        return ['total_likes' => $totalLikes, 'terms_processed' => $termsProcessed, 'likeback_likes' => $likebackLikes];
     }
 
     private function processSearchTerm(SocialAccount $account, array $auth, BotSearchTerm $term): int
@@ -205,6 +208,130 @@ class BlueskyBotService
             'success' => $success,
             'error' => $error,
         ]);
+    }
+
+    private function processLikeback(SocialAccount $account, array $auth): int
+    {
+        // Fetch our recent posts
+        $response = Http::get(self::PUBLIC_API . '/xrpc/app.bsky.feed.getAuthorFeed', [
+            'actor' => $auth['did'],
+            'limit' => 15,
+        ]);
+
+        if (! $response->successful()) {
+            return 0;
+        }
+
+        $feed = $response->json('feed', []);
+        $likerDids = [];
+
+        // Collect unique likers from our posts
+        foreach ($feed as $feedItem) {
+            $post = $feedItem['post'] ?? null;
+            if (! $post || ($post['likeCount'] ?? 0) === 0) {
+                continue;
+            }
+
+            $postUri = $post['uri'];
+            $likesResponse = Http::get(self::PUBLIC_API . '/xrpc/app.bsky.feed.getLikes', [
+                'uri' => $postUri,
+                'limit' => 20,
+            ]);
+
+            if (! $likesResponse->successful()) {
+                continue;
+            }
+
+            foreach ($likesResponse->json('likes', []) as $like) {
+                $did = $like['actor']['did'] ?? null;
+                if ($did && $did !== $auth['did'] && ! isset($likerDids[$did])) {
+                    $likerDids[$did] = $like['actor']['handle'] ?? $did;
+                }
+            }
+
+            usleep(200_000);
+        }
+
+        if (empty($likerDids)) {
+            return 0;
+        }
+
+        // Like recent posts from each liker
+        $likesCount = 0;
+        $maxLikersToProcess = 10;
+        $processed = 0;
+
+        foreach ($likerDids as $did => $handle) {
+            if ($processed >= $maxLikersToProcess) {
+                break;
+            }
+
+            $likesCount += $this->likeRecentPostsOf($account, $auth, $did, $handle);
+            $processed++;
+
+            usleep(500_000);
+        }
+
+        return $likesCount;
+    }
+
+    private function likeRecentPostsOf(SocialAccount $account, array $auth, string $did, string $handle): int
+    {
+        $response = Http::get(self::PUBLIC_API . '/xrpc/app.bsky.feed.getAuthorFeed', [
+            'actor' => $did,
+            'limit' => 5,
+        ]);
+
+        if (! $response->successful()) {
+            return 0;
+        }
+
+        $feed = $response->json('feed', []);
+        $likesCount = 0;
+        $maxLikesPerUser = 3;
+
+        foreach ($feed as $feedItem) {
+            if ($likesCount >= $maxLikesPerUser) {
+                break;
+            }
+
+            $post = $feedItem['post'] ?? null;
+            if (! $post) {
+                continue;
+            }
+
+            // Only like their own posts (not reposts)
+            if (($post['author']['did'] ?? null) !== $did) {
+                continue;
+            }
+
+            $postUri = $post['uri'];
+            $postCid = $post['cid'];
+
+            if ($this->alreadyActioned($account->id, $postUri)) {
+                continue;
+            }
+
+            $success = $this->likeRecord($auth, $postUri, $postCid);
+
+            BotActionLog::create([
+                'social_account_id' => $account->id,
+                'action_type' => 'like_back',
+                'target_uri' => $postUri,
+                'target_author' => $handle,
+                'target_text' => mb_substr($post['record']['text'] ?? '', 0, 500),
+                'search_term' => null,
+                'success' => $success,
+            ]);
+
+            if ($success) {
+                $likesCount++;
+            }
+
+            usleep(300_000);
+        }
+
+        return $likesCount;
     }
 
     private function getAuth(SocialAccount $account): ?array
