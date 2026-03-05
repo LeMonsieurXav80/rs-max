@@ -3,6 +3,7 @@
 namespace App\Services;
 
 use App\Models\SocialAccount;
+use App\Services\YouTubeTokenHelper;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 
@@ -173,8 +174,8 @@ class FollowersService
 
     private function fetchYouTubeFollowers(SocialAccount $account): ?int
     {
-        $token = $account->credentials['access_token'] ?? null;
         $channelId = $account->platform_account_id;
+        $token = YouTubeTokenHelper::getFreshAccessToken($account);
 
         if (! $token) {
             return null;

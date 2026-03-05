@@ -155,7 +155,7 @@ class InboxController extends Controller
             // standalone comments (no replies) should each be their own conversation.
             // Other platforms (Bluesky, Threads, Facebook, Telegram):
             // external_post_id represents the conversation/thread, so group by it.
-            $parentIdPlatforms = ['instagram', 'youtube', 'reddit', 'twitter'];
+            $parentIdPlatforms = ['facebook', 'instagram', 'youtube', 'reddit', 'twitter'];
             $slug = $item->platform->slug ?? '';
 
             if ($item->external_post_id && ! in_array($slug, $parentIdPlatforms)) {
