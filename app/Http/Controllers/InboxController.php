@@ -469,8 +469,10 @@ class InboxController extends Controller
             $account = SocialAccount::with('platform')->findOrFail($accountId);
             $result = $syncService->syncAccount($account);
         } elseif ($platforms = $request->input('platforms')) {
+            Log::info('InboxController: syncing specific platforms', ['platforms' => $platforms]);
             $result = $syncService->syncPlatforms((array) $platforms);
         } else {
+            Log::info('InboxController: syncing all platforms');
             $result = $syncService->syncAll();
         }
 
