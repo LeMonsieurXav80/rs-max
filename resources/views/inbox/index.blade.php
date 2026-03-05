@@ -517,8 +517,13 @@
                             <input type="number" x-model.number="spreadMinutes" min="0" max="59" class="w-16 rounded-lg border-gray-300 text-sm text-center shadow-sm focus:border-indigo-500 focus:ring-indigo-500">
                             <span class="text-sm text-gray-500">min</span>
                         </div>
-                        <span class="text-xs text-gray-400 ml-1" x-show="spreadHours > 0 || spreadMinutes > 0" x-cloak>
-                            (1 reponse toutes les <span x-text="Math.round((spreadHours * 60 + spreadMinutes) / Math.max(bulkSuggestions.filter(s => s.reply && s.reply.trim()).length, 1))"></span> min)
+                        <span class="text-xs text-gray-400 ml-1" x-show="spreadHours > 0 || spreadMinutes > 0" x-cloak
+                              x-text="(() => {
+                                  const count = Math.max(bulkSuggestions.filter(s => s.reply && s.reply.trim()).length, 1);
+                                  const totalSec = (spreadHours * 60 + spreadMinutes) * 60 / count;
+                                  if (totalSec >= 60) return '(1 réponse toutes les ' + Math.round(totalSec / 60) + ' min)';
+                                  return '(1 réponse toutes les ' + Math.round(totalSec) + 's)';
+                              })()">
                         </span>
                     </div>
                     <div class="flex justify-end gap-2">
