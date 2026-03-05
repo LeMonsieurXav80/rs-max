@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Models\BotActionLog;
 use App\Models\BotSearchTerm;
+use App\Models\Setting;
 use App\Models\SocialAccount;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
@@ -44,12 +45,22 @@ class BotController extends Controller
             ->groupBy('action_type')
             ->pluck('total', 'action_type');
 
+        // Bot frequency per account
+        $botFrequencies = [];
+        foreach ($blueskyAccounts as $acc) {
+            $botFrequencies["bluesky_{$acc->id}"] = Setting::get("bot_freq_bluesky_{$acc->id}", 'every_30_min');
+        }
+        foreach ($facebookAccounts as $acc) {
+            $botFrequencies["facebook_{$acc->id}"] = Setting::get("bot_freq_facebook_{$acc->id}", 'every_30_min');
+        }
+
         return view('bot.index', compact(
             'blueskyAccounts',
             'facebookAccounts',
             'searchTerms',
             'logs',
             'todayStats',
+            'botFrequencies',
         ));
     }
 
@@ -129,6 +140,19 @@ class BotController extends Controller
         Cache::put("bot_stop_{$platform}_{$accountId}", true, 300);
 
         return response()->json(['stopped' => true]);
+    }
+
+    public function updateFrequency(Request $request): JsonResponse
+    {
+        $validated = $request->validate([
+            'platform' => 'required|string|in:bluesky,facebook',
+            'account_id' => 'required|integer|exists:social_accounts,id',
+            'frequency' => 'required|string|in:disabled,every_15_min,every_30_min,hourly,every_2_hours,every_6_hours,every_12_hours,daily',
+        ]);
+
+        Setting::set("bot_freq_{$validated['platform']}_{$validated['account_id']}", $validated['frequency']);
+
+        return response()->json(['saved' => true]);
     }
 
     public function clearLogs(): RedirectResponse

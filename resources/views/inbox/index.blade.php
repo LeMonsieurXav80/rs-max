@@ -110,7 +110,7 @@
             <div class="flex flex-wrap items-center gap-2">
                 <span class="text-xs text-gray-400 font-medium mr-1">Plateforme :</span>
                 @php $activePlatforms = request('platform', []); if (!is_array($activePlatforms)) $activePlatforms = [$activePlatforms]; @endphp
-                @foreach(['facebook' => 'Facebook', 'instagram' => 'Instagram', 'threads' => 'Threads', 'youtube' => 'YouTube', 'bluesky' => 'Bluesky', 'telegram' => 'Telegram', 'reddit' => 'Reddit'] as $slug => $name)
+                @foreach(['facebook' => 'Facebook', 'instagram' => 'Instagram', 'threads' => 'Threads', 'youtube' => 'YouTube', 'bluesky' => 'Bluesky', 'telegram' => 'Telegram', 'reddit' => 'Reddit', 'twitter' => 'X / Twitter'] as $slug => $name)
                     @if($enabledSlugs->contains($slug))
                     <label class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium cursor-pointer transition-colors {{ in_array($slug, $activePlatforms) ? 'bg-indigo-100 text-indigo-700' : 'bg-gray-100 text-gray-500 hover:bg-gray-200' }}">
                         <input type="checkbox" name="platform[]" value="{{ $slug }}" class="sr-only"

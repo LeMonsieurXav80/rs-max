@@ -39,9 +39,8 @@ match ($inboxFreq) {
     default => $inboxSchedule->everyFifteenMinutes(),
 };
 
-// Bot actions - Bluesky auto-like every hour, Facebook comment likes every 30 min
-Schedule::command('bot:run --platform=bluesky')->hourly()->withoutOverlapping(15);
-Schedule::command('bot:run --platform=facebook')->everyThirtyMinutes()->withoutOverlapping(10);
+// Bot actions - runs every 15 min, each account has its own frequency setting
+Schedule::command('bot:run')->everyFifteenMinutes()->withoutOverlapping(15);
 
 // Downsample follower snapshots (1st of each month at 3 AM)
 Schedule::command('snapshots:downsample')->monthlyOn(1, '03:00');

@@ -2,6 +2,7 @@
 
 namespace App\Console\Commands;
 
+use App\Models\Setting;
 use App\Models\SocialAccount;
 use App\Services\Bot\BlueskyBotService;
 use App\Services\Bot\FacebookBotService;
@@ -15,6 +16,16 @@ class RunBotActions extends Command
                             {--account= : Run only for a specific account ID}';
 
     protected $description = 'Run automated bot actions (Bluesky auto-like, Facebook comment likes)';
+
+    private const FREQUENCY_MINUTES = [
+        'every_15_min' => 15,
+        'every_30_min' => 30,
+        'hourly' => 60,
+        'every_2_hours' => 120,
+        'every_6_hours' => 360,
+        'every_12_hours' => 720,
+        'daily' => 1440,
+    ];
 
     public function handle(): int
     {
@@ -46,8 +57,15 @@ class RunBotActions extends Command
         $service = new BlueskyBotService;
 
         foreach ($accounts as $account) {
+            // Skip if not due (unless manually triggered with --account)
+            if (! $accountId && ! $this->isDue('bluesky', $account->id, 'every_30_min')) {
+                $this->line("  Skipping {$account->name} (not due yet)");
+
+                continue;
+            }
+
             $cacheKey = "bot_running_bluesky_{$account->id}";
-            Cache::put($cacheKey, true, 600); // 10 min max TTL
+            Cache::put($cacheKey, true, 600);
             Cache::forget("bot_stop_bluesky_{$account->id}");
 
             $this->line("  Processing: {$account->name}");
@@ -59,6 +77,9 @@ class RunBotActions extends Command
                 if (isset($result['error'])) {
                     $this->error("  Error: {$result['error']}");
                 }
+
+                // Mark last run time
+                Setting::set("bot_last_run_bluesky_{$account->id}", now()->toIso8601String());
             } finally {
                 Cache::forget($cacheKey);
             }
@@ -79,6 +100,12 @@ class RunBotActions extends Command
         $service = new FacebookBotService;
 
         foreach ($accounts as $account) {
+            if (! $accountId && ! $this->isDue('facebook', $account->id, 'every_30_min')) {
+                $this->line("  Skipping {$account->name} (not due yet)");
+
+                continue;
+            }
+
             $cacheKey = "bot_running_facebook_{$account->id}";
             Cache::put($cacheKey, true, 600);
             Cache::forget("bot_stop_facebook_{$account->id}");
@@ -92,9 +119,30 @@ class RunBotActions extends Command
                 if (isset($result['error'])) {
                     $this->error("  Error: {$result['error']}");
                 }
+
+                Setting::set("bot_last_run_facebook_{$account->id}", now()->toIso8601String());
             } finally {
                 Cache::forget($cacheKey);
             }
         }
+    }
+
+    private function isDue(string $platform, int $accountId, string $defaultFreq): bool
+    {
+        $freq = rescue(fn () => Setting::get("bot_freq_{$platform}_{$accountId}", $defaultFreq), $defaultFreq, false);
+
+        if ($freq === 'disabled') {
+            return false;
+        }
+
+        $minutes = self::FREQUENCY_MINUTES[$freq] ?? 60;
+
+        $lastRun = rescue(fn () => Setting::get("bot_last_run_{$platform}_{$accountId}"), null, false);
+
+        if (! $lastRun) {
+            return true;
+        }
+
+        return now()->diffInMinutes(\Carbon\Carbon::parse($lastRun)) >= $minutes;
     }
 }
