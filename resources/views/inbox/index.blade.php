@@ -144,6 +144,7 @@
                     @php
                         $items = $convo->items;
                         $isSingle = $items->count() === 1;
+                        $previewItem = $items->last();
                         $firstItem = $items->first();
                         $latestItem = $items->sortByDesc('posted_at')->first();
                         $itemIds = $items->pluck('id')->toArray();
@@ -213,11 +214,17 @@
                                         </div>
                                     @endif
                                 @else
-                                    {{-- Multi-item: show preview --}}
-                                    @if($firstItem->content)
-                                        <p class="text-sm text-gray-500 line-clamp-1">{{ Str::limit($firstItem->content, 100) }}</p>
-                                    @elseif($firstItem->media_url)
-                                        <p class="text-sm text-gray-400 italic">[{{ $firstItem->media_type === 'gif' ? 'GIF' : ($firstItem->media_type === 'sticker' ? 'Sticker' : 'Image') }}]</p>
+                                    {{-- Multi-item: show last author + preview of latest message --}}
+                                    <div class="flex items-center gap-2 mb-1">
+                                        <span class="text-sm font-medium text-gray-700">{{ $previewItem->author_name ?: $previewItem->author_username ?: 'Anonyme' }}</span>
+                                        @if($previewItem->author_username && $previewItem->author_name && $previewItem->author_username !== $previewItem->author_name)
+                                            <span class="text-xs text-gray-400">{{'@'}}{{ $previewItem->author_username }}</span>
+                                        @endif
+                                    </div>
+                                    @if($previewItem->content)
+                                        <p class="text-sm text-gray-500 line-clamp-1">{{ Str::limit($previewItem->content, 100) }}</p>
+                                    @elseif($previewItem->media_url)
+                                        <p class="text-sm text-gray-400 italic">[{{ $previewItem->media_type === 'gif' ? 'GIF' : ($previewItem->media_type === 'sticker' ? 'Sticker' : 'Image') }}]</p>
                                     @endif
                                 @endif
                             </div>
