@@ -815,6 +815,8 @@ function inboxManager() {
             this.syncing = true;
 
             try {
+                const params = new URLSearchParams(window.location.search);
+                const platforms = params.getAll('platform[]');
                 await fetch('/inbox/sync', {
                     method: 'POST',
                     headers: {
@@ -822,6 +824,7 @@ function inboxManager() {
                         'X-CSRF-TOKEN': this.csrfToken,
                         'Accept': 'application/json',
                     },
+                    body: JSON.stringify(platforms.length ? { platforms } : {}),
                 });
                 location.reload();
             } catch (e) {

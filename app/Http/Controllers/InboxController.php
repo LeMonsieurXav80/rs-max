@@ -468,6 +468,8 @@ class InboxController extends Controller
         if ($accountId = $request->input('account_id')) {
             $account = SocialAccount::with('platform')->findOrFail($accountId);
             $result = $syncService->syncAccount($account);
+        } elseif ($platforms = $request->input('platforms')) {
+            $result = $syncService->syncPlatforms((array) $platforms);
         } else {
             $result = $syncService->syncAll();
         }

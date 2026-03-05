@@ -49,6 +49,44 @@ class InboxSyncService
     }
 
     /**
+     * Sync inbox for specific platforms only.
+     *
+     * @return array{fetched: int, failed: int, accounts: int}
+     */
+    public function syncPlatforms(array $slugs): array
+    {
+        $total = ['fetched' => 0, 'failed' => 0, 'accounts' => 0];
+
+        $enabledPlatforms = array_intersect($slugs, $this->getEnabledPlatforms());
+
+        if (empty($enabledPlatforms)) {
+            return $total;
+        }
+
+        $accounts = SocialAccount::whereHas('platform', function ($q) use ($enabledPlatforms) {
+            $q->whereIn('slug', $enabledPlatforms);
+        })->with('platform')->get();
+
+        foreach ($accounts as $account) {
+            try {
+                $result = $this->syncAccount($account);
+                $total['fetched'] += $result['fetched'];
+                $total['accounts']++;
+            } catch (\Throwable $e) {
+                Log::error('InboxSyncService: sync failed', [
+                    'account_id' => $account->id,
+                    'error' => $e->getMessage(),
+                ]);
+                $total['failed']++;
+            }
+
+            usleep(200000);
+        }
+
+        return $total;
+    }
+
+    /**
      * Sync inbox for a single account.
      *
      * @return array{fetched: int, error: ?string}
