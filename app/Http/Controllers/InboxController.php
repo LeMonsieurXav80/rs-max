@@ -36,7 +36,7 @@ class InboxController extends Controller
             ->with(['socialAccount.platform', 'platform']);
 
         // Status filter (single value, mutually exclusive)
-        $status = $request->input('status', '');
+        $status = $request->input('status') ?? '';
         if ($status === 'unreplied') {
             $query->whereIn('status', ['unread', 'read']);
         } elseif ($status !== '') {
