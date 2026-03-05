@@ -76,10 +76,19 @@ class InboxController extends Controller
         $parentIds = $allItems->pluck('parent_id')->filter()->unique()->flip();
         $externalIds = $allItems->pluck('external_id')->filter()->unique()->flip();
 
-        // Map reply_external_id → external_id: resolves "reply to OUR reply" back to original item
+        // Map reply_external_id → external_id: resolves "reply to OUR reply" back to original item.
+        // Look up in DB (not just current dataset) so orphan parent_ids can be resolved.
+        $orphanParentIds = $parentIds->keys()->diff($externalIds->keys())->values();
         $replyExternalToExternal = $allItems
             ->filter(fn ($i) => $i->reply_external_id)
             ->pluck('external_id', 'reply_external_id');
+
+        // Also look up orphan parent_ids that might match reply_external_id in DB
+        if ($orphanParentIds->isNotEmpty()) {
+            $dbResolved = InboxItem::whereIn('reply_external_id', $orphanParentIds)
+                ->pluck('external_id', 'reply_external_id');
+            $replyExternalToExternal = $replyExternalToExternal->merge($dbResolved);
+        }
 
         // Set of reply_external_ids that are referenced as parent_id by some item
         $replyIdsAsParent = $parentIds->intersectByKeys($replyExternalToExternal);
@@ -97,7 +106,13 @@ class InboxController extends Controller
                 }
 
                 // parent_id points to another item's external_id (normal case)
-                return $item->social_account_id . ':thread:' . $item->parent_id;
+                if ($externalIds->has($item->parent_id)) {
+                    return $item->social_account_id . ':thread:' . $item->parent_id;
+                }
+
+                // Orphan: parent_id doesn't match any item or reply (e.g. reply to our deleted reply).
+                // Treat as standalone conversation.
+                return $item->social_account_id . ':single:' . $item->external_id;
             }
 
             // This is a root comment that has direct replies
