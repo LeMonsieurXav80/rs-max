@@ -152,7 +152,7 @@
                         $latestItem = $items->sortByDesc('posted_at')->first();
                         $allItemIds = $items->pluck('id')->toArray();
                         $itemIds = match($currentStatus) {
-                            'unreplied' => $items->whereIn('status', ['unread', 'read'])->pluck('id')->toArray(),
+                            'unreplied' => array_filter([$items->whereIn('status', ['unread', 'read'])->last()?->id]),
                             '' => $items->where('status', '!=', 'archived')->pluck('id')->toArray(),
                             default => $items->where('status', $currentStatus)->pluck('id')->toArray(),
                         };
