@@ -256,6 +256,11 @@ class YouTubeOAuthController extends Controller
         $data = $response->json();
 
         if (empty($data['items'])) {
+            Log::warning('YouTube channel fetch: no channels found for this account', [
+                'response_keys' => array_keys($data),
+                'page_info' => $data['pageInfo'] ?? null,
+            ]);
+
             return null;
         }
 

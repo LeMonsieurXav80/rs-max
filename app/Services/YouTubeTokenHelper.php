@@ -36,6 +36,8 @@ class YouTubeTokenHelper
             Log::warning('YouTubeTokenHelper: refresh failed, using existing token', [
                 'account_id' => $account->id,
                 'status' => $response->status(),
+                'error' => $response->json('error'),
+                'error_description' => $response->json('error_description'),
             ]);
 
             return $credentials['access_token'] ?? null;
