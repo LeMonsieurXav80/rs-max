@@ -137,11 +137,11 @@
         </div>
 
         {{-- Conversation list --}}
+        @php $selectableIdsByConvo = []; @endphp
         <div class="space-y-3">
             @if($conversations->count() > 0)
                 @php
                     $convoIndex = 0;
-                    $selectableIdsByConvo = [];
                 @endphp
                 @foreach($conversations as $convo)
                     @php
