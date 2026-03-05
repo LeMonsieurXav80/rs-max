@@ -62,11 +62,21 @@ class RedditInboxService implements PlatformInboxInterface
                 $type = $kind === 't4' ? 'dm' : 'comment';
                 $context = $data['context'] ?? null;
 
+                $externalId = $data['name'] ?? $data['id'] ?? '';
+                $parentId = $data['parent_id'] ?? null;
+
+                if ($type === 'dm') {
+                    $conversationKey = "dm:{$externalId}";
+                } else {
+                    $conversationKey = $parentId ?? $externalId;
+                }
+
                 $items->push([
                     'type' => $type,
-                    'external_id' => $data['name'] ?? $data['id'] ?? '',
+                    'external_id' => $externalId,
                     'external_post_id' => $data['link_id'] ?? null,
-                    'parent_id' => $data['parent_id'] ?? null,
+                    'parent_id' => $parentId,
+                    'conversation_key' => $conversationKey,
                     'author_name' => $data['author'] ?? null,
                     'author_username' => $data['author'] ?? null,
                     'content' => $data['body'] ?? null,

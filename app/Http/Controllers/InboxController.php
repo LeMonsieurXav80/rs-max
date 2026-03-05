@@ -75,22 +75,14 @@ class InboxController extends Controller
         // Fetch filtered items
         $filteredItems = $query->orderBy('posted_at', 'asc')->get();
 
-        // When status is filtered, fetch related thread items for context.
-        // This ensures conversations show the full thread, not just the filtered items.
+        // When status is filtered, fetch related conversation items for context.
         $allItems = $filteredItems;
         if ($statusIsFiltered && $filteredItems->isNotEmpty()) {
-            $threadIds = $filteredItems->pluck('parent_id')
-                ->merge($filteredItems->pluck('external_id'))
-                ->merge($filteredItems->pluck('external_post_id'))
-                ->filter()->unique()->values();
+            $conversationKeys = $filteredItems->pluck('conversation_key')->filter()->unique()->values();
 
             $relatedItems = InboxItem::whereIn('social_account_id', $accountIds)
                 ->where('status', '!=', 'archived')
-                ->where(function ($q) use ($threadIds) {
-                    $q->whereIn('external_id', $threadIds)
-                      ->orWhereIn('parent_id', $threadIds)
-                      ->orWhereIn('reply_external_id', $threadIds);
-                })
+                ->whereIn('conversation_key', $conversationKeys)
                 ->with(['socialAccount.platform', 'platform'])
                 ->orderBy('posted_at', 'asc')
                 ->get();
@@ -98,71 +90,21 @@ class InboxController extends Controller
             $allItems = $filteredItems->merge($relatedItems)->unique('id')->sortBy('posted_at')->values();
         }
 
-        // Lookup sets for fast grouping
-        $parentIds = $allItems->pluck('parent_id')->filter()->unique()->flip();
-        $externalIds = $allItems->pluck('external_id')->filter()->unique()->flip();
+        // Build reply chain map: when someone replies to OUR reply, merge into original conversation.
+        // Maps reply_external_id → conversation_key of the item we replied to.
+        $replyExternalToConvoKey = $allItems
+            ->filter(fn ($i) => $i->reply_external_id && $i->conversation_key)
+            ->pluck('conversation_key', 'reply_external_id');
 
-        // Map reply_external_id → external_id: resolves "reply to OUR reply" back to original item.
-        // Look up in DB (not just current dataset) so orphan parent_ids can be resolved.
-        $orphanParentIds = $parentIds->keys()->diff($externalIds->keys())->values();
-        $replyExternalToExternal = $allItems
-            ->filter(fn ($i) => $i->reply_external_id)
-            ->pluck('external_id', 'reply_external_id');
+        $conversations = $allItems->groupBy(function ($item) use ($replyExternalToConvoKey) {
+            $key = $item->conversation_key ?? $item->external_id ?? (string) $item->id;
 
-        // Also look up orphan parent_ids that might match reply_external_id in DB
-        if ($orphanParentIds->isNotEmpty()) {
-            $dbResolved = InboxItem::whereIn('reply_external_id', $orphanParentIds)
-                ->pluck('external_id', 'reply_external_id');
-            $replyExternalToExternal = $replyExternalToExternal->merge($dbResolved);
-        }
-
-        // Set of reply_external_ids that are referenced as parent_id by some item
-        $replyIdsAsParent = $parentIds->intersectByKeys($replyExternalToExternal);
-
-        $conversations = $allItems->groupBy(function ($item) use ($parentIds, $externalIds, $replyExternalToExternal, $replyIdsAsParent) {
-            if ($item->type === 'dm') {
-                return $item->social_account_id . ':dm:' . ($item->external_post_id ?: 'single:' . $item->id);
+            // If this item's parent_id points to our reply, merge into the original conversation
+            if ($item->parent_id && $replyExternalToConvoKey->has($item->parent_id)) {
+                $key = $replyExternalToConvoKey->get($item->parent_id);
             }
 
-            // This is a reply to a parent comment
-            if ($item->parent_id) {
-                // parent_id points to OUR reply → resolve to the original item's external_id
-                if ($replyExternalToExternal->has($item->parent_id)) {
-                    return $item->social_account_id . ':thread:' . $replyExternalToExternal->get($item->parent_id);
-                }
-
-                // parent_id points to another item's external_id (normal case)
-                if ($externalIds->has($item->parent_id)) {
-                    return $item->social_account_id . ':thread:' . $item->parent_id;
-                }
-
-                // Orphan: parent_id doesn't match any item or reply (e.g. reply to our deleted reply).
-                // Treat as standalone conversation.
-                return $item->social_account_id . ':single:' . $item->external_id;
-            }
-
-            // This is a root comment that has direct replies
-            if ($item->external_id && $parentIds->has($item->external_id)) {
-                return $item->social_account_id . ':thread:' . $item->external_id;
-            }
-
-            // This item has a reply from us, and someone replied to our reply
-            if ($item->reply_external_id && $replyIdsAsParent->has($item->reply_external_id)) {
-                return $item->social_account_id . ':thread:' . $item->external_id;
-            }
-
-            // Platforms that use parent_id threading (Instagram, YouTube, Reddit, Twitter):
-            // standalone comments (no replies) should each be their own conversation.
-            // Other platforms (Bluesky, Threads, Facebook, Telegram):
-            // external_post_id represents the conversation/thread, so group by it.
-            $parentIdPlatforms = ['facebook', 'instagram', 'youtube', 'reddit', 'twitter'];
-            $slug = $item->platform->slug ?? '';
-
-            if ($item->external_post_id && ! in_array($slug, $parentIdPlatforms)) {
-                return $item->social_account_id . ':post:' . $item->external_post_id;
-            }
-
-            return $item->social_account_id . ':single:' . ($item->external_id ?: $item->id);
+            return $item->social_account_id . ':' . $key;
         });
 
         // When status is filtered, only keep conversations that contain at least one

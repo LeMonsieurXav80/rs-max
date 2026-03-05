@@ -64,6 +64,7 @@ class FacebookInboxService implements PlatformInboxInterface
                         'type' => 'comment',
                         'external_id' => $comment['id'],
                         'external_post_id' => $postId,
+                        'conversation_key' => $comment['id'],
                         'author_name' => $comment['from']['name'] ?? null,
                         'author_external_id' => $fromId,
                         'content' => $comment['message'] ?? null,

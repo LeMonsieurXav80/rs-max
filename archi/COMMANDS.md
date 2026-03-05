@@ -38,7 +38,7 @@ php artisan stats:sync --days=7                 # Posts des 7 derniers jours (d�
 
 **Options** :
 - `--post-id=` - Sync un post spécifique
-- `--platform=` - Filtre par plateforme (facebook, instagram, twitter, youtube, threads)
+- `--platform=` - Filtre par plateforme (facebook, instagram, twitter, youtube, threads, bluesky, reddit)
 - `--force` - Force la synchronisation même si récemment effectuée
 - `--days=` - Nombre de jours en arrière (défaut: 30)
 
@@ -58,11 +58,16 @@ Schedule::command('stats:sync')->{fréquence}->withoutOverlapping();
 
 ---
 
-## RSS
+## Sources de contenu (RSS, WordPress, YouTube, Reddit)
+
+Les 4 types de sources de contenu suivent le même workflow de génération via `ContentGenerationService` :
+1. **Génération IA** (`rss:generate` / auto_post) - Crée un brouillon ou post programmé
+2. **Preview** - L'utilisateur peut prévisualiser et modifier
+3. **Confirmation** - Publication manuelle ou programmée
 
 ### `rss:generate`
 
-Génère des posts programmés à partir des articles de flux RSS en utilisant l'IA.
+Génère des posts programmés à partir des articles de flux RSS en utilisant l'IA. S'applique aux 4 types de sources (RSS, WordPress, YouTube, Reddit).
 
 ```bash
 php artisan rss:generate                # Génère pour tous les flux actifs
@@ -90,6 +95,111 @@ php artisan rss:generate --dry-run      # Prévisualise sans créer de posts
 **Scheduler** :
 ```php
 Schedule::command('rss:generate')->cron('0 */6 * * *')->withoutOverlapping();
+```
+
+---
+
+## Abonnés (Followers)
+
+### `followers:sync`
+
+Synchronise le nombre d'abonnés depuis toutes les plateformes sociales.
+
+```bash
+php artisan followers:sync                    # Sync tous les comptes
+php artisan followers:sync --account=5        # Sync un compte spécifique
+php artisan followers:sync --no-snapshot      # Sans créer de snapshot
+```
+
+**Logique** :
+1. Récupère les comptes sociaux avec leurs plateformes
+2. Pour chaque compte, appelle `FollowersService::syncFollowers()`
+3. Met à jour `social_accounts.followers_count` + `followers_synced_at`
+4. Crée un snapshot quotidien dans `social_account_snapshots` (sauf `--no-snapshot`)
+5. Délai de 100ms entre les comptes
+
+**Plateformes supportées** : Facebook, Instagram, Twitter, YouTube, Telegram, Threads, Bluesky
+
+**Note** : YouTube utilise `YouTubeTokenHelper` pour rafraîchir le token OAuth expiré (1h) avant chaque appel.
+
+**Scheduler** :
+```php
+Schedule::command('followers:sync')->dailyAt('06:00')->withoutOverlapping(30);
+```
+
+---
+
+### `snapshots:downsample`
+
+Agrège les snapshots followers pour la rétention progressive.
+
+```bash
+php artisan snapshots:downsample
+```
+
+**Scheduler** :
+```php
+Schedule::command('snapshots:downsample')->monthlyOn(1, '03:00');
+```
+
+---
+
+## Messagerie (Inbox)
+
+### `inbox:sync`
+
+Synchronise la messagerie depuis toutes les plateformes activées.
+
+```bash
+php artisan inbox:sync
+```
+
+**Scheduler** :
+```php
+// Fréquence configurable via Settings (défaut: every_15_min)
+Schedule::command('inbox:sync')->{fréquence}->withoutOverlapping(10);
+```
+
+---
+
+### `inbox:send-scheduled`
+
+Envoie les réponses programmées dont l'heure est passée.
+
+```bash
+php artisan inbox:send-scheduled
+```
+
+**Scheduler** :
+```php
+Schedule::command('inbox:send-scheduled')->everyMinute();
+```
+
+---
+
+## Bot
+
+### `bot:run`
+
+Exécute le bot d'engagement automatique. Cherche des posts par mots-clés et répond via IA.
+
+```bash
+php artisan bot:run
+```
+
+**Logique** :
+1. Pour chaque compte avec des paramètres bot actifs
+2. Vérifie la fréquence configurée (cooldown)
+3. Cherche des posts correspondant aux BotTerms
+4. Génère une réponse IA (persona du compte)
+5. Poste la réponse via le service de la plateforme
+6. Enregistre un BotLog
+
+**Plateformes** : Bluesky, Facebook
+
+**Scheduler** :
+```php
+Schedule::command('bot:run')->everyFifteenMinutes()->withoutOverlapping(15);
 ```
 
 ---
@@ -215,3 +325,18 @@ php artisan db:seed --class=PlatformSeeder    # Seed des plateformes uniquement
 **User de test créé** :
 - Email : `test@example.com`
 - Mot de passe : `password`
+
+---
+
+## Récapitulatif Scheduler
+
+| Commande | Fréquence | Overlap |
+|---|---|---|
+| `posts:publish-scheduled` | Chaque minute | `withoutOverlapping()` |
+| `stats:sync` | Configurable (défaut: hourly) | `withoutOverlapping()` |
+| `rss:generate` | Toutes les 6h | `withoutOverlapping()` |
+| `followers:sync` | Quotidien à 06:00 | `withoutOverlapping(30)` |
+| `snapshots:downsample` | 1er du mois à 03:00 | — |
+| `inbox:sync` | Configurable (défaut: every_15_min) | `withoutOverlapping(10)` |
+| `inbox:send-scheduled` | Chaque minute | — |
+| `bot:run` | Toutes les 15 min | `withoutOverlapping(15)` |

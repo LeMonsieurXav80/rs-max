@@ -81,15 +81,18 @@ class YouTubeInboxService implements PlatformInboxInterface
                         continue;
                     }
 
+                    $topCommentId = $topComment['id'];
+
                     $items->push([
                         'type' => 'comment',
-                        'external_id' => $topComment['id'],
+                        'external_id' => $topCommentId,
                         'external_post_id' => $videoId,
+                        'conversation_key' => $topCommentId,
                         'author_name' => $snippet['authorDisplayName'] ?? null,
                         'author_avatar_url' => $snippet['authorProfileImageUrl'] ?? null,
                         'author_external_id' => $authorChannelId,
                         'content' => $snippet['textOriginal'] ?? $snippet['textDisplay'] ?? null,
-                        'post_url' => "https://youtube.com/watch?v={$videoId}&lc={$topComment['id']}",
+                        'post_url' => "https://youtube.com/watch?v={$videoId}&lc={$topCommentId}",
                         'posted_at' => isset($snippet['publishedAt']) ? Carbon::parse($snippet['publishedAt']) : null,
                     ]);
 
@@ -107,7 +110,8 @@ class YouTubeInboxService implements PlatformInboxInterface
                             'type' => 'reply',
                             'external_id' => $reply['id'],
                             'external_post_id' => $videoId,
-                            'parent_id' => $topComment['id'],
+                            'parent_id' => $topCommentId,
+                            'conversation_key' => $topCommentId,
                             'author_name' => $replySnippet['authorDisplayName'] ?? null,
                             'author_avatar_url' => $replySnippet['authorProfileImageUrl'] ?? null,
                             'author_external_id' => $replyAuthorId,

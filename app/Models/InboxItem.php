@@ -14,6 +14,7 @@ class InboxItem extends Model
         'external_id',
         'external_post_id',
         'parent_id',
+        'conversation_key',
         'author_name',
         'author_username',
         'author_avatar_url',

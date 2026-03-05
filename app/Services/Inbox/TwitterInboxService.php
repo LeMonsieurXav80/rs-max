@@ -95,6 +95,7 @@ class TwitterInboxService implements PlatformInboxInterface
                     'external_id' => $tweetId,
                     'external_post_id' => $conversationId,
                     'parent_id' => $repliedToId,
+                    'conversation_key' => $repliedToId ?? $tweetId,
                     'author_name' => $author['name'] ?? null,
                     'author_username' => $username,
                     'author_avatar_url' => $author['profile_image_url'] ?? null,

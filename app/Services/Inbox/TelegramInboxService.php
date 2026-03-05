@@ -101,10 +101,13 @@ class TelegramInboxService implements PlatformInboxInterface
                     }
                 }
 
+                $chatId = (string) ($message['chat']['id'] ?? '');
+
                 $items->push([
                     'type' => 'dm',
                     'external_id' => (string) $message['message_id'],
-                    'external_post_id' => (string) ($message['chat']['id'] ?? ''),
+                    'external_post_id' => $chatId,
+                    'conversation_key' => "dm:{$chatId}",
                     'author_name' => $authorName ?: null,
                     'author_username' => $from['username'] ?? null,
                     'author_external_id' => isset($from['id']) ? (string) $from['id'] : null,

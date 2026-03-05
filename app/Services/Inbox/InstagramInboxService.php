@@ -58,10 +58,13 @@ class InstagramInboxService implements PlatformInboxInterface
                 $comments = $commentsResponse->json('data', []);
 
                 foreach ($comments as $comment) {
+                    $commentId = $comment['id'];
+
                     $items->push([
                         'type' => 'comment',
-                        'external_id' => $comment['id'],
+                        'external_id' => $commentId,
                         'external_post_id' => $mediaId,
+                        'conversation_key' => $commentId,
                         'author_username' => $comment['username'] ?? null,
                         'author_name' => $comment['username'] ?? null,
                         'content' => $comment['text'] ?? null,
@@ -76,7 +79,8 @@ class InstagramInboxService implements PlatformInboxInterface
                             'type' => 'reply',
                             'external_id' => $reply['id'],
                             'external_post_id' => $mediaId,
-                            'parent_id' => $comment['id'],
+                            'parent_id' => $commentId,
+                            'conversation_key' => $commentId,
                             'author_username' => $reply['username'] ?? null,
                             'author_name' => $reply['username'] ?? null,
                             'content' => $reply['text'] ?? null,

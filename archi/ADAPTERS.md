@@ -154,6 +154,36 @@ public function publish(SocialAccount $account, string $content, ?array $media =
 
 ---
 
+### Bluesky
+
+**Fichier** : `app/Services/Adapters/BlueskyAdapter.php`
+**API** : AT Protocol (Bluesky PDS)
+**Credentials** : `did`, `handle`, `app_password`, `access_jwt`, `refresh_jwt`
+
+| Cas                    | Processus                          | Notes                              |
+|------------------------|------------------------------------|------------------------------------|
+| Texte seul             | createRecord app.bsky.feed.post    | Facets pour liens/mentions         |
+| 1+ images              | Upload blobs → embed images        | Max 4 images                       |
+| Vidéo                  | Upload blob → embed video          |                                    |
+
+**Auth** : JWT tokens with auto-refresh. Falls back to full re-login with app_password.
+
+---
+
+### Reddit
+
+**Fichier** : `app/Services/Adapters/RedditAdapter.php`
+**API** : Reddit OAuth API
+**Credentials** : `client_id`, `client_secret`, `username`, `password`, `subreddit`
+
+| Cas                    | Processus                          | Notes                              |
+|------------------------|------------------------------------|------------------------------------|
+| Texte seul             | POST /api/submit (self)            | Kind = self                        |
+| Lien                   | POST /api/submit (link)            | Kind = link                        |
+| Image                  | Upload → POST /api/submit          |                                    |
+
+---
+
 ### Credentials par plateforme
 
 | Plateforme | Champs dans `credentials`                                     |
@@ -164,6 +194,8 @@ public function publish(SocialAccount $account, string $content, ?array $media =
 | Twitter/X  | `api_key`, `api_secret`, `access_token`, `access_token_secret`|
 | Threads    | `user_id`, `access_token`                                     |
 | YouTube    | `channel_id`, `access_token`, `refresh_token`                 |
+| Bluesky    | `did`, `handle`, `app_password`, `access_jwt`, `refresh_jwt`  |
+| Reddit     | `client_id`, `client_secret`, `username`, `password`, `subreddit`, `type` |
 
 ---
 
@@ -227,6 +259,13 @@ Retourne une collection de `ExternalPost`. Quota cost retourne `['cost' => int, 
 **API** : Threads Graph API v1.0
 
 - Import des posts Threads avec métriques
+
+### BlueskyImportService
+
+**Fichier** : `app/Services/Import/BlueskyImportService.php`
+**API** : AT Protocol public API
+
+- Import des posts via getAuthorFeed
 
 ---
 
@@ -354,9 +393,10 @@ public function fetchMetrics(PostPlatform $postPlatform): ?array;
 | Facebook   | Graph v21.0 GET /{pageId}             | followers_count                    |
 | Instagram  | Graph v21.0 GET /{igUserId}           | followers_count                    |
 | Twitter    | API v2 GET /users/me (OAuth 1.0a)     | public_metrics.followers_count     |
-| YouTube    | Data API v3 GET /channels             | statistics.subscriberCount         |
+| YouTube    | Data API v3 GET /channels (via `YouTubeTokenHelper::getFreshAccessToken()`) | statistics.subscriberCount         |
 | Telegram   | Bot API getChatMemberCount            | result                             |
 | Threads    | graph.threads.net /threads_insights   | followers_count total_value        |
+| Bluesky    | public.api.bsky.app getProfile        | followersCount                     |
 
 ### TranslationService
 
@@ -367,3 +407,63 @@ public function fetchMetrics(PostPlatform $postPlatform): ?array;
 - Réinterprétation naturelle (pas traduction littérale)
 - Préserve emojis, formatage, ton
 - Timeout : 30 secondes
+
+---
+
+## 6. Services d'inbox
+
+### Interface
+
+**Fichier** : `app/Services/Inbox/PlatformInboxInterface.php`
+
+```php
+public function fetchInbox(SocialAccount $account, ?Carbon $since = null): Collection;
+public function sendReply(SocialAccount $account, InboxItem $item, string $replyText): array;
+```
+
+Chaque service retourne des items avec un `conversation_key` qui détermine le regroupement en conversations.
+
+### Services par plateforme
+
+| Plateforme | Fichier                    | API                          | Types          | conversation_key              |
+|------------|----------------------------|------------------------------|----------------|-------------------------------|
+| Facebook   | FacebookInboxService       | Graph API v21.0 /{pageId}/feed | comment        | `{comment_id}`                |
+| Instagram  | InstagramInboxService      | Graph API v21.0 /{accountId}/media | comment, reply | `{top_comment_id}`            |
+| YouTube    | YouTubeInboxService        | Data API v3 /commentThreads  | comment, reply | `{top_comment_id}`            |
+| Twitter    | TwitterInboxService        | v2 /users/{id}/mentions      | comment        | `{replied_to_id or tweet_id}` |
+| Threads    | ThreadsInboxService        | Threads API v1.0             | reply          | `post:{thread_id}`            |
+| Bluesky    | BlueskyInboxService        | AT Protocol                  | comment, dm    | `post:{uri\|cid}` / `dm:{convo_id}` |
+| Telegram   | TelegramInboxService       | Bot API getUpdates           | dm             | `dm:{chat_id}`                |
+| Reddit     | RedditInboxService         | OAuth API /message/inbox     | comment, dm    | `{parent_id or id}` / `dm:{id}` |
+
+### InboxSyncService (orchestrateur)
+
+**Fichier** : `app/Services/Inbox/InboxSyncService.php`
+
+- `syncAll()` → sync toutes les plateformes activées
+- `syncPlatforms(slugs)` → sync des plateformes spécifiques
+- `syncAccount(account)` → sync un compte, déduplique sur external_id
+- Plateformes activables via `Setting::get("inbox_platform_{slug}_enabled")`
+
+---
+
+## 7. Services Bot
+
+### Architecture
+
+**Fichiers** : `app/Services/Bot/`, `app/Console/Commands/BotRunCommand.php`
+
+| Fichier              | Plateforme | API                          |
+|----------------------|------------|------------------------------|
+| BlueskyBotService    | Bluesky    | AT Protocol searchPosts      |
+| FacebookBotService   | Facebook   | Graph API search             |
+
+**Logique** :
+1. BotTerms : mots-clés à rechercher (activables/désactivables)
+2. Pour chaque terme actif, cherche des posts récents
+3. Filtre les posts déjà traités (BotLog)
+4. Génère une réponse via IA (persona du compte)
+5. Poste la réponse
+6. Crée un BotLog
+
+**Modèles** : BotTerm, BotLog, BotAccountSetting
