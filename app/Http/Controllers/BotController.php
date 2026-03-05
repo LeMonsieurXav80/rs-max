@@ -45,13 +45,16 @@ class BotController extends Controller
             ->groupBy('action_type')
             ->pluck('total', 'action_type');
 
-        // Bot frequency per account
+        // Bot frequency and active state per account
         $botFrequencies = [];
+        $botActiveStates = [];
         foreach ($blueskyAccounts as $acc) {
             $botFrequencies["bluesky_{$acc->id}"] = Setting::get("bot_freq_bluesky_{$acc->id}", 'every_30_min');
+            $botActiveStates["bluesky_{$acc->id}"] = Setting::get("bot_active_bluesky_{$acc->id}") === '1';
         }
         foreach ($facebookAccounts as $acc) {
             $botFrequencies["facebook_{$acc->id}"] = Setting::get("bot_freq_facebook_{$acc->id}", 'every_30_min');
+            $botActiveStates["facebook_{$acc->id}"] = Setting::get("bot_active_facebook_{$acc->id}") === '1';
         }
 
         return view('bot.index', compact(
@@ -61,6 +64,7 @@ class BotController extends Controller
             'logs',
             'todayStats',
             'botFrequencies',
+            'botActiveStates',
         ));
     }
 
@@ -107,9 +111,12 @@ class BotController extends Controller
         $accountId = $request->input('social_account_id');
         SocialAccount::findOrFail($accountId);
 
+        // Activate bot persistently
+        Setting::set("bot_active_bluesky_{$accountId}", '1');
+
         Artisan::queue('bot:run', ['--platform' => 'bluesky', '--account' => $accountId]);
 
-        return back()->with('success', 'Bot Bluesky lancé en arrière-plan. Les résultats apparaîtront dans l\'historique.');
+        return back()->with('success', 'Bot Bluesky activé et lancé.');
     }
 
     public function runFacebook(Request $request): RedirectResponse
@@ -117,9 +124,12 @@ class BotController extends Controller
         $accountId = $request->input('social_account_id');
         SocialAccount::findOrFail($accountId);
 
+        // Activate bot persistently
+        Setting::set("bot_active_facebook_{$accountId}", '1');
+
         Artisan::queue('bot:run', ['--platform' => 'facebook', '--account' => $accountId]);
 
-        return back()->with('success', 'Bot Facebook lancé en arrière-plan. Les résultats apparaîtront dans l\'historique.');
+        return back()->with('success', 'Bot Facebook activé et lancé.');
     }
 
     public function botStatus(Request $request): JsonResponse
@@ -127,9 +137,10 @@ class BotController extends Controller
         $platform = $request->input('platform');
         $accountId = $request->input('account_id');
 
+        $active = Setting::get("bot_active_{$platform}_{$accountId}") === '1';
         $running = Cache::has("bot_running_{$platform}_{$accountId}");
 
-        return response()->json(['running' => $running]);
+        return response()->json(['active' => $active, 'running' => $running]);
     }
 
     public function stopBot(Request $request): JsonResponse
@@ -137,6 +148,10 @@ class BotController extends Controller
         $platform = $request->input('platform');
         $accountId = $request->input('account_id');
 
+        // Deactivate bot persistently
+        Setting::set("bot_active_{$platform}_{$accountId}", '0');
+
+        // Also signal current run to stop if running
         Cache::put("bot_stop_{$platform}_{$accountId}", true, 300);
 
         return response()->json(['stopped' => true]);

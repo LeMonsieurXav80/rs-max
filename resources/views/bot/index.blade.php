@@ -90,33 +90,39 @@
                                     <option value="daily">1x par jour</option>
                                 </select>
                             </div>
-                            <div x-data="botButton('bluesky', {{ $bsAccount->id }})" x-init="checkStatus()">
-                                <template x-if="!running">
-                                    <form method="POST" action="{{ route('bot.runBluesky') }}" @submit="startPolling()">
+                            <div x-data="botButton('bluesky', {{ $bsAccount->id }}, {{ ($botActiveStates["bluesky_{$bsAccount->id}"] ?? false) ? 'true' : 'false' }})" x-init="init()">
+                                <template x-if="!active">
+                                    <form method="POST" action="{{ route('bot.runBluesky') }}" @submit="activate()">
                                         @csrf
                                         <input type="hidden" name="social_account_id" value="{{ $bsAccount->id }}">
                                         <button type="submit" class="inline-flex items-center gap-1.5 px-3 py-1.5 bg-indigo-600 text-white text-xs font-medium rounded-lg hover:bg-indigo-700 transition-colors">
                                             <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2">
                                                 <path stroke-linecap="round" stroke-linejoin="round" d="M5.25 5.653c0-.856.917-1.398 1.667-.986l11.54 6.347a1.125 1.125 0 0 1 0 1.972l-11.54 6.347a1.125 1.125 0 0 1-1.667-.986V5.653Z" />
                                             </svg>
-                                            Lancer maintenant
+                                            Activer le bot
                                         </button>
                                     </form>
                                 </template>
-                                <template x-if="running">
+                                <template x-if="active">
                                     <div class="flex items-center gap-2">
-                                        <span class="inline-flex items-center gap-1.5 px-3 py-1.5 bg-green-100 text-green-700 text-xs font-medium rounded-lg">
-                                            <svg class="w-3.5 h-3.5 animate-spin" fill="none" viewBox="0 0 24 24">
-                                                <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
-                                                <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path>
-                                            </svg>
-                                            En cours...
+                                        <span class="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg"
+                                              :class="running ? 'bg-green-100 text-green-700' : 'bg-emerald-50 text-emerald-600'">
+                                            <template x-if="running">
+                                                <svg class="w-3.5 h-3.5 animate-spin" fill="none" viewBox="0 0 24 24">
+                                                    <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                                                    <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path>
+                                                </svg>
+                                            </template>
+                                            <template x-if="!running">
+                                                <span class="w-2 h-2 rounded-full bg-emerald-500"></span>
+                                            </template>
+                                            <span x-text="running ? 'En cours...' : 'Actif'"></span>
                                         </span>
                                         <button type="button" @click="stop()" class="inline-flex items-center gap-1 px-2 py-1.5 bg-red-100 text-red-700 text-xs font-medium rounded-lg hover:bg-red-200 transition-colors">
                                             <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2">
                                                 <path stroke-linecap="round" stroke-linejoin="round" d="M5.25 7.5A2.25 2.25 0 0 1 7.5 5.25h9a2.25 2.25 0 0 1 2.25 2.25v9a2.25 2.25 0 0 1-2.25 2.25h-9a2.25 2.25 0 0 1-2.25-2.25v-9Z" />
                                             </svg>
-                                            Stop
+                                            Désactiver
                                         </button>
                                     </div>
                                 </template>
@@ -269,33 +275,39 @@
                                         <option value="daily">1x par jour</option>
                                     </select>
                                 </div>
-                                <div x-data="botButton('facebook', {{ $fbAccount->id }})" x-init="checkStatus()">
-                                    <template x-if="!running">
-                                        <form method="POST" action="{{ route('bot.runFacebook') }}" @submit="startPolling()">
+                                <div x-data="botButton('facebook', {{ $fbAccount->id }}, {{ ($botActiveStates["facebook_{$fbAccount->id}"] ?? false) ? 'true' : 'false' }})" x-init="init()">
+                                    <template x-if="!active">
+                                        <form method="POST" action="{{ route('bot.runFacebook') }}" @submit="activate()">
                                             @csrf
                                             <input type="hidden" name="social_account_id" value="{{ $fbAccount->id }}">
                                             <button type="submit" class="inline-flex items-center gap-1.5 px-3 py-1.5 bg-blue-600 text-white text-xs font-medium rounded-lg hover:bg-blue-700 transition-colors">
                                                 <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2">
                                                     <path stroke-linecap="round" stroke-linejoin="round" d="M6.633 10.25c.806 0 1.533-.446 2.031-1.08a9.041 9.041 0 0 1 2.861-2.4c.723-.384 1.35-.956 1.653-1.715a4.498 4.498 0 0 0 .322-1.672V2.75a.75.75 0 0 1 .75-.75 2.25 2.25 0 0 1 2.25 2.25c0 1.152-.26 2.243-.723 3.218-.266.558.107 1.282.725 1.282m0 0h3.126c1.026 0 1.945.694 2.054 1.715.045.422.068.85.068 1.285a11.95 11.95 0 0 1-2.649 7.521c-.388.482-.987.729-1.605.729H13.48c-.483 0-.964-.078-1.423-.23l-3.114-1.04a4.501 4.501 0 0 0-1.423-.23H5.904m7.846 2.354-3.114-1.04a4.501 4.501 0 0 0-1.423-.23H3.75a.75.75 0 0 1-.75-.75V8.322a.75.75 0 0 1 .75-.75h2.154c.489 0 .954-.21 1.282-.579l.218-.273a4.5 4.5 0 0 0 .729-3.469" />
                                                 </svg>
-                                                Liker les commentaires
+                                                Activer le bot
                                             </button>
                                         </form>
                                     </template>
-                                    <template x-if="running">
+                                    <template x-if="active">
                                         <div class="flex items-center gap-2">
-                                            <span class="inline-flex items-center gap-1.5 px-3 py-1.5 bg-green-100 text-green-700 text-xs font-medium rounded-lg">
-                                                <svg class="w-3.5 h-3.5 animate-spin" fill="none" viewBox="0 0 24 24">
-                                                    <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
-                                                    <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path>
-                                                </svg>
-                                                En cours...
+                                            <span class="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg"
+                                                  :class="running ? 'bg-green-100 text-green-700' : 'bg-emerald-50 text-emerald-600'">
+                                                <template x-if="running">
+                                                    <svg class="w-3.5 h-3.5 animate-spin" fill="none" viewBox="0 0 24 24">
+                                                        <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                                                        <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path>
+                                                    </svg>
+                                                </template>
+                                                <template x-if="!running">
+                                                    <span class="w-2 h-2 rounded-full bg-emerald-500"></span>
+                                                </template>
+                                                <span x-text="running ? 'En cours...' : 'Actif'"></span>
                                             </span>
                                             <button type="button" @click="stop()" class="inline-flex items-center gap-1 px-2 py-1.5 bg-red-100 text-red-700 text-xs font-medium rounded-lg hover:bg-red-200 transition-colors">
                                                 <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2">
                                                     <path stroke-linecap="round" stroke-linejoin="round" d="M5.25 7.5A2.25 2.25 0 0 1 7.5 5.25h9a2.25 2.25 0 0 1 2.25 2.25v9a2.25 2.25 0 0 1-2.25 2.25h-9a2.25 2.25 0 0 1-2.25-2.25v-9Z" />
                                                 </svg>
-                                                Stop
+                                                Désactiver
                                             </button>
                                         </div>
                                     </template>
@@ -415,31 +427,42 @@ function freqSelector(platform, accountId, initial) {
     };
 }
 
-function botButton(platform, accountId) {
+function botButton(platform, accountId, initialActive) {
     return {
+        active: initialActive,
         running: false,
         interval: null,
+
+        init() {
+            // Check current execution status
+            this.checkStatus();
+            // Poll periodically if bot is active
+            if (this.active) {
+                this.startPolling();
+            }
+        },
 
         checkStatus() {
             fetch(`{{ route('bot.status') }}?platform=${platform}&account_id=${accountId}`)
                 .then(r => r.json())
-                .then(data => { this.running = data.running; })
+                .then(data => {
+                    this.active = data.active;
+                    this.running = data.running;
+                })
                 .catch(() => {});
         },
 
+        activate() {
+            this.active = true;
+            this.running = true;
+            this.startPolling();
+        },
+
         startPolling() {
-            // Start showing running state after a short delay (queue pickup time)
-            setTimeout(() => {
-                this.running = true;
-                this.interval = setInterval(() => {
-                    this.checkStatus();
-                    if (!this.running && this.interval) {
-                        clearInterval(this.interval);
-                        this.interval = null;
-                        location.reload();
-                    }
-                }, 3000);
-            }, 1500);
+            if (this.interval) return;
+            this.interval = setInterval(() => {
+                this.checkStatus();
+            }, 5000);
         },
 
         stop() {
@@ -448,7 +471,12 @@ function botButton(platform, accountId) {
                 headers: { 'X-CSRF-TOKEN': '{{ csrf_token() }}', 'Content-Type': 'application/json' },
                 body: JSON.stringify({ platform, account_id: accountId })
             }).then(() => {
-                // Bot will stop at next iteration check
+                this.active = false;
+                this.running = false;
+                if (this.interval) {
+                    clearInterval(this.interval);
+                    this.interval = null;
+                }
             });
         }
     };

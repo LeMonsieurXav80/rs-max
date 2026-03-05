@@ -57,6 +57,13 @@ class RunBotActions extends Command
         $service = new BlueskyBotService;
 
         foreach ($accounts as $account) {
+            // When running via scheduler (no --account), check if bot is active
+            if (! $accountId && Setting::get("bot_active_bluesky_{$account->id}") !== '1') {
+                $this->line("  Skipping {$account->name} (not active)");
+
+                continue;
+            }
+
             // Skip if not due (unless manually triggered with --account)
             if (! $accountId && ! $this->isDue('bluesky', $account->id, 'every_30_min')) {
                 $this->line("  Skipping {$account->name} (not due yet)");
@@ -100,6 +107,13 @@ class RunBotActions extends Command
         $service = new FacebookBotService;
 
         foreach ($accounts as $account) {
+            // When running via scheduler (no --account), check if bot is active
+            if (! $accountId && Setting::get("bot_active_facebook_{$account->id}") !== '1') {
+                $this->line("  Skipping {$account->name} (not active)");
+
+                continue;
+            }
+
             if (! $accountId && ! $this->isDue('facebook', $account->id, 'every_30_min')) {
                 $this->line("  Skipping {$account->name} (not due yet)");
 
