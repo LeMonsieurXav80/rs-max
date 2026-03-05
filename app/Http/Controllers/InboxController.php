@@ -75,7 +75,8 @@ class InboxController extends Controller
         // Group by conversation thread:
         // - DMs: group by chat/conversation (external_post_id = chat_id)
         // - Comments with parent_id: group with their root comment (parent_id = root's external_id)
-        // - Top-level comments: group by their own external_id (so child items join them)
+        // - Comments with external_post_id: group by post/conversation (Twitter conversation_id, FB post_id, etc.)
+        // - Fallback: group by own external_id
         $conversations = $allItems->groupBy(function ($item) {
             if ($item->type === 'dm') {
                 return $item->social_account_id . ':dm:' . ($item->external_post_id ?: 'single:' . $item->id);
@@ -83,6 +84,10 @@ class InboxController extends Controller
 
             if ($item->parent_id) {
                 return $item->social_account_id . ':thread:' . $item->parent_id;
+            }
+
+            if ($item->external_post_id) {
+                return $item->social_account_id . ':post:' . $item->external_post_id;
             }
 
             return $item->social_account_id . ':thread:' . ($item->external_id ?: 'single:' . $item->id);

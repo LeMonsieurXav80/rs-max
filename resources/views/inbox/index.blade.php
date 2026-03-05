@@ -187,7 +187,7 @@
                                     <div class="flex items-center gap-2 mb-1">
                                         <span class="text-sm font-medium text-gray-700">{{ $firstItem->author_name ?: $firstItem->author_username ?: 'Anonyme' }}</span>
                                         @if($firstItem->author_username && $firstItem->author_name && $firstItem->author_username !== $firstItem->author_name)
-                                            <span class="text-xs text-gray-400">@{{ $firstItem->author_username }}</span>
+                                            <span class="text-xs text-gray-400">{{'@'}}{{ $firstItem->author_username }}</span>
                                         @endif
                                         @if($firstItem->type === 'reply')
                                             <span class="px-1.5 py-0.5 rounded-full bg-blue-100 text-blue-700 text-xs font-medium">Réponse</span>
@@ -266,7 +266,7 @@
                                                     <div class="flex items-center gap-2 mb-1">
                                                         <span class="font-medium text-sm text-gray-900">{{ $item->author_name ?: $item->author_username ?: 'Anonyme' }}</span>
                                                         @if($item->author_username && $item->author_name && $item->author_username !== $item->author_name)
-                                                            <span class="text-xs text-gray-400">@{{ $item->author_username }}</span>
+                                                            <span class="text-xs text-gray-400">{{'@'}}{{ $item->author_username }}</span>
                                                         @endif
                                                         <span class="text-xs text-gray-400">{{ $item->posted_at?->diffForHumans() }}</span>
                                                         @if($item->status === 'unread')
