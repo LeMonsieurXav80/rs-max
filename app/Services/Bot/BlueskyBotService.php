@@ -5,6 +5,7 @@ namespace App\Services\Bot;
 use App\Models\BotActionLog;
 use App\Models\BotSearchTerm;
 use App\Models\SocialAccount;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 
@@ -14,8 +15,12 @@ class BlueskyBotService
 
     private const PUBLIC_API = 'https://public.api.bsky.app';
 
+    private ?int $currentAccountId = null;
+
     public function runForAccount(SocialAccount $account): array
     {
+        $this->currentAccountId = $account->id;
+
         $auth = $this->getAuth($account);
         if (! $auth) {
             Log::error('BlueskyBotService: authentication failed', ['account_id' => $account->id]);
@@ -32,6 +37,9 @@ class BlueskyBotService
             ->get();
 
         foreach ($terms as $term) {
+            if ($this->shouldStop()) {
+                break;
+            }
             $likes = $this->processSearchTerm($account, $auth, $term);
             $totalLikes += $likes;
             $termsProcessed++;
@@ -39,7 +47,10 @@ class BlueskyBotService
         }
 
         // 2. Like-back: like posts from people who liked our posts
-        $likebackLikes = $this->processLikeback($account, $auth);
+        $likebackLikes = 0;
+        if (! $this->shouldStop()) {
+            $likebackLikes = $this->processLikeback($account, $auth);
+        }
         $totalLikes += $likebackLikes;
 
         return ['total_likes' => $totalLikes, 'terms_processed' => $termsProcessed, 'likeback_likes' => $likebackLikes];
@@ -55,6 +66,10 @@ class BlueskyBotService
         $likesCount = 0;
 
         foreach ($posts as $post) {
+            if ($this->shouldStop()) {
+                break;
+            }
+
             $postUri = $post['uri'] ?? null;
             $postCid = $post['cid'] ?? null;
             $authorDid = $post['author']['did'] ?? null;
@@ -82,7 +97,7 @@ class BlueskyBotService
             }
 
             // Like replies if enabled
-            if ($term->like_replies) {
+            if ($term->like_replies && ! $this->shouldStop()) {
                 $likesCount += $this->likePostReplies($account, $auth, $postUri, $term->term);
             }
 
@@ -393,5 +408,10 @@ class BlueskyBotService
         $payload = json_decode(base64_decode(strtr($parts[1], '-_', '+/')), true);
 
         return ! $payload || ! isset($payload['exp']) || $payload['exp'] < (time() + 300);
+    }
+
+    private function shouldStop(): bool
+    {
+        return $this->currentAccountId && Cache::has("bot_stop_bluesky_{$this->currentAccountId}");
     }
 }

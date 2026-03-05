@@ -6,6 +6,7 @@ use App\Models\SocialAccount;
 use App\Services\Bot\BlueskyBotService;
 use App\Services\Bot\FacebookBotService;
 use Illuminate\Console\Command;
+use Illuminate\Support\Facades\Cache;
 
 class RunBotActions extends Command
 {
@@ -45,12 +46,21 @@ class RunBotActions extends Command
         $service = new BlueskyBotService;
 
         foreach ($accounts as $account) {
-            $this->line("  Processing: {$account->name}");
-            $result = $service->runForAccount($account);
-            $this->line("  Likes: {$result['total_likes']} | Terms: " . ($result['terms_processed'] ?? 0));
+            $cacheKey = "bot_running_bluesky_{$account->id}";
+            Cache::put($cacheKey, true, 600); // 10 min max TTL
+            Cache::forget("bot_stop_bluesky_{$account->id}");
 
-            if (isset($result['error'])) {
-                $this->error("  Error: {$result['error']}");
+            $this->line("  Processing: {$account->name}");
+
+            try {
+                $result = $service->runForAccount($account);
+                $this->line("  Likes: {$result['total_likes']} | Terms: " . ($result['terms_processed'] ?? 0));
+
+                if (isset($result['error'])) {
+                    $this->error("  Error: {$result['error']}");
+                }
+            } finally {
+                Cache::forget($cacheKey);
             }
         }
     }
@@ -69,12 +79,21 @@ class RunBotActions extends Command
         $service = new FacebookBotService;
 
         foreach ($accounts as $account) {
-            $this->line("  Processing: {$account->name}");
-            $result = $service->runForAccount($account);
-            $this->line("  Comments liked: {$result['total_likes']}");
+            $cacheKey = "bot_running_facebook_{$account->id}";
+            Cache::put($cacheKey, true, 600);
+            Cache::forget("bot_stop_facebook_{$account->id}");
 
-            if (isset($result['error'])) {
-                $this->error("  Error: {$result['error']}");
+            $this->line("  Processing: {$account->name}");
+
+            try {
+                $result = $service->runForAccount($account);
+                $this->line("  Comments liked: {$result['total_likes']}");
+
+                if (isset($result['error'])) {
+                    $this->error("  Error: {$result['error']}");
+                }
+            } finally {
+                Cache::forget($cacheKey);
             }
         }
     }

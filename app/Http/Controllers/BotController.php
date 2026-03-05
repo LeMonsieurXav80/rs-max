@@ -9,6 +9,7 @@ use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Artisan;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\View\View;
 
 class BotController extends Controller
@@ -108,6 +109,26 @@ class BotController extends Controller
         Artisan::queue('bot:run', ['--platform' => 'facebook', '--account' => $accountId]);
 
         return back()->with('success', 'Bot Facebook lancé en arrière-plan. Les résultats apparaîtront dans l\'historique.');
+    }
+
+    public function botStatus(Request $request): JsonResponse
+    {
+        $platform = $request->input('platform');
+        $accountId = $request->input('account_id');
+
+        $running = Cache::has("bot_running_{$platform}_{$accountId}");
+
+        return response()->json(['running' => $running]);
+    }
+
+    public function stopBot(Request $request): JsonResponse
+    {
+        $platform = $request->input('platform');
+        $accountId = $request->input('account_id');
+
+        Cache::put("bot_stop_{$platform}_{$accountId}", true, 300);
+
+        return response()->json(['stopped' => true]);
     }
 
     public function clearLogs(): RedirectResponse

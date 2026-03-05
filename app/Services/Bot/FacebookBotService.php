@@ -4,6 +4,7 @@ namespace App\Services\Bot;
 
 use App\Models\BotActionLog;
 use App\Models\SocialAccount;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 
@@ -13,8 +14,11 @@ class FacebookBotService
 
     private const MAX_LIKES_PER_RUN = 50;
 
+    private ?int $currentAccountId = null;
+
     public function runForAccount(SocialAccount $account): array
     {
+        $this->currentAccountId = $account->id;
         $credentials = $account->credentials;
         $pageId = $credentials['page_id'] ?? $account->platform_account_id;
         $accessToken = $credentials['access_token'] ?? null;
@@ -47,14 +51,14 @@ class FacebookBotService
         $errors = 0;
 
         foreach ($posts as $post) {
-            if ($totalLikes >= self::MAX_LIKES_PER_RUN) {
+            if ($totalLikes >= self::MAX_LIKES_PER_RUN || $this->shouldStop()) {
                 break;
             }
 
             $comments = $post['comments']['data'] ?? [];
 
             foreach ($comments as $comment) {
-                if ($totalLikes >= self::MAX_LIKES_PER_RUN) {
+                if ($totalLikes >= self::MAX_LIKES_PER_RUN || $this->shouldStop()) {
                     break;
                 }
 
@@ -134,5 +138,10 @@ class FacebookBotService
             ->where('target_uri', $commentId)
             ->where('success', true)
             ->exists();
+    }
+
+    private function shouldStop(): bool
+    {
+        return $this->currentAccountId && Cache::has("bot_stop_facebook_{$this->currentAccountId}");
     }
 }

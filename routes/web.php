@@ -219,6 +219,8 @@ Route::middleware(['auth', 'verified'])->group(function () {
         Route::patch('bot/terms/{term}/toggle', [BotController::class, 'toggleTerm'])->name('bot.toggleTerm');
         Route::post('bot/run/bluesky', [BotController::class, 'runBluesky'])->name('bot.runBluesky');
         Route::post('bot/run/facebook', [BotController::class, 'runFacebook'])->name('bot.runFacebook');
+        Route::get('bot/status', [BotController::class, 'botStatus'])->name('bot.status');
+        Route::post('bot/stop', [BotController::class, 'stopBot'])->name('bot.stop');
         Route::delete('bot/logs', [BotController::class, 'clearLogs'])->name('bot.clearLogs');
 
         // Settings
