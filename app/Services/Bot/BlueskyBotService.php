@@ -83,26 +83,24 @@ class BlueskyBotService
                 continue;
             }
 
-            // Skip already liked
-            if ($this->alreadyActioned($account->id, $postUri)) {
-                continue;
+            $alreadyLiked = $this->alreadyActioned($account->id, $postUri);
+
+            if (! $alreadyLiked) {
+                // Like the post
+                $success = $this->likeRecord($auth, $postUri, $postCid);
+                $this->logAction($account, 'like_post', $postUri, $post, $term->term, $success);
+
+                if ($success) {
+                    $likesCount++;
+                }
+
+                usleep(500_000);
             }
 
-            // Like the post
-            $success = $this->likeRecord($auth, $postUri, $postCid);
-            $this->logAction($account, 'like_post', $postUri, $post, $term->term, $success);
-
-            if ($success) {
-                $likesCount++;
-            }
-
-            // Like replies if enabled
+            // Like new replies (even on already-liked posts — revisit for new interactions)
             if ($term->like_replies && ! $this->shouldStop()) {
                 $likesCount += $this->likePostReplies($account, $auth, $postUri, $term->term);
             }
-
-            // Respect rate limits
-            usleep(500_000); // 500ms between actions
         }
 
         return $likesCount;
@@ -112,7 +110,7 @@ class BlueskyBotService
     {
         $response = Http::get(self::PUBLIC_API . '/xrpc/app.bsky.feed.searchPosts', [
             'q' => $query,
-            'sort' => 'latest',
+            'sort' => 'top',
             'limit' => min($limit, 25),
         ]);
 
