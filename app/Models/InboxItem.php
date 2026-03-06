@@ -29,6 +29,7 @@ class InboxItem extends Model
         'reply_external_id',
         'replied_at',
         'reply_scheduled_at',
+        'reply_attempts',
     ];
 
     protected function casts(): array

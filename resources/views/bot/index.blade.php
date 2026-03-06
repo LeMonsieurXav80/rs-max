@@ -274,7 +274,12 @@
                         @if ($accountTargets->isNotEmpty())
                             <div class="space-y-2 mb-4">
                                 @foreach ($accountTargets as $target)
-                                    <div class="flex items-center justify-between py-2 px-3 rounded-xl {{ $target->status === 'completed' ? 'bg-green-50' : ($target->status === 'running' ? 'bg-blue-50' : ($target->status === 'paused' ? 'bg-yellow-50' : 'bg-gray-50')) }}">
+                                    <div class="flex items-center justify-between py-2 px-3 rounded-xl {{ $target->status === 'completed' ? 'bg-green-50' : ($target->status === 'running' ? 'bg-blue-50' : ($target->status === 'paused' ? 'bg-yellow-50' : 'bg-gray-50')) }}"
+                                         @if($target->status === 'running')
+                                             x-data="prospectProgress({{ $target->id }}, {{ json_encode(['likers' => $target->likers_processed, 'likes' => $target->likes_given, 'follows' => $target->follows_given, 'status' => $target->status]) }})"
+                                             x-init="startPolling()"
+                                         @endif
+                                    >
                                         <div class="flex items-center gap-3 min-w-0 flex-wrap">
                                             <span class="text-sm font-medium text-gray-900 cursor-pointer hover:text-purple-600"
                                                   onclick="document.getElementById('target-handle-{{ $bsAccount->id }}').value = '{{ $target->handle }}'"
@@ -282,15 +287,21 @@
                                             @if ($target->status === 'completed')
                                                 <span class="px-2 py-0.5 bg-green-100 text-green-700 rounded-full text-[10px] font-medium">Termine</span>
                                             @elseif ($target->status === 'running')
-                                                <span class="px-2 py-0.5 bg-blue-100 text-blue-700 rounded-full text-[10px] font-medium animate-pulse">En cours</span>
+                                                <span class="px-2 py-0.5 bg-blue-100 text-blue-700 rounded-full text-[10px] font-medium animate-pulse" x-text="statusLabel">En cours</span>
                                             @elseif ($target->status === 'paused')
                                                 <span class="px-2 py-0.5 bg-yellow-100 text-yellow-700 rounded-full text-[10px] font-medium">En pause</span>
                                             @else
                                                 <span class="px-2 py-0.5 bg-gray-100 text-gray-600 rounded-full text-[10px] font-medium">En attente</span>
                                             @endif
-                                            <span class="text-[10px] text-gray-400">
-                                                {{ $target->likers_processed }} likers &middot; {{ $target->likes_given }} likes &middot; {{ $target->follows_given }} follows
-                                            </span>
+                                            @if ($target->status === 'running')
+                                                <span class="text-[10px] text-gray-400">
+                                                    <span x-text="likers"></span> likers &middot; <span x-text="likes"></span> likes &middot; <span x-text="follows"></span> follows
+                                                </span>
+                                            @else
+                                                <span class="text-[10px] text-gray-400">
+                                                    {{ $target->likers_processed }} likers &middot; {{ $target->likes_given }} likes &middot; {{ $target->follows_given }} follows
+                                                </span>
+                                            @endif
                                         </div>
                                         <div class="flex items-center gap-1">
                                             @if (in_array($target->status, ['pending', 'paused', 'completed']))
@@ -609,6 +620,43 @@ function botButton(platform, accountId, initialActive, runUrl) {
             });
         }
     };
+}
+
+function prospectProgress(targetId, initial) {
+    return {
+        likers: initial.likers,
+        likes: initial.likes,
+        follows: initial.follows,
+        status: initial.status,
+        statusLabel: 'En cours',
+        timer: null,
+
+        startPolling() {
+            this.timer = setInterval(() => this.poll(), 10000);
+        },
+
+        async poll() {
+            try {
+                const resp = await fetch('/bot/target-status/' + targetId, {
+                    headers: { 'Accept': 'application/json' },
+                });
+                const data = await resp.json();
+                this.likers = data.likers_processed;
+                this.likes = data.likes_given;
+                this.follows = data.follows_given;
+                this.status = data.status;
+
+                if (data.status !== 'running') {
+                    clearInterval(this.timer);
+                    setTimeout(() => location.reload(), 1000);
+                }
+            } catch (e) { /* silent */ }
+        },
+
+        destroy() {
+            if (this.timer) clearInterval(this.timer);
+        }
+    }
 }
 </script>
 @endpush

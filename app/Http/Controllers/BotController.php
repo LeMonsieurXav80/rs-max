@@ -226,6 +226,16 @@ class BotController extends Controller
         return response()->json(['stopped' => true]);
     }
 
+    public function targetStatus(BotTargetAccount $target): JsonResponse
+    {
+        return response()->json([
+            'status' => $target->status,
+            'likers_processed' => $target->likers_processed,
+            'likes_given' => $target->likes_given,
+            'follows_given' => $target->follows_given,
+        ]);
+    }
+
     public function apiStatus(SocialAccount $account): JsonResponse
     {
         $credentials = $account->credentials;

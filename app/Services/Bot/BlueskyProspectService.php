@@ -23,22 +23,25 @@ class BlueskyProspectService
 
     private const ACTION_DELAY_MS = 2_400_000; // ~2.4s between actions to spread over 1h
 
+    private const HTTP_TIMEOUT = 15;
+
+    private const MAX_CONSECUTIVE_ERRORS = 10;
+
     private SocialAccount $account;
 
     private array $auth;
+
+    private int $consecutiveErrors = 0;
 
     public function run(SocialAccount $account, BotTargetAccount $target): array
     {
         $this->account = $account;
 
-        $auth = $this->getAuth($account);
-        if (! $auth) {
+        if (! $this->refreshAuth()) {
             Log::warning('BlueskyProspectService: auth failed', ['account_id' => $account->id]);
 
             return ['error' => 'Auth failed'];
         }
-        Log::info('BlueskyProspectService: auth OK', ['did' => $auth['did']]);
-        $this->auth = $auth;
 
         // Resolve DID if not yet done
         if (! $target->did) {
@@ -93,28 +96,36 @@ class BlueskyProspectService
 
             do {
                 if ($this->shouldStop($account->id)) {
-                    $target->update([
-                        'status' => 'paused',
-                        'current_cursor' => $cursor,
-                        'likers_processed' => $target->likers_processed + $likersProcessed - $target->likers_processed,
-                        'likes_given' => $target->likes_given + $totalLikes,
-                        'follows_given' => $target->follows_given + $totalFollows,
+                    return $this->saveAndReturn($target, $likersProcessed, $totalLikes, $totalFollows, $cursor, 'paused');
+                }
+
+                // Too many consecutive errors — likely rate limited or network issue
+                if ($this->consecutiveErrors >= self::MAX_CONSECUTIVE_ERRORS) {
+                    Log::warning('BlueskyProspectService: too many consecutive errors, pausing', [
+                        'errors' => $this->consecutiveErrors,
+                        'account_id' => $account->id,
                     ]);
 
-                    return [
-                        'paused' => true,
-                        'likers_processed' => $likersProcessed,
-                        'likes' => $totalLikes,
-                        'follows' => $totalFollows,
-                    ];
+                    return $this->saveAndReturn($target, $likersProcessed, $totalLikes, $totalFollows, $cursor, 'paused');
                 }
 
                 $likesResult = $this->fetchLikers($postUri, $cursor);
+                if ($likesResult === null) {
+                    // Network error fetching likers — skip to next page/post
+                    $cursor = null;
+
+                    continue;
+                }
+
                 $likers = $likesResult['likers'];
                 $cursor = $likesResult['cursor'];
 
                 foreach ($likers as $liker) {
                     if ($this->shouldStop($account->id)) {
+                        break 3;
+                    }
+
+                    if ($this->consecutiveErrors >= self::MAX_CONSECUTIVE_ERRORS) {
                         break 3;
                     }
 
@@ -128,6 +139,11 @@ class BlueskyProspectService
                     // Skip if we already prospected this user
                     if ($this->alreadyProspected($likerDid)) {
                         continue;
+                    }
+
+                    // Refresh auth token periodically (every 50 likers)
+                    if ($likersProcessed > 0 && $likersProcessed % 50 === 0) {
+                        $this->refreshAuth();
                     }
 
                     // Like their recent posts (only originals, not reposts)
@@ -182,13 +198,41 @@ class BlueskyProspectService
         ];
     }
 
+    private function saveAndReturn(BotTargetAccount $target, int $likersProcessed, int $totalLikes, int $totalFollows, ?string $cursor, string $status): array
+    {
+        $target->update([
+            'status' => $status,
+            'current_cursor' => $cursor,
+            'likers_processed' => $likersProcessed,
+            'likes_given' => $target->likes_given + $totalLikes,
+            'follows_given' => $target->follows_given + $totalFollows,
+        ]);
+
+        return [
+            'paused' => true,
+            'likers_processed' => $likersProcessed,
+            'likes' => $totalLikes,
+            'follows' => $totalFollows,
+        ];
+    }
+
     private function getRecentPosts(string $did, int $count): array
     {
-        $response = Http::get(self::PUBLIC_API . '/xrpc/app.bsky.feed.getAuthorFeed', [
-            'actor' => $did,
-            'limit' => 30, // fetch more to filter out reposts
-            'filter' => 'posts_no_replies',
-        ]);
+        try {
+            $response = Http::timeout(self::HTTP_TIMEOUT)
+                ->get(self::PUBLIC_API . '/xrpc/app.bsky.feed.getAuthorFeed', [
+                    'actor' => $did,
+                    'limit' => 30,
+                    'filter' => 'posts_no_replies',
+                ]);
+        } catch (\Throwable $e) {
+            Log::warning('BlueskyProspectService: getAuthorFeed exception', [
+                'did' => $did,
+                'error' => $e->getMessage(),
+            ]);
+
+            return [];
+        }
 
         if (! $response->successful()) {
             Log::warning('BlueskyProspectService: getAuthorFeed failed', [
@@ -226,18 +270,33 @@ class BlueskyProspectService
         return $posts;
     }
 
-    private function fetchLikers(string $postUri, ?string $cursor): array
+    private function fetchLikers(string $postUri, ?string $cursor): ?array
     {
         $params = ['uri' => $postUri, 'limit' => 100];
         if ($cursor) {
             $params['cursor'] = $cursor;
         }
 
-        $response = Http::get(self::PUBLIC_API . '/xrpc/app.bsky.feed.getLikes', $params);
+        try {
+            $response = Http::timeout(self::HTTP_TIMEOUT)
+                ->get(self::PUBLIC_API . '/xrpc/app.bsky.feed.getLikes', $params);
+        } catch (\Throwable $e) {
+            Log::warning('BlueskyProspectService: getLikes exception', [
+                'uri' => $postUri,
+                'error' => $e->getMessage(),
+            ]);
+            $this->consecutiveErrors++;
+
+            return null;
+        }
 
         if (! $response->successful()) {
+            $this->consecutiveErrors++;
+
             return ['likers' => [], 'cursor' => null];
         }
+
+        $this->consecutiveErrors = 0;
 
         return [
             'likers' => collect($response->json('likes', []))
@@ -251,13 +310,26 @@ class BlueskyProspectService
 
     private function likeRecentPosts(string $did, string $handle): int
     {
-        $response = Http::get(self::PUBLIC_API . '/xrpc/app.bsky.feed.getAuthorFeed', [
-            'actor' => $did,
-            'limit' => 15,
-            'filter' => 'posts_no_replies',
-        ]);
+        try {
+            $response = Http::timeout(self::HTTP_TIMEOUT)
+                ->get(self::PUBLIC_API . '/xrpc/app.bsky.feed.getAuthorFeed', [
+                    'actor' => $did,
+                    'limit' => 15,
+                    'filter' => 'posts_no_replies',
+                ]);
+        } catch (\Throwable $e) {
+            Log::warning('BlueskyProspectService: likeRecentPosts feed exception', [
+                'did' => $did,
+                'error' => $e->getMessage(),
+            ]);
+            $this->consecutiveErrors++;
+
+            return 0;
+        }
 
         if (! $response->successful()) {
+            $this->consecutiveErrors++;
+
             return 0;
         }
 
@@ -300,6 +372,9 @@ class BlueskyProspectService
 
             if ($success) {
                 $likesCount++;
+                $this->consecutiveErrors = 0;
+            } else {
+                $this->consecutiveErrors++;
             }
 
             usleep(self::ACTION_DELAY_MS);
@@ -314,16 +389,40 @@ class BlueskyProspectService
             return false;
         }
 
-        $response = Http::withToken($this->auth['accessJwt'])
-            ->post(self::PDS_BASE . '/xrpc/com.atproto.repo.createRecord', [
-                'repo' => $this->auth['did'],
-                'collection' => 'app.bsky.graph.follow',
-                'record' => [
-                    '$type' => 'app.bsky.graph.follow',
-                    'subject' => $did,
-                    'createdAt' => now()->toIso8601ZuluString(),
-                ],
+        try {
+            $response = Http::timeout(self::HTTP_TIMEOUT)
+                ->withToken($this->auth['accessJwt'])
+                ->post(self::PDS_BASE . '/xrpc/com.atproto.repo.createRecord', [
+                    'repo' => $this->auth['did'],
+                    'collection' => 'app.bsky.graph.follow',
+                    'record' => [
+                        '$type' => 'app.bsky.graph.follow',
+                        'subject' => $did,
+                        'createdAt' => now()->toIso8601ZuluString(),
+                    ],
+                ]);
+        } catch (\Throwable $e) {
+            Log::warning('BlueskyProspectService: follow exception', [
+                'did' => $did,
+                'error' => $e->getMessage(),
             ]);
+
+            BotActionLog::create([
+                'social_account_id' => $this->account->id,
+                'action_type' => 'prospect_follow',
+                'target_uri' => "follow:{$did}",
+                'target_author' => $handle,
+                'target_text' => null,
+                'search_term' => null,
+                'success' => false,
+                'error' => $e->getMessage(),
+            ]);
+
+            $this->consecutiveErrors++;
+            usleep(self::ACTION_DELAY_MS);
+
+            return false;
+        }
 
         $success = $response->successful();
 
@@ -338,7 +437,10 @@ class BlueskyProspectService
             'error' => $success ? null : $response->json('message'),
         ]);
 
-        if (! $success) {
+        if ($success) {
+            $this->consecutiveErrors = 0;
+        } else {
+            $this->consecutiveErrors++;
             Log::warning('BlueskyProspectService: follow failed', [
                 'did' => $did,
                 'status' => $response->status(),
@@ -353,37 +455,63 @@ class BlueskyProspectService
 
     private function likeRecord(string $uri, string $cid): bool
     {
-        $response = Http::withToken($this->auth['accessJwt'])
-            ->post(self::PDS_BASE . '/xrpc/com.atproto.repo.createRecord', [
-                'repo' => $this->auth['did'],
-                'collection' => 'app.bsky.feed.like',
-                'record' => [
-                    '$type' => 'app.bsky.feed.like',
-                    'subject' => [
-                        'uri' => $uri,
-                        'cid' => $cid,
+        try {
+            $response = Http::timeout(self::HTTP_TIMEOUT)
+                ->withToken($this->auth['accessJwt'])
+                ->post(self::PDS_BASE . '/xrpc/com.atproto.repo.createRecord', [
+                    'repo' => $this->auth['did'],
+                    'collection' => 'app.bsky.feed.like',
+                    'record' => [
+                        '$type' => 'app.bsky.feed.like',
+                        'subject' => [
+                            'uri' => $uri,
+                            'cid' => $cid,
+                        ],
+                        'createdAt' => now()->toIso8601ZuluString(),
                     ],
-                    'createdAt' => now()->toIso8601ZuluString(),
-                ],
+                ]);
+        } catch (\Throwable $e) {
+            Log::warning('BlueskyProspectService: like exception', [
+                'uri' => $uri,
+                'error' => $e->getMessage(),
             ]);
+            $this->consecutiveErrors++;
+
+            return false;
+        }
 
         if (! $response->successful()) {
             Log::warning('BlueskyProspectService: like failed', [
                 'uri' => $uri,
                 'status' => $response->status(),
             ]);
+            $this->consecutiveErrors++;
+
+            return false;
         }
 
-        return $response->successful();
+        $this->consecutiveErrors = 0;
+
+        return true;
     }
 
     private function resolveHandle(string $handle): ?string
     {
-        $response = Http::get(self::PUBLIC_API . '/xrpc/com.atproto.identity.resolveHandle', [
-            'handle' => $handle,
-        ]);
+        try {
+            $response = Http::timeout(self::HTTP_TIMEOUT)
+                ->get(self::PUBLIC_API . '/xrpc/com.atproto.identity.resolveHandle', [
+                    'handle' => $handle,
+                ]);
 
-        return $response->successful() ? $response->json('did') : null;
+            return $response->successful() ? $response->json('did') : null;
+        } catch (\Throwable $e) {
+            Log::warning('BlueskyProspectService: resolveHandle exception', [
+                'handle' => $handle,
+                'error' => $e->getMessage(),
+            ]);
+
+            return null;
+        }
     }
 
     private function alreadyActioned(string $uri): bool
@@ -407,9 +535,20 @@ class BlueskyProspectService
         return Cache::has("bot_stop_prospect_{$accountId}");
     }
 
+    private function refreshAuth(): bool
+    {
+        $auth = $this->getAuth($this->account);
+        if (! $auth) {
+            return false;
+        }
+        Log::info('BlueskyProspectService: auth OK', ['did' => $auth['did']]);
+        $this->auth = $auth;
+
+        return true;
+    }
+
     private function getAuth(SocialAccount $account): ?array
     {
-        // Reuse the same auth logic from BlueskyBotService
         $credentials = $account->credentials;
         $accessJwt = $credentials['access_jwt'] ?? null;
         $refreshJwt = $credentials['refresh_jwt'] ?? null;
@@ -419,39 +558,49 @@ class BlueskyProspectService
         }
 
         if ($refreshJwt) {
-            $response = Http::withToken($refreshJwt)
-                ->post(self::PDS_BASE . '/xrpc/com.atproto.server.refreshSession');
+            try {
+                $response = Http::timeout(self::HTTP_TIMEOUT)
+                    ->withToken($refreshJwt)
+                    ->post(self::PDS_BASE . '/xrpc/com.atproto.server.refreshSession');
+
+                if ($response->successful()) {
+                    $data = $response->json();
+                    $account->update([
+                        'credentials' => array_merge($credentials, [
+                            'access_jwt' => $data['accessJwt'],
+                            'refresh_jwt' => $data['refreshJwt'],
+                            'did' => $data['did'],
+                        ]),
+                    ]);
+
+                    return ['did' => $data['did'], 'accessJwt' => $data['accessJwt']];
+                }
+            } catch (\Throwable $e) {
+                Log::warning('BlueskyProspectService: refresh session exception', ['error' => $e->getMessage()]);
+            }
+        }
+
+        try {
+            $response = Http::timeout(self::HTTP_TIMEOUT)
+                ->post(self::PDS_BASE . '/xrpc/com.atproto.server.createSession', [
+                    'identifier' => $credentials['handle'],
+                    'password' => $credentials['app_password'],
+                ]);
 
             if ($response->successful()) {
                 $data = $response->json();
                 $account->update([
                     'credentials' => array_merge($credentials, [
+                        'did' => $data['did'],
                         'access_jwt' => $data['accessJwt'],
                         'refresh_jwt' => $data['refreshJwt'],
-                        'did' => $data['did'],
                     ]),
                 ]);
 
                 return ['did' => $data['did'], 'accessJwt' => $data['accessJwt']];
             }
-        }
-
-        $response = Http::post(self::PDS_BASE . '/xrpc/com.atproto.server.createSession', [
-            'identifier' => $credentials['handle'],
-            'password' => $credentials['app_password'],
-        ]);
-
-        if ($response->successful()) {
-            $data = $response->json();
-            $account->update([
-                'credentials' => array_merge($credentials, [
-                    'did' => $data['did'],
-                    'access_jwt' => $data['accessJwt'],
-                    'refresh_jwt' => $data['refreshJwt'],
-                ]),
-            ]);
-
-            return ['did' => $data['did'], 'accessJwt' => $data['accessJwt']];
+        } catch (\Throwable $e) {
+            Log::warning('BlueskyProspectService: create session exception', ['error' => $e->getMessage()]);
         }
 
         return null;

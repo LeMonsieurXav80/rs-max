@@ -23,40 +23,68 @@
 
         {{-- Scheduled replies progress banner --}}
         @if($scheduledInfo)
-            <div class="bg-indigo-50 border border-indigo-200 rounded-2xl p-4"
-                 x-data="scheduledCountdown({{ json_encode($scheduledInfo) }})"
+            <div x-data="scheduledCountdown({{ json_encode($scheduledInfo) }})"
                  x-init="startCountdown()"
-                 x-show="pending > 0"
+                 x-show="pending > 0 || failed > 0"
                  x-transition>
-                <div class="flex items-center gap-4">
-                    <div class="flex-shrink-0">
-                        <svg class="w-6 h-6 text-indigo-600 animate-pulse" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1.5">
-                            <path stroke-linecap="round" stroke-linejoin="round" d="M12 6v6h4.5m4.5 0a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z" />
-                        </svg>
+
+                {{-- Pending replies banner --}}
+                <template x-if="pending > 0">
+                    <div class="bg-indigo-50 border border-indigo-200 rounded-2xl p-4" :class="{ 'mb-3': failed > 0 }">
+                        <div class="flex items-center gap-4">
+                            <div class="flex-shrink-0">
+                                <svg class="w-6 h-6 text-indigo-600 animate-pulse" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1.5">
+                                    <path stroke-linecap="round" stroke-linejoin="round" d="M12 6v6h4.5m4.5 0a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z" />
+                                </svg>
+                            </div>
+                            <div class="flex-1 min-w-0">
+                                <p class="text-sm font-semibold text-indigo-900">
+                                    <span x-text="pending"></span>/<span x-text="initialCount"></span> réponse(s) restante(s)
+                                </p>
+                                <p class="text-xs text-indigo-700 mt-0.5">
+                                    Prochaine dans <span x-text="nextIn" class="font-medium"></span>
+                                    <template x-if="pending > 1">
+                                        <span> &middot; Dernière dans <span x-text="lastIn" class="font-medium"></span></span>
+                                    </template>
+                                </p>
+                            </div>
+                            <div class="flex-shrink-0">
+                                <span class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium bg-indigo-100 text-indigo-700">
+                                    <span class="w-2 h-2 rounded-full bg-indigo-500 animate-pulse"></span>
+                                    En cours
+                                </span>
+                            </div>
+                        </div>
+                        <div class="mt-3 w-full bg-indigo-100 rounded-full h-1.5">
+                            <div class="bg-indigo-500 h-1.5 rounded-full transition-all duration-500"
+                                 :style="'width: ' + Math.round(((initialCount - pending) / initialCount) * 100) + '%'"></div>
+                        </div>
                     </div>
-                    <div class="flex-1 min-w-0">
-                        <p class="text-sm font-semibold text-indigo-900">
-                            <span x-text="pending"></span>/<span x-text="initialCount"></span> réponse(s) restante(s)
-                        </p>
-                        <p class="text-xs text-indigo-700 mt-0.5">
-                            Prochaine dans <span x-text="nextIn" class="font-medium"></span>
-                            <template x-if="pending > 1">
-                                <span> &middot; Dernière dans <span x-text="lastIn" class="font-medium"></span></span>
-                            </template>
-                        </p>
+                </template>
+
+                {{-- Failed replies banner --}}
+                <template x-if="failed > 0">
+                    <div class="bg-red-50 border border-red-200 rounded-2xl p-4">
+                        <div class="flex items-center gap-4">
+                            <div class="flex-shrink-0">
+                                <svg class="w-6 h-6 text-red-500" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1.5">
+                                    <path stroke-linecap="round" stroke-linejoin="round" d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126ZM12 15.75h.007v.008H12v-.008Z" />
+                                </svg>
+                            </div>
+                            <div class="flex-1 min-w-0">
+                                <p class="text-sm font-semibold text-red-900">
+                                    <span x-text="failed"></span> réponse(s) en échec
+                                </p>
+                                <p class="text-xs text-red-700 mt-0.5">L'envoi a échoué après 3 tentatives. Vous pouvez réessayer depuis la conversation.</p>
+                            </div>
+                            <div class="flex-shrink-0">
+                                <button @click="dismissFailed()" class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium bg-red-100 text-red-700 hover:bg-red-200 transition-colors">
+                                    Fermer
+                                </button>
+                            </div>
+                        </div>
                     </div>
-                    <div class="flex-shrink-0">
-                        <span class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium bg-indigo-100 text-indigo-700">
-                            <span class="w-2 h-2 rounded-full bg-indigo-500 animate-pulse"></span>
-                            En cours
-                        </span>
-                    </div>
-                </div>
-                {{-- Progress bar --}}
-                <div class="mt-3 w-full bg-indigo-100 rounded-full h-1.5">
-                    <div class="bg-indigo-500 h-1.5 rounded-full transition-all duration-500"
-                         :style="'width: ' + Math.round(((initialCount - pending) / initialCount) * 100) + '%'"></div>
-                </div>
+                </template>
             </div>
         @endif
 
@@ -204,6 +232,8 @@
                                         @endif
                                         @if($firstItem->status === 'replied')
                                             <span class="px-1.5 py-0.5 rounded-full bg-green-100 text-green-700 text-xs font-medium">Répondu</span>
+                                        @elseif($firstItem->status === 'reply_failed')
+                                            <span class="px-1.5 py-0.5 rounded-full bg-red-100 text-red-700 text-xs font-medium">Échec envoi</span>
                                         @endif
                                     </div>
                                     @if($firstItem->content)
@@ -290,6 +320,8 @@
                                                         @endif
                                                         @if($item->status === 'replied')
                                                             <span class="px-1.5 py-0.5 rounded-full bg-green-100 text-green-700 text-xs font-medium">Répondu</span>
+                                                        @elseif($item->status === 'reply_failed')
+                                                            <span class="px-1.5 py-0.5 rounded-full bg-red-100 text-red-700 text-xs font-medium">Échec envoi</span>
                                                         @endif
                                                     </div>
                                                     @if($item->content)
@@ -342,6 +374,8 @@
                                                                         @endif
                                                                         @if($reply->status === 'replied')
                                                                             <span class="px-1 py-0.5 rounded-full bg-green-100 text-green-700 text-xs font-medium">Répondu</span>
+                                                                        @elseif($reply->status === 'reply_failed')
+                                                                            <span class="px-1 py-0.5 rounded-full bg-red-100 text-red-700 text-xs font-medium">Échec</span>
                                                                         @endif
                                                                     </div>
                                                                     <p class="text-sm text-gray-600">{{ $reply->content }}</p>
@@ -388,6 +422,8 @@
                                                         @endif
                                                         @if($item->status === 'replied')
                                                             <span class="px-1.5 py-0.5 rounded-full bg-green-100 text-green-700 text-xs font-medium">Répondu</span>
+                                                        @elseif($item->status === 'reply_failed')
+                                                            <span class="px-1.5 py-0.5 rounded-full bg-red-100 text-red-700 text-xs font-medium">Échec envoi</span>
                                                         @endif
                                                     </div>
                                                     @if($item->content)
@@ -855,9 +891,10 @@ function inboxManager() {
 function scheduledCountdown(info) {
     return {
         pending: info.pending,
-        initialCount: info.pending,
-        nextAt: new Date(info.next_at),
-        lastAt: new Date(info.last_at),
+        initialCount: info.pending || 1,
+        failed: info.failed || 0,
+        nextAt: info.next_at ? new Date(info.next_at) : null,
+        lastAt: info.last_at ? new Date(info.last_at) : null,
         nextIn: '',
         lastIn: '',
         countdownTimer: null,
@@ -865,14 +902,16 @@ function scheduledCountdown(info) {
 
         startCountdown() {
             this.updateLabels();
-            this.pollStatus();
-            this.countdownTimer = setInterval(() => this.updateLabels(), 10000);
-            this.pollTimer = setInterval(() => this.pollStatus(), 15000);
+            if (this.pending > 0) {
+                this.pollStatus();
+                this.countdownTimer = setInterval(() => this.updateLabels(), 10000);
+                this.pollTimer = setInterval(() => this.pollStatus(), 15000);
+            }
         },
 
         updateLabels() {
-            this.nextIn = this.formatDiff(this.nextAt);
-            this.lastIn = this.formatDiff(this.lastAt);
+            if (this.nextAt) this.nextIn = this.formatDiff(this.nextAt);
+            if (this.lastAt) this.lastIn = this.formatDiff(this.lastAt);
         },
 
         async pollStatus() {
@@ -882,6 +921,7 @@ function scheduledCountdown(info) {
                 });
                 const data = await resp.json();
                 this.pending = data.pending;
+                this.failed = data.failed || 0;
                 if (data.pending > 0) {
                     this.nextAt = new Date(data.next_at);
                     this.lastAt = new Date(data.last_at);
@@ -889,10 +929,15 @@ function scheduledCountdown(info) {
                 } else {
                     if (this.countdownTimer) clearInterval(this.countdownTimer);
                     if (this.pollTimer) clearInterval(this.pollTimer);
-                    // Reload to refresh conversation statuses
-                    setTimeout(() => location.reload(), 1500);
+                    if (this.failed === 0) {
+                        setTimeout(() => location.reload(), 1500);
+                    }
                 }
             } catch (e) { /* silent */ }
+        },
+
+        dismissFailed() {
+            this.failed = 0;
         },
 
         formatDiff(date) {

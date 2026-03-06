@@ -183,16 +183,22 @@ class InboxController extends Controller
         $scheduledPending = InboxItem::whereIn('social_account_id', $accountIds)
             ->whereNotNull('reply_scheduled_at')
             ->whereNull('replied_at')
-            ->where('status', '!=', 'replied')
+            ->whereNotIn('status', ['replied', 'reply_failed'])
             ->orderBy('reply_scheduled_at', 'asc')
             ->get(['id', 'reply_scheduled_at']);
 
+        // Failed replies count
+        $failedReplies = InboxItem::whereIn('social_account_id', $accountIds)
+            ->where('status', 'reply_failed')
+            ->count();
+
         $scheduledInfo = null;
-        if ($scheduledPending->isNotEmpty()) {
+        if ($scheduledPending->isNotEmpty() || $failedReplies > 0) {
             $scheduledInfo = [
                 'pending' => $scheduledPending->count(),
-                'next_at' => $scheduledPending->first()->reply_scheduled_at,
-                'last_at' => $scheduledPending->last()->reply_scheduled_at,
+                'next_at' => $scheduledPending->first()?->reply_scheduled_at,
+                'last_at' => $scheduledPending->last()?->reply_scheduled_at,
+                'failed' => $failedReplies,
             ];
         }
 
@@ -338,6 +344,8 @@ class InboxController extends Controller
                 $item->update([
                     'reply_content' => $itemData['reply_text'],
                     'reply_scheduled_at' => $scheduledAt,
+                    'reply_attempts' => 0,
+                    'status' => $item->status === 'reply_failed' ? 'read' : $item->status,
                 ]);
 
                 $results[] = ['id' => $item->id, 'success' => true, 'scheduled_at' => $scheduledAt->toDateTimeString()];
@@ -398,18 +406,23 @@ class InboxController extends Controller
         $pending = InboxItem::whereIn('social_account_id', $accountIds)
             ->whereNotNull('reply_scheduled_at')
             ->whereNull('replied_at')
-            ->where('status', '!=', 'replied')
+            ->whereNotIn('status', ['replied', 'reply_failed'])
             ->orderBy('reply_scheduled_at', 'asc')
             ->get(['id', 'reply_scheduled_at']);
 
-        if ($pending->isEmpty()) {
-            return response()->json(['pending' => 0]);
+        $failed = InboxItem::whereIn('social_account_id', $accountIds)
+            ->where('status', 'reply_failed')
+            ->count();
+
+        if ($pending->isEmpty() && $failed === 0) {
+            return response()->json(['pending' => 0, 'failed' => 0]);
         }
 
         return response()->json([
             'pending' => $pending->count(),
-            'next_at' => $pending->first()->reply_scheduled_at,
-            'last_at' => $pending->last()->reply_scheduled_at,
+            'next_at' => $pending->first()?->reply_scheduled_at,
+            'last_at' => $pending->last()?->reply_scheduled_at,
+            'failed' => $failed,
         ]);
     }
 
