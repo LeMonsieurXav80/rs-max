@@ -184,12 +184,14 @@ class InboxController extends Controller
             ->whereNotNull('reply_scheduled_at')
             ->whereNull('replied_at')
             ->whereNotIn('status', ['replied', 'reply_failed'])
+            ->where('reply_attempts', '<', 3)
             ->orderBy('reply_scheduled_at', 'asc')
             ->get(['id', 'reply_scheduled_at']);
 
-        // Failed replies count
+        // Failed replies count (status or exhausted attempts)
         $failedReplies = InboxItem::whereIn('social_account_id', $accountIds)
-            ->where('status', 'reply_failed')
+            ->where(fn ($q) => $q->where('status', 'reply_failed')->orWhere('reply_attempts', '>=', 3))
+            ->whereNull('replied_at')
             ->count();
 
         $scheduledInfo = null;
@@ -407,11 +409,13 @@ class InboxController extends Controller
             ->whereNotNull('reply_scheduled_at')
             ->whereNull('replied_at')
             ->whereNotIn('status', ['replied', 'reply_failed'])
+            ->where('reply_attempts', '<', 3)
             ->orderBy('reply_scheduled_at', 'asc')
             ->get(['id', 'reply_scheduled_at']);
 
         $failed = InboxItem::whereIn('social_account_id', $accountIds)
-            ->where('status', 'reply_failed')
+            ->where(fn ($q) => $q->where('status', 'reply_failed')->orWhere('reply_attempts', '>=', 3))
+            ->whereNull('replied_at')
             ->count();
 
         if ($pending->isEmpty() && $failed === 0) {
