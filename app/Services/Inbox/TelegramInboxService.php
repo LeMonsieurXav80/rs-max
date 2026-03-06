@@ -9,6 +9,8 @@ use Carbon\Carbon;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Str;
 
 class TelegramInboxService implements PlatformInboxInterface
 {
@@ -89,16 +91,10 @@ class TelegramInboxService implements PlatformInboxInterface
                     $mediaFileId = end($message['photo'])['file_id'] ?? null;
                 }
 
-                // Resolve file_id to URL
+                // Download media file locally (avoids exposing bot token in URL)
                 $mediaUrl = null;
                 if ($mediaFileId) {
-                    $fileResponse = Http::get("{$baseUrl}/getFile", ['file_id' => $mediaFileId]);
-                    if ($fileResponse->successful()) {
-                        $filePath = $fileResponse->json('result.file_path');
-                        if ($filePath) {
-                            $mediaUrl = "https://api.telegram.org/file/bot{$botToken}/{$filePath}";
-                        }
-                    }
+                    $mediaUrl = $this->downloadTelegramFile($baseUrl, $botToken, $mediaFileId);
                 }
 
                 $chatId = (string) ($message['chat']['id'] ?? '');
@@ -170,6 +166,34 @@ class TelegramInboxService implements PlatformInboxInterface
             ]);
 
             return ['success' => false, 'external_id' => null, 'error' => $e->getMessage()];
+        }
+    }
+
+    private function downloadTelegramFile(string $baseUrl, string $botToken, string $fileId): ?string
+    {
+        try {
+            $fileResponse = Http::get("{$baseUrl}/getFile", ['file_id' => $fileId]);
+            if (! $fileResponse->successful()) {
+                return null;
+            }
+
+            $filePath = $fileResponse->json('result.file_path');
+            if (! $filePath) {
+                return null;
+            }
+
+            $remoteUrl = "https://api.telegram.org/file/bot{$botToken}/{$filePath}";
+            $fileContent = Http::get($remoteUrl)->body();
+
+            $extension = pathinfo($filePath, PATHINFO_EXTENSION) ?: 'bin';
+            $localName = 'tg_' . Str::random(16) . '.' . $extension;
+
+            Storage::disk('local')->put("media/{$localName}", $fileContent);
+
+            return url("/media/{$localName}");
+        } catch (\Throwable $e) {
+            Log::warning('TelegramInboxService: file download failed', ['error' => $e->getMessage()]);
+            return null;
         }
     }
 }

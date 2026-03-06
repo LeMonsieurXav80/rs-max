@@ -27,6 +27,7 @@ use App\Http\Controllers\YouTubeChannelController;
 use App\Http\Controllers\StatsController;
 use App\Http\Controllers\ThreadController;
 use App\Http\Controllers\ThreadsOAuthController;
+use App\Http\Controllers\HelpController;
 use App\Http\Controllers\UpdateController;
 use App\Http\Controllers\YouTubeOAuthController;
 use Illuminate\Support\Facades\Route;
@@ -40,6 +41,9 @@ Route::middleware(['auth', 'verified', 'throttle:60,1'])->group(function () {
 
     // Dashboard
     Route::get('/dashboard', [DashboardController::class, 'index'])->name('dashboard');
+
+    // Help
+    Route::get('/help', [HelpController::class, 'index'])->name('help.index');
 
     // AI Assist (must be before posts resource to avoid route conflict)
     Route::post('posts/ai-assist', [AiAssistController::class, 'generate'])->name('posts.aiAssist');
