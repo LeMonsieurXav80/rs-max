@@ -561,48 +561,70 @@ function freqSelector(platform, accountId, initial) {
     };
 }
 
+// Central status manager — single batch request for all bot buttons
+const botStatusManager = {
+    listeners: {},
+    polling: false,
+    interval: null,
+
+    register(key, callback) {
+        this.listeners[key] = callback;
+        if (!this.polling) {
+            this.polling = true;
+            this.fetchAll();
+            this.interval = setInterval(() => this.fetchAll(), 10000);
+        }
+    },
+
+    fetchAll() {
+        const accounts = Object.keys(this.listeners).map(key => {
+            const [platform, account_id] = key.split('_', 2);
+            return { platform, account_id };
+        });
+        if (accounts.length === 0) return;
+
+        fetch('{{ route('bot.statusBatch') }}', {
+            method: 'POST',
+            headers: {
+                'X-CSRF-TOKEN': '{{ csrf_token() }}',
+                'Content-Type': 'application/json',
+                'Accept': 'application/json',
+            },
+            body: JSON.stringify({ accounts })
+        })
+        .then(r => r.json())
+        .then(data => {
+            for (const [key, status] of Object.entries(data)) {
+                if (this.listeners[key]) {
+                    this.listeners[key](status);
+                }
+            }
+        })
+        .catch(() => {});
+    }
+};
+
 function botButton(platform, accountId, initialActive, runUrl) {
     return {
         active: initialActive,
         running: false,
-        interval: null,
 
         init() {
-            // Check current execution status
-            this.checkStatus();
-            // Poll periodically if bot is active
-            if (this.active) {
-                this.startPolling();
-            }
-        },
-
-        checkStatus() {
-            fetch(`{{ route('bot.status') }}?platform=${platform}&account_id=${accountId}`)
-                .then(r => r.json())
-                .then(data => {
-                    this.active = data.active;
-                    this.running = data.running;
-                })
-                .catch(() => {});
+            const key = `${platform}_${accountId}`;
+            botStatusManager.register(key, (status) => {
+                this.active = status.active;
+                this.running = status.running;
+            });
         },
 
         activate() {
             this.active = true;
             this.running = true;
-            this.startPolling();
-            // Trigger the bot run via AJAX
             fetch(runUrl, {
                 method: 'POST',
                 headers: { 'X-CSRF-TOKEN': '{{ csrf_token() }}', 'Content-Type': 'application/json' },
                 body: JSON.stringify({ social_account_id: accountId })
             }).catch(() => {});
-        },
-
-        startPolling() {
-            if (this.interval) return;
-            this.interval = setInterval(() => {
-                this.checkStatus();
-            }, 5000);
         },
 
         stop() {
@@ -613,10 +635,6 @@ function botButton(platform, accountId, initialActive, runUrl) {
             }).then(() => {
                 this.active = false;
                 this.running = false;
-                if (this.interval) {
-                    clearInterval(this.interval);
-                    this.interval = null;
-                }
             });
         }
     };

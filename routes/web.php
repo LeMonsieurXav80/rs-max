@@ -214,6 +214,7 @@ Route::middleware(['auth', 'verified', 'throttle:60,1'])->group(function () {
         Route::post('bot/run/bluesky', [BotController::class, 'runBluesky'])->name('bot.runBluesky');
         Route::post('bot/run/facebook', [BotController::class, 'runFacebook'])->name('bot.runFacebook');
         Route::get('bot/status', [BotController::class, 'botStatus'])->name('bot.status');
+        Route::post('bot/status-batch', [BotController::class, 'botStatusBatch'])->name('bot.statusBatch');
         Route::post('bot/stop', [BotController::class, 'stopBot'])->name('bot.stop');
         Route::post('bot/frequency', [BotController::class, 'updateFrequency'])->name('bot.updateFrequency');
         Route::delete('bot/logs', [BotController::class, 'clearLogs'])->name('bot.clearLogs');

@@ -146,6 +146,25 @@ class BotController extends Controller
         return response()->json(['active' => $active, 'running' => $running]);
     }
 
+    public function botStatusBatch(Request $request): JsonResponse
+    {
+        $accounts = $request->input('accounts', []);
+        $results = [];
+
+        foreach ($accounts as $entry) {
+            $platform = $entry['platform'] ?? '';
+            $accountId = $entry['account_id'] ?? '';
+            $key = "{$platform}_{$accountId}";
+
+            $results[$key] = [
+                'active' => Setting::get("bot_active_{$platform}_{$accountId}") === '1',
+                'running' => Cache::has("bot_running_{$platform}_{$accountId}"),
+            ];
+        }
+
+        return response()->json($results);
+    }
+
     public function stopBot(Request $request): JsonResponse
     {
         $platform = $request->input('platform');

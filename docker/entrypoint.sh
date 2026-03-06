@@ -114,6 +114,9 @@ php artisan view:cache
 # Create storage link if not exists
 php artisan storage:link 2>/dev/null || true
 
+# Fix log ownership (artisan commands above run as root and may recreate logs)
+chown -R www-data:www-data /var/www/html/storage/logs
+
 echo "RS-Max is ready!"
 echo "================================================"
 
