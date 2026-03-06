@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Models\BotActionLog;
 use App\Models\BotSearchTerm;
+use App\Models\BotTargetAccount;
 use App\Models\Setting;
 use App\Models\SocialAccount;
 use Illuminate\Http\JsonResponse;
@@ -57,10 +58,15 @@ class BotController extends Controller
             $botActiveStates["facebook_{$acc->id}"] = Setting::get("bot_active_facebook_{$acc->id}") === '1';
         }
 
+        $targetAccounts = BotTargetAccount::with('socialAccount')
+            ->orderByDesc('created_at')
+            ->get();
+
         return view('bot.index', compact(
             'blueskyAccounts',
             'facebookAccounts',
             'searchTerms',
+            'targetAccounts',
             'logs',
             'todayStats',
             'botFrequencies',
@@ -171,5 +177,62 @@ class BotController extends Controller
         BotActionLog::truncate();
 
         return back()->with('success', 'Historique des actions vidé.');
+    }
+
+    public function addTarget(Request $request): RedirectResponse
+    {
+        $validated = $request->validate([
+            'social_account_id' => 'required|exists:social_accounts,id',
+            'handle' => 'required|string|max:255',
+        ]);
+
+        $handle = ltrim(trim($validated['handle']), '@');
+
+        BotTargetAccount::updateOrCreate(
+            [
+                'social_account_id' => $validated['social_account_id'],
+                'handle' => $handle,
+            ],
+            ['status' => 'pending']
+        );
+
+        return back()->with('success', "Compte cible @{$handle} ajouté.");
+    }
+
+    public function removeTarget(BotTargetAccount $target): RedirectResponse
+    {
+        $target->delete();
+
+        return back()->with('success', 'Compte cible supprimé.');
+    }
+
+    public function runTarget(BotTargetAccount $target): JsonResponse
+    {
+        Artisan::queue('bot:prospect', ['--target' => $target->id]);
+
+        return response()->json(['started' => true]);
+    }
+
+    public function stopTarget(BotTargetAccount $target): JsonResponse
+    {
+        Cache::put("bot_stop_prospect_{$target->social_account_id}", true, 300);
+
+        return response()->json(['stopped' => true]);
+    }
+
+    public function resetTarget(BotTargetAccount $target): RedirectResponse
+    {
+        $target->update([
+            'status' => 'pending',
+            'current_post_uri' => null,
+            'current_cursor' => null,
+            'likers_processed' => 0,
+            'likes_given' => 0,
+            'follows_given' => 0,
+            'started_at' => null,
+            'completed_at' => null,
+        ]);
+
+        return back()->with('success', "Compte @{$target->handle} réinitialisé.");
     }
 }

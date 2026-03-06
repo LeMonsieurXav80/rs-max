@@ -223,6 +223,11 @@ Route::middleware(['auth', 'verified'])->group(function () {
         Route::post('bot/stop', [BotController::class, 'stopBot'])->name('bot.stop');
         Route::post('bot/frequency', [BotController::class, 'updateFrequency'])->name('bot.updateFrequency');
         Route::delete('bot/logs', [BotController::class, 'clearLogs'])->name('bot.clearLogs');
+        Route::post('bot/targets', [BotController::class, 'addTarget'])->name('bot.addTarget');
+        Route::delete('bot/targets/{target}', [BotController::class, 'removeTarget'])->name('bot.removeTarget');
+        Route::post('bot/targets/{target}/run', [BotController::class, 'runTarget'])->name('bot.runTarget');
+        Route::post('bot/targets/{target}/stop', [BotController::class, 'stopTarget'])->name('bot.stopTarget');
+        Route::post('bot/targets/{target}/reset', [BotController::class, 'resetTarget'])->name('bot.resetTarget');
 
         // Settings
         Route::get('settings', [SettingsController::class, 'index'])->name('settings.index');
