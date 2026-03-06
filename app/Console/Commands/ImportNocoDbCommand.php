@@ -42,7 +42,7 @@ class ImportNocoDbCommand extends Command
         if ($adminEmail) {
             $admin = User::where('email', $adminEmail)->first();
             if ($admin) {
-                $admin->update(['is_admin' => true]);
+                $admin->update(['role' => 'admin']);
                 $this->info("   Admin: {$admin->name} ({$admin->email})");
             }
         }

@@ -21,7 +21,7 @@ class RedditSourceController extends Controller
 {
     public function index(Request $request): View
     {
-        if (! $request->user()->is_admin) {
+        if (! $request->user()->isManager()) {
             abort(403);
         }
 
@@ -35,7 +35,7 @@ class RedditSourceController extends Controller
 
     public function create(Request $request): View
     {
-        if (! $request->user()->is_admin) {
+        if (! $request->user()->isManager()) {
             abort(403);
         }
 
@@ -50,7 +50,7 @@ class RedditSourceController extends Controller
 
     public function store(Request $request)
     {
-        if (! $request->user()->is_admin) {
+        if (! $request->user()->isManager()) {
             abort(403);
         }
 
@@ -100,7 +100,7 @@ class RedditSourceController extends Controller
 
     public function edit(Request $request, RedditSource $redditSource): View
     {
-        if (! $request->user()->is_admin) {
+        if (! $request->user()->isManager()) {
             abort(403);
         }
 
@@ -127,7 +127,7 @@ class RedditSourceController extends Controller
 
     public function update(Request $request, RedditSource $redditSource)
     {
-        if (! $request->user()->is_admin) {
+        if (! $request->user()->isManager()) {
             abort(403);
         }
 
@@ -177,7 +177,7 @@ class RedditSourceController extends Controller
 
     public function destroy(Request $request, RedditSource $redditSource)
     {
-        if (! $request->user()->is_admin) {
+        if (! $request->user()->isManager()) {
             abort(403);
         }
 
@@ -190,7 +190,7 @@ class RedditSourceController extends Controller
 
     public function testConnection(Request $request): JsonResponse
     {
-        if (! $request->user()->is_admin) {
+        if (! $request->user()->isManager()) {
             abort(403);
         }
 
@@ -208,7 +208,7 @@ class RedditSourceController extends Controller
 
     public function fetchNow(Request $request, RedditSource $redditSource)
     {
-        if (! $request->user()->is_admin) {
+        if (! $request->user()->isManager()) {
             abort(403);
         }
 
@@ -224,7 +224,7 @@ class RedditSourceController extends Controller
 
     public function preview(Request $request, RedditSource $redditSource): View
     {
-        if (! $request->user()->is_admin) {
+        if (! $request->user()->isManager()) {
             abort(403);
         }
 
@@ -248,7 +248,7 @@ class RedditSourceController extends Controller
 
     public function generatePreview(Request $request, RedditSource $redditSource): JsonResponse
     {
-        if (! $request->user()->is_admin) {
+        if (! $request->user()->isManager()) {
             abort(403);
         }
 
@@ -316,7 +316,7 @@ class RedditSourceController extends Controller
 
     public function regenerateItem(Request $request, RedditSource $redditSource): JsonResponse
     {
-        if (! $request->user()->is_admin) {
+        if (! $request->user()->isManager()) {
             abort(403);
         }
 
@@ -362,7 +362,7 @@ class RedditSourceController extends Controller
 
     public function confirmPublications(Request $request, RedditSource $redditSource): JsonResponse
     {
-        if (! $request->user()->is_admin) {
+        if (! $request->user()->isManager()) {
             abort(403);
         }
 
@@ -372,7 +372,7 @@ class RedditSourceController extends Controller
             return response()->json(['error' => 'Aucune publication à créer.'], 422);
         }
 
-        $adminUser = User::where('is_admin', true)->first();
+        $adminUser = User::where('role', 'admin')->first();
         if (! $adminUser) {
             return response()->json(['error' => 'Aucun utilisateur admin trouvé.'], 500);
         }

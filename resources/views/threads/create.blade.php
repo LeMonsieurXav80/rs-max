@@ -41,7 +41,7 @@
                     <label class="block text-sm font-medium text-gray-700 mb-2">Source du contenu</label>
 
                     {{-- Source mode tabs --}}
-                    @if(auth()->user()->is_admin && !empty(array_filter($sourceTypeCounts ?? [])))
+                    @if(auth()->user()->isManager() && !empty(array_filter($sourceTypeCounts ?? [])))
                     <div class="flex flex-wrap items-center gap-1.5 mb-3">
                         <button type="button" @click="switchSourceMode('url')"
                                 class="px-3 py-1.5 text-xs font-medium rounded-lg transition-colors"

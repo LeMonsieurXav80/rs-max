@@ -178,7 +178,7 @@
                     </div>
 
                     {{-- Persona & Hooks (admin, collapsible sub-menu) --}}
-                    @if(auth()->user()->is_admin)
+                    @if(auth()->user()->isManager())
                     <div x-data="{ personaOpen: {{ str_starts_with($currentRoute, 'personas') || str_starts_with($currentRoute, 'hooks') ? 'true' : 'false' }} }">
                         <button
                             @click="personaOpen = !personaOpen"
@@ -215,7 +215,7 @@
                     @endif
 
                     {{-- Sources de contenu (collapsible) --}}
-                    @if(auth()->user()->is_admin)
+                    @if(auth()->user()->isManager())
                     <div x-data="{ rssOpen: {{ str_starts_with($currentRoute, 'rss') || str_starts_with($currentRoute, 'wordpress') || str_starts_with($currentRoute, 'youtube-channels') || str_starts_with($currentRoute, 'reddit') ? 'true' : 'false' }} }">
                         <button
                             @click="rssOpen = !rssOpen"
@@ -349,7 +349,7 @@
                     </div>
 
                     {{-- Utilisateurs (admin only) --}}
-                    @if(auth()->user()->is_admin)
+                    @if(auth()->user()->isAdmin())
                     <a href="{{ url('/users') }}"
                        class="flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-colors {{ str_starts_with($currentRoute, 'users') ? 'bg-indigo-50 text-indigo-600' : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900' }}">
                         <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1.5">
@@ -360,7 +360,7 @@
                     @endif
 
                     {{-- Bot Actions (admin only) --}}
-                    @if(auth()->user()->is_admin)
+                    @if(auth()->user()->isManager())
                     <a href="{{ url('/bot') }}"
                        class="flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-colors {{ str_starts_with($currentRoute, 'bot') ? 'bg-indigo-50 text-indigo-600' : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900' }}">
                         <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1.5">
@@ -371,7 +371,7 @@
                     @endif
 
                     {{-- Paramètres (admin only) --}}
-                    @if(auth()->user()->is_admin)
+                    @if(auth()->user()->isManager())
                     <a href="{{ url('/settings') }}"
                        class="flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-colors {{ str_starts_with($currentRoute, 'settings') ? 'bg-indigo-50 text-indigo-600' : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900' }}">
                         <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1.5">

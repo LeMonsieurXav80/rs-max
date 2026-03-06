@@ -35,7 +35,7 @@ Route::get('/', function () {
 });
 
 Route::middleware(['auth', 'verified'])->group(function () {
-    // ─── Accessible à tous les utilisateurs authentifiés ──────────
+    // ─── Accessible a tous les utilisateurs authentifies ──────────
 
     // Dashboard
     Route::get('/dashboard', [DashboardController::class, 'index'])->name('dashboard');
@@ -122,43 +122,31 @@ Route::middleware(['auth', 'verified'])->group(function () {
     Route::get('media/thumbnail/{filename}', [MediaController::class, 'thumbnail'])->name('media.thumbnail');
     Route::delete('media/{filename}', [MediaController::class, 'destroy'])->name('media.destroy');
 
-    // ─── Admin seulement ──────────────────────────────────────────
+    // OAuth flows (reconnecting accounts the user already has linked)
+    Route::get('auth/facebook/redirect', [FacebookOAuthController::class, 'redirect'])->name('facebook.redirect');
+    Route::get('auth/facebook/callback', [FacebookOAuthController::class, 'callback'])->name('facebook.callback');
+    Route::get('auth/facebook/select', [FacebookOAuthController::class, 'select'])->name('facebook.select');
+    Route::post('auth/facebook/connect', [FacebookOAuthController::class, 'connect'])->name('facebook.connect');
+    Route::get('auth/threads/redirect', [ThreadsOAuthController::class, 'redirect'])->name('threads.redirect');
+    Route::get('auth/threads/callback', [ThreadsOAuthController::class, 'callback'])->name('threads.callback');
+    Route::get('oauth/youtube/redirect', [YouTubeOAuthController::class, 'redirect'])->name('youtube.redirect');
+    Route::get('oauth/youtube/callback', [YouTubeOAuthController::class, 'callback'])->name('youtube.callback');
+    Route::get('oauth/youtube/select', [YouTubeOAuthController::class, 'select'])->name('youtube.select');
+    Route::post('oauth/youtube/store', [YouTubeOAuthController::class, 'store'])->name('youtube.store');
 
-    Route::middleware('admin')->group(function () {
-        // User management
-        Route::resource('users', UserController::class)->except(['show']);
-        Route::patch('users/{user}/toggle-admin', [UserController::class, 'toggleAdmin'])->name('users.toggleAdmin');
+    // Platform account management (update credentials — user must own the account)
+    Route::post('platforms/telegram/register-bot', [PlatformController::class, 'registerTelegramBot'])->name('platforms.telegram.registerBot');
+    Route::post('platforms/telegram/add-channel', [PlatformController::class, 'addTelegramChannel'])->name('platforms.telegram.addChannel');
+    Route::post('platforms/twitter/add-account', [PlatformController::class, 'addTwitterAccount'])->name('platforms.twitter.addAccount');
+    Route::put('platforms/twitter/update-account/{account}', [PlatformController::class, 'updateTwitterAccount'])->name('platforms.twitter.updateAccount');
+    Route::post('platforms/bluesky/add-account', [PlatformController::class, 'addBlueskyAccount'])->name('platforms.bluesky.addAccount');
+    Route::post('platforms/reddit/register-app', [PlatformController::class, 'registerRedditApp'])->name('platforms.reddit.registerApp');
+    Route::post('platforms/reddit/add-subreddit', [PlatformController::class, 'addRedditSubreddit'])->name('platforms.reddit.addSubreddit');
 
-        // Social account creation & deletion (admin only)
-        Route::get('accounts/create', [SocialAccountController::class, 'create'])->name('accounts.create');
-        Route::post('accounts', [SocialAccountController::class, 'store'])->name('accounts.store');
-        Route::delete('accounts/{account}', [SocialAccountController::class, 'destroy'])->name('accounts.destroy');
+    // ─── Manager (gestionnaire) ─────────────────────────────────
 
-        // OAuth flows (connecting new accounts)
-        Route::get('auth/facebook/redirect', [FacebookOAuthController::class, 'redirect'])->name('facebook.redirect');
-        Route::get('auth/facebook/callback', [FacebookOAuthController::class, 'callback'])->name('facebook.callback');
-        Route::get('auth/facebook/select', [FacebookOAuthController::class, 'select'])->name('facebook.select');
-        Route::post('auth/facebook/connect', [FacebookOAuthController::class, 'connect'])->name('facebook.connect');
-        Route::get('auth/threads/redirect', [ThreadsOAuthController::class, 'redirect'])->name('threads.redirect');
-        Route::get('auth/threads/callback', [ThreadsOAuthController::class, 'callback'])->name('threads.callback');
-        Route::get('oauth/youtube/redirect', [YouTubeOAuthController::class, 'redirect'])->name('youtube.redirect');
-        Route::get('oauth/youtube/callback', [YouTubeOAuthController::class, 'callback'])->name('youtube.callback');
-        Route::get('oauth/youtube/select', [YouTubeOAuthController::class, 'select'])->name('youtube.select');
-        Route::post('oauth/youtube/store', [YouTubeOAuthController::class, 'store'])->name('youtube.store');
-
-        // Platform account management (add/update/delete)
-        Route::post('platforms/telegram/register-bot', [PlatformController::class, 'registerTelegramBot'])->name('platforms.telegram.registerBot');
-        Route::post('platforms/telegram/add-channel', [PlatformController::class, 'addTelegramChannel'])->name('platforms.telegram.addChannel');
-        Route::delete('platforms/telegram/bot', [PlatformController::class, 'destroyTelegramBot'])->name('platforms.telegram.destroyBot');
-        Route::post('platforms/twitter/add-account', [PlatformController::class, 'addTwitterAccount'])->name('platforms.twitter.addAccount');
-        Route::put('platforms/twitter/update-account/{account}', [PlatformController::class, 'updateTwitterAccount'])->name('platforms.twitter.updateAccount');
-        Route::post('platforms/bluesky/add-account', [PlatformController::class, 'addBlueskyAccount'])->name('platforms.bluesky.addAccount');
-        Route::post('platforms/reddit/register-app', [PlatformController::class, 'registerRedditApp'])->name('platforms.reddit.registerApp');
-        Route::post('platforms/reddit/add-subreddit', [PlatformController::class, 'addRedditSubreddit'])->name('platforms.reddit.addSubreddit');
-        Route::delete('platforms/reddit/app', [PlatformController::class, 'destroyRedditApp'])->name('platforms.reddit.destroyApp');
-        Route::delete('platforms/account/{account}', [PlatformController::class, 'destroyAccount'])->name('platforms.destroyAccount');
-
-        // Inbox sync (admin only)
+    Route::middleware('role:manager')->group(function () {
+        // Inbox sync
         Route::post('inbox/sync', [InboxController::class, 'sync'])->name('inbox.sync');
 
         // Historical import & followers sync
@@ -233,9 +221,27 @@ Route::middleware(['auth', 'verified'])->group(function () {
         Route::get('settings', [SettingsController::class, 'index'])->name('settings.index');
         Route::patch('settings', [SettingsController::class, 'update'])->name('settings.update');
 
-        // Source items API (admin — for thread creation source browser)
+        // Source items API (for thread creation source browser)
         Route::get('api/source-items/sources', [SourceItemController::class, 'sources'])->name('sourceItems.sources');
         Route::get('api/source-items/items', [SourceItemController::class, 'items'])->name('sourceItems.items');
+    });
+
+    // ─── Admin seulement ────────────────────────────────────────
+
+    Route::middleware('role:admin')->group(function () {
+        // User management
+        Route::resource('users', UserController::class)->except(['show']);
+        Route::patch('users/{user}/toggle-role', [UserController::class, 'toggleRole'])->name('users.toggleRole');
+
+        // Social account creation & deletion (admin only)
+        Route::get('accounts/create', [SocialAccountController::class, 'create'])->name('accounts.create');
+        Route::post('accounts', [SocialAccountController::class, 'store'])->name('accounts.store');
+        Route::delete('accounts/{account}', [SocialAccountController::class, 'destroy'])->name('accounts.destroy');
+
+        // Platform account deletion (admin only)
+        Route::delete('platforms/telegram/bot', [PlatformController::class, 'destroyTelegramBot'])->name('platforms.telegram.destroyBot');
+        Route::delete('platforms/reddit/app', [PlatformController::class, 'destroyRedditApp'])->name('platforms.reddit.destroyApp');
+        Route::delete('platforms/account/{account}', [PlatformController::class, 'destroyAccount'])->name('platforms.destroyAccount');
     });
 });
 

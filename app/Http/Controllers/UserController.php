@@ -15,7 +15,10 @@ class UserController extends Controller
 {
     public function index(): View
     {
-        $users = User::withCount('socialAccounts', 'posts')->orderByDesc('is_admin')->orderBy('name')->get();
+        $users = User::withCount('socialAccounts', 'posts')
+            ->orderByRaw("FIELD(role, 'admin', 'manager', 'user')")
+            ->orderBy('name')
+            ->get();
 
         return view('users.index', compact('users'));
     }
@@ -39,6 +42,7 @@ class UserController extends Controller
             'email' => 'required|string|email|max:255|unique:users',
             'password' => ['required', 'confirmed', Rules\Password::defaults()],
             'default_language' => 'required|in:fr,en,pt,es,de,it',
+            'role' => 'required|in:user,manager,admin',
             'accounts' => 'nullable|array',
             'accounts.*' => 'exists:social_accounts,id',
         ]);
@@ -48,7 +52,7 @@ class UserController extends Controller
             'email' => $validated['email'],
             'password' => Hash::make($validated['password']),
             'default_language' => $validated['default_language'],
-            'is_admin' => false,
+            'role' => $validated['role'],
             'email_verified_at' => now(),
         ]);
 
@@ -60,7 +64,7 @@ class UserController extends Controller
         }
 
         return redirect()->route('users.index')
-            ->with('success', "Utilisateur \"{$user->name}\" créé avec succès.");
+            ->with('success', "Utilisateur \"{$user->name}\" cree avec succes.");
     }
 
     public function edit(User $user): View
@@ -84,6 +88,7 @@ class UserController extends Controller
             'email' => 'required|string|email|max:255|unique:users,email,' . $user->id,
             'password' => ['nullable', 'confirmed', Rules\Password::defaults()],
             'default_language' => 'required|in:fr,en,pt,es,de,it',
+            'role' => 'required|in:user,manager,admin',
             'accounts' => 'nullable|array',
             'accounts.*' => 'exists:social_accounts,id',
         ]);
@@ -92,6 +97,7 @@ class UserController extends Controller
             'name' => $validated['name'],
             'email' => $validated['email'],
             'default_language' => $validated['default_language'],
+            'role' => $validated['role'],
         ]);
 
         if (! empty($validated['password'])) {
@@ -115,7 +121,7 @@ class UserController extends Controller
         }
 
         return redirect()->route('users.index')
-            ->with('success', "Utilisateur \"{$user->name}\" mis à jour.");
+            ->with('success', "Utilisateur \"{$user->name}\" mis a jour.");
     }
 
     public function destroy(Request $request, User $user): RedirectResponse
@@ -136,22 +142,32 @@ class UserController extends Controller
         $user->delete();
 
         return redirect()->route('users.index')
-            ->with('success', "Utilisateur \"{$name}\" supprimé.");
+            ->with('success', "Utilisateur \"{$name}\" supprime.");
     }
 
-    public function toggleAdmin(Request $request, User $user): JsonResponse
+    public function toggleRole(Request $request, User $user): JsonResponse
     {
-        // Cannot toggle yourself
+        // Cannot change your own role
         if ($user->id === $request->user()->id) {
-            return response()->json(['error' => 'Vous ne pouvez pas modifier votre propre rôle.'], 422);
+            return response()->json(['error' => 'Vous ne pouvez pas modifier votre propre role.'], 422);
         }
 
-        $user->update(['is_admin' => ! $user->is_admin]);
+        $validated = $request->validate([
+            'role' => 'required|in:user,manager,admin',
+        ]);
+
+        $user->update(['role' => $validated['role']]);
+
+        $labels = [
+            'user' => 'Utilisateur',
+            'manager' => 'Manager',
+            'admin' => 'Administrateur',
+        ];
 
         return response()->json([
             'success' => true,
-            'is_admin' => $user->is_admin,
-            'message' => $user->is_admin ? 'Promu administrateur.' : 'Rétrogradé en utilisateur.',
+            'role' => $user->role,
+            'message' => "Role mis a jour : {$labels[$user->role]}.",
         ]);
     }
 }

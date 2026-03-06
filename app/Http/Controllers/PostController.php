@@ -60,7 +60,7 @@ class PostController extends Controller
         ]);
 
         // Admin sees all posts, regular user sees only own posts
-        if (! $user->is_admin) {
+        if (! $user->isAdmin()) {
             $query->where('user_id', $user->id);
         }
 
@@ -111,7 +111,7 @@ class PostController extends Controller
             'postPlatforms.socialAccount',
             'user',
         ]);
-        if (! $user->is_admin) {
+        if (! $user->isAdmin()) {
             $calendarQuery->where('user_id', $user->id);
         }
         $hasActiveAccount($calendarQuery);
@@ -292,7 +292,7 @@ class PostController extends Controller
         ])->findOrFail($id);
 
         // Regular users can only view their own posts
-        if (! $user->is_admin && $post->user_id !== $user->id) {
+        if (! $user->isAdmin() && $post->user_id !== $user->id) {
             abort(403, 'Unauthorized.');
         }
 
@@ -307,7 +307,7 @@ class PostController extends Controller
         $post = Post::with('postPlatforms')->findOrFail($id);
 
         // Regular users can only edit their own posts
-        if (! $request->user()->is_admin && $post->user_id !== $request->user()->id) {
+        if (! $request->user()->isAdmin() && $post->user_id !== $request->user()->id) {
             abort(403, 'Unauthorized.');
         }
 
@@ -337,7 +337,7 @@ class PostController extends Controller
         $post = Post::with('postPlatforms')->findOrFail($id);
 
         // Regular users can only update their own posts
-        if (! $request->user()->is_admin && $post->user_id !== $request->user()->id) {
+        if (! $request->user()->isAdmin() && $post->user_id !== $request->user()->id) {
             abort(403, 'Unauthorized.');
         }
 
@@ -445,7 +445,7 @@ class PostController extends Controller
         $post = Post::findOrFail($id);
 
         // Regular users can only delete their own posts
-        if (! $request->user()->is_admin && $post->user_id !== $request->user()->id) {
+        if (! $request->user()->isAdmin() && $post->user_id !== $request->user()->id) {
             abort(403, 'Unauthorized.');
         }
 
@@ -479,7 +479,7 @@ class PostController extends Controller
         $post = Post::with('postPlatforms.platform')->findOrFail($id);
 
         // Authorization check
-        if (! $request->user()->is_admin && $post->user_id !== $request->user()->id) {
+        if (! $request->user()->isAdmin() && $post->user_id !== $request->user()->id) {
             return response()->json(['success' => false, 'error' => 'Unauthorized'], 403);
         }
 

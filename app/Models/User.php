@@ -14,6 +14,16 @@ class User extends Authenticatable
     /** @use HasFactory<\Database\Factories\UserFactory> */
     use HasFactory, Notifiable;
 
+    const ROLE_USER = 'user';
+    const ROLE_MANAGER = 'manager';
+    const ROLE_ADMIN = 'admin';
+
+    const ROLE_LEVELS = [
+        'user' => 0,
+        'manager' => 1,
+        'admin' => 2,
+    ];
+
     protected $fillable = [
         'name',
         'email',
@@ -22,7 +32,7 @@ class User extends Authenticatable
         'auto_translate',
         'openai_api_key',
         'telegram_alert_chat_id',
-        'is_admin',
+        'role',
         'default_accounts',
     ];
 
@@ -39,9 +49,29 @@ class User extends Authenticatable
             'password' => 'hashed',
             'openai_api_key' => 'encrypted',
             'auto_translate' => 'boolean',
-            'is_admin' => 'boolean',
             'default_accounts' => 'array',
         ];
+    }
+
+    public function isAdmin(): bool
+    {
+        return $this->role === self::ROLE_ADMIN;
+    }
+
+    public function isManager(): bool
+    {
+        return in_array($this->role, [self::ROLE_MANAGER, self::ROLE_ADMIN]);
+    }
+
+    public function isAtLeast(string $role): bool
+    {
+        return (self::ROLE_LEVELS[$this->role] ?? 0) >= (self::ROLE_LEVELS[$role] ?? 0);
+    }
+
+    // Backward compat accessor for blade templates during transition
+    public function getIsAdminAttribute(): bool
+    {
+        return $this->isAdmin();
     }
 
     public function socialAccounts(): BelongsToMany

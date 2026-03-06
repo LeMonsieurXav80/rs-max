@@ -21,17 +21,24 @@
     @else
         <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
             @foreach($users as $user)
+                @php
+                    $roleColors = [
+                        'admin' => ['bg' => 'bg-indigo-100', 'text' => 'text-indigo-600', 'badge' => 'bg-indigo-50 text-indigo-700'],
+                        'manager' => ['bg' => 'bg-purple-100', 'text' => 'text-purple-600', 'badge' => 'bg-purple-50 text-purple-700'],
+                        'user' => ['bg' => 'bg-gray-100', 'text' => 'text-gray-400', 'badge' => 'bg-gray-100 text-gray-500'],
+                    ];
+                    $colors = $roleColors[$user->role] ?? $roleColors['user'];
+                    $roleLabels = ['admin' => 'Admin', 'manager' => 'Manager', 'user' => 'Utilisateur'];
+                @endphp
                 <div
                     class="bg-white rounded-2xl shadow-sm border border-gray-100 p-6 hover:shadow-md transition-shadow"
-                    x-data="{ isAdmin: {{ $user->is_admin ? 'true' : 'false' }}, toggling: false }"
+                    x-data="{ role: '{{ $user->role }}', toggling: false }"
                 >
                     <div class="flex items-start justify-between gap-4">
                         <div class="flex items-start gap-3 min-w-0 flex-1">
                             {{-- Avatar --}}
-                            <div class="w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0"
-                                 :class="isAdmin ? 'bg-indigo-100' : 'bg-gray-100'">
-                                <span class="text-sm font-bold"
-                                      :class="isAdmin ? 'text-indigo-600' : 'text-gray-400'">{{ strtoupper(substr($user->name, 0, 1)) }}</span>
+                            <div class="w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0 {{ $colors['bg'] }}">
+                                <span class="text-sm font-bold {{ $colors['text'] }}">{{ strtoupper(substr($user->name, 0, 1)) }}</span>
                             </div>
 
                             <div class="min-w-0 flex-1">
@@ -40,17 +47,9 @@
 
                                 <div class="flex items-center gap-2 mt-2 flex-wrap">
                                     {{-- Role badge --}}
-                                    <span
-                                        x-show="isAdmin"
-                                        class="inline-flex items-center px-2 py-0.5 rounded-md text-xs font-medium bg-indigo-50 text-indigo-700"
-                                    >
-                                        Admin
-                                    </span>
-                                    <span
-                                        x-show="!isAdmin"
-                                        class="inline-flex items-center px-2 py-0.5 rounded-md text-xs font-medium bg-gray-100 text-gray-500"
-                                    >
-                                        Utilisateur
+                                    <span class="inline-flex items-center px-2 py-0.5 rounded-md text-xs font-medium {{ $colors['badge'] }}"
+                                          x-text="{ admin: 'Admin', manager: 'Manager', user: 'Utilisateur' }[role]">
+                                        {{ $roleLabels[$user->role] ?? 'Utilisateur' }}
                                     </span>
 
                                     {{-- Accounts count --}}
@@ -86,39 +85,39 @@
                         </a>
 
                         @if($user->id !== auth()->id())
-                            {{-- Toggle admin --}}
-                            <button
-                                type="button"
-                                @click="
+                            {{-- Role selector --}}
+                            <select
+                                x-model="role"
+                                @change="
                                     if (toggling) return;
                                     toggling = true;
-                                    fetch('{{ route('users.toggleAdmin', $user) }}', {
+                                    fetch('{{ route('users.toggleRole', $user) }}', {
                                         method: 'PATCH',
                                         headers: {
                                             'Content-Type': 'application/json',
                                             'X-CSRF-TOKEN': document.querySelector('meta[name=csrf-token]').getAttribute('content'),
                                             'Accept': 'application/json',
                                         },
+                                        body: JSON.stringify({ role: role }),
                                     })
                                     .then(r => r.json())
-                                    .then(data => { if (data.success) isAdmin = data.is_admin; })
+                                    .then(data => { if (data.success) role = data.role; })
                                     .catch(() => {})
                                     .finally(() => { toggling = false; });
                                 "
-                                class="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg transition-colors"
-                                :class="isAdmin ? 'text-orange-600 bg-orange-50 hover:bg-orange-100' : 'text-indigo-600 bg-indigo-50 hover:bg-indigo-100'"
+                                class="text-xs rounded-lg border-gray-300 py-1.5 pr-8 focus:border-indigo-500 focus:ring-indigo-500"
                             >
-                                <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1.5">
-                                    <path stroke-linecap="round" stroke-linejoin="round" d="M9 12.75 11.25 15 15 9.75m-3-7.036A11.959 11.959 0 0 1 3.598 6 11.99 11.99 0 0 0 3 9.749c0 5.592 3.824 10.29 9 11.623 5.176-1.332 9-6.03 9-11.622 0-1.31-.21-2.571-.598-3.751h-.152c-3.196 0-6.1-1.248-8.25-3.285Z" />
-                                </svg>
-                                <span x-text="isAdmin ? 'Retirer admin' : 'Promouvoir admin'"></span>
-                            </button>
+                                <option value="user">Utilisateur</option>
+                                <option value="manager">Manager</option>
+                                <option value="admin">Admin</option>
+                            </select>
 
                             {{-- Delete --}}
                             <form
                                 method="POST"
                                 action="{{ route('users.destroy', $user) }}"
                                 onsubmit="return confirm('Supprimer cet utilisateur ? Cette action est irreversible.')"
+                                class="ml-auto"
                             >
                                 @csrf
                                 @method('DELETE')

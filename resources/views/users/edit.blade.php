@@ -45,7 +45,7 @@
                         placeholder="Laisser vide pour ne pas changer" />
                 </div>
 
-                <div>
+                <div class="mb-5">
                     <label for="default_language" class="block text-sm font-medium text-gray-700 mb-1.5">Langue par defaut</label>
                     <select name="default_language" id="default_language"
                         class="w-full rounded-xl border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 text-sm">
@@ -53,6 +53,17 @@
                             <option value="{{ $code }}" {{ old('default_language', $user->default_language) === $code ? 'selected' : '' }}>{{ $label }}</option>
                         @endforeach
                     </select>
+                </div>
+
+                <div>
+                    <label for="role" class="block text-sm font-medium text-gray-700 mb-1.5">Role</label>
+                    <select name="role" id="role"
+                        class="w-full rounded-xl border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 text-sm">
+                        <option value="user" {{ old('role', $user->role) === 'user' ? 'selected' : '' }}>Utilisateur</option>
+                        <option value="manager" {{ old('role', $user->role) === 'manager' ? 'selected' : '' }}>Manager</option>
+                        <option value="admin" {{ old('role', $user->role) === 'admin' ? 'selected' : '' }}>Admin</option>
+                    </select>
+                    <p class="mt-1 text-xs text-gray-400">Utilisateur = contenu uniquement, Manager = contenu + sources + bot + settings, Admin = acces total</p>
                 </div>
             </div>
 

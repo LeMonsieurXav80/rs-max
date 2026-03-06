@@ -22,7 +22,7 @@ class InboxBadgeComposer
         $count = Cache::remember("inbox_unread_{$user->id}", 60, function () use ($user) {
             $query = InboxItem::where('status', 'unread');
 
-            if (! $user->is_admin) {
+            if (! $user->isAdmin()) {
                 $accountIds = $user->socialAccounts()->pluck('social_accounts.id');
                 $query->whereIn('social_account_id', $accountIds);
             }

@@ -129,7 +129,7 @@ class SettingsController extends Controller
 
     public function index(Request $request): View
     {
-        if (! $request->user()->is_admin) {
+        if (! $request->user()->isManager()) {
             abort(403);
         }
 
@@ -173,7 +173,7 @@ class SettingsController extends Controller
 
     public function update(Request $request)
     {
-        if (! $request->user()->is_admin) {
+        if (! $request->user()->isManager()) {
             abort(403);
         }
 

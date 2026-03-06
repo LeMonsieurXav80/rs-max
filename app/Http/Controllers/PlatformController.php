@@ -352,7 +352,7 @@ class PlatformController extends Controller
     {
         $user = $request->user();
 
-        if (! $user->is_admin && ! $account->users()->where('user_id', $user->id)->exists()) {
+        if (! $user->isAdmin() && ! $account->users()->where('user_id', $user->id)->exists()) {
             abort(403);
         }
 
@@ -391,7 +391,7 @@ class PlatformController extends Controller
         $account = SocialAccount::findOrFail($request->input('account_id'));
         $user = $request->user();
 
-        if (! $user->is_admin && ! $account->users()->where('user_id', $user->id)->exists()) {
+        if (! $user->isAdmin() && ! $account->users()->where('user_id', $user->id)->exists()) {
             return response()->json(['success' => false, 'error' => 'Non autorisé.'], 403);
         }
 
@@ -503,7 +503,7 @@ class PlatformController extends Controller
             ->get()
             ->filter(fn ($a) => ($a->credentials['bot_token'] ?? null) === $token);
 
-        if (! $user->is_admin) {
+        if (! $user->isAdmin()) {
             $accounts = $accounts->filter(fn ($a) => $a->users()->where('user_id', $user->id)->exists());
         }
 
@@ -524,7 +524,7 @@ class PlatformController extends Controller
     {
         $user = $request->user();
 
-        if (! $user->is_admin && ! $account->users()->where('user_id', $user->id)->exists()) {
+        if (! $user->isAdmin() && ! $account->users()->where('user_id', $user->id)->exists()) {
             abort(403);
         }
 
@@ -1075,7 +1075,7 @@ class PlatformController extends Controller
         $user = $request->user();
         $platformIds = Platform::whereIn('slug', $slugs)->pluck('id');
 
-        if ($user->is_admin) {
+        if ($user->isAdmin()) {
             return SocialAccount::with('platform')
                 ->whereIn('platform_id', $platformIds)
                 ->orderBy('name')

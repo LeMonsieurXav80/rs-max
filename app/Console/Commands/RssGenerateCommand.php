@@ -27,7 +27,7 @@ class RssGenerateCommand extends Command
         $dryRun = $this->option('dry-run');
 
         // Get admin user for post ownership
-        $adminUser = User::where('is_admin', true)->first();
+        $adminUser = User::where('role', 'admin')->first();
         if (! $adminUser) {
             $this->error('No admin user found.');
 

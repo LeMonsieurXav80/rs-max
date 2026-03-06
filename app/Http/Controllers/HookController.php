@@ -11,7 +11,7 @@ class HookController extends Controller
 {
     public function index(Request $request): View
     {
-        if (! $request->user()->is_admin) {
+        if (! $request->user()->isManager()) {
             abort(403);
         }
 
@@ -28,7 +28,7 @@ class HookController extends Controller
 
     public function create(Request $request): View
     {
-        if (! $request->user()->is_admin) {
+        if (! $request->user()->isManager()) {
             abort(403);
         }
 
@@ -40,7 +40,7 @@ class HookController extends Controller
 
     public function store(Request $request)
     {
-        if (! $request->user()->is_admin) {
+        if (! $request->user()->isManager()) {
             abort(403);
         }
 
@@ -60,7 +60,7 @@ class HookController extends Controller
 
     public function edit(Request $request, Hook $hook): View
     {
-        if (! $request->user()->is_admin) {
+        if (! $request->user()->isManager()) {
             abort(403);
         }
 
@@ -72,7 +72,7 @@ class HookController extends Controller
 
     public function update(Request $request, Hook $hook)
     {
-        if (! $request->user()->is_admin) {
+        if (! $request->user()->isManager()) {
             abort(403);
         }
 
@@ -92,7 +92,7 @@ class HookController extends Controller
 
     public function destroy(Request $request, Hook $hook)
     {
-        if (! $request->user()->is_admin) {
+        if (! $request->user()->isManager()) {
             abort(403);
         }
 
@@ -109,7 +109,7 @@ class HookController extends Controller
 
     public function storeCategory(Request $request)
     {
-        if (! $request->user()->is_admin) {
+        if (! $request->user()->isManager()) {
             abort(403);
         }
 
@@ -130,7 +130,7 @@ class HookController extends Controller
 
     public function updateCategory(Request $request, HookCategory $category)
     {
-        if (! $request->user()->is_admin) {
+        if (! $request->user()->isManager()) {
             abort(403);
         }
 
@@ -151,7 +151,7 @@ class HookController extends Controller
 
     public function destroyCategory(Request $request, HookCategory $category)
     {
-        if (! $request->user()->is_admin) {
+        if (! $request->user()->isManager()) {
             abort(403);
         }
 
@@ -166,7 +166,7 @@ class HookController extends Controller
 
     public function resetCounters(Request $request, HookCategory $category)
     {
-        if (! $request->user()->is_admin) {
+        if (! $request->user()->isManager()) {
             abort(403);
         }
 

@@ -38,7 +38,7 @@ class ThreadController extends Controller
             ->with(['segments', 'socialAccounts.platform', 'user'])
             ->withCount('segments');
 
-        if (! $user->is_admin) {
+        if (! $user->isAdmin()) {
             $query->where('user_id', $user->id);
         }
 
@@ -69,7 +69,7 @@ class ThreadController extends Controller
         $hookCategories = HookCategory::active()->ordered()->withCount('activeHooks')->get();
 
         $sourceTypeCounts = [];
-        if ($user->is_admin) {
+        if ($user->isAdmin()) {
             $sourceTypeCounts = [
                 'wordpress' => WpSource::where('is_active', true)->count(),
                 'rss' => RssFeed::where('is_active', true)->count(),
@@ -192,7 +192,7 @@ class ThreadController extends Controller
     {
         $user = $request->user();
 
-        if (! $user->is_admin && $thread->user_id !== $user->id) {
+        if (! $user->isAdmin() && $thread->user_id !== $user->id) {
             abort(403);
         }
 
@@ -212,7 +212,7 @@ class ThreadController extends Controller
     {
         $user = $request->user();
 
-        if (! $user->is_admin && $thread->user_id !== $user->id) {
+        if (! $user->isAdmin() && $thread->user_id !== $user->id) {
             abort(403);
         }
 
@@ -243,7 +243,7 @@ class ThreadController extends Controller
     {
         $user = $request->user();
 
-        if (! $user->is_admin && $thread->user_id !== $user->id) {
+        if (! $user->isAdmin() && $thread->user_id !== $user->id) {
             abort(403);
         }
 
@@ -338,7 +338,7 @@ class ThreadController extends Controller
     {
         $user = $request->user();
 
-        if (! $user->is_admin && $thread->user_id !== $user->id) {
+        if (! $user->isAdmin() && $thread->user_id !== $user->id) {
             abort(403);
         }
 
@@ -449,7 +449,7 @@ class ThreadController extends Controller
 
         $user = $request->user();
 
-        if (! $user->is_admin && $thread->user_id !== $user->id) {
+        if (! $user->isAdmin() && $thread->user_id !== $user->id) {
             return response()->json(['success' => false, 'error' => 'Non autorisé.'], 403);
         }
 
@@ -475,7 +475,7 @@ class ThreadController extends Controller
 
         $user = $request->user();
 
-        if (! $user->is_admin && $thread->user_id !== $user->id) {
+        if (! $user->isAdmin() && $thread->user_id !== $user->id) {
             return response()->json(['success' => false, 'error' => 'Non autorisé.'], 403);
         }
 
@@ -500,7 +500,7 @@ class ThreadController extends Controller
     {
         $user = $request->user();
 
-        if (! $user->is_admin && $thread->user_id !== $user->id) {
+        if (! $user->isAdmin() && $thread->user_id !== $user->id) {
             return response()->json(['success' => false, 'error' => 'Non autorisé.'], 403);
         }
 

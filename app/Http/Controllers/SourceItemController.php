@@ -17,7 +17,7 @@ class SourceItemController extends Controller
 {
     public function sources(Request $request): JsonResponse
     {
-        if (! $request->user()->is_admin) {
+        if (! $request->user()->isManager()) {
             abort(403);
         }
 
@@ -50,7 +50,7 @@ class SourceItemController extends Controller
 
     public function items(Request $request): JsonResponse
     {
-        if (! $request->user()->is_admin) {
+        if (! $request->user()->isManager()) {
             abort(403);
         }
 

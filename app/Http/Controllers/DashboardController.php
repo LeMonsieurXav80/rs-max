@@ -15,7 +15,7 @@ class DashboardController extends Controller
     public function index(Request $request): View
     {
         $user = $request->user();
-        $isAdmin = $user->is_admin;
+        $isAdmin = $user->isAdmin();
         $userId = $user->id;
 
         // Build base queries - admin sees all, regular user sees own data

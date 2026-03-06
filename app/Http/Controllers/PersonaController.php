@@ -10,7 +10,7 @@ class PersonaController extends Controller
 {
     public function index(Request $request): View
     {
-        if (! $request->user()->is_admin) {
+        if (! $request->user()->isManager()) {
             abort(403);
         }
 
@@ -21,7 +21,7 @@ class PersonaController extends Controller
 
     public function create(Request $request): View
     {
-        if (! $request->user()->is_admin) {
+        if (! $request->user()->isManager()) {
             abort(403);
         }
 
@@ -30,7 +30,7 @@ class PersonaController extends Controller
 
     public function store(Request $request)
     {
-        if (! $request->user()->is_admin) {
+        if (! $request->user()->isManager()) {
             abort(403);
         }
 
@@ -53,7 +53,7 @@ class PersonaController extends Controller
 
     public function edit(Request $request, Persona $persona): View
     {
-        if (! $request->user()->is_admin) {
+        if (! $request->user()->isManager()) {
             abort(403);
         }
 
@@ -62,7 +62,7 @@ class PersonaController extends Controller
 
     public function update(Request $request, Persona $persona)
     {
-        if (! $request->user()->is_admin) {
+        if (! $request->user()->isManager()) {
             abort(403);
         }
 
@@ -85,7 +85,7 @@ class PersonaController extends Controller
 
     public function destroy(Request $request, Persona $persona)
     {
-        if (! $request->user()->is_admin) {
+        if (! $request->user()->isManager()) {
             abort(403);
         }
 

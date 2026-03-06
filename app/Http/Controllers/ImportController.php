@@ -20,7 +20,7 @@ class ImportController extends Controller
         $account = SocialAccount::with('platform')->findOrFail($accountId);
 
         // Authorization check
-        if (! $user->is_admin && ! $account->users()->where('user_id', $user->id)->exists()) {
+        if (! $user->isManager() && ! $account->users()->where('user_id', $user->id)->exists()) {
             return response()->json(['error' => 'Unauthorized'], 403);
         }
 
@@ -50,7 +50,7 @@ class ImportController extends Controller
         $account = SocialAccount::with('platform')->findOrFail($accountId);
 
         // Authorization check
-        if (! $user->is_admin && ! $account->users()->where('user_id', $user->id)->exists()) {
+        if (! $user->isManager() && ! $account->users()->where('user_id', $user->id)->exists()) {
             return response()->json(['error' => 'Unauthorized'], 403);
         }
 
@@ -104,7 +104,7 @@ class ImportController extends Controller
      */
     public function syncFollowers(Request $request, FollowersService $followersService): JsonResponse
     {
-        if (! $request->user()->is_admin) {
+        if (! $request->user()->isManager()) {
             return response()->json(['error' => 'Unauthorized'], 403);
         }
 

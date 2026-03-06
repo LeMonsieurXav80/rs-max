@@ -35,7 +35,7 @@ class PublishController extends Controller
         $postPlatform->load('socialAccount.platform', 'post.user');
         $post = $postPlatform->post;
 
-        if (! $user->is_admin && $post->user_id !== $user->id) {
+        if (! $user->isAdmin() && $post->user_id !== $user->id) {
             return response()->json(['success' => false, 'error' => 'Non autorisé.'], 403);
         }
 
@@ -135,7 +135,7 @@ class PublishController extends Controller
     {
         $user = $request->user();
 
-        if (! $user->is_admin && $post->user_id !== $user->id) {
+        if (! $user->isAdmin() && $post->user_id !== $user->id) {
             return response()->json(['success' => false, 'error' => 'Non autorisé.'], 403);
         }
 
@@ -233,7 +233,7 @@ class PublishController extends Controller
         $user = $request->user();
         $postPlatform->load('post');
 
-        if (! $user->is_admin && $postPlatform->post->user_id !== $user->id) {
+        if (! $user->isAdmin() && $postPlatform->post->user_id !== $user->id) {
             return response()->json(['success' => false, 'error' => 'Non autorisé.'], 403);
         }
 

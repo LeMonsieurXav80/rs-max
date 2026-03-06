@@ -176,7 +176,7 @@
                             </div>
 
                             {{-- Delete app --}}
-                            @if(auth()->user()->is_admin)
+                            @if(auth()->user()->isAdmin())
                             <form action="{{ route('platforms.reddit.destroyApp') }}" method="POST" onsubmit="return confirm('Supprimer cette app et tous ses subreddits ?')">
                                 @csrf
                                 @method('DELETE')
@@ -215,7 +215,7 @@
 
                                 <div class="flex items-center gap-3">
                                     {{-- Delete subreddit --}}
-                                    @if(auth()->user()->is_admin)
+                                    @if(auth()->user()->isAdmin())
                                     <form action="{{ route('platforms.destroyAccount', $subreddit) }}" method="POST" onsubmit="return confirm('Supprimer ce subreddit ?')">
                                         @csrf
                                         @method('DELETE')
@@ -233,7 +233,7 @@
                 @endif
 
                 {{-- Quick add subreddit to this app --}}
-                @if(auth()->user()->is_admin)
+                @if(auth()->user()->isAdmin())
                 <div class="px-6 py-4 bg-gray-50 border-t border-gray-100">
                     <form action="{{ route('platforms.reddit.addSubreddit') }}" method="POST" class="flex gap-2">
                         @csrf

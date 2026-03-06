@@ -20,7 +20,7 @@ class SocialAccountController extends Controller
     {
         $user = $request->user();
 
-        if ($user->is_admin) {
+        if ($user->isAdmin()) {
             // Admin sees all accounts; load their own pivot to get per-user is_active
             $accounts = SocialAccount::with('platform', 'users')->orderBy('platform_id')->orderBy('name')->get();
 
@@ -261,6 +261,6 @@ class SocialAccountController extends Controller
 
     private function userCanAccess($user, SocialAccount $account): bool
     {
-        return $user->is_admin || $account->users()->where('user_id', $user->id)->exists();
+        return $user->isAdmin() || $account->users()->where('user_id', $user->id)->exists();
     }
 }
