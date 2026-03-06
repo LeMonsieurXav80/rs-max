@@ -19,8 +19,8 @@ class TelegramInboxService implements PlatformInboxInterface
         $botToken = $credentials['bot_token'];
         $baseUrl = "https://api.telegram.org/bot{$botToken}";
 
-        // Skip bot records (they don't have a chat_id for receiving messages)
-        if (($credentials['type'] ?? '') === 'bot') {
+        // Only bot accounts can call getUpdates to receive DMs
+        if (($credentials['type'] ?? '') !== 'bot') {
             return $items;
         }
 
@@ -105,7 +105,7 @@ class TelegramInboxService implements PlatformInboxInterface
 
                 $items->push([
                     'type' => 'dm',
-                    'external_id' => (string) $message['message_id'],
+                    'external_id' => "{$chatId}_{$message['message_id']}",
                     'external_post_id' => $chatId,
                     'conversation_key' => "dm:{$chatId}",
                     'author_name' => $authorName ?: null,
@@ -139,10 +139,15 @@ class TelegramInboxService implements PlatformInboxInterface
             $chatId = $item->external_post_id; // chat_id stored as external_post_id
             $baseUrl = "https://api.telegram.org/bot{$botToken}";
 
+            // external_id format: "{chatId}_{messageId}"
+            $messageId = str_contains($item->external_id, '_')
+                ? explode('_', $item->external_id, 2)[1]
+                : $item->external_id;
+
             $response = Http::post("{$baseUrl}/sendMessage", [
                 'chat_id' => $chatId,
                 'text' => $replyText,
-                'reply_to_message_id' => $item->external_id,
+                'reply_to_message_id' => $messageId,
                 'parse_mode' => 'HTML',
             ]);
 

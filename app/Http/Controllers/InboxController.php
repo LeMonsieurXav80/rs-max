@@ -127,6 +127,7 @@ class InboxController extends Controller
                 'post_url' => $first->post_url,
                 'external_post_id' => $first->external_post_id,
                 'latest_author' => $latest->author_name ?? $latest->author_username,
+                'latest_author_external_id' => $latest->author_external_id,
             ];
         });
 
@@ -141,14 +142,15 @@ class InboxController extends Controller
         // For unreplied-type filters: exclude conversations where the latest message
         // is from the account owner (we already replied, no new message from others)
         if (in_array($status, ['unreplied', 'new', 'followup'])) {
-            $accountNames = SocialAccount::whereIn('id', $accountIds)
-                ->pluck('name', 'id')
-                ->map(fn ($n) => mb_strtolower($n));
+            // Use platform_account_id for reliable owner detection (name matching is fragile)
+            $accountPlatformIds = SocialAccount::whereIn('id', $accountIds)
+                ->pluck('platform_account_id', 'id');
 
-            $conversationList = $conversationList->filter(function ($convo) use ($accountNames) {
-                $ownName = $accountNames[$convo->socialAccount->id] ?? null;
+            $conversationList = $conversationList->filter(function ($convo) use ($accountPlatformIds) {
+                $ownPlatformId = $accountPlatformIds[$convo->socialAccount->id] ?? null;
 
-                return ! $ownName || mb_strtolower($convo->latest_author ?? '') !== $ownName;
+                // Exclude conversations where the latest message is from the account owner
+                return ! $ownPlatformId || (string) ($convo->latest_author_external_id ?? '') !== (string) $ownPlatformId;
             })->values();
 
             // "new" = never replied in this conversation; "followup" = replied before, new message since

@@ -65,8 +65,8 @@ class TwitterInboxService implements PlatformInboxInterface
             foreach ($tweets as $tweet) {
                 $authorId = $tweet['author_id'] ?? null;
 
-                // Skip own tweets
-                if ($authorId === $userId) {
+                // Skip own tweets (cast both to string for reliable comparison)
+                if ($authorId && (string) $authorId === (string) $userId) {
                     continue;
                 }
 
