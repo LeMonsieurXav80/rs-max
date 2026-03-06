@@ -12,7 +12,6 @@ use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Cache;
-use Symfony\Component\Process\Process;
 use Illuminate\Support\Facades\Http;
 use Illuminate\View\View;
 
@@ -240,11 +239,10 @@ class BotController extends Controller
             $target->update($update);
         }
 
-        // Run as background process (not in queue) to avoid blocking the queue worker
-        $process = new Process(['php', base_path('artisan'), 'bot:prospect', '--target=' . $target->id]);
-        $process->setWorkingDirectory(base_path());
-        $process->disableOutput();
-        $process->start();
+        // Run as detached background process (not in queue) to avoid blocking the queue worker
+        $cmd = 'nohup php ' . base_path('artisan') . ' bot:prospect --target=' . (int) $target->id
+             . ' >> ' . storage_path('logs/prospect.log') . ' 2>&1 &';
+        exec($cmd);
 
         return response()->json(['started' => true]);
     }

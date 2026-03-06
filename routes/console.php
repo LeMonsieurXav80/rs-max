@@ -5,7 +5,6 @@ use App\Models\Setting;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Schedule;
-use Symfony\Component\Process\Process;
 
 // Health heartbeats
 Schedule::call(fn () => Cache::put('health:scheduler', true, now()->addMinutes(5)))->everyMinute();
@@ -67,10 +66,9 @@ Schedule::call(function () {
         // No active worker for this target — reset and requeue
         if (! Cache::has("bot_running_prospect_{$target->id}")) {
             $target->update(['status' => 'pending']);
-            $process = new Process(['php', base_path('artisan'), 'bot:prospect', '--target=' . $target->id]);
-            $process->setWorkingDirectory(base_path());
-            $process->disableOutput();
-            $process->start();
+            $cmd = 'nohup php ' . base_path('artisan') . ' bot:prospect --target=' . (int) $target->id
+                 . ' >> ' . storage_path('logs/prospect.log') . ' 2>&1 &';
+            exec($cmd);
         }
     }
 })->everyFiveMinutes()->name('prospect:recover-orphans')->withoutOverlapping(5);
