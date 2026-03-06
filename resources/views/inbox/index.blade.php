@@ -75,11 +75,16 @@
                                 <p class="text-sm font-semibold text-red-900">
                                     <span x-text="failed"></span> réponse(s) en échec
                                 </p>
-                                <p class="text-xs text-red-700 mt-0.5">L'envoi a échoué après 3 tentatives. Vous pouvez réessayer depuis la conversation.</p>
+                                <template x-for="item in failedItems" :key="item.id">
+                                    <p class="text-xs text-red-700 mt-1">
+                                        <span class="font-medium" x-text="item.author"></span> : <span class="italic" x-text="item.reply"></span>
+                                    </p>
+                                </template>
                             </div>
                             <div class="flex-shrink-0">
-                                <button @click="dismissFailed()" class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium bg-red-100 text-red-700 hover:bg-red-200 transition-colors">
-                                    Fermer
+                                <button @click="dismissFailedInDb()" :disabled="dismissing"
+                                        class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium bg-red-100 text-red-700 hover:bg-red-200 transition-colors disabled:opacity-50">
+                                    <span x-text="dismissing ? '...' : 'Ignorer'"></span>
                                 </button>
                             </div>
                         </div>
@@ -893,6 +898,8 @@ function scheduledCountdown(info) {
         pending: info.pending,
         initialCount: info.pending || 1,
         failed: info.failed || 0,
+        failedItems: info.failed_items || [],
+        dismissing: false,
         nextAt: info.next_at ? new Date(info.next_at) : null,
         lastAt: info.last_at ? new Date(info.last_at) : null,
         nextIn: '',
@@ -936,8 +943,23 @@ function scheduledCountdown(info) {
             } catch (e) { /* silent */ }
         },
 
-        dismissFailed() {
-            this.failed = 0;
+        async dismissFailedInDb() {
+            this.dismissing = true;
+            try {
+                const ids = this.failedItems.map(i => i.id);
+                await fetch('{{ route("inbox.dismissFailed") }}', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').content,
+                        'Accept': 'application/json',
+                    },
+                    body: JSON.stringify({ ids }),
+                });
+                this.failed = 0;
+                this.failedItems = [];
+            } catch (e) { /* silent */ }
+            this.dismissing = false;
         },
 
         formatDiff(date) {

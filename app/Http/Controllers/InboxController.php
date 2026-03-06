@@ -188,19 +188,25 @@ class InboxController extends Controller
             ->orderBy('reply_scheduled_at', 'asc')
             ->get(['id', 'reply_scheduled_at']);
 
-        // Failed replies count (status or exhausted attempts)
-        $failedReplies = InboxItem::whereIn('social_account_id', $accountIds)
+        // Failed replies (status or exhausted attempts)
+        $failedItems = InboxItem::whereIn('social_account_id', $accountIds)
             ->where(fn ($q) => $q->where('status', 'reply_failed')->orWhere('reply_attempts', '>=', 3))
             ->whereNull('replied_at')
-            ->count();
+            ->select('id', 'author_name', 'author_username', 'reply_content', 'conversation_key')
+            ->get();
 
         $scheduledInfo = null;
-        if ($scheduledPending->isNotEmpty() || $failedReplies > 0) {
+        if ($scheduledPending->isNotEmpty() || $failedItems->isNotEmpty()) {
             $scheduledInfo = [
                 'pending' => $scheduledPending->count(),
                 'next_at' => $scheduledPending->first()?->reply_scheduled_at,
                 'last_at' => $scheduledPending->last()?->reply_scheduled_at,
-                'failed' => $failedReplies,
+                'failed' => $failedItems->count(),
+                'failed_items' => $failedItems->map(fn ($i) => [
+                    'id' => $i->id,
+                    'author' => $i->author_name ?: $i->author_username ?: 'Inconnu',
+                    'reply' => \Str::limit($i->reply_content, 60),
+                ])->values(),
             ];
         }
 
@@ -237,6 +243,25 @@ class InboxController extends Controller
         ]);
 
         InboxItem::whereIn('id', $validated['ids'])->update(['status' => 'archived']);
+
+        return response()->json(['success' => true]);
+    }
+
+    public function dismissFailed(Request $request): JsonResponse
+    {
+        $validated = $request->validate([
+            'ids' => 'required|array',
+            'ids.*' => 'integer|exists:inbox_items,id',
+        ]);
+
+        InboxItem::whereIn('id', $validated['ids'])
+            ->where(fn ($q) => $q->where('status', 'reply_failed')->orWhere('reply_attempts', '>=', 3))
+            ->update([
+                'status' => 'read',
+                'reply_content' => null,
+                'reply_scheduled_at' => null,
+                'reply_attempts' => 0,
+            ]);
 
         return response()->json(['success' => true]);
     }
