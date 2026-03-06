@@ -643,7 +643,7 @@ function targetRow(targetId, opts) {
             return { pending: 'En attente', running: 'En cours', paused: 'En pause', completed: 'Termine', starting: 'Lancement...', stopping: 'Arret...' }[this.status] || this.status;
         },
         get canPlay() {
-            return ['pending', 'paused'].includes(this.status);
+            return ['pending', 'paused', 'completed'].includes(this.status);
         },
         get canStop() {
             return ['running', 'starting'].includes(this.status);

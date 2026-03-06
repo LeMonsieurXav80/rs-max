@@ -228,9 +228,15 @@ class BotController extends Controller
 
     public function runTarget(BotTargetAccount $target): JsonResponse
     {
-        // Reset completed/paused targets so the command picks them up
+        // Reset target so the command picks it up and re-scans posts
         if (in_array($target->status, ['completed', 'paused'])) {
-            $target->update(['status' => 'pending']);
+            $update = ['status' => 'pending'];
+            if ($target->status === 'completed') {
+                // Reset cursor to re-scan posts from scratch (new likers since last run)
+                $update['current_post_uri'] = null;
+                $update['current_cursor'] = null;
+            }
+            $target->update($update);
         }
 
         Artisan::queue('bot:prospect', ['--target' => $target->id]);
