@@ -1,59 +1,88 @@
-<p align="center"><a href="https://laravel.com" target="_blank"><img src="https://raw.githubusercontent.com/laravel/art/master/logo-lockup/5%20SVG/2%20CMYK/1%20Full%20Color/laravel-logolockup-cmyk-red.svg" width="400" alt="Laravel Logo"></a></p>
+# RS-Max
 
-<p align="center">
-<a href="https://github.com/laravel/framework/actions"><img src="https://github.com/laravel/framework/workflows/tests/badge.svg" alt="Build Status"></a>
-<a href="https://packagist.org/packages/laravel/framework"><img src="https://img.shields.io/packagist/dt/laravel/framework" alt="Total Downloads"></a>
-<a href="https://packagist.org/packages/laravel/framework"><img src="https://img.shields.io/packagist/v/laravel/framework" alt="Latest Stable Version"></a>
-<a href="https://packagist.org/packages/laravel/framework"><img src="https://img.shields.io/packagist/l/laravel/framework" alt="License"></a>
-</p>
+Plateforme de gestion de reseaux sociaux multi-comptes avec publication, boite de reception, bot de prospection, et generation de contenu par IA.
 
-## About Laravel
+## Plateformes supportees
 
-Laravel is a web application framework with expressive, elegant syntax. We believe development must be an enjoyable and creative experience to be truly fulfilling. Laravel takes the pain out of development by easing common tasks used in many web projects, such as:
+Facebook, Instagram, Threads, Twitter/X, Bluesky, YouTube, Reddit, Telegram
 
-- [Simple, fast routing engine](https://laravel.com/docs/routing).
-- [Powerful dependency injection container](https://laravel.com/docs/container).
-- Multiple back-ends for [session](https://laravel.com/docs/session) and [cache](https://laravel.com/docs/cache) storage.
-- Expressive, intuitive [database ORM](https://laravel.com/docs/eloquent).
-- Database agnostic [schema migrations](https://laravel.com/docs/migrations).
-- [Robust background job processing](https://laravel.com/docs/queues).
-- [Real-time event broadcasting](https://laravel.com/docs/broadcasting).
+## Pre-requis
 
-Laravel is accessible, powerful, and provides tools required for large, robust applications.
+- **Production** : Docker + Coolify (ou tout orchestrateur Docker)
+- **Developpement local** : PHP 8.2+, Composer, Node.js 18+, SQLite
 
-## Learning Laravel
+## Installation rapide (dev local)
 
-Laravel has the most extensive and thorough [documentation](https://laravel.com/docs) and video tutorial library of all modern web application frameworks, making it a breeze to get started with the framework. You can also check out [Laravel Learn](https://laravel.com/learn), where you will be guided through building a modern Laravel application.
+```bash
+git clone <repo-url> rs-max && cd rs-max
+composer install
+npm install && npm run build
+cp .env.example .env
+php artisan key:generate
+touch database/database.sqlite
+php artisan migrate
+php artisan db:seed
+php artisan make:admin   # Creer le premier compte admin
+php artisan serve
+```
 
-If you don't feel like reading, [Laracasts](https://laracasts.com) can help. Laracasts contains thousands of video tutorials on a range of topics including Laravel, modern PHP, unit testing, and JavaScript. Boost your skills by digging into our comprehensive video library.
+## Deploiement Docker (Coolify)
 
-## Laravel Sponsors
+1. Creer une application **Docker Compose** dans Coolify
+2. Configurer les variables d'environnement (voir `.env.example`)
+3. Le premier demarrage execute automatiquement les migrations et seeders
+4. Creer un admin : `docker exec -it <container> php artisan make:admin`
 
-We would like to extend our thanks to the following sponsors for funding Laravel development. If you are interested in becoming a sponsor, please visit the [Laravel Partners program](https://partners.laravel.com).
+## Variables d'environnement requises
 
-### Premium Partners
+| Variable | Description |
+|----------|-------------|
+| `APP_KEY` | Cle de chiffrement (generee automatiquement au premier demarrage) |
+| `APP_URL` | URL publique de l'instance |
+| `DB_*` | Connexion base de donnees (MySQL en production) |
+| `FACEBOOK_APP_ID` / `FACEBOOK_APP_SECRET` | App Meta pour Facebook + Instagram |
+| `FACEBOOK_CONFIG_ID` | Config ID pour Facebook Login for Business |
+| `THREADS_APP_ID` / `THREADS_APP_SECRET` | App Meta pour Threads |
+| `YOUTUBE_CLIENT_ID` / `YOUTUBE_CLIENT_SECRET` | OAuth Google pour YouTube |
+| `OPENAI_API_KEY` | API OpenAI pour la generation de contenu IA |
+| `REGISTRATION_ENABLED` | `false` par defaut — desactive l'inscription publique |
 
-- **[Vehikl](https://vehikl.com)**
-- **[Tighten Co.](https://tighten.co)**
-- **[Kirschbaum Development Group](https://kirschbaumdevelopment.com)**
-- **[64 Robots](https://64robots.com)**
-- **[Curotec](https://www.curotec.com/services/technologies/laravel)**
-- **[DevSquad](https://devsquad.com/hire-laravel-developers)**
-- **[Redberry](https://redberry.international/laravel-development)**
-- **[Active Logic](https://activelogic.com)**
+Voir `.env.example` pour la liste complete.
 
-## Contributing
+## Commandes artisan utiles
 
-Thank you for considering contributing to the Laravel framework! The contribution guide can be found in the [Laravel documentation](https://laravel.com/docs/contributions).
+```bash
+php artisan make:admin              # Creer un compte administrateur
+php artisan posts:publish-scheduled  # Publier les posts programmes
+php artisan inbox:sync               # Synchroniser la boite de reception
+php artisan bot:run                  # Lancer le bot de prospection
+php artisan stats:sync               # Synchroniser les statistiques
+php artisan followers:sync           # Synchroniser les compteurs d'abonnes
+```
 
-## Code of Conduct
+## Roles utilisateurs
 
-In order to ensure that the Laravel community is welcoming to all, please review and abide by the [Code of Conduct](https://laravel.com/docs/contributions#code-of-conduct).
+- **Admin** : Acces complet (gestion utilisateurs, creation/suppression comptes sociaux)
+- **Manager** : Configuration (hooks, personas, sources de contenu, bot, parametres)
+- **User** : Publication, boite de reception, consultation stats
 
-## Security Vulnerabilities
+## APP_KEY — AVERTISSEMENT CRITIQUE
 
-If you discover a security vulnerability within Laravel, please send an e-mail to Taylor Otwell via [taylor@laravel.com](mailto:taylor@laravel.com). All security vulnerabilities will be promptly addressed.
+> **Ne JAMAIS modifier ou regenerer `APP_KEY` apres l'installation initiale.**
+>
+> Toutes les donnees sensibles (credentials des comptes sociaux, cles API) sont chiffrees
+> avec cette cle via le cast `encrypted:array` de Laravel. Si `APP_KEY` change, toutes ces
+> donnees deviennent **irreversiblement illisibles**.
+>
+> **Avant toute operation** :
+> 1. Sauvegarder `APP_KEY` dans un endroit securise
+> 2. Ne jamais l'inclure dans un commit ou un fichier partage
+> 3. En cas de migration de serveur, copier la meme `APP_KEY`
 
-## License
+## Systeme de mise a jour
 
-The Laravel framework is open-sourced software licensed under the [MIT license](https://opensource.org/licenses/MIT).
+RS-Max detecte automatiquement les nouvelles versions disponibles (verification horaire).
+Un badge s'affiche dans l'interface admin lorsqu'une mise a jour est disponible.
+L'admin peut declencher le deploiement manuellement via Coolify.
+
+Variables necessaires : `COOLIFY_API_URL`, `COOLIFY_API_TOKEN`, `COOLIFY_APP_UUID`

@@ -82,6 +82,50 @@ class PlatformSeeder extends Seeder
                     ],
                 ]),
             ],
+            [
+                'slug' => 'bluesky',
+                'name' => 'Bluesky',
+                'description' => 'Publications sur Bluesky (AT Protocol)',
+                'color' => '#0085FF',
+                'auth_type' => 'oauth',
+                'config' => json_encode([
+                    'credential_fields' => [
+                        ['key' => 'handle', 'label' => 'Handle', 'type' => 'text'],
+                        ['key' => 'app_password', 'label' => 'App Password', 'type' => 'password'],
+                        ['key' => 'did', 'label' => 'DID', 'type' => 'text'],
+                    ],
+                ]),
+            ],
+            [
+                'slug' => 'youtube',
+                'name' => 'YouTube',
+                'description' => 'Publications sur YouTube via OAuth',
+                'color' => '#FF0000',
+                'auth_type' => 'oauth',
+                'config' => json_encode([
+                    'credential_fields' => [
+                        ['key' => 'channel_id', 'label' => 'Channel ID', 'type' => 'text'],
+                        ['key' => 'access_token', 'label' => 'Access Token', 'type' => 'password'],
+                        ['key' => 'refresh_token', 'label' => 'Refresh Token', 'type' => 'password'],
+                    ],
+                ]),
+            ],
+            [
+                'slug' => 'reddit',
+                'name' => 'Reddit',
+                'description' => 'Publications sur Reddit (subreddits)',
+                'color' => '#FF4500',
+                'auth_type' => 'oauth',
+                'config' => json_encode([
+                    'credential_fields' => [
+                        ['key' => 'client_id', 'label' => 'Client ID', 'type' => 'password'],
+                        ['key' => 'client_secret', 'label' => 'Client Secret', 'type' => 'password'],
+                        ['key' => 'username', 'label' => 'Username', 'type' => 'text'],
+                        ['key' => 'password', 'label' => 'Password', 'type' => 'password'],
+                        ['key' => 'subreddit', 'label' => 'Subreddit', 'type' => 'text'],
+                    ],
+                ]),
+            ],
         ];
 
         foreach ($platforms as $platform) {
