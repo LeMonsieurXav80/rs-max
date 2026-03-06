@@ -370,7 +370,7 @@
                     </a>
                     @endif
 
-                    {{-- Paramètres (admin only) --}}
+                    {{-- Paramètres (manager+) --}}
                     @if(auth()->user()->isManager())
                     <a href="{{ url('/settings') }}"
                        class="flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-colors {{ str_starts_with($currentRoute, 'settings') ? 'bg-indigo-50 text-indigo-600' : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900' }}">
@@ -379,6 +379,23 @@
                             <path stroke-linecap="round" stroke-linejoin="round" d="M15 12a3 3 0 1 1-6 0 3 3 0 0 1 6 0Z" />
                         </svg>
                         Paramètres
+                    </a>
+                    @endif
+
+                    {{-- Mise a jour (admin only) --}}
+                    @if(auth()->user()->isAdmin())
+                    @php $updateAvailable = \App\Models\Setting::get('update_available') === '1'; @endphp
+                    <a href="{{ url('/update') }}"
+                       class="flex items-center justify-between px-3 py-2.5 rounded-xl text-sm font-medium transition-colors {{ str_starts_with($currentRoute, 'update') ? 'bg-indigo-50 text-indigo-600' : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900' }}">
+                        <span class="flex items-center gap-3">
+                            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1.5">
+                                <path stroke-linecap="round" stroke-linejoin="round" d="M3 16.5v2.25A2.25 2.25 0 0 0 5.25 21h13.5A2.25 2.25 0 0 0 21 18.75V16.5M16.5 12 12 16.5m0 0L7.5 12m4.5 4.5V3" />
+                            </svg>
+                            Mise a jour
+                        </span>
+                        @if($updateAvailable)
+                        <span class="w-2.5 h-2.5 bg-amber-400 rounded-full animate-pulse"></span>
+                        @endif
                     </a>
                     @endif
 

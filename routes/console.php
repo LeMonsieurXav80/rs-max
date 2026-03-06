@@ -67,5 +67,10 @@ Schedule::call(function () {
     }
 })->everyFiveMinutes()->name('prospect:recover-orphans')->withoutOverlapping(5);
 
+// Check for application updates (hourly)
+Schedule::call(function () {
+    app(\App\Services\UpdateService::class)->checkForUpdate();
+})->hourly()->name('update:check')->withoutOverlapping(10);
+
 // Downsample follower snapshots (1st of each month at 3 AM)
 Schedule::command('snapshots:downsample')->monthlyOn(1, '03:00');

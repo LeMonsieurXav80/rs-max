@@ -27,6 +27,7 @@ use App\Http\Controllers\YouTubeChannelController;
 use App\Http\Controllers\StatsController;
 use App\Http\Controllers\ThreadController;
 use App\Http\Controllers\ThreadsOAuthController;
+use App\Http\Controllers\UpdateController;
 use App\Http\Controllers\YouTubeOAuthController;
 use Illuminate\Support\Facades\Route;
 
@@ -230,6 +231,12 @@ Route::middleware(['auth', 'verified', 'throttle:60,1'])->group(function () {
     // ─── Admin seulement ────────────────────────────────────────
 
     Route::middleware('role:admin')->group(function () {
+        // Update system
+        Route::get('update', [UpdateController::class, 'index'])->name('update.index');
+        Route::post('update/check', [UpdateController::class, 'check'])->name('update.check');
+        Route::post('update/deploy', [UpdateController::class, 'deploy'])->name('update.deploy');
+        Route::get('update/status', [UpdateController::class, 'status'])->name('update.status');
+
         // User management
         Route::resource('users', UserController::class)->except(['show']);
         Route::patch('users/{user}/toggle-role', [UserController::class, 'toggleRole'])->name('users.toggleRole');
