@@ -38,7 +38,7 @@ class InboxController extends Controller
         // Status filter (single value, mutually exclusive)
         $status = $request->input('status') ?? '';
         $statusIsFiltered = false;
-        if (in_array($status, ['unreplied', 'new', 'followup'])) {
+        if (in_array($status, ['new', 'followup'])) {
             $query->whereIn('status', ['unread', 'read']);
             $statusIsFiltered = true;
         } elseif ($status !== '') {
@@ -141,7 +141,7 @@ class InboxController extends Controller
 
         // For unreplied-type filters: exclude conversations where the latest message
         // is from the account owner (we already replied, no new message from others)
-        if (in_array($status, ['unreplied', 'new', 'followup'])) {
+        if (in_array($status, ['new', 'followup'])) {
             // Use platform_account_id for reliable owner detection (name matching is fragile)
             $accountPlatformIds = SocialAccount::whereIn('id', $accountIds)
                 ->pluck('platform_account_id', 'id');
@@ -154,14 +154,12 @@ class InboxController extends Controller
             })->values();
 
             // "new" = never replied in this conversation; "followup" = replied before, new message since
-            if ($status === 'new' || $status === 'followup') {
-                $wantNew = $status === 'new';
-                $conversationList = $conversationList->filter(function ($convo) use ($wantNew) {
-                    $hasReply = $convo->items->contains(fn ($i) => $i->status === 'replied' || $i->reply_content);
+            $wantNew = $status === 'new';
+            $conversationList = $conversationList->filter(function ($convo) use ($wantNew) {
+                $hasReply = $convo->items->contains(fn ($i) => $i->status === 'replied' || $i->reply_content);
 
-                    return $wantNew ? ! $hasReply : $hasReply;
-                })->values();
-            }
+                return $wantNew ? ! $hasReply : $hasReply;
+            })->values();
         }
 
         // Manual pagination by conversations
