@@ -254,7 +254,7 @@
                                         <div class="flex items-center gap-3 min-w-0 flex-wrap">
                                             <span class="text-sm font-medium text-gray-900 cursor-pointer hover:text-purple-600"
                                                   onclick="document.getElementById('target-handle-{{ $bsAccount->id }}').value = '{{ $target->handle }}'"
-                                                  title="Cliquer pour remettre dans le champ">@{{ $target->handle }}</span>
+                                                  title="Cliquer pour remettre dans le champ">{{ $target->handle }}</span>
                                             @if ($target->status === 'completed')
                                                 <span class="px-2 py-0.5 bg-green-100 text-green-700 rounded-full text-[10px] font-medium">Termine</span>
                                             @elseif ($target->status === 'running')

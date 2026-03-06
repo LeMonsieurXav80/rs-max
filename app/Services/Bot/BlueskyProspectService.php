@@ -33,14 +33,18 @@ class BlueskyProspectService
 
         $auth = $this->getAuth($account);
         if (! $auth) {
+            Log::warning('BlueskyProspectService: auth failed', ['account_id' => $account->id]);
+
             return ['error' => 'Auth failed'];
         }
+        Log::info('BlueskyProspectService: auth OK', ['did' => $auth['did']]);
         $this->auth = $auth;
 
         // Resolve DID if not yet done
         if (! $target->did) {
             $did = $this->resolveHandle($target->handle);
             if (! $did) {
+                Log::warning('BlueskyProspectService: could not resolve handle', ['handle' => $target->handle]);
                 $target->update(['status' => 'completed']);
 
                 return ['error' => "Could not resolve handle: {$target->handle}"];
@@ -48,10 +52,14 @@ class BlueskyProspectService
             $target->update(['did' => $did]);
         }
 
+        Log::info('BlueskyProspectService: resolved DID', ['handle' => $target->handle, 'did' => $target->did]);
+
         $target->update(['status' => 'running', 'started_at' => $target->started_at ?? now()]);
 
         // Get target's recent posts (only original posts, not reposts)
         $posts = $this->getRecentPosts($target->did, self::POSTS_TO_ANALYZE);
+        Log::info('BlueskyProspectService: fetched posts', ['did' => $target->did, 'count' => count($posts)]);
+
         if (empty($posts)) {
             $target->update(['status' => 'completed', 'completed_at' => now()]);
 
@@ -183,6 +191,12 @@ class BlueskyProspectService
         ]);
 
         if (! $response->successful()) {
+            Log::warning('BlueskyProspectService: getAuthorFeed failed', [
+                'did' => $did,
+                'status' => $response->status(),
+                'body' => mb_substr($response->body(), 0, 500),
+            ]);
+
             return [];
         }
 

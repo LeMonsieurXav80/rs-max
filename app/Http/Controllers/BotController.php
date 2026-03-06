@@ -208,6 +208,11 @@ class BotController extends Controller
 
     public function runTarget(BotTargetAccount $target): JsonResponse
     {
+        // Reset completed/paused targets so the command picks them up
+        if (in_array($target->status, ['completed', 'paused'])) {
+            $target->update(['status' => 'pending']);
+        }
+
         Artisan::queue('bot:prospect', ['--target' => $target->id]);
 
         return response()->json(['started' => true]);
