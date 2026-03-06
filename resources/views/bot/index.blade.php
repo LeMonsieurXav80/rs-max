@@ -233,6 +233,103 @@
                             </div>
                         </form>
                     </div>
+
+                    {{-- Comptes cibles (prospection) pour ce compte --}}
+                    <div class="border-t border-gray-100 pt-4 mt-4">
+                        <div class="flex items-center gap-2 mb-3">
+                            <svg class="w-4 h-4 text-purple-500" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1.5">
+                                <path stroke-linecap="round" stroke-linejoin="round" d="M18 18.72a9.094 9.094 0 0 0 3.741-.479 3 3 0 0 0-4.682-2.72m.94 3.198.001.031c0 .225-.012.447-.037.666A11.944 11.944 0 0 1 12 21c-2.17 0-4.207-.576-5.963-1.584A6.062 6.062 0 0 1 6 18.719m12 0a5.971 5.971 0 0 0-.941-3.197m0 0A5.995 5.995 0 0 0 12 12.75a5.995 5.995 0 0 0-5.058 2.772m0 0a3 3 0 0 0-4.681 2.72 8.986 8.986 0 0 0 3.74.477m.94-3.197a5.971 5.971 0 0 0-.94 3.197M15 6.75a3 3 0 1 1-6 0 3 3 0 0 1 6 0Zm6 3a2.25 2.25 0 1 1-4.5 0 2.25 2.25 0 0 1 4.5 0Zm-13.5 0a2.25 2.25 0 1 1-4.5 0 2.25 2.25 0 0 1 4.5 0Z" />
+                            </svg>
+                            <h3 class="text-sm font-semibold text-gray-700">Prospection - Comptes cibles</h3>
+                        </div>
+
+                        @php
+                            $accountTargets = $targetAccounts->where('social_account_id', $bsAccount->id);
+                        @endphp
+
+                        @if ($accountTargets->isNotEmpty())
+                            <div class="space-y-2 mb-4">
+                                @foreach ($accountTargets as $target)
+                                    <div class="flex items-center justify-between py-2 px-3 rounded-xl {{ $target->status === 'completed' ? 'bg-green-50' : ($target->status === 'running' ? 'bg-blue-50' : ($target->status === 'paused' ? 'bg-yellow-50' : 'bg-gray-50')) }}">
+                                        <div class="flex items-center gap-3 min-w-0 flex-wrap">
+                                            <span class="text-sm font-medium text-gray-900 cursor-pointer hover:text-purple-600"
+                                                  onclick="document.getElementById('target-handle-{{ $bsAccount->id }}').value = '{{ $target->handle }}'"
+                                                  title="Cliquer pour remettre dans le champ">@{{ $target->handle }}</span>
+                                            @if ($target->status === 'completed')
+                                                <span class="px-2 py-0.5 bg-green-100 text-green-700 rounded-full text-[10px] font-medium">Termine</span>
+                                            @elseif ($target->status === 'running')
+                                                <span class="px-2 py-0.5 bg-blue-100 text-blue-700 rounded-full text-[10px] font-medium animate-pulse">En cours</span>
+                                            @elseif ($target->status === 'paused')
+                                                <span class="px-2 py-0.5 bg-yellow-100 text-yellow-700 rounded-full text-[10px] font-medium">En pause</span>
+                                            @else
+                                                <span class="px-2 py-0.5 bg-gray-100 text-gray-600 rounded-full text-[10px] font-medium">En attente</span>
+                                            @endif
+                                            <span class="text-[10px] text-gray-400">
+                                                {{ $target->likers_processed }} likers &middot; {{ $target->likes_given }} likes &middot; {{ $target->follows_given }} follows
+                                            </span>
+                                        </div>
+                                        <div class="flex items-center gap-1">
+                                            @if (in_array($target->status, ['pending', 'paused', 'completed']))
+                                                <button type="button"
+                                                        onclick="fetch('{{ route('bot.runTarget', $target) }}', { method: 'POST', headers: { 'X-CSRF-TOKEN': '{{ csrf_token() }}', 'Content-Type': 'application/json' } }).then(() => location.reload())"
+                                                        class="p-1.5 text-indigo-600 hover:text-indigo-800 transition-colors"
+                                                        title="{{ $target->status === 'completed' ? 'Relancer' : 'Demarrer' }}">
+                                                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2">
+                                                        <path stroke-linecap="round" stroke-linejoin="round" d="M5.25 5.653c0-.856.917-1.398 1.667-.986l11.54 6.347a1.125 1.125 0 0 1 0 1.972l-11.54 6.347a1.125 1.125 0 0 1-1.667-.986V5.653Z" />
+                                                    </svg>
+                                                </button>
+                                            @endif
+                                            @if ($target->status === 'running')
+                                                <button type="button"
+                                                        onclick="fetch('{{ route('bot.stopTarget', $target) }}', { method: 'POST', headers: { 'X-CSRF-TOKEN': '{{ csrf_token() }}', 'Content-Type': 'application/json' } }).then(() => location.reload())"
+                                                        class="p-1.5 text-red-600 hover:text-red-800 transition-colors"
+                                                        title="Arreter">
+                                                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2">
+                                                        <path stroke-linecap="round" stroke-linejoin="round" d="M5.25 7.5A2.25 2.25 0 0 1 7.5 5.25h9a2.25 2.25 0 0 1 2.25 2.25v9a2.25 2.25 0 0 1-2.25 2.25h-9a2.25 2.25 0 0 1-2.25-2.25v-9Z" />
+                                                    </svg>
+                                                </button>
+                                            @endif
+                                            @if ($target->status === 'completed')
+                                                <form method="POST" action="{{ route('bot.resetTarget', $target) }}" class="inline">
+                                                    @csrf
+                                                    <button type="submit" class="p-1.5 text-gray-400 hover:text-gray-600 transition-colors" title="Reinitialiser les compteurs">
+                                                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2">
+                                                            <path stroke-linecap="round" stroke-linejoin="round" d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0 3.181 3.183a8.25 8.25 0 0 0 13.803-3.7M4.031 9.865a8.25 8.25 0 0 1 13.803-3.7l3.181 3.182" />
+                                                        </svg>
+                                                    </button>
+                                                </form>
+                                            @endif
+                                            <form method="POST" action="{{ route('bot.removeTarget', $target) }}" class="inline">
+                                                @csrf
+                                                @method('DELETE')
+                                                <button type="submit" class="p-1.5 text-gray-400 hover:text-red-600 transition-colors" title="Supprimer">
+                                                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2.5">
+                                                        <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" />
+                                                    </svg>
+                                                </button>
+                                            </form>
+                                        </div>
+                                    </div>
+                                @endforeach
+                            </div>
+                        @endif
+
+                        <form method="POST" action="{{ route('bot.addTarget') }}" class="flex items-center gap-3">
+                            @csrf
+                            <input type="hidden" name="social_account_id" value="{{ $bsAccount->id }}">
+                            <div class="flex-1">
+                                <input type="text" name="handle" id="target-handle-{{ $bsAccount->id }}"
+                                       class="w-full rounded-xl border-gray-300 shadow-sm text-sm focus:border-purple-500 focus:ring-purple-500"
+                                       placeholder="handle.bsky.social">
+                            </div>
+                            <button type="submit" class="inline-flex items-center gap-1.5 px-3 py-2 bg-purple-600 text-white text-xs font-medium rounded-lg hover:bg-purple-700 transition-colors whitespace-nowrap">
+                                <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2">
+                                    <path stroke-linecap="round" stroke-linejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
+                                </svg>
+                                Ajouter cible
+                            </button>
+                        </form>
+                    </div>
                 </div>
                 @empty
                     <div class="bg-white rounded-2xl border border-gray-100 shadow-sm p-6 text-center">
@@ -241,119 +338,6 @@
                         </p>
                     </div>
                 @endforelse
-
-                {{-- Comptes cibles (prospection) --}}
-                @if ($blueskyAccounts->isNotEmpty())
-                <div class="bg-white rounded-2xl border border-gray-100 shadow-sm p-6">
-                    <div class="flex items-center gap-3 mb-1">
-                        <svg class="w-5 h-5 text-purple-500" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1.5">
-                            <path stroke-linecap="round" stroke-linejoin="round" d="M18 18.72a9.094 9.094 0 0 0 3.741-.479 3 3 0 0 0-4.682-2.72m.94 3.198.001.031c0 .225-.012.447-.037.666A11.944 11.944 0 0 1 12 21c-2.17 0-4.207-.576-5.963-1.584A6.062 6.062 0 0 1 6 18.719m12 0a5.971 5.971 0 0 0-.941-3.197m0 0A5.995 5.995 0 0 0 12 12.75a5.995 5.995 0 0 0-5.058 2.772m0 0a3 3 0 0 0-4.681 2.72 8.986 8.986 0 0 0 3.74.477m.94-3.197a5.971 5.971 0 0 0-.94 3.197M15 6.75a3 3 0 1 1-6 0 3 3 0 0 1 6 0Zm6 3a2.25 2.25 0 1 1-4.5 0 2.25 2.25 0 0 1 4.5 0Zm-13.5 0a2.25 2.25 0 1 1-4.5 0 2.25 2.25 0 0 1 4.5 0Z" />
-                        </svg>
-                        <h2 class="text-base font-semibold text-gray-900">Prospection - Comptes cibles</h2>
-                    </div>
-                    <p class="text-sm text-gray-500 mb-5">Analyse les likers des posts d'un compte, visite leur profil, like 3-5 posts et follow 1 sur 5. Tache unique (~1h par compte).</p>
-
-                    {{-- Existing targets --}}
-                    @php
-                        $bsAccountIds = $blueskyAccounts->pluck('id');
-                        $bsTargets = $targetAccounts->whereIn('social_account_id', $bsAccountIds);
-                    @endphp
-
-                    @if ($bsTargets->isNotEmpty())
-                        <div class="space-y-2 mb-4">
-                            @foreach ($bsTargets as $target)
-                                <div class="flex items-center justify-between py-2 px-3 rounded-xl {{ $target->status === 'completed' ? 'bg-green-50' : ($target->status === 'running' ? 'bg-blue-50' : ($target->status === 'paused' ? 'bg-yellow-50' : 'bg-gray-50')) }}">
-                                    <div class="flex items-center gap-3 min-w-0 flex-wrap">
-                                        <span class="text-sm font-medium text-gray-900 cursor-pointer hover:text-purple-600"
-                                              onclick="document.getElementById('target-handle-input').value = '{{ $target->handle }}'"
-                                              title="Cliquer pour remettre dans le champ">@{{ $target->handle }}</span>
-                                        @if ($target->status === 'completed')
-                                            <span class="px-2 py-0.5 bg-green-100 text-green-700 rounded-full text-[10px] font-medium">Termine</span>
-                                        @elseif ($target->status === 'running')
-                                            <span class="px-2 py-0.5 bg-blue-100 text-blue-700 rounded-full text-[10px] font-medium animate-pulse">En cours</span>
-                                        @elseif ($target->status === 'paused')
-                                            <span class="px-2 py-0.5 bg-yellow-100 text-yellow-700 rounded-full text-[10px] font-medium">En pause</span>
-                                        @else
-                                            <span class="px-2 py-0.5 bg-gray-100 text-gray-600 rounded-full text-[10px] font-medium">En attente</span>
-                                        @endif
-                                        <span class="text-[10px] text-gray-400">
-                                            {{ $target->likers_processed }} likers &middot; {{ $target->likes_given }} likes &middot; {{ $target->follows_given }} follows
-                                        </span>
-                                    </div>
-                                    <div class="flex items-center gap-1">
-                                        @if (in_array($target->status, ['pending', 'paused', 'completed']))
-                                            <button type="button"
-                                                    onclick="fetch('{{ route('bot.runTarget', $target) }}', { method: 'POST', headers: { 'X-CSRF-TOKEN': '{{ csrf_token() }}', 'Content-Type': 'application/json' } }).then(() => location.reload())"
-                                                    class="p-1.5 text-indigo-600 hover:text-indigo-800 transition-colors"
-                                                    title="{{ $target->status === 'completed' ? 'Relancer' : 'Demarrer' }}">
-                                                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2">
-                                                    <path stroke-linecap="round" stroke-linejoin="round" d="M5.25 5.653c0-.856.917-1.398 1.667-.986l11.54 6.347a1.125 1.125 0 0 1 0 1.972l-11.54 6.347a1.125 1.125 0 0 1-1.667-.986V5.653Z" />
-                                                </svg>
-                                            </button>
-                                        @endif
-                                        @if ($target->status === 'running')
-                                            <button type="button"
-                                                    onclick="fetch('{{ route('bot.stopTarget', $target) }}', { method: 'POST', headers: { 'X-CSRF-TOKEN': '{{ csrf_token() }}', 'Content-Type': 'application/json' } }).then(() => location.reload())"
-                                                    class="p-1.5 text-red-600 hover:text-red-800 transition-colors"
-                                                    title="Arreter">
-                                                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2">
-                                                    <path stroke-linecap="round" stroke-linejoin="round" d="M5.25 7.5A2.25 2.25 0 0 1 7.5 5.25h9a2.25 2.25 0 0 1 2.25 2.25v9a2.25 2.25 0 0 1-2.25 2.25h-9a2.25 2.25 0 0 1-2.25-2.25v-9Z" />
-                                                </svg>
-                                            </button>
-                                        @endif
-                                        @if ($target->status === 'completed')
-                                            <form method="POST" action="{{ route('bot.resetTarget', $target) }}" class="inline">
-                                                @csrf
-                                                <button type="submit" class="p-1.5 text-gray-400 hover:text-gray-600 transition-colors" title="Reinitialiser les compteurs">
-                                                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2">
-                                                        <path stroke-linecap="round" stroke-linejoin="round" d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0 3.181 3.183a8.25 8.25 0 0 0 13.803-3.7M4.031 9.865a8.25 8.25 0 0 1 13.803-3.7l3.181 3.182" />
-                                                    </svg>
-                                                </button>
-                                            </form>
-                                        @endif
-                                        <form method="POST" action="{{ route('bot.removeTarget', $target) }}" class="inline">
-                                            @csrf
-                                            @method('DELETE')
-                                            <button type="submit" class="p-1.5 text-gray-400 hover:text-red-600 transition-colors" title="Supprimer">
-                                                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2.5">
-                                                    <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" />
-                                                </svg>
-                                            </button>
-                                        </form>
-                                    </div>
-                                </div>
-                            @endforeach
-                        </div>
-                    @endif
-
-                    {{-- Add target form --}}
-                    <div class="border-t border-gray-100 pt-4">
-                        <form method="POST" action="{{ route('bot.addTarget') }}" class="flex items-center gap-3">
-                            @csrf
-                            @if ($blueskyAccounts->count() > 1)
-                                <select name="social_account_id" class="rounded-lg border-gray-300 text-xs py-1.5 focus:border-indigo-500 focus:ring-indigo-500">
-                                    @foreach ($blueskyAccounts as $bsAcc)
-                                        <option value="{{ $bsAcc->id }}">{{ $bsAcc->name }}</option>
-                                    @endforeach
-                                </select>
-                            @else
-                                <input type="hidden" name="social_account_id" value="{{ $blueskyAccounts->first()->id }}">
-                            @endif
-                            <div class="flex-1">
-                                <input type="text" name="handle" id="target-handle-input"
-                                       class="w-full rounded-xl border-gray-300 shadow-sm text-sm focus:border-purple-500 focus:ring-purple-500"
-                                       placeholder="handle.bsky.social">
-                            </div>
-                            <button type="submit" class="inline-flex items-center gap-1.5 px-3 py-2 bg-purple-600 text-white text-xs font-medium rounded-lg hover:bg-purple-700 transition-colors whitespace-nowrap">
-                                <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2">
-                                    <path stroke-linecap="round" stroke-linejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
-                                </svg>
-                                Ajouter
-                            </button>
-                        </form>
-                    </div>
-                </div>
-                @endif
             </div>
 
             {{-- ═══════════ TAB: Facebook ═══════════ --}}
