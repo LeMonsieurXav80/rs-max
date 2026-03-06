@@ -32,6 +32,9 @@ for var in APP_NAME APP_ENV APP_DEBUG APP_URL APP_KEY \
            SESSION_DRIVER CACHE_STORE QUEUE_CONNECTION \
            FACEBOOK_APP_ID FACEBOOK_APP_SECRET FACEBOOK_CONFIG_ID \
            THREADS_APP_ID THREADS_APP_SECRET \
+           YOUTUBE_CLIENT_ID YOUTUBE_CLIENT_SECRET \
+           APP_LOCALE APP_TIMEZONE REGISTRATION_ENABLED \
+           COOLIFY_API_URL COOLIFY_API_TOKEN COOLIFY_APP_UUID \
            OPENAI_API_KEY; do
     val=$(eval echo \$$var)
     if [ -n "$val" ]; then
@@ -74,9 +77,9 @@ fi
 echo "Running migrations..."
 php artisan migrate --force
 
-# Seed platforms if needed (only if platforms table is empty)
+# Seed platforms and hooks if needed
 echo "Checking if seeding is needed..."
-php artisan db:seed --class=PlatformSeeder --force 2>/dev/null || true
+php artisan db:seed --force 2>/dev/null || true
 
 # Convert non-H.264 videos to MP4 H.264/AAC (runs in background to not block startup)
 echo "Starting video conversion in background..."
