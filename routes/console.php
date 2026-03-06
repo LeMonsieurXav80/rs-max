@@ -1,7 +1,9 @@
 <?php
 
+use App\Models\BotTargetAccount;
 use App\Models\Setting;
 use Illuminate\Support\Facades\Artisan;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Schedule;
 
 // Publish scheduled posts every minute
@@ -49,6 +51,21 @@ foreach ($inboxPlatforms as $slug) {
 
 // Bot actions - runs every 15 min, each account has its own frequency setting
 Schedule::command('bot:run')->everyFifteenMinutes()->withoutOverlapping(15);
+
+// Recover orphaned prospect targets (stuck in 'running' after redeploy or crash)
+Schedule::call(function () {
+    $orphans = BotTargetAccount::where('status', 'running')
+        ->where('updated_at', '<', now()->subMinutes(10))
+        ->get();
+
+    foreach ($orphans as $target) {
+        // No active worker for this target — reset and requeue
+        if (! Cache::has("bot_running_prospect_{$target->social_account_id}")) {
+            $target->update(['status' => 'pending']);
+            Artisan::queue('bot:prospect', ['--target' => $target->id]);
+        }
+    }
+})->everyFiveMinutes()->name('prospect:recover-orphans')->withoutOverlapping(5);
 
 // Downsample follower snapshots (1st of each month at 3 AM)
 Schedule::command('snapshots:downsample')->monthlyOn(1, '03:00');

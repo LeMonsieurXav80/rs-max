@@ -98,6 +98,9 @@ fi
 # Clear schedule locks (prevents stale locks from killed processes during redeploy)
 php artisan schedule:clear-cache
 
+# Reset orphaned prospect targets (stuck in 'running' from previous container)
+php artisan tinker --execute="App\Models\BotTargetAccount::where('status', 'running')->update(['status' => 'pending'])" 2>/dev/null || true
+
 # Clear and optimize caches
 echo "Optimizing application..."
 php artisan config:cache
