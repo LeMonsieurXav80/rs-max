@@ -12,6 +12,7 @@ use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\Http;
 use Illuminate\View\View;
 
 class BotController extends Controller
@@ -223,6 +224,94 @@ class BotController extends Controller
         Cache::put("bot_stop_prospect_{$target->social_account_id}", true, 300);
 
         return response()->json(['stopped' => true]);
+    }
+
+    public function apiStatus(SocialAccount $account): JsonResponse
+    {
+        $credentials = $account->credentials;
+        $checks = ['auth' => false, 'api' => false, 'rate_limited' => false, 'error' => null];
+
+        // 1. Test auth (get a valid token)
+        $accessJwt = $credentials['access_jwt'] ?? null;
+        $refreshJwt = $credentials['refresh_jwt'] ?? null;
+        $did = $credentials['did'] ?? null;
+
+        // Try refresh if access token looks expired
+        if ($refreshJwt) {
+            $response = Http::withToken($refreshJwt)
+                ->post('https://bsky.social/xrpc/com.atproto.server.refreshSession');
+
+            if ($response->successful()) {
+                $data = $response->json();
+                $accessJwt = $data['accessJwt'];
+                $did = $data['did'];
+                $account->update([
+                    'credentials' => array_merge($credentials, [
+                        'access_jwt' => $data['accessJwt'],
+                        'refresh_jwt' => $data['refreshJwt'],
+                        'did' => $data['did'],
+                    ]),
+                ]);
+                $checks['auth'] = true;
+            } else {
+                // Try full login
+                $loginResponse = Http::post('https://bsky.social/xrpc/com.atproto.server.createSession', [
+                    'identifier' => $credentials['handle'],
+                    'password' => $credentials['app_password'],
+                ]);
+
+                if ($loginResponse->successful()) {
+                    $data = $loginResponse->json();
+                    $accessJwt = $data['accessJwt'];
+                    $did = $data['did'];
+                    $account->update([
+                        'credentials' => array_merge($credentials, [
+                            'did' => $data['did'],
+                            'access_jwt' => $data['accessJwt'],
+                            'refresh_jwt' => $data['refreshJwt'],
+                        ]),
+                    ]);
+                    $checks['auth'] = true;
+                } else {
+                    $checks['error'] = 'Auth failed: ' . ($loginResponse->json('message') ?? $loginResponse->status());
+
+                    return response()->json($checks);
+                }
+            }
+        }
+
+        // 2. Test public API (fetch own profile)
+        if ($did) {
+            $profileResponse = Http::get('https://public.api.bsky.app/xrpc/app.bsky.actor.getProfile', [
+                'actor' => $did,
+            ]);
+
+            if ($profileResponse->successful()) {
+                $checks['api'] = true;
+            } elseif ($profileResponse->status() === 429) {
+                $checks['rate_limited'] = true;
+                $checks['error'] = 'Rate limited (429)';
+            } else {
+                $checks['error'] = 'API error: ' . $profileResponse->status() . ' - ' . ($profileResponse->json('message') ?? '');
+            }
+        }
+
+        // 3. Test authenticated API (try creating a record check)
+        if ($checks['auth'] && $accessJwt) {
+            $authTestResponse = Http::withToken($accessJwt)
+                ->get('https://bsky.social/xrpc/com.atproto.repo.describeRepo', [
+                    'repo' => $did,
+                ]);
+
+            if ($authTestResponse->status() === 429) {
+                $checks['rate_limited'] = true;
+                $checks['error'] = 'Rate limited on PDS (429)';
+            } elseif (! $authTestResponse->successful()) {
+                $checks['error'] = 'PDS error: ' . $authTestResponse->status() . ' - ' . ($authTestResponse->json('message') ?? '');
+            }
+        }
+
+        return response()->json($checks);
     }
 
     public function resetTarget(BotTargetAccount $target): RedirectResponse

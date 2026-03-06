@@ -216,6 +216,7 @@ Route::middleware(['auth', 'verified'])->group(function () {
         Route::post('bot/targets/{target}/run', [BotController::class, 'runTarget'])->name('bot.runTarget');
         Route::post('bot/targets/{target}/stop', [BotController::class, 'stopTarget'])->name('bot.stopTarget');
         Route::post('bot/targets/{target}/reset', [BotController::class, 'resetTarget'])->name('bot.resetTarget');
+        Route::get('bot/api-status/{account}', [BotController::class, 'apiStatus'])->name('bot.apiStatus');
 
         // Settings
         Route::get('settings', [SettingsController::class, 'index'])->name('settings.index');

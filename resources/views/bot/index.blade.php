@@ -84,6 +84,30 @@
                                 <h3 class="text-sm font-semibold text-gray-900">{{ $bsAccount->name }}</h3>
                                 <p class="text-xs text-gray-500">{{ $bsAccount->credentials['handle'] ?? '' }}</p>
                             </div>
+                            {{-- API Status check --}}
+                            <div x-data="{ checking: false, result: null }" class="ml-2">
+                                <button type="button"
+                                        @click="checking = true; result = null; fetch('{{ route('bot.apiStatus', $bsAccount) }}').then(r => r.json()).then(d => { result = d; checking = false; }).catch(() => { result = { error: 'Network error' }; checking = false; })"
+                                        :disabled="checking"
+                                        class="inline-flex items-center gap-1 px-2 py-1 text-[10px] font-medium rounded-md transition-colors"
+                                        :class="result === null ? 'bg-gray-100 text-gray-500 hover:bg-gray-200' : (result.auth && result.api && !result.rate_limited ? 'bg-green-100 text-green-700' : (result.rate_limited ? 'bg-red-100 text-red-600' : 'bg-yellow-100 text-yellow-700'))">
+                                    <template x-if="checking">
+                                        <svg class="w-3 h-3 animate-spin" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path></svg>
+                                    </template>
+                                    <template x-if="!checking && result === null">
+                                        <span>API Status</span>
+                                    </template>
+                                    <template x-if="!checking && result !== null && result.auth && result.api && !result.rate_limited">
+                                        <span>API OK</span>
+                                    </template>
+                                    <template x-if="!checking && result !== null && result.rate_limited">
+                                        <span>Rate Limited</span>
+                                    </template>
+                                    <template x-if="!checking && result !== null && !result.rate_limited && (!result.auth || !result.api)">
+                                        <span x-text="result.error ? result.error.substring(0, 40) : 'Erreur'"></span>
+                                    </template>
+                                </button>
+                            </div>
                         </div>
                         <div class="flex items-center gap-3">
                             <div x-data="freqSelector('bluesky', {{ $bsAccount->id }}, '{{ $botFrequencies["bluesky_{$bsAccount->id}"] ?? 'every_30_min' }}')">
