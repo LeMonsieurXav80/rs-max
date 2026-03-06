@@ -195,17 +195,15 @@ class InstagramAdapter implements PlatformAdapterInterface
                 return $this->errorFromResponse($response, 'Failed to create carousel child container');
             }
 
-            // If this child is a video, wait for it to finish processing.
-            if ($isVideo) {
-                $ready = $this->waitForProcessing($childId, $accessToken);
+            // Wait for child container to be FINISHED (required for all types, not just videos)
+            $ready = $this->waitForProcessing($childId, $accessToken);
 
-                if (! $ready) {
-                    return [
-                        'success' => false,
-                        'external_id' => null,
-                        'error' => "Video processing timed out for carousel child {$childId}.",
-                    ];
-                }
+            if (! $ready) {
+                return [
+                    'success' => false,
+                    'external_id' => null,
+                    'error' => "Processing timed out for carousel child {$childId}.",
+                ];
             }
 
             $childIds[] = $childId;

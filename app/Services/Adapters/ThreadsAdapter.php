@@ -238,17 +238,17 @@ class ThreadsAdapter implements PlatformAdapterInterface, ThreadableAdapterInter
                 return $this->errorFromResponse($response, 'Failed to create carousel child container');
             }
 
-            // Wait for video processing.
-            if ($isVideo) {
-                $ready = $this->waitForProcessing($childId, $accessToken);
+            // Wait for child container to be FINISHED (required for all types, not just videos)
+            $ready = $isVideo
+                ? $this->waitForProcessing($childId, $accessToken)
+                : $this->waitUntilReady($childId, $accessToken);
 
-                if (! $ready) {
-                    return [
-                        'success' => false,
-                        'external_id' => null,
-                        'error' => "Video processing timed out for carousel child {$childId}.",
-                    ];
-                }
+            if (! $ready) {
+                return [
+                    'success' => false,
+                    'external_id' => null,
+                    'error' => "Processing timed out for carousel child {$childId}.",
+                ];
             }
 
             $childIds[] = $childId;
