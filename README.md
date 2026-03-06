@@ -83,6 +83,6 @@ php artisan followers:sync           # Synchroniser les compteurs d'abonnes
 
 RS-Max detecte automatiquement les nouvelles versions disponibles (verification horaire).
 Un badge s'affiche dans l'interface admin lorsqu'une mise a jour est disponible.
-L'admin peut declencher le deploiement manuellement via Coolify.
+L'admin peut declencher le deploiement depuis l'interface (via l'API de la plateforme d'hebergement).
 
-Variables necessaires : `COOLIFY_API_URL`, `COOLIFY_API_TOKEN`, `COOLIFY_APP_UUID`
+Variables necessaires : `DEPLOY_API_URL`, `DEPLOY_API_TOKEN`, `DEPLOY_APP_UUID`

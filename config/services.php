@@ -58,10 +58,12 @@ return [
         'redirect' => env('APP_URL').'/oauth/youtube/callback',
     ],
 
-    'coolify' => [
-        'api_url' => env('COOLIFY_API_URL'),
-        'api_token' => env('COOLIFY_API_TOKEN'),
-        'app_uuid' => env('COOLIFY_APP_UUID'),
+    'deploy' => [
+        'api_url' => env('DEPLOY_API_URL'),
+        'api_token' => env('DEPLOY_API_TOKEN'),
+        'app_uuid' => env('DEPLOY_APP_UUID'),
+        'git_repo' => env('DEPLOY_GIT_REPO'),
+        'git_branch' => env('DEPLOY_GIT_BRANCH', 'main'),
     ],
 
 ];

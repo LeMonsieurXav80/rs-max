@@ -67,7 +67,15 @@ class UpdateService
 
     public function getRemoteHash(): ?string
     {
-        $result = Process::run('git ls-remote origin HEAD');
+        $repo = config('services.deploy.git_repo');
+        $branch = config('services.deploy.git_branch', 'main');
+
+        if (! $repo) {
+            return null;
+        }
+
+        $ref = "refs/heads/{$branch}";
+        $result = Process::run("git ls-remote {$repo} {$ref}");
         if ($result->successful()) {
             $output = trim($result->output());
             if (preg_match('/^([a-f0-9]+)/', $output, $matches)) {
@@ -80,12 +88,21 @@ class UpdateService
 
     public function getChangelog(string $localHash, string $remoteHash): string
     {
-        // Fetch remote to get commit info
-        Process::run('git fetch origin main --quiet');
+        $repo = config('services.deploy.git_repo');
+        $branch = config('services.deploy.git_branch', 'main');
 
-        $result = Process::run("git log --oneline {$localHash}..origin/main 2>/dev/null");
-        if ($result->successful() && trim($result->output())) {
-            return trim($result->output());
+        if ($repo) {
+            // Add/update temporary remote for fetching
+            Process::run("git remote remove _deploy 2>/dev/null");
+            Process::run("git remote add _deploy {$repo}");
+            Process::run("git fetch _deploy {$branch} --quiet 2>/dev/null");
+
+            $result = Process::run("git log --oneline {$localHash}.._deploy/{$branch} 2>/dev/null");
+            Process::run("git remote remove _deploy 2>/dev/null");
+
+            if ($result->successful() && trim($result->output())) {
+                return trim($result->output());
+            }
         }
 
         return "Nouvelle version disponible ({$remoteHash})";
@@ -93,12 +110,12 @@ class UpdateService
 
     public function deploy(): array
     {
-        $apiUrl = config('services.coolify.api_url');
-        $apiToken = config('services.coolify.api_token');
-        $appUuid = config('services.coolify.app_uuid');
+        $apiUrl = config('services.deploy.api_url');
+        $apiToken = config('services.deploy.api_token');
+        $appUuid = config('services.deploy.app_uuid');
 
         if (! $apiUrl || ! $apiToken || ! $appUuid) {
-            return ['success' => false, 'error' => 'Configuration Coolify manquante (COOLIFY_API_URL, COOLIFY_API_TOKEN, COOLIFY_APP_UUID)'];
+            return ['success' => false, 'error' => 'Configuration de deploiement manquante (DEPLOY_API_URL, DEPLOY_API_TOKEN, DEPLOY_APP_UUID)'];
         }
 
         try {
@@ -130,7 +147,7 @@ class UpdateService
             'changelog' => Setting::get('update_changelog'),
             'checked_at' => Setting::get('update_checked_at'),
             'local_hash' => $this->getLocalHash(),
-            'coolify_configured' => (bool) config('services.coolify.api_url'),
+            'deploy_configured' => (bool) config('services.deploy.api_url'),
         ];
     }
 }

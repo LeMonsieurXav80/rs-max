@@ -69,7 +69,7 @@
                     <span x-text="checking ? 'Verification...' : 'Verifier maintenant'"></span>
                 </button>
 
-                @if($update['coolify_configured'])
+                @if($update['deploy_configured'])
                 <template x-if="updateAvailable">
                     <button
                         type="button"
@@ -85,7 +85,7 @@
                 </template>
                 @else
                 <p class="text-xs text-gray-400">
-                    Deploiement automatique non configure. Definissez COOLIFY_API_URL, COOLIFY_API_TOKEN et COOLIFY_APP_UUID.
+                    Deploiement automatique non configure. Definissez DEPLOY_API_URL, DEPLOY_API_TOKEN et DEPLOY_APP_UUID.
                 </p>
                 @endif
             </div>
