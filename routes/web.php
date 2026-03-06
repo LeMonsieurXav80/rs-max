@@ -27,6 +27,7 @@ use App\Http\Controllers\YouTubeChannelController;
 use App\Http\Controllers\StatsController;
 use App\Http\Controllers\ThreadController;
 use App\Http\Controllers\ThreadsOAuthController;
+use App\Http\Controllers\HealthController;
 use App\Http\Controllers\HelpController;
 use App\Http\Controllers\UpdateController;
 use App\Http\Controllers\YouTubeOAuthController;
@@ -268,5 +269,8 @@ Route::middleware('auth')->group(function () {
 Route::get('/media/{filename}', [MediaController::class, 'show'])
     ->where('filename', '[^/]+\.[a-zA-Z0-9]+')
     ->name('media.show');
+
+// Health check (public, for monitoring)
+Route::get('/health', HealthController::class)->name('health');
 
 require __DIR__.'/auth.php';

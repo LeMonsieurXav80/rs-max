@@ -6,6 +6,10 @@ use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Schedule;
 
+// Health heartbeats
+Schedule::call(fn () => Cache::put('health:scheduler', true, now()->addMinutes(5)))->everyMinute();
+Schedule::call(fn () => dispatch(fn () => Cache::put('health:queue_worker', true, now()->addMinutes(5))))->everyMinute();
+
 // Publish scheduled posts every minute
 Schedule::command('posts:publish-scheduled')->everyMinute()->withoutOverlapping(5);
 
