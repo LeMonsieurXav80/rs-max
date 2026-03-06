@@ -47,7 +47,7 @@ class RunBotProspect extends Command
 
         $this->info("Processing target: @{$target->handle} for {$account->name}");
 
-        Cache::put("bot_running_prospect_{$account->id}", true, 7200); // 2h TTL
+        Cache::put("bot_running_prospect_{$target->id}", true, 7200); // 2h TTL
 
         try {
             $result = $service->run($account, $target);
@@ -60,8 +60,8 @@ class RunBotProspect extends Command
                 $this->info("Completed. Likers: {$result['likers_processed']}, Likes: {$result['likes']}, Follows: {$result['follows']}");
             }
         } finally {
-            Cache::forget("bot_running_prospect_{$account->id}");
-            Cache::forget("bot_stop_prospect_{$account->id}");
+            Cache::forget("bot_running_prospect_{$target->id}");
+            Cache::forget("bot_stop_prospect_{$target->id}");
         }
 
         return self::SUCCESS;

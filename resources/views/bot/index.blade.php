@@ -699,9 +699,18 @@ function targetRow(targetId, opts) {
                 this.follows = data.follows_given;
 
                 const prev = this.status;
-                this.status = data.status;
 
-                if (!['running', 'pending'].includes(data.status) && ['running', 'starting', 'stopping'].includes(prev)) {
+                // Don't overwrite transitional states until DB reflects the change
+                if (prev === 'stopping' && data.status === 'running') {
+                    // Still waiting for service to process the stop signal
+                } else if (prev === 'starting' && data.status === 'pending') {
+                    // Still waiting for process to start
+                } else {
+                    this.status = data.status;
+                }
+
+                // Stop polling when we've settled into a final state
+                if (['completed', 'paused'].includes(this.status)) {
                     clearInterval(this.timer);
                     this.timer = null;
                 }

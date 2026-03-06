@@ -15,7 +15,7 @@ class BlueskyProspectService
 
     private const PUBLIC_API = 'https://public.api.bsky.app';
 
-    private const POSTS_TO_ANALYZE = 3;
+    private const POSTS_TO_ANALYZE = 10;
 
     private const LIKES_PER_LIKER = 4; // average of 3-5
 
@@ -33,9 +33,12 @@ class BlueskyProspectService
 
     private int $consecutiveErrors = 0;
 
+    private BotTargetAccount $target;
+
     public function run(SocialAccount $account, BotTargetAccount $target): array
     {
         $this->account = $account;
+        $this->target = $target;
 
         if (! $this->refreshAuth()) {
             Log::warning('BlueskyProspectService: auth failed', ['account_id' => $account->id]);
@@ -95,7 +98,7 @@ class BlueskyProspectService
             $cursor = ($i === $startPostIndex) ? $target->current_cursor : null;
 
             do {
-                if ($this->shouldStop($account->id)) {
+                if ($this->shouldStop()) {
                     return $this->saveAndReturn($target, $likersProcessed, $totalLikes, $totalFollows, $cursor, 'paused');
                 }
 
@@ -121,7 +124,7 @@ class BlueskyProspectService
                 $cursor = $likesResult['cursor'];
 
                 foreach ($likers as $liker) {
-                    if ($this->shouldStop($account->id)) {
+                    if ($this->shouldStop()) {
                         break 3;
                     }
 
@@ -530,9 +533,9 @@ class BlueskyProspectService
             ->exists();
     }
 
-    private function shouldStop(int $accountId): bool
+    private function shouldStop(): bool
     {
-        return Cache::has("bot_stop_prospect_{$accountId}");
+        return Cache::has("bot_stop_prospect_{$this->target->id}");
     }
 
     private function refreshAuth(): bool

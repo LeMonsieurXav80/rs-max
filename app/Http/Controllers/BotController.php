@@ -12,6 +12,7 @@ use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Cache;
+use Symfony\Component\Process\Process;
 use Illuminate\Support\Facades\Http;
 use Illuminate\View\View;
 
@@ -239,14 +240,18 @@ class BotController extends Controller
             $target->update($update);
         }
 
-        Artisan::queue('bot:prospect', ['--target' => $target->id]);
+        // Run as background process (not in queue) to avoid blocking the queue worker
+        $process = new Process(['php', base_path('artisan'), 'bot:prospect', '--target=' . $target->id]);
+        $process->setWorkingDirectory(base_path());
+        $process->disableOutput();
+        $process->start();
 
         return response()->json(['started' => true]);
     }
 
     public function stopTarget(BotTargetAccount $target): JsonResponse
     {
-        Cache::put("bot_stop_prospect_{$target->social_account_id}", true, 300);
+        Cache::put("bot_stop_prospect_{$target->id}", true, 3600);
 
         return response()->json(['stopped' => true]);
     }
