@@ -33,12 +33,19 @@ class YouTubeTokenHelper
         ]);
 
         if (! $response->successful()) {
-            Log::warning('YouTubeTokenHelper: refresh failed, using existing token', [
+            $error = $response->json('error');
+
+            Log::warning('YouTubeTokenHelper: refresh failed', [
                 'account_id' => $account->id,
                 'status' => $response->status(),
-                'error' => $response->json('error'),
+                'error' => $error,
                 'error_description' => $response->json('error_description'),
             ]);
+
+            // Token revoked or expired — no point using the old access token
+            if ($error === 'invalid_grant') {
+                return null;
+            }
 
             return $credentials['access_token'] ?? null;
         }

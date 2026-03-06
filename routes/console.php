@@ -26,18 +26,26 @@ match ($syncFreq) {
 // Send scheduled inbox replies every minute
 Schedule::command('inbox:send-scheduled')->everyMinute()->withoutOverlapping(5);
 
-// Inbox sync - frequency configurable via Settings page
-$inboxFreq = rescue(fn () => Setting::get('inbox_sync_frequency', 'every_15_min'), 'every_15_min', false);
-$inboxSchedule = Schedule::command('inbox:sync')->withoutOverlapping(10);
-match ($inboxFreq) {
-    'every_30_min' => $inboxSchedule->everyThirtyMinutes(),
-    'hourly' => $inboxSchedule->hourly(),
-    'every_2_hours' => $inboxSchedule->everyTwoHours(),
-    'every_6_hours' => $inboxSchedule->cron('0 */6 * * *'),
-    'every_12_hours' => $inboxSchedule->twiceDaily(0, 12),
-    'daily' => $inboxSchedule->daily(),
-    default => $inboxSchedule->everyFifteenMinutes(),
-};
+// Inbox sync - per-platform frequency configurable via Settings page
+$inboxPlatforms = ['facebook', 'instagram', 'threads', 'youtube', 'bluesky', 'telegram', 'reddit', 'twitter'];
+foreach ($inboxPlatforms as $slug) {
+    $enabled = rescue(fn () => (bool) Setting::get("inbox_platform_{$slug}_enabled", true), true, false);
+    if (! $enabled) {
+        continue;
+    }
+
+    $freq = rescue(fn () => Setting::get("inbox_sync_freq_{$slug}", 'every_15_min'), 'every_15_min', false);
+    $platformSchedule = Schedule::command("inbox:sync --platform={$slug}")->withoutOverlapping(10);
+    match ($freq) {
+        'every_30_min' => $platformSchedule->everyThirtyMinutes(),
+        'hourly' => $platformSchedule->hourly(),
+        'every_2_hours' => $platformSchedule->everyTwoHours(),
+        'every_6_hours' => $platformSchedule->cron('0 */6 * * *'),
+        'every_12_hours' => $platformSchedule->twiceDaily(0, 12),
+        'daily' => $platformSchedule->daily(),
+        default => $platformSchedule->everyFifteenMinutes(),
+    };
+}
 
 // Bot actions - runs every 15 min, each account has its own frequency setting
 Schedule::command('bot:run')->everyFifteenMinutes()->withoutOverlapping(15);

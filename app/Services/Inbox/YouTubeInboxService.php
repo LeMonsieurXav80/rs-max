@@ -28,27 +28,25 @@ class YouTubeInboxService implements PlatformInboxInterface
         }
 
         try {
-            // Fetch recent videos (always fetch latest to catch new comments on existing videos)
-            $searchParams = [
-                'part' => 'id',
-                'channelId' => $channelId,
+            // Fetch recent videos via uploads playlist (1 quota unit vs 100 for /search)
+            $uploadsPlaylistId = 'UU' . substr($channelId, 2);
+
+            $playlistResponse = Http::withToken($accessToken)->get(self::API_BASE . '/playlistItems', [
+                'part' => 'contentDetails',
+                'playlistId' => $uploadsPlaylistId,
                 'maxResults' => 15,
-                'order' => 'date',
-                'type' => 'video',
-            ];
+            ]);
 
-            $searchResponse = Http::withToken($accessToken)->get(self::API_BASE . '/search', $searchParams);
-
-            if (! $searchResponse->successful()) {
-                Log::warning('YouTubeInboxService: search failed', ['status' => $searchResponse->status()]);
+            if (! $playlistResponse->successful()) {
+                Log::warning('YouTubeInboxService: playlistItems failed', ['status' => $playlistResponse->status()]);
 
                 return $items;
             }
 
-            $videos = $searchResponse->json('items', []);
+            $videos = $playlistResponse->json('items', []);
 
             foreach ($videos as $video) {
-                $videoId = $video['id']['videoId'] ?? null;
+                $videoId = $video['contentDetails']['videoId'] ?? null;
                 if (! $videoId) {
                     continue;
                 }

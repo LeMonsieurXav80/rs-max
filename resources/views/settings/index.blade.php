@@ -422,28 +422,10 @@
                     </div>
                     <p class="text-sm text-gray-500 mb-5">Configuration de la synchronisation des commentaires, reponses et messages prives depuis les plateformes sociales.</p>
 
-                    {{-- Sync frequency --}}
+                    {{-- Platform toggles + per-platform sync frequency --}}
                     <div class="mb-6">
-                        <label for="inbox_sync_frequency" class="block text-sm font-medium text-gray-700 mb-1">Frequence de synchronisation</label>
-                        <select id="inbox_sync_frequency" name="inbox_sync_frequency"
-                                class="w-full sm:w-1/2 rounded-xl border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 text-sm">
-                            <option value="every_15_min" {{ $settings['inbox_sync_frequency'] === 'every_15_min' ? 'selected' : '' }}>Toutes les 15 minutes</option>
-                            <option value="every_30_min" {{ $settings['inbox_sync_frequency'] === 'every_30_min' ? 'selected' : '' }}>Toutes les 30 minutes</option>
-                            <option value="hourly" {{ $settings['inbox_sync_frequency'] === 'hourly' ? 'selected' : '' }}>Toutes les heures</option>
-                            <option value="every_2_hours" {{ $settings['inbox_sync_frequency'] === 'every_2_hours' ? 'selected' : '' }}>Toutes les 2 heures</option>
-                            <option value="every_6_hours" {{ $settings['inbox_sync_frequency'] === 'every_6_hours' ? 'selected' : '' }}>Toutes les 6 heures</option>
-                            <option value="every_12_hours" {{ $settings['inbox_sync_frequency'] === 'every_12_hours' ? 'selected' : '' }}>Toutes les 12 heures</option>
-                            <option value="daily" {{ $settings['inbox_sync_frequency'] === 'daily' ? 'selected' : '' }}>Une fois par jour</option>
-                        </select>
-                        <p class="text-xs text-gray-400 mt-1">A quelle frequence le systeme recupere les nouveaux commentaires et messages. Recommande : 15 min</p>
-                        @error('inbox_sync_frequency')
-                            <p class="text-sm text-red-600 mt-1">{{ $message }}</p>
-                        @enderror
-                    </div>
-
-                    {{-- Platform toggles --}}
-                    <div class="border-t border-gray-100 pt-6 mb-6">
-                        <h3 class="text-sm font-semibold text-gray-900 mb-4">Plateformes actives</h3>
+                        <h3 class="text-sm font-semibold text-gray-900 mb-1">Plateformes actives & frequences</h3>
+                        <p class="text-xs text-gray-400 mb-4">Activez/desactivez chaque plateforme et definissez sa frequence de synchronisation independamment.</p>
                         <div class="space-y-3">
                             @php
                                 $inboxPlatforms = [
@@ -456,17 +438,32 @@
                                     ['slug' => 'reddit', 'name' => 'Reddit', 'desc' => 'Commentaires et messages prives'],
                                     ['slug' => 'twitter', 'name' => 'X / Twitter', 'desc' => 'Mentions et reponses aux tweets (API payante)'],
                                 ];
+                                $freqOptions = [
+                                    'every_15_min' => '15 min',
+                                    'every_30_min' => '30 min',
+                                    'hourly' => '1 heure',
+                                    'every_2_hours' => '2 heures',
+                                    'every_6_hours' => '6 heures',
+                                    'every_12_hours' => '12 heures',
+                                    'daily' => '1 fois/jour',
+                                ];
                             @endphp
                             @foreach($inboxPlatforms as $p)
-                                <label class="flex items-center gap-3 cursor-pointer">
+                                <div class="flex items-center gap-3 py-1">
                                     <input type="checkbox" name="inbox_platform_{{ $p['slug'] }}_enabled" value="1"
                                            {{ $settings['inbox_platform_'.$p['slug'].'_enabled'] ? 'checked' : '' }}
                                            class="rounded border-gray-300 text-indigo-600 shadow-sm focus:ring-indigo-500">
-                                    <div>
+                                    <div class="flex-1 min-w-0">
                                         <span class="text-sm font-medium text-gray-900">{{ $p['name'] }}</span>
-                                        <span class="text-xs text-gray-400 ml-1">{{ $p['desc'] }}</span>
+                                        <span class="text-xs text-gray-400 ml-1 hidden sm:inline">{{ $p['desc'] }}</span>
                                     </div>
-                                </label>
+                                    <select name="inbox_sync_freq_{{ $p['slug'] }}"
+                                            class="w-32 rounded-lg border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 text-xs">
+                                        @foreach($freqOptions as $val => $label)
+                                            <option value="{{ $val }}" {{ $settings['inbox_sync_freq_'.$p['slug']] === $val ? 'selected' : '' }}>{{ $label }}</option>
+                                        @endforeach
+                                    </select>
+                                </div>
                             @endforeach
                         </div>
                     </div>
