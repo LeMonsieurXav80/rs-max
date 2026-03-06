@@ -274,75 +274,48 @@
                         @if ($accountTargets->isNotEmpty())
                             <div class="space-y-2 mb-4">
                                 @foreach ($accountTargets as $target)
-                                    <div class="flex items-center justify-between py-2 px-3 rounded-xl {{ $target->status === 'completed' ? 'bg-green-50' : ($target->status === 'running' ? 'bg-blue-50' : ($target->status === 'paused' ? 'bg-yellow-50' : 'bg-gray-50')) }}"
-                                         @if($target->status === 'running')
-                                             x-data="prospectProgress({{ $target->id }}, {{ json_encode(['likers' => $target->likers_processed, 'likes' => $target->likes_given, 'follows' => $target->follows_given, 'status' => $target->status]) }})"
-                                             x-init="startPolling()"
-                                         @endif
-                                    >
+                                    <div class="flex items-center justify-between py-2 px-3 rounded-xl"
+                                         :class="bgClass"
+                                         x-data="targetRow({{ $target->id }}, {{ json_encode([
+                                             'status' => $target->status,
+                                             'likers' => $target->likers_processed,
+                                             'likes' => $target->likes_given,
+                                             'follows' => $target->follows_given,
+                                             'runUrl' => route('bot.runTarget', $target),
+                                             'stopUrl' => route('bot.stopTarget', $target),
+                                             'removeUrl' => route('bot.removeTarget', $target),
+                                         ]) }})">
                                         <div class="flex items-center gap-3 min-w-0 flex-wrap">
                                             <span class="text-sm font-medium text-gray-900 cursor-pointer hover:text-purple-600"
                                                   onclick="document.getElementById('target-handle-{{ $bsAccount->id }}').value = '{{ $target->handle }}'"
                                                   title="Cliquer pour remettre dans le champ">{{ $target->handle }}</span>
-                                            @if ($target->status === 'completed')
-                                                <span class="px-2 py-0.5 bg-green-100 text-green-700 rounded-full text-[10px] font-medium">Termine</span>
-                                            @elseif ($target->status === 'running')
-                                                <span class="px-2 py-0.5 bg-blue-100 text-blue-700 rounded-full text-[10px] font-medium animate-pulse" x-text="statusLabel">En cours</span>
-                                            @elseif ($target->status === 'paused')
-                                                <span class="px-2 py-0.5 bg-yellow-100 text-yellow-700 rounded-full text-[10px] font-medium">En pause</span>
-                                            @else
-                                                <span class="px-2 py-0.5 bg-gray-100 text-gray-600 rounded-full text-[10px] font-medium">En attente</span>
-                                            @endif
-                                            @if ($target->status === 'running')
-                                                <span class="text-[10px] text-gray-400">
-                                                    <span x-text="likers"></span> likers &middot; <span x-text="likes"></span> likes &middot; <span x-text="follows"></span> follows
-                                                </span>
-                                            @else
-                                                <span class="text-[10px] text-gray-400">
-                                                    {{ $target->likers_processed }} likers &middot; {{ $target->likes_given }} likes &middot; {{ $target->follows_given }} follows
-                                                </span>
-                                            @endif
+                                            <span class="px-2 py-0.5 rounded-full text-[10px] font-medium" :class="badgeClass" x-text="badgeLabel"></span>
+                                            <span class="text-[10px] text-gray-400">
+                                                <span x-text="likers"></span> likers &middot; <span x-text="likes"></span> likes &middot; <span x-text="follows"></span> follows
+                                            </span>
                                         </div>
                                         <div class="flex items-center gap-1">
-                                            @if (in_array($target->status, ['pending', 'paused', 'completed']))
-                                                <button type="button"
-                                                        onclick="fetch('{{ route('bot.runTarget', $target) }}', { method: 'POST', headers: { 'X-CSRF-TOKEN': '{{ csrf_token() }}', 'Content-Type': 'application/json' } }).then(() => location.reload())"
-                                                        class="p-1.5 text-indigo-600 hover:text-indigo-800 transition-colors"
-                                                        title="{{ $target->status === 'completed' ? 'Relancer' : 'Demarrer' }}">
-                                                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2">
-                                                        <path stroke-linecap="round" stroke-linejoin="round" d="M5.25 5.653c0-.856.917-1.398 1.667-.986l11.54 6.347a1.125 1.125 0 0 1 0 1.972l-11.54 6.347a1.125 1.125 0 0 1-1.667-.986V5.653Z" />
-                                                    </svg>
-                                                </button>
-                                            @endif
-                                            @if ($target->status === 'running')
-                                                <button type="button"
-                                                        onclick="fetch('{{ route('bot.stopTarget', $target) }}', { method: 'POST', headers: { 'X-CSRF-TOKEN': '{{ csrf_token() }}', 'Content-Type': 'application/json' } }).then(() => location.reload())"
-                                                        class="p-1.5 text-red-600 hover:text-red-800 transition-colors"
-                                                        title="Arreter">
-                                                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2">
-                                                        <path stroke-linecap="round" stroke-linejoin="round" d="M5.25 7.5A2.25 2.25 0 0 1 7.5 5.25h9a2.25 2.25 0 0 1 2.25 2.25v9a2.25 2.25 0 0 1-2.25 2.25h-9a2.25 2.25 0 0 1-2.25-2.25v-9Z" />
-                                                    </svg>
-                                                </button>
-                                            @endif
-                                            @if ($target->status === 'completed')
-                                                <form method="POST" action="{{ route('bot.resetTarget', $target) }}" class="inline">
-                                                    @csrf
-                                                    <button type="submit" class="p-1.5 text-gray-400 hover:text-gray-600 transition-colors" title="Reinitialiser les compteurs">
-                                                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2">
-                                                            <path stroke-linecap="round" stroke-linejoin="round" d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0 3.181 3.183a8.25 8.25 0 0 0 13.803-3.7M4.031 9.865a8.25 8.25 0 0 1 13.803-3.7l3.181 3.182" />
-                                                        </svg>
-                                                    </button>
-                                                </form>
-                                            @endif
-                                            <form method="POST" action="{{ route('bot.removeTarget', $target) }}" class="inline">
-                                                @csrf
-                                                @method('DELETE')
-                                                <button type="submit" class="p-1.5 text-gray-400 hover:text-red-600 transition-colors" title="Supprimer">
-                                                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2.5">
-                                                        <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" />
-                                                    </svg>
-                                                </button>
-                                            </form>
+                                            {{-- Play button --}}
+                                            <button type="button" x-show="canPlay" x-cloak @click="play()"
+                                                    class="p-1.5 text-indigo-600 hover:text-indigo-800 transition-colors" title="Lancer">
+                                                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2">
+                                                    <path stroke-linecap="round" stroke-linejoin="round" d="M5.25 5.653c0-.856.917-1.398 1.667-.986l11.54 6.347a1.125 1.125 0 0 1 0 1.972l-11.54 6.347a1.125 1.125 0 0 1-1.667-.986V5.653Z" />
+                                                </svg>
+                                            </button>
+                                            {{-- Stop button --}}
+                                            <button type="button" x-show="canStop" x-cloak @click="stop()"
+                                                    class="p-1.5 text-red-600 hover:text-red-800 transition-colors" title="Arreter">
+                                                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2">
+                                                    <path stroke-linecap="round" stroke-linejoin="round" d="M5.25 7.5A2.25 2.25 0 0 1 7.5 5.25h9a2.25 2.25 0 0 1 2.25 2.25v9a2.25 2.25 0 0 1-2.25 2.25h-9a2.25 2.25 0 0 1-2.25-2.25v-9Z" />
+                                                </svg>
+                                            </button>
+                                            {{-- Delete button --}}
+                                            <button type="button" x-show="canDelete" x-cloak @click="remove()"
+                                                    class="p-1.5 text-gray-400 hover:text-red-600 transition-colors" title="Supprimer">
+                                                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2.5">
+                                                    <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" />
+                                                </svg>
+                                            </button>
                                         </div>
                                     </div>
                                 @endforeach
@@ -640,17 +613,79 @@ function botButton(platform, accountId, initialActive, runUrl) {
     };
 }
 
-function prospectProgress(targetId, initial) {
+function targetRow(targetId, opts) {
     return {
-        likers: initial.likers,
-        likes: initial.likes,
-        follows: initial.follows,
-        status: initial.status,
-        statusLabel: 'En cours',
+        status: opts.status,
+        likers: opts.likers,
+        likes: opts.likes,
+        follows: opts.follows,
         timer: null,
 
+        get bgClass() {
+            return {
+                'bg-green-50': this.status === 'completed',
+                'bg-blue-50': this.status === 'running',
+                'bg-yellow-50': this.status === 'paused',
+                'bg-gray-50': !['completed','running','paused'].includes(this.status),
+            };
+        },
+        get badgeClass() {
+            return {
+                'bg-green-100 text-green-700': this.status === 'completed',
+                'bg-blue-100 text-blue-700 animate-pulse': this.status === 'running',
+                'bg-yellow-100 text-yellow-700': this.status === 'paused',
+                'bg-indigo-100 text-indigo-700 animate-pulse': this.status === 'starting',
+                'bg-orange-100 text-orange-700 animate-pulse': this.status === 'stopping',
+                'bg-gray-100 text-gray-600': this.status === 'pending',
+            };
+        },
+        get badgeLabel() {
+            return { pending: 'En attente', running: 'En cours', paused: 'En pause', completed: 'Termine', starting: 'Lancement...', stopping: 'Arret...' }[this.status] || this.status;
+        },
+        get canPlay() {
+            return ['pending', 'paused'].includes(this.status);
+        },
+        get canStop() {
+            return ['running', 'starting'].includes(this.status);
+        },
+        get canDelete() {
+            return !['running', 'starting', 'stopping'].includes(this.status);
+        },
+
+        init() {
+            if (['running', 'starting', 'stopping'].includes(this.status)) {
+                this.startPolling();
+            }
+        },
+
+        play() {
+            this.status = 'starting';
+            this.startPolling();
+            fetch(opts.runUrl, {
+                method: 'POST',
+                headers: { 'X-CSRF-TOKEN': '{{ csrf_token() }}', 'Content-Type': 'application/json' },
+            }).catch(() => {});
+        },
+
+        stop() {
+            this.status = 'stopping';
+            fetch(opts.stopUrl, {
+                method: 'POST',
+                headers: { 'X-CSRF-TOKEN': '{{ csrf_token() }}', 'Content-Type': 'application/json' },
+            }).catch(() => {});
+        },
+
+        remove() {
+            if (!confirm('Supprimer ce compte cible ?')) return;
+            fetch(opts.removeUrl, {
+                method: 'DELETE',
+                headers: { 'X-CSRF-TOKEN': '{{ csrf_token() }}', 'Content-Type': 'application/json' },
+            }).then(() => this.$el.remove());
+        },
+
         startPolling() {
-            this.timer = setInterval(() => this.poll(), 10000);
+            if (this.timer) return;
+            this.timer = setInterval(() => this.poll(), 8000);
         },
 
         async poll() {
@@ -662,11 +697,13 @@ function prospectProgress(targetId, initial) {
                 this.likers = data.likers_processed;
                 this.likes = data.likes_given;
                 this.follows = data.follows_given;
+
+                const prev = this.status;
                 this.status = data.status;
 
-                if (data.status !== 'running') {
+                if (!['running', 'pending'].includes(data.status) && ['running', 'starting', 'stopping'].includes(prev)) {
                     clearInterval(this.timer);
-                    setTimeout(() => location.reload(), 1000);
+                    this.timer = null;
                 }
             } catch (e) { /* silent */ }
         },

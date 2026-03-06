@@ -84,7 +84,7 @@
                             <div class="flex-shrink-0">
                                 <button @click="dismissFailedInDb()" :disabled="dismissing"
                                         class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium bg-red-100 text-red-700 hover:bg-red-200 transition-colors disabled:opacity-50">
-                                    <span x-text="dismissing ? '...' : 'Ignorer'"></span>
+                                    <span x-text="dismissing ? '...' : 'Supprimer'"></span>
                                 </button>
                             </div>
                         </div>
