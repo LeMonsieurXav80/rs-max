@@ -146,15 +146,17 @@ class HookSeeder extends Seeder
         ];
 
         foreach ($data as $order => $categoryData) {
-            $category = HookCategory::create([
-                'name' => $categoryData['name'],
-                'slug' => $categoryData['slug'],
-                'color' => $categoryData['color'],
-                'sort_order' => $order,
-            ]);
+            $category = HookCategory::firstOrCreate(
+                ['slug' => $categoryData['slug']],
+                [
+                    'name' => $categoryData['name'],
+                    'color' => $categoryData['color'],
+                    'sort_order' => $order,
+                ]
+            );
 
             foreach ($categoryData['hooks'] as $content) {
-                Hook::create([
+                Hook::firstOrCreate([
                     'hook_category_id' => $category->id,
                     'content' => $content,
                 ]);
