@@ -65,7 +65,7 @@ class BlueskyInboxService implements PlatformInboxInterface
                 }
 
                 $replies = $threadResponse->json('thread.replies', []);
-                $this->extractReplies($items, $replies, $postUri, $postCid, $did, $handle);
+                $this->extractReplies($items, $replies, $postUri, $postCid, $did, $handle, null, null);
             }
 
             // Fetch DMs (authenticated)
@@ -80,7 +80,7 @@ class BlueskyInboxService implements PlatformInboxInterface
         return $items;
     }
 
-    private function extractReplies(Collection $items, array $replies, string $postUri, string $postCid, string $ownDid, string $handle): void
+    private function extractReplies(Collection $items, array $replies, string $postUri, string $postCid, string $ownDid, string $handle, ?string $threadConversationKey, ?string $parentExternalId): void
     {
         foreach ($replies as $reply) {
             $replyPost = $reply['post'] ?? null;
@@ -89,14 +89,26 @@ class BlueskyInboxService implements PlatformInboxInterface
             }
 
             $authorDid = $replyPost['author']['did'] ?? null;
+            $replyUri = $replyPost['uri'];
+            $replyCid = $replyPost['cid'];
+            $externalId = "{$replyUri}|{$replyCid}";
 
-            // Skip our own replies
+            // For top-level replies (direct replies to the post), each starts its own conversation thread.
+            // For nested replies, they inherit the conversation key of their top-level ancestor.
+            $isTopLevel = $threadConversationKey === null;
+            $conversationKey = $isTopLevel ? "thread:{$externalId}" : $threadConversationKey;
+
+            // Skip our own replies but still recurse into their children
+            // (someone might reply to our reply)
             if ($authorDid === $ownDid) {
+                $nestedReplies = $reply['replies'] ?? [];
+                if (! empty($nestedReplies)) {
+                    $this->extractReplies($items, $nestedReplies, $postUri, $postCid, $ownDid, $handle, $conversationKey, $externalId);
+                }
+
                 continue;
             }
 
-            $replyUri = $replyPost['uri'];
-            $replyCid = $replyPost['cid'];
             $rkey = basename($replyUri);
             $replyHandle = $replyPost['author']['handle'] ?? '';
 
@@ -113,10 +125,11 @@ class BlueskyInboxService implements PlatformInboxInterface
             }
 
             $items->push([
-                'type' => 'comment',
-                'external_id' => "{$replyUri}|{$replyCid}",
+                'type' => $isTopLevel ? 'comment' : 'reply',
+                'external_id' => $externalId,
                 'external_post_id' => "{$postUri}|{$postCid}",
-                'conversation_key' => "post:{$postUri}|{$postCid}",
+                'parent_id' => $parentExternalId,
+                'conversation_key' => $conversationKey,
                 'author_name' => $replyPost['author']['displayName'] ?? $replyHandle,
                 'author_username' => $replyHandle,
                 'author_avatar_url' => $replyPost['author']['avatar'] ?? null,
@@ -128,10 +141,10 @@ class BlueskyInboxService implements PlatformInboxInterface
                 'posted_at' => isset($replyPost['record']['createdAt']) ? Carbon::parse($replyPost['record']['createdAt']) : null,
             ]);
 
-            // Recursive nested replies
+            // Recursive nested replies — pass this reply's conversation key and external_id as parent
             $nestedReplies = $reply['replies'] ?? [];
             if (! empty($nestedReplies)) {
-                $this->extractReplies($items, $nestedReplies, $postUri, $postCid, $ownDid, $handle);
+                $this->extractReplies($items, $nestedReplies, $postUri, $postCid, $ownDid, $handle, $conversationKey, $externalId);
             }
         }
     }

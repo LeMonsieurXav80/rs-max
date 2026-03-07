@@ -147,7 +147,24 @@ class InboxSyncService
         foreach ($items as $itemData) {
             $externalId = $itemData['external_id'] ?? null;
 
-            if (! $externalId || $existing->has($externalId)) {
+            if (! $externalId) {
+                continue;
+            }
+
+            if ($existing->has($externalId)) {
+                // Update conversation_key and parent_id if they changed
+                $updates = array_filter([
+                    'conversation_key' => $itemData['conversation_key'] ?? null,
+                    'parent_id' => $itemData['parent_id'] ?? null,
+                    'type' => $itemData['type'] ?? null,
+                ], fn ($v) => $v !== null);
+
+                if (! empty($updates)) {
+                    InboxItem::where('platform_id', $account->platform_id)
+                        ->where('external_id', $externalId)
+                        ->update($updates);
+                }
+
                 continue;
             }
 
