@@ -8,9 +8,9 @@ use Illuminate\Support\Facades\Schedule;
 
 // Health heartbeats
 Schedule::call(fn () => Cache::put('health:scheduler', true, now()->addMinutes(5)))->everyMinute();
-Schedule::call(fn () => dispatch(function () {
-    \Illuminate\Support\Facades\Cache::put('health:queue_worker', true, now()->addMinutes(5));
-}))->everyMinute();
+Schedule::call(function () {
+    \Illuminate\Support\Facades\Queue::push(new \App\Jobs\HealthQueueHeartbeat());
+})->everyMinute();
 
 // Publish scheduled posts every minute
 Schedule::command('posts:publish-scheduled')->everyMinute()->withoutOverlapping(5);
