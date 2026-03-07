@@ -154,8 +154,9 @@ class PostController extends Controller
         $platforms = Platform::where('is_active', true)->get();
         $defaultAccountIds = $user->default_accounts ?? [];
         $charLimits = $this->getPlatformCharLimits();
+        $accountGroups = $user->accountGroups()->with('socialAccounts')->get();
 
-        return view('posts.create', compact('accounts', 'platforms', 'defaultAccountIds', 'charLimits'));
+        return view('posts.create', compact('accounts', 'platforms', 'defaultAccountIds', 'charLimits', 'accountGroups'));
     }
 
     /**
@@ -325,8 +326,9 @@ class PostController extends Controller
         // IDs of currently selected accounts
         $selectedAccountIds = $post->postPlatforms->pluck('social_account_id')->toArray();
         $charLimits = $this->getPlatformCharLimits();
+        $accountGroups = $user->accountGroups()->with('socialAccounts')->get();
 
-        return view('posts.edit', compact('post', 'accounts', 'platforms', 'selectedAccountIds', 'charLimits'));
+        return view('posts.edit', compact('post', 'accounts', 'platforms', 'selectedAccountIds', 'charLimits', 'accountGroups'));
     }
 
     /**

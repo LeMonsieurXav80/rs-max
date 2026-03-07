@@ -88,4 +88,9 @@ class User extends Authenticatable
     {
         return $this->socialAccounts()->wherePivot('is_active', true);
     }
+
+    public function accountGroups(): HasMany
+    {
+        return $this->hasMany(AccountGroup::class)->orderBy('sort_order');
+    }
 }

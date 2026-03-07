@@ -57,6 +57,11 @@ class SocialAccount extends Model
         return $this->hasMany(PostPlatform::class);
     }
 
+    public function accountGroups(): BelongsToMany
+    {
+        return $this->belongsToMany(AccountGroup::class);
+    }
+
     public function externalPosts(): HasMany
     {
         return $this->hasMany(ExternalPost::class);

@@ -171,8 +171,46 @@
         @endif
 
         {{-- Section 1: Comptes de publication --}}
-        <div class="bg-white rounded-2xl shadow-sm border border-gray-100 p-6 lg:p-8">
-            <h2 class="text-base font-semibold text-gray-900 mb-6">Comptes de publication <span class="text-red-500">*</span></h2>
+        @php
+            $groupsData = $accountGroups->map(fn ($g) => [
+                'id' => $g->id,
+                'name' => $g->name,
+                'color' => $g->color,
+                'account_ids' => $g->socialAccounts->pluck('id')->values()->toArray(),
+            ])->values()->toArray();
+        @endphp
+        <div class="bg-white rounded-2xl shadow-sm border border-gray-100 p-6 lg:p-8" x-data="{
+            groups: {{ json_encode($groupsData) }},
+            isGroupActive(group) {
+                const checked = new Set([...this.$el.querySelectorAll('input[name=\'accounts[]\']:checked')].map(el => parseInt(el.value)));
+                return group.account_ids.length > 0 && group.account_ids.every(id => checked.has(id));
+            },
+            toggleGroup(group) {
+                const allChecked = this.isGroupActive(group);
+                group.account_ids.forEach(id => {
+                    const cb = this.$el.querySelector('input[name=\'accounts[]\'][value=\'' + id + '\']');
+                    if (cb) cb.checked = !allChecked;
+                });
+                $dispatch('accounts-changed');
+            },
+        }">
+            <h2 class="text-base font-semibold text-gray-900 mb-4">Comptes de publication <span class="text-red-500">*</span></h2>
+
+            {{-- Group pills --}}
+            <template x-if="groups.length > 0">
+                <div class="flex flex-wrap gap-2 mb-4">
+                    <template x-for="group in groups" :key="group.id">
+                        <button type="button" @click="toggleGroup(group)"
+                            class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium border transition-colors"
+                            :class="isGroupActive(group) ? 'border-transparent text-white' : 'border-gray-200 text-gray-600 hover:border-gray-300 bg-white'"
+                            :style="isGroupActive(group) ? 'background-color:' + group.color : ''">
+                            <div class="w-2 h-2 rounded-full" :style="'background-color:' + (isGroupActive(group) ? '#fff' : group.color)"></div>
+                            <span x-text="group.name"></span>
+                            <span class="opacity-60" x-text="'(' + group.account_ids.length + ')'"></span>
+                        </button>
+                    </template>
+                </div>
+            </template>
 
             @if($accounts->count())
                 <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">

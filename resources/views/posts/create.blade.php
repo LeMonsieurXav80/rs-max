@@ -256,12 +256,21 @@
         @endif
 
         {{-- Section 1: Comptes de publication --}}
+        @php
+            $groupsData = $accountGroups->map(fn ($g) => [
+                'id' => $g->id,
+                'name' => $g->name,
+                'color' => $g->color,
+                'account_ids' => $g->socialAccounts->pluck('id')->values()->toArray(),
+            ])->values()->toArray();
+        @endphp
         <div class="bg-white rounded-2xl shadow-sm border border-gray-100 p-6 lg:p-8" x-data="{
             saving: false,
             saved: false,
+            groups: {{ json_encode($groupsData) }},
             async saveDefaults() {
                 this.saving = true;
-                const checked = [...document.querySelectorAll('input[name=\'accounts[]\']:checked')].map(el => parseInt(el.value));
+                const checked = [...this.$el.querySelectorAll('input[name=\'accounts[]\']:checked')].map(el => parseInt(el.value));
                 try {
                     const resp = await fetch('{{ route('accounts.saveDefaults') }}', {
                         method: 'POST',
@@ -278,9 +287,21 @@
                     }
                 } catch(e) {}
                 this.saving = false;
-            }
+            },
+            isGroupActive(group) {
+                const checked = new Set([...this.$el.querySelectorAll('input[name=\'accounts[]\']:checked')].map(el => parseInt(el.value)));
+                return group.account_ids.length > 0 && group.account_ids.every(id => checked.has(id));
+            },
+            toggleGroup(group) {
+                const allChecked = this.isGroupActive(group);
+                group.account_ids.forEach(id => {
+                    const cb = this.$el.querySelector('input[name=\'accounts[]\'][value=\'' + id + '\']');
+                    if (cb) cb.checked = !allChecked;
+                });
+                $dispatch('accounts-changed');
+            },
         }">
-            <div class="flex items-center justify-between mb-6">
+            <div class="flex items-center justify-between mb-4">
                 <h2 class="text-base font-semibold text-gray-900">Comptes de publication <span class="text-red-500">*</span></h2>
                 <button type="button" @click="saveDefaults()"
                     class="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg transition-colors"
@@ -302,9 +323,25 @@
                             <path stroke-linecap="round" stroke-linejoin="round" d="m4.5 12.75 6 6 9-13.5" />
                         </svg>
                     </template>
-                    <span x-text="saved ? 'Enregistré' : 'Enregistrer'"></span>
+                    <span x-text="saved ? 'Enregistre' : 'Enregistrer'"></span>
                 </button>
             </div>
+
+            {{-- Group pills --}}
+            <template x-if="groups.length > 0">
+                <div class="flex flex-wrap gap-2 mb-4">
+                    <template x-for="group in groups" :key="group.id">
+                        <button type="button" @click="toggleGroup(group)"
+                            class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium border transition-colors"
+                            :class="isGroupActive(group) ? 'border-transparent text-white' : 'border-gray-200 text-gray-600 hover:border-gray-300 bg-white'"
+                            :style="isGroupActive(group) ? 'background-color:' + group.color : ''">
+                            <div class="w-2 h-2 rounded-full" :style="'background-color:' + (isGroupActive(group) ? '#fff' : group.color)"></div>
+                            <span x-text="group.name"></span>
+                            <span class="opacity-60" x-text="'(' + group.account_ids.length + ')'"></span>
+                        </button>
+                    </template>
+                </div>
+            </template>
 
             @if($accounts->count())
                 <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">

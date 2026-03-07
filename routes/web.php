@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Controllers\AccountGroupController;
 use App\Http\Controllers\BotController;
 use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\FacebookOAuthController;
@@ -77,6 +78,13 @@ Route::middleware(['auth', 'verified', 'throttle:60,1'])->group(function () {
 
     // Save default account selection (shared across posts, inbox, stats)
     Route::post('accounts/save-defaults', [PostController::class, 'saveDefaultAccounts'])->name('accounts.saveDefaults');
+
+    // Account groups
+    Route::get('account-groups', [AccountGroupController::class, 'index'])->name('accountGroups.index');
+    Route::post('account-groups', [AccountGroupController::class, 'store'])->name('accountGroups.store');
+    Route::put('account-groups/{accountGroup}', [AccountGroupController::class, 'update'])->name('accountGroups.update');
+    Route::delete('account-groups/{accountGroup}', [AccountGroupController::class, 'destroy'])->name('accountGroups.destroy');
+    Route::post('account-groups/reorder', [AccountGroupController::class, 'reorder'])->name('accountGroups.reorder');
 
     // Messagerie (inbox)
     Route::get('inbox', [InboxController::class, 'index'])->name('inbox.index');

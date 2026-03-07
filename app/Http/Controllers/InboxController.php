@@ -220,7 +220,9 @@ class InboxController extends Controller
             ->orderBy('name')
             ->get();
 
-        return view('inbox.index', compact('conversations', 'counts', 'socialAccounts', 'enabledSlugs', 'scheduledInfo', 'selectedAccountIds'));
+        $accountGroups = $user->accountGroups()->with('socialAccounts')->get();
+
+        return view('inbox.index', compact('conversations', 'counts', 'socialAccounts', 'accountGroups', 'enabledSlugs', 'scheduledInfo', 'selectedAccountIds'));
     }
 
     public function markRead(Request $request): JsonResponse

@@ -78,7 +78,9 @@ class ThreadController extends Controller
             ];
         }
 
-        return view('threads.create', compact('accounts', 'platforms', 'personas', 'hookCategories', 'sourceTypeCounts'));
+        $accountGroups = $user->accountGroups()->with('socialAccounts')->get();
+
+        return view('threads.create', compact('accounts', 'platforms', 'personas', 'hookCategories', 'sourceTypeCounts', 'accountGroups'));
     }
 
     /**
@@ -232,8 +234,9 @@ class ThreadController extends Controller
         $platforms = Platform::where('is_active', true)->get();
         $personas = Persona::where('is_active', true)->orderBy('name')->get();
         $selectedAccountIds = $thread->socialAccounts->pluck('id')->toArray();
+        $accountGroups = $user->accountGroups()->with('socialAccounts')->get();
 
-        return view('threads.edit', compact('thread', 'accounts', 'platforms', 'personas', 'selectedAccountIds'));
+        return view('threads.edit', compact('thread', 'accounts', 'platforms', 'personas', 'selectedAccountIds', 'accountGroups'));
     }
 
     /**
