@@ -73,6 +73,12 @@ class WordPressSiteController extends Controller
             'accounts.*.auto_post' => 'boolean',
             'accounts.*.post_frequency' => 'in:hourly,every_6h,daily,weekly',
             'accounts.*.max_posts_per_day' => 'integer|min:1|max:10',
+        ], [
+            'post_types.required' => 'Veuillez d\'abord tester la connexion et sélectionner au moins un type de contenu.',
+            'post_types.min' => 'Veuillez sélectionner au moins un type de contenu.',
+            'name.required' => 'Le nom est obligatoire.',
+            'url.required' => 'L\'URL du site est obligatoire.',
+            'url.url' => 'L\'URL fournie n\'est pas valide.',
         ]);
 
         $source = WpSource::create([

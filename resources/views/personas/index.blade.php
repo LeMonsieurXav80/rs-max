@@ -114,7 +114,6 @@
                     </div>
 
                     <div class="flex items-center gap-3 mt-3">
-                        <span class="inline-flex items-center px-2 py-0.5 rounded-md text-xs font-medium bg-gray-100 text-gray-600 uppercase">{{ $persona->language }}</span>
                         @if(! $persona->is_active)
                             <span class="inline-flex items-center px-2 py-0.5 rounded-md text-xs font-medium bg-red-50 text-red-600">Inactif</span>
                         @endif

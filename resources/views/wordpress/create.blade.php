@@ -98,6 +98,17 @@
           }">
         @csrf
 
+        @if($errors->any())
+            <div class="bg-red-50 border border-red-200 rounded-xl p-4 mb-4">
+                <p class="text-sm font-medium text-red-700 mb-1">Des erreurs sont survenues :</p>
+                <ul class="list-disc list-inside text-sm text-red-600 space-y-1">
+                    @foreach($errors->all() as $error)
+                        <li>{{ $error }}</li>
+                    @endforeach
+                </ul>
+            </div>
+        @endif
+
         <div class="bg-white rounded-2xl shadow-sm border border-gray-100 p-6 space-y-6">
 
             {{-- Infos du site --}}
