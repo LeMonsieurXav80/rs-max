@@ -189,9 +189,11 @@
                 const allChecked = this.isGroupActive(group);
                 group.account_ids.forEach(id => {
                     const cb = this.$el.querySelector('input[name=\'accounts[]\'][value=\'' + id + '\']');
-                    if (cb) cb.checked = !allChecked;
+                    if (cb) {
+                        cb.checked = !allChecked;
+                        cb.dispatchEvent(new Event('change', { bubbles: true }));
+                    }
                 });
-                $dispatch('accounts-changed');
             },
         }">
             <h2 class="text-base font-semibold text-gray-900 mb-4">Comptes de publication <span class="text-red-500">*</span></h2>
