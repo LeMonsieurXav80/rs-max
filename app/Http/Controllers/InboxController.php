@@ -273,7 +273,7 @@ class InboxController extends Controller
         InboxItem::whereIn('id', $validated['ids'])
             ->where(fn ($q) => $q->where('status', 'reply_failed')->orWhere('reply_attempts', '>=', 3))
             ->update([
-                'status' => 'read',
+                'status' => 'ignored',
                 'reply_content' => null,
                 'reply_scheduled_at' => null,
                 'reply_attempts' => 0,
