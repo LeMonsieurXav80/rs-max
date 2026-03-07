@@ -135,14 +135,13 @@ function accountSelector(config) {
         },
 
         toggleGroup(group) {
-            const allChecked = this.isGroupActive(group);
-            group.account_ids.forEach(id => {
-                if (allChecked) {
-                    this.checked.delete(id);
-                } else {
-                    this.checked.add(id);
-                }
-            });
+            if (this.isGroupActive(group)) {
+                // Deselect group: remove only its accounts
+                group.account_ids.forEach(id => this.checked.delete(id));
+            } else {
+                // Select group: replace entire selection with group accounts
+                this.checked = new Set(group.account_ids);
+            }
             this.checked = new Set(this.checked);
             this.syncCheckboxes();
             this.afterChange();
