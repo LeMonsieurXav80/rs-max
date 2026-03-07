@@ -82,6 +82,7 @@ Route::middleware(['auth', 'verified', 'throttle:60,1'])->group(function () {
     Route::get('inbox', [InboxController::class, 'index'])->name('inbox.index');
     Route::post('inbox/mark-read', [InboxController::class, 'markRead'])->name('inbox.markRead');
     Route::post('inbox/archive', [InboxController::class, 'archive'])->name('inbox.archive');
+    Route::post('inbox/ignore', [InboxController::class, 'ignore'])->name('inbox.ignore');
     Route::post('inbox/dismiss-failed', [InboxController::class, 'dismissFailed'])->name('inbox.dismissFailed');
     Route::post('inbox/{inboxItem}/reply', [InboxController::class, 'reply'])->name('inbox.reply');
     Route::post('inbox/{inboxItem}/ai-suggest', [InboxController::class, 'aiSuggest'])->name('inbox.aiSuggest');

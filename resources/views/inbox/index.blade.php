@@ -93,18 +93,41 @@
             </div>
         @endif
 
-        {{-- Filters --}}
+        {{-- Account selector --}}
         <form method="GET" action="{{ route('inbox.index') }}" x-ref="filterForm" class="bg-white rounded-2xl shadow-sm border border-gray-100 p-4 space-y-3">
-            {{-- Row 1: Status pills + sync button --}}
+            @php $currentStatus = request('status', ''); @endphp
+            <input type="hidden" name="status" x-ref="statusInput" value="{{ $currentStatus }}">
+            @php $activeTypes = request('type', []); if (!is_array($activeTypes)) $activeTypes = [$activeTypes]; @endphp
+
+            {{-- Account pills --}}
+            <div>
+                <label class="block text-sm font-medium text-gray-700 mb-2">Comptes</label>
+                <div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-2">
+                    @foreach($socialAccounts as $account)
+                        <label class="flex items-center gap-2 p-3 rounded-xl border border-gray-200 hover:border-indigo-300 cursor-pointer transition-colors {{ in_array($account->id, $selectedAccountIds) ? 'bg-indigo-50 border-indigo-300' : 'bg-white' }}">
+                            <input type="checkbox" name="accounts[]" value="{{ $account->id }}" class="rounded border-gray-300 text-indigo-600 focus:ring-indigo-500"
+                                   {{ in_array($account->id, $selectedAccountIds) ? 'checked' : '' }}
+                                   onchange="this.form.submit()">
+                            <div class="flex items-center gap-2 min-w-0 flex-1">
+                                <x-platform-icon :platform="$account->platform->slug" size="sm" />
+                                <span class="text-sm truncate">{{ $account->name }}</span>
+                            </div>
+                        </label>
+                    @endforeach
+                </div>
+            </div>
+
+            {{-- Status pills + sync button --}}
             <div class="flex flex-wrap items-center gap-3">
                 <div class="flex items-center gap-1 bg-gray-100 rounded-xl p-1">
-                    @php $currentStatus = request('status', ''); @endphp
-                    <input type="hidden" name="status" x-ref="statusInput" value="{{ $currentStatus }}">
-                    @foreach(['' => 'Tous', 'new' => 'Nouveau', 'followup' => 'Relance', 'replied' => 'Répondus', 'archived' => 'Archivés'] as $val => $label)
+                    @foreach(['' => 'Tous', 'new' => 'Nouveau', 'followup' => 'Relance', 'replied' => 'Répondus', 'ignored' => 'Ignorés', 'archived' => 'Archivés'] as $val => $label)
                         <button type="submit"
                                 @click.prevent="$refs.statusInput.value = '{{ $val }}'; $refs.filterForm.submit()"
-                                class="px-3 py-1.5 rounded-lg text-sm font-medium transition-colors {{ $currentStatus === $val ? 'bg-white shadow-sm' . ($val === 'replied' ? ' text-green-600' : ($val === 'archived' ? ' text-gray-600' : ($val === 'new' ? ' text-amber-600' : ($val === 'followup' ? ' text-orange-600' : ' text-indigo-600')))) : 'text-gray-500 hover:text-gray-700' }}">
+                                class="px-3 py-1.5 rounded-lg text-sm font-medium transition-colors {{ $currentStatus === $val ? 'bg-white shadow-sm' . ($val === 'replied' ? ' text-green-600' : ($val === 'archived' ? ' text-gray-600' : ($val === 'ignored' ? ' text-gray-600' : ($val === 'new' ? ' text-amber-600' : ($val === 'followup' ? ' text-orange-600' : ' text-indigo-600'))))) : 'text-gray-500 hover:text-gray-700' }}">
                             {{ $label }}
+                            @if($val === 'ignored' && $counts['ignored'] > 0)
+                                <span class="ml-1 text-xs text-gray-400">({{ $counts['ignored'] }})</span>
+                            @endif
                         </button>
                     @endforeach
                 </div>
@@ -125,10 +148,9 @@
                 @endif
             </div>
 
-            {{-- Row 2: Type checkboxes --}}
+            {{-- Type checkboxes --}}
             <div class="flex flex-wrap items-center gap-2">
                 <span class="text-xs text-gray-400 font-medium mr-1">Type :</span>
-                @php $activeTypes = request('type', []); if (!is_array($activeTypes)) $activeTypes = [$activeTypes]; @endphp
                 @foreach(['comment' => 'Commentaires', 'reply' => 'Réponses', 'dm' => 'Messages privés'] as $val => $label)
                     <label class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium cursor-pointer transition-colors {{ in_array($val, $activeTypes) ? 'bg-indigo-100 text-indigo-700' : 'bg-gray-100 text-gray-500 hover:bg-gray-200' }}">
                         <input type="checkbox" name="type[]" value="{{ $val }}" class="sr-only"
@@ -138,30 +160,22 @@
                     </label>
                 @endforeach
             </div>
-
-            {{-- Row 3: Platform checkboxes --}}
-            <div class="flex flex-wrap items-center gap-2">
-                <span class="text-xs text-gray-400 font-medium mr-1">Plateforme :</span>
-                @php $activePlatforms = request('platform', []); if (!is_array($activePlatforms)) $activePlatforms = [$activePlatforms]; @endphp
-                @foreach(['facebook' => 'Facebook', 'instagram' => 'Instagram', 'threads' => 'Threads', 'youtube' => 'YouTube', 'bluesky' => 'Bluesky', 'telegram' => 'Telegram', 'reddit' => 'Reddit', 'twitter' => 'X / Twitter'] as $slug => $name)
-                    @if($enabledSlugs->contains($slug))
-                    <label class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium cursor-pointer transition-colors {{ in_array($slug, $activePlatforms) ? 'bg-indigo-100 text-indigo-700' : 'bg-gray-100 text-gray-500 hover:bg-gray-200' }}">
-                        <input type="checkbox" name="platform[]" value="{{ $slug }}" class="sr-only"
-                               {{ in_array($slug, $activePlatforms) ? 'checked' : '' }}
-                               onchange="this.form.submit()">
-                        {{ $name }}
-                    </label>
-                    @endif
-                @endforeach
-            </div>
         </form>
 
         {{-- Bulk action bar --}}
         <div x-show="selectedIds.length > 0" x-cloak x-transition class="bg-indigo-50 rounded-2xl border border-indigo-200 p-4 flex flex-wrap items-center justify-between gap-3">
             <span class="text-sm font-medium text-indigo-700" x-text="selectedIds.length + ' élément(s) sélectionné(s)'"></span>
-            <div class="flex flex-wrap gap-2">
-                <button @click="markReadBulk()" class="px-3 py-1.5 bg-white text-sm font-medium text-gray-700 rounded-xl border border-gray-200 hover:bg-gray-50 transition-colors">Marquer lu</button>
-                <button @click="archiveBulk()" class="px-3 py-1.5 bg-white text-sm font-medium text-gray-700 rounded-xl border border-gray-200 hover:bg-gray-50 transition-colors">Archiver</button>
+            <div class="flex flex-wrap items-center gap-2">
+                {{-- Bulk dropdown (WordPress-style) --}}
+                <select x-ref="bulkAction" class="rounded-xl border-gray-200 text-sm py-1.5 pl-3 pr-8 bg-white">
+                    <option value="">-- Action --</option>
+                    <option value="markread">Marquer lu</option>
+                    <option value="ignore">Ignorer</option>
+                    <option value="archive">Archiver</option>
+                </select>
+                <button @click="executeBulkAction()" class="px-3 py-1.5 bg-white text-sm font-medium text-gray-700 rounded-xl border border-gray-200 hover:bg-gray-50 transition-colors">Appliquer</button>
+
+                {{-- Primary action: AI reply --}}
                 <button @click="startBulkAiReply()" :disabled="bulkLoading" class="px-3 py-1.5 bg-indigo-600 text-sm font-medium text-white rounded-xl hover:bg-indigo-700 transition-colors disabled:opacity-50">
                     <span x-show="!bulkLoading">Répondre avec IA</span>
                     <span x-show="bulkLoading" x-cloak>Génération...</span>
@@ -491,7 +505,7 @@
                 <span>Par page :</span>
                 <select onchange="var p = new URLSearchParams(window.location.search); p.set('per_page', this.value); p.delete('page'); window.location.href = window.location.pathname + '?' + p.toString();"
                         class="rounded-lg border-gray-200 text-sm py-1 pl-2 pr-7">
-                    @foreach([15, 25, 50, 100] as $opt)
+                    @foreach([15, 25, 50, 100, 250] as $opt)
                         <option value="{{ $opt }}" {{ (int) request('per_page', 15) === $opt ? 'selected' : '' }}>{{ $opt }}</option>
                     @endforeach
                 </select>
@@ -755,6 +769,31 @@ function inboxManager() {
             }
         },
 
+        executeBulkAction() {
+            const action = this.$refs.bulkAction.value;
+            if (!action) return alert('Choisissez une action');
+            if (action === 'markread') this.markReadBulk();
+            else if (action === 'ignore') this.ignoreBulk();
+            else if (action === 'archive') this.archiveBulk();
+        },
+
+        async ignoreBulk() {
+            try {
+                await fetch('/inbox/ignore', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'X-CSRF-TOKEN': this.csrfToken,
+                        'Accept': 'application/json',
+                    },
+                    body: JSON.stringify({ ids: this.selectedIds }),
+                });
+                location.reload();
+            } catch (e) {
+                alert('Erreur de connexion');
+            }
+        },
+
         async markReadBulk() {
             try {
                 await fetch('/inbox/mark-read', {
@@ -873,7 +912,28 @@ function inboxManager() {
 
             try {
                 const params = new URLSearchParams(window.location.search);
-                const platforms = params.getAll('platform[]');
+                const accountIds = params.getAll('accounts[]').map(Number).filter(Boolean);
+                const body = {};
+
+                if (accountIds.length === 1) {
+                    body.account_id = accountIds[0];
+                } else if (accountIds.length > 1) {
+                    // Sync each selected account
+                    for (const id of accountIds) {
+                        await fetch('/inbox/sync', {
+                            method: 'POST',
+                            headers: {
+                                'Content-Type': 'application/json',
+                                'X-CSRF-TOKEN': this.csrfToken,
+                                'Accept': 'application/json',
+                            },
+                            body: JSON.stringify({ account_id: id }),
+                        });
+                    }
+                    location.reload();
+                    return;
+                }
+
                 await fetch('/inbox/sync', {
                     method: 'POST',
                     headers: {
@@ -881,7 +941,7 @@ function inboxManager() {
                         'X-CSRF-TOKEN': this.csrfToken,
                         'Accept': 'application/json',
                     },
-                    body: JSON.stringify(platforms.length ? { platforms } : {}),
+                    body: JSON.stringify(body),
                 });
                 location.reload();
             } catch (e) {

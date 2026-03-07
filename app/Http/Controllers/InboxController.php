@@ -28,9 +28,20 @@ class InboxController extends Controller
             ? SocialAccount::query()
             : $user->socialAccounts();
 
-        $accountIds = $accountQuery
+        $allAccountIds = $accountQuery
             ->whereHas('platform', fn ($q) => $q->whereIn('slug', $enabledSlugs))
             ->pluck('social_accounts.id');
+
+        // Filter by selected accounts (multi-select)
+        $selectedAccountIds = $request->input('accounts', []);
+        if (! is_array($selectedAccountIds)) {
+            $selectedAccountIds = [$selectedAccountIds];
+        }
+        $selectedAccountIds = array_map('intval', array_filter($selectedAccountIds));
+
+        $accountIds = ! empty($selectedAccountIds)
+            ? $allAccountIds->intersect($selectedAccountIds)->values()
+            : $allAccountIds;
 
         $query = InboxItem::whereIn('social_account_id', $accountIds)
             ->with(['socialAccount.platform', 'platform']);
@@ -45,7 +56,7 @@ class InboxController extends Controller
             $query->where('status', $status);
             $statusIsFiltered = true;
         } else {
-            $query->where('status', '!=', 'archived');
+            $query->whereNotIn('status', ['archived', 'ignored']);
         }
 
         // Type filter (multi-select)
@@ -58,20 +69,6 @@ class InboxController extends Controller
             $query->whereIn('type', $types);
         }
 
-        // Platform filter (multi-select)
-        $platforms = $request->input('platform', []);
-        if (! is_array($platforms)) {
-            $platforms = [$platforms];
-        }
-        $platforms = array_filter($platforms);
-        if (! empty($platforms)) {
-            $query->whereHas('platform', fn ($q) => $q->whereIn('slug', $platforms));
-        }
-
-        if ($accountId = $request->input('account')) {
-            $query->where('social_account_id', $accountId);
-        }
-
         // Fetch filtered items
         $filteredItems = $query->orderBy('posted_at', 'asc')->get();
 
@@ -81,7 +78,7 @@ class InboxController extends Controller
             $conversationKeys = $filteredItems->pluck('conversation_key')->filter()->unique()->values();
 
             $relatedItems = InboxItem::whereIn('social_account_id', $accountIds)
-                ->where('status', '!=', 'archived')
+                ->whereNotIn('status', ['archived', 'ignored'])
                 ->whereIn('conversation_key', $conversationKeys)
                 ->with(['socialAccount.platform', 'platform'])
                 ->orderBy('posted_at', 'asc')
@@ -174,9 +171,10 @@ class InboxController extends Controller
         );
 
         $counts = [
-            'total' => InboxItem::whereIn('social_account_id', $accountIds)->where('status', '!=', 'archived')->count(),
+            'total' => InboxItem::whereIn('social_account_id', $accountIds)->whereNotIn('status', ['archived', 'ignored'])->count(),
             'unreplied' => InboxItem::whereIn('social_account_id', $accountIds)->whereIn('status', ['unread', 'read'])->count(),
             'replied' => InboxItem::whereIn('social_account_id', $accountIds)->where('status', 'replied')->count(),
+            'ignored' => InboxItem::whereIn('social_account_id', $accountIds)->where('status', 'ignored')->count(),
         ];
 
         // Scheduled replies progress
@@ -218,7 +216,7 @@ class InboxController extends Controller
             ->orderBy('name')
             ->get();
 
-        return view('inbox.index', compact('conversations', 'counts', 'socialAccounts', 'enabledSlugs', 'scheduledInfo'));
+        return view('inbox.index', compact('conversations', 'counts', 'socialAccounts', 'enabledSlugs', 'scheduledInfo', 'selectedAccountIds'));
     }
 
     public function markRead(Request $request): JsonResponse
@@ -243,6 +241,18 @@ class InboxController extends Controller
         ]);
 
         InboxItem::whereIn('id', $validated['ids'])->update(['status' => 'archived']);
+
+        return response()->json(['success' => true]);
+    }
+
+    public function ignore(Request $request): JsonResponse
+    {
+        $validated = $request->validate([
+            'ids' => 'required|array',
+            'ids.*' => 'integer|exists:inbox_items,id',
+        ]);
+
+        InboxItem::whereIn('id', $validated['ids'])->update(['status' => 'ignored']);
 
         return response()->json(['success' => true]);
     }
@@ -311,7 +321,7 @@ class InboxController extends Controller
     public function bulkAiReply(Request $request): JsonResponse
     {
         $validated = $request->validate([
-            'ids' => 'required|array|min:1|max:100',
+            'ids' => 'required|array|min:1|max:250',
             'ids.*' => 'integer|exists:inbox_items,id',
         ]);
 
