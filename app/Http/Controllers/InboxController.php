@@ -32,12 +32,16 @@ class InboxController extends Controller
             ->whereHas('platform', fn ($q) => $q->whereIn('slug', $enabledSlugs))
             ->pluck('social_accounts.id');
 
-        // Filter by selected accounts (multi-select)
+        // Filter by selected accounts (multi-select), fall back to saved defaults
         $selectedAccountIds = $request->input('accounts', []);
         if (! is_array($selectedAccountIds)) {
             $selectedAccountIds = [$selectedAccountIds];
         }
         $selectedAccountIds = array_map('intval', array_filter($selectedAccountIds));
+
+        if (empty($selectedAccountIds)) {
+            $selectedAccountIds = array_map('intval', $user->default_accounts ?? []);
+        }
 
         $accountIds = ! empty($selectedAccountIds)
             ? $allAccountIds->intersect($selectedAccountIds)->values()

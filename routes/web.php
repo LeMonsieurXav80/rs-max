@@ -75,8 +75,8 @@ Route::middleware(['auth', 'verified', 'throttle:60,1'])->group(function () {
     Route::post('platforms/bluesky/validate-account', [PlatformController::class, 'validateBlueskyAccount'])->name('platforms.bluesky.validateAccount');
     Route::post('platforms/reddit/validate-account', [PlatformController::class, 'validateRedditAccount'])->name('platforms.reddit.validateAccount');
 
-    // Save default account selection
-    Route::post('posts/default-accounts', [PostController::class, 'saveDefaultAccounts'])->name('posts.defaultAccounts');
+    // Save default account selection (shared across posts, inbox, stats)
+    Route::post('accounts/save-defaults', [PostController::class, 'saveDefaultAccounts'])->name('accounts.saveDefaults');
 
     // Messagerie (inbox)
     Route::get('inbox', [InboxController::class, 'index'])->name('inbox.index');

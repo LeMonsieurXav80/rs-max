@@ -21,7 +21,7 @@
 | PATCH   | `/posts/{post}`                        | PostController@update               | posts.update           |
 | DELETE  | `/posts/{post}`                        | PostController@destroy              | posts.destroy          |
 | POST    | `/posts/ai-assist`                     | AiAssistController@generate         | posts.aiAssist         |
-| POST    | `/posts/default-accounts`              | PostController@saveDefaultAccounts  | posts.defaultAccounts  |
+| POST    | `/accounts/save-defaults`              | PostController@saveDefaultAccounts  | accounts.saveDefaults  |
 | POST    | `/posts/{post}/sync-stats`             | PostController@syncStats            | posts.syncStats        |
 
 #### Publication manuelle

@@ -46,6 +46,9 @@ class StatsController extends Controller
         $socialAccounts = $user->activeSocialAccounts()->with('platform')->orderBy('name')->get();
 
         $selectedAccounts = $request->input('accounts', []);
+        if (empty($selectedAccounts)) {
+            $selectedAccounts = $user->default_accounts ?? [];
+        }
         $period = $request->input('period', '90');
         $accountIds = ! empty($selectedAccounts)
             ? $selectedAccounts
@@ -150,8 +153,13 @@ class StatsController extends Controller
 
     private function getFilters(Request $request): array
     {
+        $accounts = $request->input('accounts', []);
+        if (empty($accounts)) {
+            $accounts = $request->user()->default_accounts ?? [];
+        }
+
         return [
-            $request->input('accounts', []),
+            $accounts,
             $request->input('period', '30'),
             $request->input('start_date'),
             $request->input('end_date'),

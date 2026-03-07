@@ -263,7 +263,7 @@
                 this.saving = true;
                 const checked = [...document.querySelectorAll('input[name=\'accounts[]\']:checked')].map(el => parseInt(el.value));
                 try {
-                    const resp = await fetch('{{ route('posts.defaultAccounts') }}', {
+                    const resp = await fetch('{{ route('accounts.saveDefaults') }}', {
                         method: 'POST',
                         headers: {
                             'Content-Type': 'application/json',

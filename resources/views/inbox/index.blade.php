@@ -100,8 +100,44 @@
             @php $activeTypes = request('type', []); if (!is_array($activeTypes)) $activeTypes = [$activeTypes]; @endphp
 
             {{-- Account pills --}}
-            <div>
-                <label class="block text-sm font-medium text-gray-700 mb-2">Comptes</label>
+            <div x-data="{ saving: false, saved: false, async saveDefaults() {
+                this.saving = true;
+                const checked = [...this.$el.querySelectorAll('input[name=\'accounts[]\']:checked')].map(el => parseInt(el.value));
+                try {
+                    const resp = await fetch('{{ route('accounts.saveDefaults') }}', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json', 'X-CSRF-TOKEN': document.querySelector('meta[name=csrf-token]').getAttribute('content'), 'Accept': 'application/json' },
+                        body: JSON.stringify({ accounts: checked })
+                    });
+                    if (resp.ok) { this.saved = true; setTimeout(() => this.saved = false, 2000); }
+                } catch(e) {}
+                this.saving = false;
+            } }">
+                <div class="flex items-center justify-between mb-2">
+                    <label class="block text-sm font-medium text-gray-700">Comptes</label>
+                    <button type="button" @click="saveDefaults()"
+                        class="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg transition-colors"
+                        :class="saved ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'"
+                        :disabled="saving">
+                        <template x-if="!saving && !saved">
+                            <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1.5">
+                                <path stroke-linecap="round" stroke-linejoin="round" d="M17.593 3.322c1.1.128 1.907 1.077 1.907 2.185V21L12 17.25 4.5 21V5.507c0-1.108.806-2.057 1.907-2.185a48.507 48.507 0 0 1 11.186 0Z" />
+                            </svg>
+                        </template>
+                        <template x-if="saving">
+                            <svg class="w-3.5 h-3.5 animate-spin" fill="none" viewBox="0 0 24 24">
+                                <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                                <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path>
+                            </svg>
+                        </template>
+                        <template x-if="saved">
+                            <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2">
+                                <path stroke-linecap="round" stroke-linejoin="round" d="m4.5 12.75 6 6 9-13.5" />
+                            </svg>
+                        </template>
+                        <span x-text="saved ? 'Enregistré' : 'Enregistrer'"></span>
+                    </button>
+                </div>
                 <div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-2">
                     @foreach($socialAccounts as $account)
                         <label class="flex items-center gap-2 p-3 rounded-xl border border-gray-200 hover:border-indigo-300 cursor-pointer transition-colors {{ in_array($account->id, $selectedAccountIds) ? 'bg-indigo-50 border-indigo-300' : 'bg-white' }}">
