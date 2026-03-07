@@ -24,10 +24,11 @@ class BlueskyInboxService implements PlatformInboxInterface
         $handle = $credentials['handle'];
 
         try {
-            // Fetch author's recent posts (public API, no auth needed)
+            // Fetch author's original posts only (no replies/reposts)
             $feedResponse = Http::get(self::PUBLIC_API . '/xrpc/app.bsky.feed.getAuthorFeed', [
                 'actor' => $did,
                 'limit' => 25,
+                'filter' => 'posts_no_replies',
             ]);
 
             if (! $feedResponse->successful()) {
@@ -44,9 +45,13 @@ class BlueskyInboxService implements PlatformInboxInterface
                     continue;
                 }
 
+                // Skip posts that are replies to other posts (only process original posts)
+                if (isset($post['record']['reply'])) {
+                    continue;
+                }
+
                 $postUri = $post['uri'];
                 $postCid = $post['cid'];
-                $postCreatedAt = $post['record']['createdAt'] ?? null;
 
                 $replyCount = $post['replyCount'] ?? 0;
                 if ($replyCount === 0) {
