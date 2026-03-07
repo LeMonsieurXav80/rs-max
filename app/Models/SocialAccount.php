@@ -9,6 +9,10 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class SocialAccount extends Model
 {
+    protected $hidden = [
+        'credentials',
+    ];
+
     protected $fillable = [
         'platform_id',
         'platform_account_id',
