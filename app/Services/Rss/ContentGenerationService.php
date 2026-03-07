@@ -97,8 +97,12 @@ class ContentGenerationService
 
             // Add age-aware phrasing for videos older than 6 months
             if ($item->published_at && $item->published_at->diffInMonths(now()) >= 6) {
-                $agePhrase = $this->getVideoAgePhrase($item->published_at);
-                $userPrompt .= "IMPORTANT : La vidéo n'est PAS récente. N'utilise PAS d'expressions comme « notre dernière vidéo », « nouvelle vidéo » ou « vient de sortir ». Intègre naturellement cette formulation dans ta publication : « {$agePhrase} ». Tu peux l'adapter légèrement au contexte, mais garde l'idée.\n\n";
+                $agePhrase = $this->getVideoAgePhrase($item->published_at, $language);
+                if ($language === 'fr') {
+                    $userPrompt .= "IMPORTANT : La vidéo n'est PAS récente. N'utilise PAS d'expressions comme « notre dernière vidéo », « nouvelle vidéo » ou « vient de sortir ». Intègre naturellement cette formulation dans ta publication : « {$agePhrase} ». Tu peux l'adapter légèrement au contexte, mais garde l'idée.\n\n";
+                } else {
+                    $userPrompt .= "IMPORTANT: This video is NOT recent. Do NOT use expressions like \"our latest video\", \"new video\" or \"just released\". Naturally incorporate this phrasing into your post: \"{$agePhrase}\". You can adapt it slightly to the context, but keep the idea.\n\n";
+                }
             }
         } elseif ($item instanceof RedditItem) {
             $userPrompt = "Voici un post Reddit à transformer en publication pour les réseaux sociaux.\n\n";
@@ -128,8 +132,12 @@ class ContentGenerationService
 
             // Add age-aware phrasing for articles older than 6 months
             if ($item->published_at && $item->published_at->diffInMonths(now()) >= 6) {
-                $agePhrase = $this->getArticleAgePhrase($item->published_at);
-                $userPrompt .= "IMPORTANT : L'article n'est PAS récent. N'utilise PAS d'expressions comme « nouvel article », « vient de paraître » ou « tout juste publié ». Intègre naturellement cette formulation dans ta publication : « {$agePhrase} ». Tu peux l'adapter légèrement au contexte, mais garde l'idée.\n\n";
+                $agePhrase = $this->getArticleAgePhrase($item->published_at, $language);
+                if ($language === 'fr') {
+                    $userPrompt .= "IMPORTANT : L'article n'est PAS récent. N'utilise PAS d'expressions comme « nouvel article », « vient de paraître » ou « tout juste publié ». Intègre naturellement cette formulation dans ta publication : « {$agePhrase} ». Tu peux l'adapter légèrement au contexte, mais garde l'idée.\n\n";
+                } else {
+                    $userPrompt .= "IMPORTANT: This article is NOT recent. Do NOT use expressions like \"new article\", \"just published\" or \"fresh off the press\". Naturally incorporate this phrasing into your post: \"{$agePhrase}\". You can adapt it slightly to the context, but keep the idea.\n\n";
+                }
             }
         }
         $userPrompt .= "Génère une publication en {$languageLabel} pour le compte \"{$account->name}\" sur {$account->platform->name}.\n";
@@ -243,13 +251,59 @@ class ContentGenerationService
         };
     }
 
-    private function getVideoAgePhrase(\Carbon\Carbon $publishedAt): string
+    private function getVideoAgePhrase(\Carbon\Carbon $publishedAt, string $language = 'fr'): string
     {
+        $diffMonths = $publishedAt->diffInMonths(now());
+
+        if ($language === 'en') {
+            $month = $publishedAt->format('F');
+            $year = $publishedAt->format('Y');
+            $monthYear = "{$month} {$year}";
+
+            if ($diffMonths >= 24) {
+                $age = (int) floor($diffMonths / 12) . ' years';
+            } elseif ($diffMonths >= 12) {
+                $age = 'a year';
+            } else {
+                $age = $diffMonths . ' months';
+            }
+
+            $templates = [
+                "We posted this video {age} ago...",
+                "Remember this one? It was back in {month_year}.",
+                "We stumbled back on this {year} video and it's worth a watch.",
+                "This video from {month_year} may be older, but its message still holds up.",
+                "Throwback to {month_year} with this video.",
+                "{month_year} — time flies, but this video is still relevant.",
+                "Quick flashback: this video is from {month_year}.",
+                "Bringing this video from {age} ago back into the spotlight.",
+                "That was {age} ago. Time flies!",
+                "Released in {month_year}, this video deserves to be (re)discovered.",
+                "A {year} video we wanted to share again.",
+                "Published in {month_year}, still relevant today.",
+                "{age} ago, we shared this video. Did you catch it?",
+                "Diving back into our {month_year} archives.",
+                "Since {month_year}, this video has traveled far.",
+                "This video is {age} old and hasn't aged a day.",
+                "Back in {month_year}, we shared this video. Here it is again!",
+                "A {year} classic worth (re)watching.",
+                "It's already been {age} since this video came out.",
+                "A look back at {month_year}.",
+            ];
+
+            $template = $templates[random_int(0, count($templates) - 1)];
+
+            return str_replace(
+                ['{age}', '{month}', '{year}', '{month_year}'],
+                [$age, $month, $year, $monthYear],
+                $template
+            );
+        }
+
         $mois = $publishedAt->translatedFormat('F');
         $année = $publishedAt->format('Y');
         $mois_année = "{$mois} {$année}";
 
-        $diffMonths = $publishedAt->diffInMonths(now());
         if ($diffMonths >= 24) {
             $age = (int) floor($diffMonths / 12) . ' ans';
         } elseif ($diffMonths >= 12) {
@@ -281,7 +335,6 @@ class ContentGenerationService
             "Coup d'œil dans le rétro : {mois_année}.",
         ];
 
-        // Use random_int for true randomness
         $template = $templates[random_int(0, count($templates) - 1)];
 
         return str_replace(
@@ -291,13 +344,59 @@ class ContentGenerationService
         );
     }
 
-    private function getArticleAgePhrase(\Carbon\Carbon $publishedAt): string
+    private function getArticleAgePhrase(\Carbon\Carbon $publishedAt, string $language = 'fr'): string
     {
+        $diffMonths = $publishedAt->diffInMonths(now());
+
+        if ($language === 'en') {
+            $month = $publishedAt->format('F');
+            $year = $publishedAt->format('Y');
+            $monthYear = "{$month} {$year}";
+
+            if ($diffMonths >= 24) {
+                $age = (int) floor($diffMonths / 12) . ' years';
+            } elseif ($diffMonths >= 12) {
+                $age = 'a year';
+            } else {
+                $age = $diffMonths . ' months';
+            }
+
+            $templates = [
+                "This article is from {month_year}.",
+                "We published this article {age} ago...",
+                "It was back in {month_year}.",
+                "An article from {month_year} on this topic.",
+                "Published {age} ago.",
+                "We covered this back in {month_year}.",
+                "This goes back to {month_year}.",
+                "{age} ago already.",
+                "In {month_year}, we talked about this.",
+                "A {year} article worth reading again.",
+                "Released in {month_year}.",
+                "From {month_year}, but still relevant.",
+                "We wrote about this in {month_year}.",
+                "A quick look back at {month_year}.",
+                "{age} ago, we were talking about this.",
+                "{month_year}, already.",
+                "This article is {age} old.",
+                "From {month_year}.",
+                "Written {age} ago.",
+                "We told you about this in {month_year}.",
+            ];
+
+            $template = $templates[random_int(0, count($templates) - 1)];
+
+            return str_replace(
+                ['{age}', '{month}', '{year}', '{month_year}'],
+                [$age, $month, $year, $monthYear],
+                $template
+            );
+        }
+
         $mois = $publishedAt->translatedFormat('F');
         $année = $publishedAt->format('Y');
         $mois_année = "{$mois} {$année}";
 
-        $diffMonths = $publishedAt->diffInMonths(now());
         if ($diffMonths >= 24) {
             $age = (int) floor($diffMonths / 12) . ' ans';
         } elseif ($diffMonths >= 12) {
