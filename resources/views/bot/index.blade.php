@@ -94,7 +94,7 @@
                             @endif
                             <div>
                                 <h3 class="text-sm font-semibold text-gray-900">{{ $bsAccount->name }}</h3>
-                                <p class="text-xs text-gray-500">{{ $bsAccount->credentials['handle'] ?? '' }}</p>
+                                <p class="text-xs text-gray-500">{{ rescue(fn () => $bsAccount->credentials['handle'] ?? '', '') }}</p>
                             </div>
                             {{-- API Status check --}}
                             <div x-data="{ checking: false, result: null }" class="ml-2">
@@ -435,7 +435,7 @@
                                 @endif
                                 <div>
                                     <p class="text-sm font-medium text-gray-900">{{ $fbAccount->name }}</p>
-                                    <p class="text-xs text-gray-500">Page ID: {{ $fbAccount->credentials['page_id'] ?? 'N/A' }}</p>
+                                    <p class="text-xs text-gray-500">Page ID: {{ rescue(fn () => $fbAccount->credentials['page_id'] ?? 'N/A', 'N/A') }}</p>
                                 </div>
                             </div>
                             <div class="flex items-center gap-3">
