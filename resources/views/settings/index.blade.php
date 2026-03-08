@@ -468,6 +468,19 @@
                         </div>
                     </div>
 
+                    {{-- Persona toggle --}}
+                    <div class="border-t border-gray-100 pt-6 mt-6">
+                        <div class="flex items-center gap-3">
+                            <input type="checkbox" name="inbox_use_persona" value="1" id="inbox_use_persona"
+                                   {{ $settings['inbox_use_persona'] ? 'checked' : '' }}
+                                   class="rounded border-gray-300 text-indigo-600 shadow-sm focus:ring-indigo-500">
+                            <div>
+                                <label for="inbox_use_persona" class="text-sm font-medium text-gray-900 cursor-pointer">Utiliser le persona du compte</label>
+                                <p class="text-xs text-gray-400">Si active, le system prompt du persona est injecte dans les reponses IA. Si desactive, seules les instructions ci-dessous sont utilisees.</p>
+                            </div>
+                        </div>
+                    </div>
+
                     {{-- AI model for inbox --}}
                     @if(!empty($availableModels))
                     <div class="border-t border-gray-100 pt-6">

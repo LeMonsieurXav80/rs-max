@@ -318,7 +318,7 @@ class InboxController extends Controller
         $reply = $this->generateAiReplyText($inboxItem, $account);
 
         if (! $reply) {
-            return response()->json(['error' => 'Impossible de générer une réponse. Vérifiez la clé API et la persona du compte.'], 422);
+            return response()->json(['error' => 'Impossible de générer une réponse. Vérifiez la clé API OpenAI' . (Setting::get('inbox_use_persona', true) ? ' et la persona du compte' : '') . '.'], 422);
         }
 
         return response()->json(['reply' => $reply]);
@@ -498,8 +498,10 @@ class InboxController extends Controller
         }
 
         $persona = $account->persona;
+        $usePersona = Setting::get('inbox_use_persona', true);
 
-        if (! $persona) {
+        // If persona is required (enabled) but missing, we can't generate
+        if ($usePersona && ! $persona) {
             return null;
         }
 
@@ -551,11 +553,11 @@ class InboxController extends Controller
         $prompt .= "{$typeLabel} de {$item->author_name} :\n\"{$item->content}\"\n\n"
             . "IMPORTANT: You MUST reply in the same language as the message above. If the message is in English, reply in English. If in Italian, reply in Italian. Match the language exactly.";
 
-        // Build system prompt: persona + inbox reply wrapper
+        // Build system prompt: persona (if enabled) + inbox reply wrapper
         $replyWrapper = Setting::get('inbox_reply_prompt', '');
-        $systemPrompt = $persona->system_prompt;
+        $systemPrompt = ($usePersona && $persona) ? $persona->system_prompt : '';
         if ($replyWrapper) {
-            $systemPrompt .= "\n\n" . $replyWrapper;
+            $systemPrompt .= ($systemPrompt ? "\n\n" : '') . $replyWrapper;
         }
 
         try {

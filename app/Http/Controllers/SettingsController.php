@@ -65,6 +65,7 @@ class SettingsController extends Controller
         'inbox_sync_freq_reddit',
         'inbox_sync_freq_twitter',
         'ai_model_inbox',
+        'inbox_use_persona',
         'inbox_reply_prompt',
     ];
 
@@ -124,6 +125,7 @@ class SettingsController extends Controller
         'inbox_sync_freq_reddit' => 'hourly',
         'inbox_sync_freq_twitter' => 'hourly',
         'ai_model_inbox' => 'gpt-4o-mini',
+        'inbox_use_persona' => true,
         'inbox_reply_prompt' => "Tu reponds a des commentaires et messages sur les reseaux sociaux. Adapte la longueur et le style de ta reponse au message recu :\n- Emoji seul ou reaction simple (coeur, flamme, applaudissements...) → reponds par 1-2 emojis adaptes, rien d'autre\n- Compliment court (\"bravo\", \"top\", \"j'adore\", \"genial\") → remercie en 2-5 mots max, tu peux ajouter un emoji\n- Question → reponds brievement et precisement, 1-2 phrases max\n- Commentaire developpe ou avis → 1-2 phrases engageantes max\n- Message prive → reponds de maniere naturelle et conversationnelle\n\nRegles absolues :\n- Ne fais JAMAIS une reponse plus longue que le message original\n- Pas de hashtags\n- Pas de formule de politesse generique (\"Merci pour votre commentaire !\")\n- Sois authentique, pas corporate\n- Garde le ton et la personnalite definis dans ton profil",
     ];
 
@@ -234,6 +236,7 @@ class SettingsController extends Controller
             'inbox_sync_freq_reddit' => 'required|in:every_15_min,every_30_min,hourly,every_2_hours,every_6_hours,every_12_hours,daily',
             'inbox_sync_freq_twitter' => 'required|in:every_15_min,every_30_min,hourly,every_2_hours,every_6_hours,every_12_hours,daily',
             'ai_model_inbox' => 'required|string|max:50',
+            'inbox_use_persona' => 'nullable',
             'inbox_reply_prompt' => 'nullable|string|max:5000',
         ]);
 
@@ -249,6 +252,9 @@ class SettingsController extends Controller
             $key = "inbox_platform_{$slug}_enabled";
             $validated[$key] = $request->has($key) ? true : false;
         }
+
+        // Handle inbox_use_persona checkbox
+        $validated['inbox_use_persona'] = $request->has('inbox_use_persona') ? true : false;
 
         foreach ($validated as $key => $value) {
             Setting::set($key, $value);
