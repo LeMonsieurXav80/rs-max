@@ -4,6 +4,7 @@ namespace App\Services\Bot;
 
 use App\Models\BotActionLog;
 use App\Models\BotSearchTerm;
+use App\Models\Setting;
 use App\Models\SocialAccount;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Http;
@@ -53,8 +54,37 @@ class BlueskyBotService
         }
         $totalLikes += $likebackLikes;
 
-        return ['total_likes' => $totalLikes, 'terms_processed' => $termsProcessed, 'likeback_likes' => $likebackLikes];
+        // 3. Like comments on own posts
+        $commentLikes = 0;
+        if (! $this->shouldStop() && Setting::get("bot_like_comments_bluesky_{$account->id}") === '1') {
+            $commentLikes = $this->likeOwnPostComments($account, $auth);
+        }
+        $totalLikes += $commentLikes;
+
+        // 4. Random feed likes
+        $feedLikes = 0;
+        if (! $this->shouldStop() && Setting::get("bot_feed_likes_bluesky_{$account->id}") === '1') {
+            $feedLikes = $this->likeRandomFeedPosts($account, $auth);
+        }
+        $totalLikes += $feedLikes;
+
+        // 5. Unfollow non-followers
+        $unfollows = 0;
+        if (! $this->shouldStop() && Setting::get("bot_unfollow_bluesky_{$account->id}") === '1') {
+            $unfollows = $this->unfollowNonFollowers($account, $auth);
+        }
+
+        return [
+            'total_likes' => $totalLikes,
+            'terms_processed' => $termsProcessed,
+            'likeback_likes' => $likebackLikes,
+            'comment_likes' => $commentLikes,
+            'feed_likes' => $feedLikes,
+            'unfollows' => $unfollows,
+        ];
     }
+
+    // ─── 1. Search terms ─────────────────────────────────────────────
 
     private function processSearchTerm(SocialAccount $account, array $auth, BotSearchTerm $term): int
     {
@@ -172,56 +202,7 @@ class BlueskyBotService
         return $likesCount;
     }
 
-    private function likeRecord(array $auth, string $uri, string $cid): bool
-    {
-        $response = Http::withToken($auth['accessJwt'])
-            ->post(self::PDS_BASE . '/xrpc/com.atproto.repo.createRecord', [
-                'repo' => $auth['did'],
-                'collection' => 'app.bsky.feed.like',
-                'record' => [
-                    '$type' => 'app.bsky.feed.like',
-                    'subject' => [
-                        'uri' => $uri,
-                        'cid' => $cid,
-                    ],
-                    'createdAt' => now()->toIso8601ZuluString(),
-                ],
-            ]);
-
-        if (! $response->successful()) {
-            Log::warning('BlueskyBotService: like failed', [
-                'uri' => $uri,
-                'status' => $response->status(),
-                'error' => $response->json('message'),
-            ]);
-
-            return false;
-        }
-
-        return true;
-    }
-
-    private function alreadyActioned(int $accountId, string $uri): bool
-    {
-        return BotActionLog::where('social_account_id', $accountId)
-            ->where('target_uri', $uri)
-            ->where('success', true)
-            ->exists();
-    }
-
-    private function logAction(SocialAccount $account, string $type, string $uri, array $post, string $searchTerm, bool $success, ?string $error = null): void
-    {
-        BotActionLog::create([
-            'social_account_id' => $account->id,
-            'action_type' => $type,
-            'target_uri' => $uri,
-            'target_author' => $post['author']['handle'] ?? $post['author']['displayName'] ?? null,
-            'target_text' => mb_substr($post['record']['text'] ?? $post['value']['text'] ?? '', 0, 500),
-            'search_term' => $searchTerm,
-            'success' => $success,
-            'error' => $error,
-        ]);
-    }
+    // ─── 2. Like-back ────────────────────────────────────────────────
 
     private function processLikeback(SocialAccount $account, array $auth): int
     {
@@ -345,6 +326,448 @@ class BlueskyBotService
         }
 
         return $likesCount;
+    }
+
+    // ─── 3. Like comments on own posts ───────────────────────────────
+
+    private function likeOwnPostComments(SocialAccount $account, array $auth): int
+    {
+        $response = Http::get(self::PUBLIC_API . '/xrpc/app.bsky.feed.getAuthorFeed', [
+            'actor' => $auth['did'],
+            'limit' => 20,
+        ]);
+
+        if (! $response->successful()) {
+            return 0;
+        }
+
+        $feed = $response->json('feed', []);
+        $likesCount = 0;
+        $maxCommentLikes = 30;
+
+        foreach ($feed as $feedItem) {
+            if ($likesCount >= $maxCommentLikes || $this->shouldStop()) {
+                break;
+            }
+
+            $post = $feedItem['post'] ?? null;
+            if (! $post) {
+                continue;
+            }
+
+            // Only process our own posts (not reposts)
+            if (($post['author']['did'] ?? null) !== $auth['did']) {
+                continue;
+            }
+
+            $replyCount = $post['replyCount'] ?? 0;
+            if ($replyCount === 0) {
+                continue;
+            }
+
+            // Fetch thread to get replies
+            $threadResponse = Http::get(self::PUBLIC_API . '/xrpc/app.bsky.feed.getPostThread', [
+                'uri' => $post['uri'],
+                'depth' => 2,
+                'parentHeight' => 0,
+            ]);
+
+            if (! $threadResponse->successful()) {
+                continue;
+            }
+
+            $replies = $threadResponse->json('thread.replies', []);
+
+            foreach ($replies as $reply) {
+                if ($likesCount >= $maxCommentLikes || $this->shouldStop()) {
+                    break;
+                }
+
+                $replyPost = $reply['post'] ?? null;
+                if (! $replyPost) {
+                    continue;
+                }
+
+                $replyUri = $replyPost['uri'] ?? null;
+                $replyCid = $replyPost['cid'] ?? null;
+                $authorDid = $replyPost['author']['did'] ?? null;
+
+                // Skip own replies
+                if (! $replyUri || ! $replyCid || $authorDid === $auth['did']) {
+                    continue;
+                }
+
+                if ($this->alreadyActioned($account->id, $replyUri)) {
+                    continue;
+                }
+
+                $success = $this->likeRecord($auth, $replyUri, $replyCid);
+
+                BotActionLog::create([
+                    'social_account_id' => $account->id,
+                    'action_type' => 'like_own_comment',
+                    'target_uri' => $replyUri,
+                    'target_author' => $replyPost['author']['handle'] ?? null,
+                    'target_text' => mb_substr($replyPost['record']['text'] ?? '', 0, 500),
+                    'search_term' => null,
+                    'success' => $success,
+                ]);
+
+                if ($success) {
+                    $likesCount++;
+                }
+
+                usleep(300_000);
+            }
+
+            usleep(200_000);
+        }
+
+        return $likesCount;
+    }
+
+    // ─── 4. Random feed likes ────────────────────────────────────────
+
+    private function likeRandomFeedPosts(SocialAccount $account, array $auth): int
+    {
+        $response = Http::withToken($auth['accessJwt'])
+            ->get(self::PDS_BASE . '/xrpc/app.bsky.feed.getTimeline', [
+                'limit' => 50,
+            ]);
+
+        if (! $response->successful()) {
+            Log::warning('BlueskyBotService: getTimeline failed', [
+                'account_id' => $account->id,
+                'status' => $response->status(),
+            ]);
+
+            return 0;
+        }
+
+        $feed = $response->json('feed', []);
+        if (empty($feed)) {
+            return 0;
+        }
+
+        // Randomly select ~20% of posts to like (between 3-8 posts)
+        $maxFeedLikes = (int) Setting::get("bot_feed_likes_max_bluesky_{$account->id}", 5);
+        $candidates = [];
+
+        foreach ($feed as $feedItem) {
+            $post = $feedItem['post'] ?? null;
+            if (! $post) {
+                continue;
+            }
+
+            $postUri = $post['uri'] ?? null;
+            $postCid = $post['cid'] ?? null;
+            $authorDid = $post['author']['did'] ?? null;
+
+            // Skip own posts and already liked
+            if (! $postUri || ! $postCid || $authorDid === $auth['did']) {
+                continue;
+            }
+
+            // Skip if viewer already liked
+            if (! empty($post['viewer']['like'])) {
+                continue;
+            }
+
+            if ($this->alreadyActioned($account->id, $postUri)) {
+                continue;
+            }
+
+            $candidates[] = $post;
+        }
+
+        if (empty($candidates)) {
+            return 0;
+        }
+
+        // Shuffle and take random subset
+        shuffle($candidates);
+        $tolike = array_slice($candidates, 0, min($maxFeedLikes, count($candidates)));
+        $likesCount = 0;
+
+        foreach ($tolike as $post) {
+            if ($this->shouldStop()) {
+                break;
+            }
+
+            $success = $this->likeRecord($auth, $post['uri'], $post['cid']);
+
+            BotActionLog::create([
+                'social_account_id' => $account->id,
+                'action_type' => 'like_feed',
+                'target_uri' => $post['uri'],
+                'target_author' => $post['author']['handle'] ?? null,
+                'target_text' => mb_substr($post['record']['text'] ?? '', 0, 500),
+                'search_term' => null,
+                'success' => $success,
+            ]);
+
+            if ($success) {
+                $likesCount++;
+            }
+
+            usleep(500_000);
+        }
+
+        return $likesCount;
+    }
+
+    // ─── 5. Unfollow non-followers ───────────────────────────────────
+
+    private function unfollowNonFollowers(SocialAccount $account, array $auth): int
+    {
+        $maxUnfollows = (int) Setting::get("bot_unfollow_max_bluesky_{$account->id}", 10);
+
+        // Get who we follow
+        $following = $this->getAllFollowsOrFollowers($auth['did'], 'follows');
+        if (empty($following)) {
+            return 0;
+        }
+
+        // Get our followers
+        $followers = $this->getAllFollowsOrFollowers($auth['did'], 'followers');
+        $followerDids = array_flip(array_column($followers, 'did'));
+
+        // Find people we follow who don't follow us back
+        $nonFollowers = [];
+        foreach ($following as $follow) {
+            $did = $follow['did'];
+            if (! isset($followerDids[$did])) {
+                $nonFollowers[] = $follow;
+            }
+        }
+
+        if (empty($nonFollowers)) {
+            Log::info('BlueskyBotService: no non-followers to unfollow', [
+                'account_id' => $account->id,
+                'following' => count($following),
+                'followers' => count($followers),
+            ]);
+
+            return 0;
+        }
+
+        Log::info('BlueskyBotService: found non-followers', [
+            'account_id' => $account->id,
+            'following' => count($following),
+            'followers' => count($followers),
+            'non_followers' => count($nonFollowers),
+        ]);
+
+        $unfollowCount = 0;
+
+        foreach ($nonFollowers as $nf) {
+            if ($unfollowCount >= $maxUnfollows || $this->shouldStop()) {
+                break;
+            }
+
+            // Skip if already unfollowed recently (prevent re-unfollowing)
+            $unfollowUri = "unfollow:{$nf['did']}";
+            if ($this->alreadyActioned($account->id, $unfollowUri)) {
+                continue;
+            }
+
+            // Find the follow record to delete
+            $followUri = $this->findFollowRecord($auth, $nf['did']);
+            if (! $followUri) {
+                continue;
+            }
+
+            $success = $this->deleteRecord($auth, $followUri);
+
+            BotActionLog::create([
+                'social_account_id' => $account->id,
+                'action_type' => 'unfollow',
+                'target_uri' => $unfollowUri,
+                'target_author' => $nf['handle'] ?? $nf['did'],
+                'target_text' => $nf['displayName'] ?? null,
+                'search_term' => null,
+                'success' => $success,
+            ]);
+
+            if ($success) {
+                $unfollowCount++;
+            }
+
+            usleep(500_000);
+        }
+
+        return $unfollowCount;
+    }
+
+    private function getAllFollowsOrFollowers(string $did, string $type): array
+    {
+        $endpoint = $type === 'follows'
+            ? '/xrpc/app.bsky.graph.getFollows'
+            : '/xrpc/app.bsky.graph.getFollowers';
+
+        $all = [];
+        $cursor = null;
+        $maxPages = 10; // Safety limit (1000 accounts max)
+
+        for ($i = 0; $i < $maxPages; $i++) {
+            $params = ['actor' => $did, 'limit' => 100];
+            if ($cursor) {
+                $params['cursor'] = $cursor;
+            }
+
+            $response = Http::get(self::PUBLIC_API . $endpoint, $params);
+            if (! $response->successful()) {
+                break;
+            }
+
+            $key = $type === 'follows' ? 'follows' : 'followers';
+            $items = $response->json($key, []);
+            foreach ($items as $item) {
+                $all[] = [
+                    'did' => $item['did'],
+                    'handle' => $item['handle'] ?? '',
+                    'displayName' => $item['displayName'] ?? '',
+                ];
+            }
+
+            $cursor = $response->json('cursor');
+            if (! $cursor || empty($items)) {
+                break;
+            }
+
+            usleep(200_000);
+        }
+
+        return $all;
+    }
+
+    private function findFollowRecord(array $auth, string $targetDid): ?string
+    {
+        // List follow records to find the one for this DID
+        $response = Http::withToken($auth['accessJwt'])
+            ->get(self::PDS_BASE . '/xrpc/com.atproto.repo.listRecords', [
+                'repo' => $auth['did'],
+                'collection' => 'app.bsky.graph.follow',
+                'limit' => 100,
+            ]);
+
+        if (! $response->successful()) {
+            return null;
+        }
+
+        $records = $response->json('records', []);
+        foreach ($records as $record) {
+            $subject = $record['value']['subject'] ?? null;
+            if ($subject === $targetDid) {
+                return $record['uri'];
+            }
+        }
+
+        // If not found in first page, try paginating
+        $cursor = $response->json('cursor');
+        if ($cursor) {
+            $response = Http::withToken($auth['accessJwt'])
+                ->get(self::PDS_BASE . '/xrpc/com.atproto.repo.listRecords', [
+                    'repo' => $auth['did'],
+                    'collection' => 'app.bsky.graph.follow',
+                    'limit' => 100,
+                    'cursor' => $cursor,
+                ]);
+
+            if ($response->successful()) {
+                foreach ($response->json('records', []) as $record) {
+                    if (($record['value']['subject'] ?? null) === $targetDid) {
+                        return $record['uri'];
+                    }
+                }
+            }
+        }
+
+        return null;
+    }
+
+    private function deleteRecord(array $auth, string $uri): bool
+    {
+        // Parse URI: at://did/collection/rkey
+        $parts = explode('/', $uri);
+        $rkey = end($parts);
+        $collection = $parts[count($parts) - 2] ?? null;
+
+        if (! $rkey || ! $collection) {
+            return false;
+        }
+
+        $response = Http::withToken($auth['accessJwt'])
+            ->post(self::PDS_BASE . '/xrpc/com.atproto.repo.deleteRecord', [
+                'repo' => $auth['did'],
+                'collection' => $collection,
+                'rkey' => $rkey,
+            ]);
+
+        if (! $response->successful()) {
+            Log::warning('BlueskyBotService: deleteRecord failed', [
+                'uri' => $uri,
+                'status' => $response->status(),
+                'error' => $response->json('message'),
+            ]);
+
+            return false;
+        }
+
+        return true;
+    }
+
+    // ─── Common helpers ──────────────────────────────────────────────
+
+    private function likeRecord(array $auth, string $uri, string $cid): bool
+    {
+        $response = Http::withToken($auth['accessJwt'])
+            ->post(self::PDS_BASE . '/xrpc/com.atproto.repo.createRecord', [
+                'repo' => $auth['did'],
+                'collection' => 'app.bsky.feed.like',
+                'record' => [
+                    '$type' => 'app.bsky.feed.like',
+                    'subject' => [
+                        'uri' => $uri,
+                        'cid' => $cid,
+                    ],
+                    'createdAt' => now()->toIso8601ZuluString(),
+                ],
+            ]);
+
+        if (! $response->successful()) {
+            Log::warning('BlueskyBotService: like failed', [
+                'uri' => $uri,
+                'status' => $response->status(),
+                'error' => $response->json('message'),
+            ]);
+
+            return false;
+        }
+
+        return true;
+    }
+
+    private function alreadyActioned(int $accountId, string $uri): bool
+    {
+        return BotActionLog::where('social_account_id', $accountId)
+            ->where('target_uri', $uri)
+            ->where('success', true)
+            ->exists();
+    }
+
+    private function logAction(SocialAccount $account, string $type, string $uri, array $post, string $searchTerm, bool $success, ?string $error = null): void
+    {
+        BotActionLog::create([
+            'social_account_id' => $account->id,
+            'action_type' => $type,
+            'target_uri' => $uri,
+            'target_author' => $post['author']['handle'] ?? $post['author']['displayName'] ?? null,
+            'target_text' => mb_substr($post['record']['text'] ?? $post['value']['text'] ?? '', 0, 500),
+            'search_term' => $searchTerm,
+            'success' => $success,
+            'error' => $error,
+        ]);
     }
 
     private function getAuth(SocialAccount $account): ?array

@@ -79,7 +79,17 @@ class RunBotActions extends Command
 
             try {
                 $result = $service->runForAccount($account);
-                $this->line("  Likes: {$result['total_likes']} | Terms: " . ($result['terms_processed'] ?? 0));
+                $parts = ["Likes: {$result['total_likes']}", 'Terms: ' . ($result['terms_processed'] ?? 0)];
+                if (($result['comment_likes'] ?? 0) > 0) {
+                    $parts[] = "Comment likes: {$result['comment_likes']}";
+                }
+                if (($result['feed_likes'] ?? 0) > 0) {
+                    $parts[] = "Feed likes: {$result['feed_likes']}";
+                }
+                if (($result['unfollows'] ?? 0) > 0) {
+                    $parts[] = "Unfollows: {$result['unfollows']}";
+                }
+                $this->line('  ' . implode(' | ', $parts));
 
                 if (isset($result['error'])) {
                     $this->error("  Error: {$result['error']}");

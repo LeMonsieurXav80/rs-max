@@ -227,6 +227,7 @@ Route::middleware(['auth', 'verified', 'throttle:60,1'])->group(function () {
         Route::post('bot/status-batch', [BotController::class, 'botStatusBatch'])->name('bot.statusBatch');
         Route::post('bot/stop', [BotController::class, 'stopBot'])->name('bot.stop');
         Route::post('bot/frequency', [BotController::class, 'updateFrequency'])->name('bot.updateFrequency');
+        Route::post('bot/option', [BotController::class, 'updateOption'])->name('bot.updateOption');
         Route::delete('bot/logs', [BotController::class, 'clearLogs'])->name('bot.clearLogs');
         Route::post('bot/targets', [BotController::class, 'addTarget'])->name('bot.addTarget');
         Route::delete('bot/targets/{target}', [BotController::class, 'removeTarget'])->name('bot.removeTarget');

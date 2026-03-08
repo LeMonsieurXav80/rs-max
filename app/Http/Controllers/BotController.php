@@ -192,6 +192,22 @@ class BotController extends Controller
         return response()->json(['saved' => true]);
     }
 
+    public function updateOption(Request $request): JsonResponse
+    {
+        $validated = $request->validate([
+            'feature' => 'required|string|in:like_comments,feed_likes,unfollow',
+            'account_id' => 'required|integer|exists:social_accounts,id',
+            'enabled' => 'required|boolean',
+        ]);
+
+        Setting::set(
+            "bot_{$validated['feature']}_bluesky_{$validated['account_id']}",
+            $validated['enabled'] ? '1' : '0'
+        );
+
+        return response()->json(['saved' => true]);
+    }
+
     public function clearLogs(): RedirectResponse
     {
         BotActionLog::truncate();

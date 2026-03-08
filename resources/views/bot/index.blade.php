@@ -16,34 +16,46 @@
         @endif
 
         {{-- Stats du jour --}}
-        <div class="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-4">
-            <div class="bg-white rounded-2xl border border-gray-100 shadow-sm p-4 text-center">
-                <p class="text-2xl font-bold text-indigo-600">{{ $todayStats->get('like_post', 0) }}</p>
-                <p class="text-xs text-gray-500 mt-1">Posts likes (BS)</p>
+        <div class="grid grid-cols-2 sm:grid-cols-5 lg:grid-cols-10 gap-3">
+            <div class="bg-white rounded-2xl border border-gray-100 shadow-sm p-3 text-center">
+                <p class="text-xl font-bold text-indigo-600">{{ $todayStats->get('like_post', 0) }}</p>
+                <p class="text-[10px] text-gray-500 mt-1">Posts (BS)</p>
             </div>
-            <div class="bg-white rounded-2xl border border-gray-100 shadow-sm p-4 text-center">
-                <p class="text-2xl font-bold text-indigo-600">{{ $todayStats->get('like_reply', 0) }}</p>
-                <p class="text-xs text-gray-500 mt-1">Replies likes (BS)</p>
+            <div class="bg-white rounded-2xl border border-gray-100 shadow-sm p-3 text-center">
+                <p class="text-xl font-bold text-indigo-600">{{ $todayStats->get('like_reply', 0) }}</p>
+                <p class="text-[10px] text-gray-500 mt-1">Replies (BS)</p>
             </div>
-            <div class="bg-white rounded-2xl border border-gray-100 shadow-sm p-4 text-center">
-                <p class="text-2xl font-bold text-purple-600">{{ $todayStats->get('like_back', 0) }}</p>
-                <p class="text-xs text-gray-500 mt-1">Like-backs (BS)</p>
+            <div class="bg-white rounded-2xl border border-gray-100 shadow-sm p-3 text-center">
+                <p class="text-xl font-bold text-purple-600">{{ $todayStats->get('like_back', 0) }}</p>
+                <p class="text-[10px] text-gray-500 mt-1">Like-backs</p>
             </div>
-            <div class="bg-white rounded-2xl border border-gray-100 shadow-sm p-4 text-center">
-                <p class="text-2xl font-bold text-purple-600">{{ $todayStats->get('prospect_like', 0) }}</p>
-                <p class="text-xs text-gray-500 mt-1">Prospect likes</p>
+            <div class="bg-white rounded-2xl border border-gray-100 shadow-sm p-3 text-center">
+                <p class="text-xl font-bold text-teal-600">{{ $todayStats->get('like_own_comment', 0) }}</p>
+                <p class="text-[10px] text-gray-500 mt-1">Comm. own</p>
             </div>
-            <div class="bg-white rounded-2xl border border-gray-100 shadow-sm p-4 text-center">
-                <p class="text-2xl font-bold text-purple-600">{{ $todayStats->get('prospect_follow', 0) }}</p>
-                <p class="text-xs text-gray-500 mt-1">Prospect follows</p>
+            <div class="bg-white rounded-2xl border border-gray-100 shadow-sm p-3 text-center">
+                <p class="text-xl font-bold text-cyan-600">{{ $todayStats->get('like_feed', 0) }}</p>
+                <p class="text-[10px] text-gray-500 mt-1">Feed likes</p>
             </div>
-            <div class="bg-white rounded-2xl border border-gray-100 shadow-sm p-4 text-center">
-                <p class="text-2xl font-bold text-blue-600">{{ $todayStats->get('like_comment', 0) }}</p>
-                <p class="text-xs text-gray-500 mt-1">Commentaires (FB)</p>
+            <div class="bg-white rounded-2xl border border-gray-100 shadow-sm p-3 text-center">
+                <p class="text-xl font-bold text-orange-600">{{ $todayStats->get('unfollow', 0) }}</p>
+                <p class="text-[10px] text-gray-500 mt-1">Unfollows</p>
             </div>
-            <div class="bg-white rounded-2xl border border-gray-100 shadow-sm p-4 text-center">
-                <p class="text-2xl font-bold text-gray-900">{{ $todayStats->values()->sum() }}</p>
-                <p class="text-xs text-gray-500 mt-1">Total aujourd'hui</p>
+            <div class="bg-white rounded-2xl border border-gray-100 shadow-sm p-3 text-center">
+                <p class="text-xl font-bold text-purple-600">{{ $todayStats->get('prospect_like', 0) }}</p>
+                <p class="text-[10px] text-gray-500 mt-1">Prospect likes</p>
+            </div>
+            <div class="bg-white rounded-2xl border border-gray-100 shadow-sm p-3 text-center">
+                <p class="text-xl font-bold text-purple-600">{{ $todayStats->get('prospect_follow', 0) }}</p>
+                <p class="text-[10px] text-gray-500 mt-1">Prospect follows</p>
+            </div>
+            <div class="bg-white rounded-2xl border border-gray-100 shadow-sm p-3 text-center">
+                <p class="text-xl font-bold text-blue-600">{{ $todayStats->get('like_comment', 0) }}</p>
+                <p class="text-[10px] text-gray-500 mt-1">Comm. (FB)</p>
+            </div>
+            <div class="bg-white rounded-2xl border border-gray-100 shadow-sm p-3 text-center">
+                <p class="text-xl font-bold text-gray-900">{{ $todayStats->values()->sum() }}</p>
+                <p class="text-[10px] text-gray-500 mt-1">Total</p>
             </div>
         </div>
 
@@ -258,6 +270,61 @@
                         </form>
                     </div>
 
+                    {{-- Options supplementaires --}}
+                    <div class="border-t border-gray-100 pt-4 mt-4">
+                        <div class="flex items-center gap-2 mb-3">
+                            <svg class="w-4 h-4 text-teal-500" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1.5">
+                                <path stroke-linecap="round" stroke-linejoin="round" d="M9.594 3.94c.09-.542.56-.94 1.11-.94h2.593c.55 0 1.02.398 1.11.94l.213 1.281c.063.374.313.686.645.87.074.04.147.083.22.127.325.196.72.257 1.075.124l1.217-.456a1.125 1.125 0 0 1 1.37.49l1.296 2.247a1.125 1.125 0 0 1-.26 1.431l-1.003.827c-.293.241-.438.613-.43.992a7.723 7.723 0 0 1 0 .255c-.008.378.137.75.43.991l1.004.827c.424.35.534.955.26 1.43l-1.298 2.247a1.125 1.125 0 0 1-1.369.491l-1.217-.456c-.355-.133-.75-.072-1.076.124a6.47 6.47 0 0 1-.22.128c-.331.183-.581.495-.644.869l-.213 1.281c-.09.543-.56.94-1.11.94h-2.594c-.55 0-1.019-.398-1.11-.94l-.213-1.281c-.062-.374-.312-.686-.644-.87a6.52 6.52 0 0 1-.22-.127c-.325-.196-.72-.257-1.076-.124l-1.217.456a1.125 1.125 0 0 1-1.369-.49l-1.297-2.247a1.125 1.125 0 0 1 .26-1.431l1.004-.827c.292-.24.437-.613.43-.991a6.932 6.932 0 0 1 0-.255c.007-.38-.138-.751-.43-.992l-1.004-.827a1.125 1.125 0 0 1-.26-1.43l1.297-2.247a1.125 1.125 0 0 1 1.37-.491l1.216.456c.356.133.751.072 1.076-.124.072-.044.146-.086.22-.128.332-.183.582-.495.644-.869l.214-1.28Z" />
+                                <path stroke-linecap="round" stroke-linejoin="round" d="M15 12a3 3 0 1 1-6 0 3 3 0 0 1 6 0Z" />
+                            </svg>
+                            <h3 class="text-sm font-semibold text-gray-700">Options automatiques</h3>
+                        </div>
+
+                        <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                            {{-- Like comments on own posts --}}
+                            <div x-data="botToggle('like_comments', {{ $bsAccount->id }}, {{ \App\Models\Setting::get("bot_like_comments_bluesky_{$bsAccount->id}") === '1' ? 'true' : 'false' }})"
+                                 class="border rounded-xl p-3 transition-colors"
+                                 :class="enabled ? 'border-teal-200 bg-teal-50/30' : 'border-gray-200'">
+                                <label class="flex items-center gap-2 cursor-pointer">
+                                    <input type="checkbox" x-model="enabled" @change="save()"
+                                           class="rounded border-gray-300 text-teal-600 focus:ring-teal-500">
+                                    <div>
+                                        <p class="text-xs font-medium text-gray-900">Liker les commentaires</p>
+                                        <p class="text-[10px] text-gray-500">Like les replies sur vos posts</p>
+                                    </div>
+                                </label>
+                            </div>
+
+                            {{-- Random feed likes --}}
+                            <div x-data="botToggle('feed_likes', {{ $bsAccount->id }}, {{ \App\Models\Setting::get("bot_feed_likes_bluesky_{$bsAccount->id}") === '1' ? 'true' : 'false' }})"
+                                 class="border rounded-xl p-3 transition-colors"
+                                 :class="enabled ? 'border-cyan-200 bg-cyan-50/30' : 'border-gray-200'">
+                                <label class="flex items-center gap-2 cursor-pointer">
+                                    <input type="checkbox" x-model="enabled" @change="save()"
+                                           class="rounded border-gray-300 text-cyan-600 focus:ring-cyan-500">
+                                    <div>
+                                        <p class="text-xs font-medium text-gray-900">Liker le feed</p>
+                                        <p class="text-[10px] text-gray-500">Like random dans votre timeline</p>
+                                    </div>
+                                </label>
+                            </div>
+
+                            {{-- Unfollow non-followers --}}
+                            <div x-data="botToggle('unfollow', {{ $bsAccount->id }}, {{ \App\Models\Setting::get("bot_unfollow_bluesky_{$bsAccount->id}") === '1' ? 'true' : 'false' }})"
+                                 class="border rounded-xl p-3 transition-colors"
+                                 :class="enabled ? 'border-orange-200 bg-orange-50/30' : 'border-gray-200'">
+                                <label class="flex items-center gap-2 cursor-pointer">
+                                    <input type="checkbox" x-model="enabled" @change="save()"
+                                           class="rounded border-gray-300 text-orange-600 focus:ring-orange-500">
+                                    <div>
+                                        <p class="text-xs font-medium text-gray-900">Unfollow non-followers</p>
+                                        <p class="text-[10px] text-gray-500">Defollow ceux qui ne follow pas</p>
+                                    </div>
+                                </label>
+                            </div>
+                        </div>
+                    </div>
+
                     {{-- Comptes cibles (prospection) pour ce compte --}}
                     <div class="border-t border-gray-100 pt-4 mt-4">
                         <div class="flex items-center gap-2 mb-3">
@@ -470,6 +537,9 @@
                                             @case('like_post') Like post @break
                                             @case('like_reply') Like reply @break
                                             @case('like_back') Like-back @break
+                                            @case('like_own_comment') Like comm. @break
+                                            @case('like_feed') Like feed @break
+                                            @case('unfollow') Unfollow @break
                                             @case('prospect_like') Prospect like @break
                                             @case('prospect_follow') Prospect follow @break
                                             @case('like_comment') Like commentaire @break
@@ -576,6 +646,19 @@ const botStatusManager = {
         .catch(() => {});
     }
 };
+
+function botToggle(feature, accountId, initial) {
+    return {
+        enabled: initial,
+        save() {
+            fetch('{{ route('bot.updateOption') }}', {
+                method: 'POST',
+                headers: { 'X-CSRF-TOKEN': '{{ csrf_token() }}', 'Content-Type': 'application/json' },
+                body: JSON.stringify({ feature, account_id: accountId, enabled: this.enabled })
+            });
+        }
+    };
+}
 
 function botButton(platform, accountId, initialActive, runUrl) {
     return {
