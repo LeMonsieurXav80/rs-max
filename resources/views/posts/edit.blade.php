@@ -180,20 +180,15 @@
             ])->values()->toArray();
         @endphp
         <div class="bg-white rounded-2xl shadow-sm border border-gray-100 p-6 lg:p-8" x-data="{
-            tick: 0,
             groups: {{ json_encode($groupsData) }},
-            checkedIds: new Set({{ json_encode(array_map('intval', old('accounts', $selectedAccountIds))) }}),
+            checked: {{ json_encode(
+                collect(old('accounts', $selectedAccountIds))->mapWithKeys(fn ($id) => [(int)$id => true])->toArray()
+            ) }},
             isGroupActive(group) {
-                this.tick;
-                return group.account_ids.length > 0 && group.account_ids.every(id => this.checkedIds.has(id));
+                return group.account_ids.length > 0 && group.account_ids.every(id => this.checked[id] === true);
             },
-            toggleAccount(id, checked) {
-                if (checked) {
-                    this.checkedIds.add(id);
-                } else {
-                    this.checkedIds.delete(id);
-                }
-                this.tick++;
+            toggleAccount(id, isChecked) {
+                this.checked[id] = isChecked;
             },
             toggleGroup(group) {
                 const allChecked = this.isGroupActive(group);
@@ -201,15 +196,10 @@
                     const cb = this.$el.querySelector('input[name=\'accounts[]\'][value=\'' + id + '\']');
                     if (cb) {
                         cb.checked = !allChecked;
-                        if (!allChecked) {
-                            this.checkedIds.add(id);
-                        } else {
-                            this.checkedIds.delete(id);
-                        }
+                        this.checked[id] = !allChecked;
                         cb.dispatchEvent(new Event('change', { bubbles: true }));
                     }
                 });
-                this.tick++;
             },
         }">
             <h2 class="text-base font-semibold text-gray-900 mb-4">Comptes de publication <span class="text-red-500">*</span></h2>
