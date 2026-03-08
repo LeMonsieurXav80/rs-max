@@ -267,10 +267,11 @@
         <div class="bg-white rounded-2xl shadow-sm border border-gray-100 p-6 lg:p-8" x-data="{
             saving: false,
             saved: false,
+            tick: 0,
             groups: {{ json_encode($groupsData) }},
+            checkedIds: new Set({{ json_encode(array_map('intval', old('accounts', $defaultAccountIds ?? []))) }}),
             async saveDefaults() {
                 this.saving = true;
-                const checked = [...this.$el.querySelectorAll('input[name=\'accounts[]\']:checked')].map(el => parseInt(el.value));
                 try {
                     const resp = await fetch('{{ route('accounts.saveDefaults') }}', {
                         method: 'POST',
@@ -279,7 +280,7 @@
                             'X-CSRF-TOKEN': document.querySelector('meta[name=csrf-token]').getAttribute('content'),
                             'Accept': 'application/json',
                         },
-                        body: JSON.stringify({ accounts: checked })
+                        body: JSON.stringify({ accounts: [...this.checkedIds] })
                     });
                     if (resp.ok) {
                         this.saved = true;
@@ -289,8 +290,16 @@
                 this.saving = false;
             },
             isGroupActive(group) {
-                const checked = new Set([...this.$el.querySelectorAll('input[name=\'accounts[]\']:checked')].map(el => parseInt(el.value)));
-                return group.account_ids.length > 0 && group.account_ids.every(id => checked.has(id));
+                this.tick;
+                return group.account_ids.length > 0 && group.account_ids.every(id => this.checkedIds.has(id));
+            },
+            toggleAccount(id, checked) {
+                if (checked) {
+                    this.checkedIds.add(id);
+                } else {
+                    this.checkedIds.delete(id);
+                }
+                this.tick++;
             },
             toggleGroup(group) {
                 const allChecked = this.isGroupActive(group);
@@ -298,9 +307,15 @@
                     const cb = this.$el.querySelector('input[name=\'accounts[]\'][value=\'' + id + '\']');
                     if (cb) {
                         cb.checked = !allChecked;
+                        if (!allChecked) {
+                            this.checkedIds.add(id);
+                        } else {
+                            this.checkedIds.delete(id);
+                        }
                         cb.dispatchEvent(new Event('change', { bubbles: true }));
                     }
                 });
+                this.tick++;
             },
         }">
             <div class="flex items-center justify-between mb-4">
@@ -378,7 +393,7 @@
                                                 data-platform="{{ $slug }}"
                                                 data-has-persona="{{ $account->persona_id ? '1' : '0' }}"
                                                 {{ in_array($account->id, old('accounts', $defaultAccountIds ?? [])) ? 'checked' : '' }}
-                                                @change="$dispatch('accounts-changed')"
+                                                @change="toggleAccount({{ $account->id }}, $el.checked); $dispatch('accounts-changed')"
                                                 class="rounded border-gray-300 text-indigo-600 focus:ring-indigo-500 transition-colors"
                                             >
                                             @if($account->profile_picture_url)
