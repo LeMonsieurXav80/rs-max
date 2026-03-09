@@ -73,108 +73,8 @@
     {{-- Two-column layout: content left, media right --}}
     <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
 
-        {{-- LEFT: Content + Stats + Logs --}}
+        {{-- LEFT: Stats + Content + Logs --}}
         <div class="lg:col-span-2 space-y-6">
-
-            {{-- ==================== CONTENT CARD ==================== --}}
-            <div class="bg-white rounded-2xl shadow-sm border border-gray-100 p-6 lg:p-8">
-                {{-- Status + user + dates --}}
-                <div class="flex flex-wrap items-center gap-3 mb-6">
-                    <x-status-badge :status="$post->status" />
-                    @if($post->user)
-                        <span class="text-xs text-gray-400">par {{ $post->user->name }}</span>
-                    @endif
-                    <span class="text-xs text-gray-400">&middot; Créé le {{ $post->created_at->format('d/m/Y H:i') }}</span>
-                    @if($post->published_at)
-                        <span class="text-xs text-gray-400">&middot; Publié le {{ $post->published_at->format('d/m/Y H:i') }}</span>
-                    @elseif($post->scheduled_at)
-                        <span class="text-xs text-gray-400">&middot; Programmé le {{ $post->scheduled_at->format('d/m/Y H:i') }}</span>
-                    @endif
-                </div>
-
-                <div class="space-y-6">
-                    {{-- Contenu par défaut --}}
-                    <div>
-                        <h3 class="text-sm font-medium text-gray-500 mb-2">Contenu par défaut</h3>
-                        <div class="text-sm text-gray-900 whitespace-pre-line bg-gray-50 rounded-xl p-4 leading-relaxed">{{ $post->content_fr }}</div>
-                    </div>
-
-                    {{-- Contenu par plateforme --}}
-                    @if($post->platform_contents)
-                        @php
-                            $platformLabels = [
-                                'facebook' => 'Facebook', 'instagram' => 'Instagram',
-                                'threads' => 'Threads', 'twitter' => 'Twitter / X',
-                                'telegram' => 'Telegram', 'youtube' => 'YouTube',
-                            ];
-                        @endphp
-                        @foreach($post->platform_contents as $slug => $text)
-                            @if($text)
-                                <div>
-                                    <h3 class="text-sm font-medium text-gray-500 mb-2 flex items-center gap-2">
-                                        <x-platform-icon :platform="$slug" size="sm" />
-                                        Contenu {{ $platformLabels[$slug] ?? ucfirst($slug) }}
-                                    </h3>
-                                    <div class="text-sm text-gray-900 whitespace-pre-line bg-gray-50 rounded-xl p-4 leading-relaxed">{{ $text }}</div>
-                                </div>
-                            @endif
-                        @endforeach
-                    @endif
-
-                    {{-- Traductions --}}
-                    @php
-                        $langLabels = ['en' => 'Anglais', 'pt' => 'Portugais', 'es' => 'Espagnol', 'de' => 'Allemand', 'it' => 'Italien'];
-                        $translations = $post->translations ?? [];
-                        if ($post->content_en && empty($translations['en'])) {
-                            $translations['en'] = $post->content_en;
-                        }
-                    @endphp
-                    @foreach($translations as $lang => $text)
-                        @if($text)
-                            <div>
-                                <h3 class="text-sm font-medium text-gray-500 mb-2">Contenu {{ $langLabels[$lang] ?? strtoupper($lang) }}</h3>
-                                <div class="text-sm text-gray-900 whitespace-pre-line bg-gray-50 rounded-xl p-4 leading-relaxed">{{ $text }}</div>
-                            </div>
-                        @endif
-                    @endforeach
-
-                    {{-- Hashtags --}}
-                    @if($post->hashtags)
-                        <div>
-                            <h3 class="text-sm font-medium text-gray-500 mb-2">Hashtags</h3>
-                            <p class="text-sm text-indigo-600">{{ $post->hashtags }}</p>
-                        </div>
-                    @endif
-
-                    {{-- Lien URL --}}
-                    @if($post->link_url)
-                        <div>
-                            <h3 class="text-sm font-medium text-gray-500 mb-2">URL du lien</h3>
-                            <a href="{{ $post->link_url }}" target="_blank" rel="noopener noreferrer"
-                               class="inline-flex items-center gap-2 text-sm text-indigo-600 hover:text-indigo-700 transition-colors">
-                                <svg class="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1.5">
-                                    <path stroke-linecap="round" stroke-linejoin="round" d="M13.19 8.688a4.5 4.5 0 0 1 1.242 7.244l-4.5 4.5a4.5 4.5 0 0 1-6.364-6.364l1.757-1.757m13.35-.622 1.757-1.757a4.5 4.5 0 0 0-6.364-6.364l-4.5 4.5a4.5 4.5 0 0 0 1.242 7.244" />
-                                </svg>
-                                {{ $post->link_url }}
-                            </a>
-                        </div>
-                    @endif
-
-                    {{-- Location --}}
-                    @if($post->location_name)
-                        <div>
-                            <h3 class="text-sm font-medium text-gray-500 mb-2">Localisation</h3>
-                            <div class="inline-flex items-center gap-2 text-sm text-gray-700">
-                                <svg class="w-4 h-4 text-indigo-500 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1.5">
-                                    <path stroke-linecap="round" stroke-linejoin="round" d="M15 10.5a3 3 0 1 1-6 0 3 3 0 0 1 6 0Z" />
-                                    <path stroke-linecap="round" stroke-linejoin="round" d="M19.5 10.5c0 7.142-7.5 11.25-7.5 11.25S4.5 17.642 4.5 10.5a7.5 7.5 0 1 1 15 0Z" />
-                                </svg>
-                                {{ $post->location_name }}
-                            </div>
-                        </div>
-                    @endif
-                </div>
-            </div>
 
             {{-- ==================== STATISTICS CARD ==================== --}}
             @php
@@ -318,6 +218,106 @@
                     @endif
                 </div>
             @endif
+
+            {{-- ==================== CONTENT CARD ==================== --}}
+            <div class="bg-white rounded-2xl shadow-sm border border-gray-100 p-6 lg:p-8">
+                {{-- Status + user + dates --}}
+                <div class="flex flex-wrap items-center gap-3 mb-6">
+                    <x-status-badge :status="$post->status" />
+                    @if($post->user)
+                        <span class="text-xs text-gray-400">par {{ $post->user->name }}</span>
+                    @endif
+                    <span class="text-xs text-gray-400">&middot; Créé le {{ $post->created_at->format('d/m/Y H:i') }}</span>
+                    @if($post->published_at)
+                        <span class="text-xs text-gray-400">&middot; Publié le {{ $post->published_at->format('d/m/Y H:i') }}</span>
+                    @elseif($post->scheduled_at)
+                        <span class="text-xs text-gray-400">&middot; Programmé le {{ $post->scheduled_at->format('d/m/Y H:i') }}</span>
+                    @endif
+                </div>
+
+                <div class="space-y-6">
+                    {{-- Contenu par défaut --}}
+                    <div>
+                        <h3 class="text-sm font-medium text-gray-500 mb-2">Contenu par défaut</h3>
+                        <div class="text-sm text-gray-900 whitespace-pre-line bg-gray-50 rounded-xl p-4 leading-relaxed">{{ $post->content_fr }}</div>
+                    </div>
+
+                    {{-- Contenu par plateforme --}}
+                    @if($post->platform_contents)
+                        @php
+                            $platformLabels = [
+                                'facebook' => 'Facebook', 'instagram' => 'Instagram',
+                                'threads' => 'Threads', 'twitter' => 'Twitter / X',
+                                'telegram' => 'Telegram', 'youtube' => 'YouTube',
+                            ];
+                        @endphp
+                        @foreach($post->platform_contents as $slug => $text)
+                            @if($text)
+                                <div>
+                                    <h3 class="text-sm font-medium text-gray-500 mb-2 flex items-center gap-2">
+                                        <x-platform-icon :platform="$slug" size="sm" />
+                                        Contenu {{ $platformLabels[$slug] ?? ucfirst($slug) }}
+                                    </h3>
+                                    <div class="text-sm text-gray-900 whitespace-pre-line bg-gray-50 rounded-xl p-4 leading-relaxed">{{ $text }}</div>
+                                </div>
+                            @endif
+                        @endforeach
+                    @endif
+
+                    {{-- Traductions --}}
+                    @php
+                        $langLabels = ['en' => 'Anglais', 'pt' => 'Portugais', 'es' => 'Espagnol', 'de' => 'Allemand', 'it' => 'Italien'];
+                        $translations = $post->translations ?? [];
+                        if ($post->content_en && empty($translations['en'])) {
+                            $translations['en'] = $post->content_en;
+                        }
+                    @endphp
+                    @foreach($translations as $lang => $text)
+                        @if($text)
+                            <div>
+                                <h3 class="text-sm font-medium text-gray-500 mb-2">Contenu {{ $langLabels[$lang] ?? strtoupper($lang) }}</h3>
+                                <div class="text-sm text-gray-900 whitespace-pre-line bg-gray-50 rounded-xl p-4 leading-relaxed">{{ $text }}</div>
+                            </div>
+                        @endif
+                    @endforeach
+
+                    {{-- Hashtags --}}
+                    @if($post->hashtags)
+                        <div>
+                            <h3 class="text-sm font-medium text-gray-500 mb-2">Hashtags</h3>
+                            <p class="text-sm text-indigo-600">{{ $post->hashtags }}</p>
+                        </div>
+                    @endif
+
+                    {{-- Lien URL --}}
+                    @if($post->link_url)
+                        <div>
+                            <h3 class="text-sm font-medium text-gray-500 mb-2">URL du lien</h3>
+                            <a href="{{ $post->link_url }}" target="_blank" rel="noopener noreferrer"
+                               class="inline-flex items-center gap-2 text-sm text-indigo-600 hover:text-indigo-700 transition-colors">
+                                <svg class="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1.5">
+                                    <path stroke-linecap="round" stroke-linejoin="round" d="M13.19 8.688a4.5 4.5 0 0 1 1.242 7.244l-4.5 4.5a4.5 4.5 0 0 1-6.364-6.364l1.757-1.757m13.35-.622 1.757-1.757a4.5 4.5 0 0 0-6.364-6.364l-4.5 4.5a4.5 4.5 0 0 0 1.242 7.244" />
+                                </svg>
+                                {{ $post->link_url }}
+                            </a>
+                        </div>
+                    @endif
+
+                    {{-- Location --}}
+                    @if($post->location_name)
+                        <div>
+                            <h3 class="text-sm font-medium text-gray-500 mb-2">Localisation</h3>
+                            <div class="inline-flex items-center gap-2 text-sm text-gray-700">
+                                <svg class="w-4 h-4 text-indigo-500 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1.5">
+                                    <path stroke-linecap="round" stroke-linejoin="round" d="M15 10.5a3 3 0 1 1-6 0 3 3 0 0 1 6 0Z" />
+                                    <path stroke-linecap="round" stroke-linejoin="round" d="M19.5 10.5c0 7.142-7.5 11.25-7.5 11.25S4.5 17.642 4.5 10.5a7.5 7.5 0 1 1 15 0Z" />
+                                </svg>
+                                {{ $post->location_name }}
+                            </div>
+                        </div>
+                    @endif
+                </div>
+            </div>
 
             {{-- ==================== LOGS CARD ==================== --}}
             <div class="bg-white rounded-2xl shadow-sm border border-gray-100">
