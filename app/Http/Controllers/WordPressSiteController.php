@@ -286,7 +286,7 @@ class WordPressSiteController extends Controller
         }
 
         $count = (int) $request->input('count', 3);
-        $count = max(1, min(20, $count));
+        $count = max(1, min(60, $count));
 
         $wpSource->load(['socialAccounts.platform']);
 

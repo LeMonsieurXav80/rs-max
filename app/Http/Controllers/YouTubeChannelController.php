@@ -253,7 +253,7 @@ class YouTubeChannelController extends Controller
         }
 
         $count = (int) $request->input('count', 3);
-        $count = max(1, min(20, $count));
+        $count = max(1, min(60, $count));
 
         $ytSource->load(['socialAccounts.platform']);
 

@@ -62,7 +62,7 @@
         <div class="flex items-end gap-4">
             <div class="flex-1">
                 <label for="postCount" class="block text-sm font-medium text-gray-700 mb-1">Nombre de publications à générer</label>
-                <input type="number" id="postCount" min="1" max="20" x-model.number="postCount"
+                <input type="number" id="postCount" min="1" max="60" x-model.number="postCount"
                        class="w-32 rounded-xl border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 text-sm">
             </div>
             <button type="button" @click="generate()" :disabled="generating"
