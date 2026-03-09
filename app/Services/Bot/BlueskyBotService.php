@@ -141,7 +141,7 @@ class BlueskyBotService
         $response = Http::get(self::PUBLIC_API . '/xrpc/app.bsky.feed.searchPosts', [
             'q' => $query,
             'sort' => 'top',
-            'limit' => min($limit, 25),
+            'limit' => min($limit, 50),
         ]);
 
         if (! $response->successful()) {
@@ -196,10 +196,77 @@ class BlueskyBotService
                 $likesCount++;
             }
 
+            // Follow reply author if they follow > 500 people (likely to follow back)
+            if ($authorDid && ! $this->alreadyActioned($account->id, "follow:{$authorDid}")) {
+                $this->followIfHighFollowing($account, $auth, $authorDid, $replyPost['author']['handle'] ?? $authorDid);
+            }
+
             usleep(300_000); // 300ms between reply likes
         }
 
         return $likesCount;
+    }
+
+    private function followIfHighFollowing(SocialAccount $account, array $auth, string $did, string $handle): void
+    {
+        $response = Http::get(self::PUBLIC_API . '/xrpc/app.bsky.actor.getProfile', [
+            'actor' => $did,
+        ]);
+
+        if (! $response->successful()) {
+            return;
+        }
+
+        $followsCount = $response->json('followsCount', 0);
+
+        if ($followsCount < 500) {
+            return;
+        }
+
+        // Check if we already follow them
+        if ($response->json('viewer.following')) {
+            return;
+        }
+
+        $success = $this->followActor($auth, $did);
+
+        BotActionLog::create([
+            'social_account_id' => $account->id,
+            'action_type' => 'follow_active_user',
+            'target_uri' => "follow:{$did}",
+            'target_author' => $handle,
+            'target_text' => "followsCount: {$followsCount}",
+            'search_term' => null,
+            'success' => $success,
+        ]);
+
+        usleep(300_000);
+    }
+
+    private function followActor(array $auth, string $did): bool
+    {
+        $response = Http::withToken($auth['accessJwt'])
+            ->post(self::PDS_BASE . '/xrpc/com.atproto.repo.createRecord', [
+                'repo' => $auth['did'],
+                'collection' => 'app.bsky.graph.follow',
+                'record' => [
+                    '$type' => 'app.bsky.graph.follow',
+                    'subject' => $did,
+                    'createdAt' => now()->toIso8601ZuluString(),
+                ],
+            ]);
+
+        if (! $response->successful()) {
+            Log::warning('BlueskyBotService: follow failed', [
+                'did' => $did,
+                'status' => $response->status(),
+                'error' => $response->json('message'),
+            ]);
+
+            return false;
+        }
+
+        return true;
     }
 
     // ─── 2. Like-back ────────────────────────────────────────────────

@@ -409,6 +409,10 @@
                                         $thumb = is_string($first) ? $first : ($first['url'] ?? null);
                                     }
                                 }
+                                // Fallback: source image (WP featured image or YT thumbnail)
+                                if (!$thumb) {
+                                    $thumb = $post->source_image_url;
+                                }
                             @endphp
 
                             <a href="{{ route('posts.show', $post) }}" target="_blank" class="flex-shrink-0">

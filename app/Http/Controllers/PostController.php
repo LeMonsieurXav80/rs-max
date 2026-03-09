@@ -57,6 +57,10 @@ class PostController extends Controller
             'postPlatforms.platform',
             'postPlatforms.socialAccount',
             'user',
+            'wpPost.wpItem',
+            'ytPost.ytItem',
+            'rssPost.rssItem',
+            'redditPost.redditItem',
         ]);
 
         // Admin sees all posts, regular user sees only own posts
@@ -110,6 +114,10 @@ class PostController extends Controller
             'postPlatforms.platform',
             'postPlatforms.socialAccount',
             'user',
+            'wpPost.wpItem',
+            'ytPost.ytItem',
+            'rssPost.rssItem',
+            'redditPost.redditItem',
         ]);
         if (! $user->isAdmin()) {
             $calendarQuery->where('user_id', $user->id);

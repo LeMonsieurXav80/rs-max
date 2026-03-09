@@ -186,6 +186,89 @@
                                     <span x-text="(pub.platform_contents[accountId].content || '').length"></span> caractères
                                 </p>
                             </div>
+
+                            {{-- Social preview card --}}
+                            <div class="mt-4" x-show="pub.platform_contents[accountId].content">
+                                <p class="text-xs font-medium text-gray-500 mb-2 uppercase tracking-wide">Apercu</p>
+
+                                {{-- Facebook-style preview --}}
+                                <template x-if="['facebook', 'instagram'].includes(pub.platform_contents[accountId].platform_slug)">
+                                    <div class="border border-gray-200 rounded-xl overflow-hidden max-w-lg bg-white shadow-sm">
+                                        {{-- Header --}}
+                                        <div class="flex items-center gap-2.5 px-3 py-2.5">
+                                            <div class="w-10 h-10 rounded-full bg-blue-100 flex items-center justify-center text-blue-600 font-bold text-sm" x-text="pub.platform_contents[accountId].account_name.charAt(0).toUpperCase()"></div>
+                                            <div>
+                                                <p class="text-sm font-semibold text-gray-900" x-text="pub.platform_contents[accountId].account_name"></p>
+                                                <p class="text-xs text-gray-500" x-text="pub.scheduled_at_human"></p>
+                                            </div>
+                                        </div>
+                                        {{-- Text --}}
+                                        <div class="px-3 pb-2">
+                                            <p class="text-sm text-gray-900 whitespace-pre-line" x-text="pub.platform_contents[accountId].content"></p>
+                                        </div>
+                                        {{-- Image --}}
+                                        <template x-if="pub.image_url">
+                                            <img :src="pub.image_url" class="w-full aspect-[1.91/1] object-cover" :alt="pub.title">
+                                        </template>
+                                        {{-- Link card --}}
+                                        <div class="border-t border-gray-200 bg-gray-50 px-3 py-2">
+                                            <p class="text-xs text-gray-500 uppercase" x-text="new URL(pub.url).hostname"></p>
+                                            <p class="text-sm font-semibold text-gray-900 line-clamp-2" x-text="pub.title"></p>
+                                        </div>
+                                    </div>
+                                </template>
+
+                                {{-- Twitter-style preview --}}
+                                <template x-if="['twitter', 'bluesky', 'threads'].includes(pub.platform_contents[accountId].platform_slug)">
+                                    <div class="border border-gray-200 rounded-2xl overflow-hidden max-w-lg bg-white shadow-sm">
+                                        {{-- Header --}}
+                                        <div class="flex items-start gap-2.5 px-3 pt-3">
+                                            <div class="w-10 h-10 rounded-full bg-gray-800 flex items-center justify-center text-white font-bold text-sm flex-shrink-0" x-text="pub.platform_contents[accountId].account_name.charAt(0).toUpperCase()"></div>
+                                            <div class="min-w-0 flex-1">
+                                                <div class="flex items-center gap-1">
+                                                    <p class="text-sm font-bold text-gray-900 truncate" x-text="pub.platform_contents[accountId].account_name"></p>
+                                                    <span class="text-gray-500 text-sm">&middot;</span>
+                                                    <span class="text-sm text-gray-500 flex-shrink-0" x-text="pub.scheduled_at_human?.split(' ').slice(0,3).join(' ')"></span>
+                                                </div>
+                                                {{-- Tweet text --}}
+                                                <p class="text-sm text-gray-900 whitespace-pre-line mt-0.5" x-text="pub.platform_contents[accountId].content"></p>
+                                                {{-- Image card --}}
+                                                <template x-if="pub.image_url">
+                                                    <div class="mt-2.5 border border-gray-200 rounded-2xl overflow-hidden">
+                                                        <img :src="pub.image_url" class="w-full aspect-[1.91/1] object-cover" :alt="pub.title">
+                                                        <div class="px-3 py-2">
+                                                            <p class="text-xs text-gray-500" x-text="new URL(pub.url).hostname"></p>
+                                                            <p class="text-sm text-gray-900 line-clamp-2" x-text="pub.title"></p>
+                                                        </div>
+                                                    </div>
+                                                </template>
+                                                {{-- Engagement bar --}}
+                                                <div class="flex items-center justify-between py-2 mt-1 text-gray-500 max-w-xs">
+                                                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1.5"><path stroke-linecap="round" stroke-linejoin="round" d="M12 20.25c4.97 0 9-3.694 9-8.25s-4.03-8.25-9-8.25S3 7.444 3 12c0 2.104.859 4.023 2.273 5.48.432.447.74 1.04.586 1.641a4.483 4.483 0 0 1-.923 1.785A5.969 5.969 0 0 0 6 21c1.282 0 2.47-.402 3.445-1.087.81.22 1.668.337 2.555.337Z" /></svg>
+                                                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1.5"><path stroke-linecap="round" stroke-linejoin="round" d="M19.5 12c0-1.232-.046-2.453-.138-3.662a4.006 4.006 0 0 0-3.7-3.7 48.678 48.678 0 0 0-7.324 0 4.006 4.006 0 0 0-3.7 3.7c-.017.22-.032.441-.046.662M19.5 12l3-3m-3 3-3-3m-12 3c0 1.232.046 2.453.138 3.662a4.006 4.006 0 0 0 3.7 3.7 48.656 48.656 0 0 0 7.324 0 4.006 4.006 0 0 0 3.7-3.7c.017-.22.032-.441.046-.662M4.5 12l3 3m-3-3-3 3" /></svg>
+                                                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1.5"><path stroke-linecap="round" stroke-linejoin="round" d="M21 8.25c0-2.485-2.099-4.5-4.688-4.5-1.935 0-3.597 1.126-4.312 2.733-.715-1.607-2.377-2.733-4.313-2.733C5.1 3.75 3 5.765 3 8.25c0 7.22 9 12 9 12s9-4.78 9-12Z" /></svg>
+                                                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1.5"><path stroke-linecap="round" stroke-linejoin="round" d="M3 16.5v2.25A2.25 2.25 0 0 0 5.25 21h13.5A2.25 2.25 0 0 0 21 18.75V16.5m-13.5-9L12 3m0 0 4.5 4.5M12 3v13.5" /></svg>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </template>
+
+                                {{-- Telegram-style preview --}}
+                                <template x-if="pub.platform_contents[accountId].platform_slug === 'telegram'">
+                                    <div class="max-w-lg">
+                                        <div class="bg-[#e1ffc7] rounded-xl rounded-br-sm px-3 py-2 shadow-sm inline-block max-w-md">
+                                            <template x-if="pub.image_url">
+                                                <img :src="pub.image_url" class="rounded-lg mb-2 max-h-48 object-cover" :alt="pub.title">
+                                            </template>
+                                            <p class="text-sm text-gray-900 whitespace-pre-line" x-text="pub.platform_contents[accountId].content"></p>
+                                            <div class="flex items-center justify-end gap-1 mt-1">
+                                                <span class="text-[10px] text-gray-500" x-text="pub.scheduled_at_human?.split(' à ')[1] || ''"></span>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </template>
+                            </div>
                         </div>
                     </template>
                 </div>

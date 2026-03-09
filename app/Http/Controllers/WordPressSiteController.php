@@ -333,6 +333,7 @@ class WordPressSiteController extends Controller
                 'wp_item_id' => $item->id,
                 'title' => $item->title,
                 'url' => $item->url,
+                'image_url' => $item->image_url,
                 'post_type' => $item->post_type,
                 'usage_count' => $item->usage_count,
                 'scheduled_at' => $dates[$index]->format('Y-m-d H:i'),
