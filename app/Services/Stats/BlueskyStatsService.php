@@ -32,10 +32,11 @@ class BlueskyStatsService implements PlatformStatsInterface
             }
 
             return [
-                'views' => null, // Bluesky doesn't expose view counts
+                'views' => null, // Bluesky API doesn't expose view counts (not in postView schema)
                 'likes' => $raw['like_count'],
                 'comments' => $raw['reply_count'],
                 'shares' => $raw['repost_count'] + $raw['quote_count'],
+                'bookmarks' => $raw['bookmark_count'],
                 'followers' => null,
             ];
         } catch (\Throwable $e) {

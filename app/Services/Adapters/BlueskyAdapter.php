@@ -587,6 +587,7 @@ class BlueskyAdapter implements PlatformAdapterInterface, ThreadableAdapterInter
             'repost_count' => $post['repostCount'] ?? 0,
             'reply_count' => $post['replyCount'] ?? 0,
             'quote_count' => $post['quoteCount'] ?? 0,
+            'bookmark_count' => $post['bookmarkCount'] ?? 0,
         ] : null;
     }
 }
