@@ -29,7 +29,8 @@ for var in APP_NAME APP_ENV APP_DEBUG APP_URL APP_KEY \
            DB_CONNECTION DB_HOST DB_PORT DB_DATABASE DB_USERNAME DB_PASSWORD \
            MAIL_MAILER MAIL_HOST MAIL_PORT MAIL_USERNAME MAIL_PASSWORD \
            MAIL_FROM_ADDRESS MAIL_FROM_NAME \
-           SESSION_DRIVER CACHE_STORE QUEUE_CONNECTION \
+           SESSION_DRIVER SESSION_DOMAIN CACHE_STORE QUEUE_CONNECTION \
+           TRUSTED_PROXIES \
            FACEBOOK_APP_ID FACEBOOK_APP_SECRET FACEBOOK_CONFIG_ID \
            THREADS_APP_ID THREADS_APP_SECRET \
            YOUTUBE_CLIENT_ID YOUTUBE_CLIENT_SECRET \
@@ -46,6 +47,18 @@ for var in APP_NAME APP_ENV APP_DEBUG APP_URL APP_KEY \
 done
 
 chown www-data:www-data /var/www/html/.env
+
+# Apply production defaults if not explicitly set via environment
+if ! grep -q "^APP_ENV=production" /var/www/html/.env && [ -z "$APP_ENV" ]; then
+    sed -i "s/^APP_ENV=.*/APP_ENV=production/" /var/www/html/.env
+fi
+if ! grep -q "^APP_DEBUG=false" /var/www/html/.env && [ -z "$APP_DEBUG" ]; then
+    sed -i "s/^APP_DEBUG=.*/APP_DEBUG=false/" /var/www/html/.env
+fi
+if ! grep -q "^TRUSTED_PROXIES=" /var/www/html/.env; then
+    echo "TRUSTED_PROXIES=*" >> /var/www/html/.env
+fi
+
 echo ".env configured"
 
 # Generate app key if not set
