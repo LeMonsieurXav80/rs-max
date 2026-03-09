@@ -88,12 +88,31 @@ class StatsController extends Controller
 
         $totalFollowers = $socialAccounts->sum('followers_count');
 
+        // Compute follower deltas for each account (vs 1d, 7d, 14d, 28d ago)
+        $deltas = [];
+        $deltaPeriods = [1, 7, 14, 28];
+        foreach ($socialAccounts as $account) {
+            if (! empty($selectedAccounts) && ! in_array($account->id, $selectedAccounts)) {
+                continue;
+            }
+            $accountDeltas = [];
+            foreach ($deltaPeriods as $days) {
+                $pastSnapshot = SocialAccountSnapshot::where('social_account_id', $account->id)
+                    ->where('date', '<=', now()->subDays($days)->toDateString())
+                    ->orderByDesc('date')
+                    ->first();
+                $accountDeltas[$days] = $pastSnapshot ? ($account->followers_count - $pastSnapshot->followers_count) : null;
+            }
+            $deltas[$account->id] = $accountDeltas;
+        }
+
         return view('stats.audience', compact(
             'socialAccounts',
             'selectedAccounts',
             'period',
             'chartData',
             'totalFollowers',
+            'deltas',
         ));
     }
 

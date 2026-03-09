@@ -41,46 +41,86 @@
         </div>
 
         {{-- Current followers by account --}}
-        <div class="bg-white rounded-2xl shadow-sm border border-gray-100">
-            <div class="px-6 py-5 border-b border-gray-100">
+        <div class="bg-white rounded-2xl shadow-sm border border-gray-100" x-data="{ deltaPeriod: 1 }">
+            <div class="px-6 py-5 border-b border-gray-100 flex items-center justify-between flex-wrap gap-3">
                 <h2 class="text-base font-semibold text-gray-900">Abonnés par compte</h2>
+                <div class="flex items-center gap-1 bg-gray-100 rounded-lg p-0.5">
+                    @foreach([1 => '1J', 7 => '7J', 14 => '14J', 28 => '28J'] as $days => $label)
+                        <button type="button"
+                                @click="deltaPeriod = {{ $days }}"
+                                :class="deltaPeriod === {{ $days }} ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500 hover:text-gray-700'"
+                                class="px-3 py-1 text-xs font-medium rounded-md transition-all">
+                            {{ $label }}
+                        </button>
+                    @endforeach
+                </div>
             </div>
-            <div class="divide-y divide-gray-50">
-                @foreach($socialAccounts->sortByDesc('followers_count') as $account)
-                    <div class="px-6 py-4 flex items-center gap-4">
-                        {{-- Profile picture --}}
-                        <div class="relative flex-shrink-0">
-                            @if($account->profile_picture_url)
-                                <img src="{{ $account->profile_picture_url }}" alt="" class="w-10 h-10 rounded-full object-cover">
-                            @else
-                                <div class="w-10 h-10 rounded-full bg-gray-200 flex items-center justify-center">
-                                    <x-platform-icon :platform="$account->platform->slug" size="sm" />
+            <div class="p-6">
+                <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+                    @foreach($socialAccounts->sortByDesc('followers_count') as $account)
+                        @if(empty($selectedAccounts) || in_array($account->id, $selectedAccounts))
+                        <div class="border border-gray-100 rounded-xl p-4 hover:border-gray-200 transition-colors">
+                            <div class="flex items-center gap-3 mb-3">
+                                {{-- Profile picture --}}
+                                <div class="relative flex-shrink-0">
+                                    @if($account->profile_picture_url)
+                                        <img src="{{ $account->profile_picture_url }}" alt="" class="w-10 h-10 rounded-full object-cover">
+                                    @else
+                                        <div class="w-10 h-10 rounded-full bg-gray-200 flex items-center justify-center">
+                                            <x-platform-icon :platform="$account->platform->slug" size="sm" />
+                                        </div>
+                                    @endif
+                                    <div class="absolute -bottom-0.5 -right-0.5 w-4.5 h-4.5 rounded-full bg-white shadow flex items-center justify-center">
+                                        <x-platform-icon :platform="$account->platform->slug" size="xs" />
+                                    </div>
                                 </div>
-                            @endif
-                            <div class="absolute bottom-0 right-0 w-5 h-5 rounded-full bg-white shadow flex items-center justify-center">
-                                <x-platform-icon :platform="$account->platform->slug" size="xs" />
+                                <div class="min-w-0 flex-1">
+                                    <p class="text-sm font-medium text-gray-900 truncate">{{ $account->name }}</p>
+                                    <p class="text-xs text-gray-500">{{ $account->platform->name }}</p>
+                                </div>
+                            </div>
+
+                            <div class="flex items-end justify-between">
+                                <div>
+                                    <p class="text-2xl font-bold text-gray-900">
+                                        {{ $account->followers_count !== null ? number_format($account->followers_count, 0, ',', ' ') : '-' }}
+                                    </p>
+                                    <p class="text-xs text-gray-400 mt-0.5">
+                                        @if($account->followers_synced_at)
+                                            MAJ {{ $account->followers_synced_at->diffForHumans() }}
+                                        @endif
+                                    </p>
+                                </div>
+
+                                {{-- Delta badges --}}
+                                @if(isset($deltas[$account->id]))
+                                    @foreach([1, 7, 14, 28] as $days)
+                                        @php $delta = $deltas[$account->id][$days] ?? null; @endphp
+                                        <div x-show="deltaPeriod === {{ $days }}" x-cloak>
+                                            @if($delta !== null)
+                                                <span class="inline-flex items-center gap-0.5 px-2 py-1 rounded-lg text-xs font-semibold
+                                                    {{ $delta > 0 ? 'bg-green-50 text-green-700' : ($delta < 0 ? 'bg-red-50 text-red-700' : 'bg-gray-50 text-gray-500') }}">
+                                                    @if($delta > 0)
+                                                        <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M4.5 19.5l15-15m0 0H8.25m11.25 0v11.25" /></svg>
+                                                        +{{ number_format($delta, 0, ',', ' ') }}
+                                                    @elseif($delta < 0)
+                                                        <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M4.5 4.5l15 15m0 0V8.25m0 11.25H8.25" /></svg>
+                                                        {{ number_format($delta, 0, ',', ' ') }}
+                                                    @else
+                                                        =
+                                                    @endif
+                                                </span>
+                                            @else
+                                                <span class="text-xs text-gray-300">--</span>
+                                            @endif
+                                        </div>
+                                    @endforeach
+                                @endif
                             </div>
                         </div>
-
-                        {{-- Name --}}
-                        <div class="flex-1 min-w-0">
-                            <p class="text-sm font-medium text-gray-900 truncate">{{ $account->name }}</p>
-                            <p class="text-xs text-gray-500">{{ $account->platform->name }}</p>
-                        </div>
-
-                        {{-- Followers --}}
-                        <div class="text-right">
-                            <p class="text-lg font-bold text-gray-900">
-                                {{ $account->followers_count !== null ? number_format($account->followers_count, 0, ',', ' ') : '-' }}
-                            </p>
-                            <p class="text-xs text-gray-400">
-                                @if($account->followers_synced_at)
-                                    MAJ {{ $account->followers_synced_at->diffForHumans() }}
-                                @endif
-                            </p>
-                        </div>
-                    </div>
-                @endforeach
+                        @endif
+                    @endforeach
+                </div>
             </div>
         </div>
 
@@ -100,7 +140,7 @@
         ];
 
         const datasets = chartData.map((item, index) => ({
-            label: item.account.name,
+            label: item.account.platform.name + ' — ' + item.account.name,
             data: item.labels.map((label, i) => ({
                 x: label,
                 y: item.data[i],
