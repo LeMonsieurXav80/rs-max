@@ -38,7 +38,7 @@ for var in APP_NAME APP_ENV APP_DEBUG APP_URL APP_KEY \
            DEPLOY_API_URL DEPLOY_API_TOKEN DEPLOY_APP_UUID \
            DEPLOY_GIT_REPO DEPLOY_GIT_BRANCH \
            OPENAI_API_KEY; do
-    val=$(eval echo \$$var)
+    val=$(eval "echo \"\$$var\"")
     if [ -n "$val" ]; then
         # Remove existing line and append new value
         sed -i "/^${var}=/d" /var/www/html/.env
