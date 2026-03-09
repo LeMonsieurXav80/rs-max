@@ -24,13 +24,19 @@ return new class extends Migration
             $table->string('author_external_id')->nullable();
 
             $table->text('content')->nullable();
+            $table->string('media_url', 1024)->nullable();
+            $table->string('media_type', 20)->nullable(); // image, gif, video, sticker
             $table->string('post_url', 1024)->nullable();
             $table->timestamp('posted_at')->nullable();
 
-            $table->string('status', 20)->default('unread')->index(); // unread, read, replied, archived
+            $table->string('status', 20)->default('unread')->index(); // unread, read, replied, archived, ignored
             $table->text('reply_content')->nullable();
             $table->string('reply_external_id')->nullable();
             $table->timestamp('replied_at')->nullable();
+            $table->timestamp('reply_scheduled_at')->nullable();
+            $table->unsignedTinyInteger('reply_attempts')->default(0);
+
+            $table->string('conversation_key')->nullable()->index();
 
             $table->timestamps();
 

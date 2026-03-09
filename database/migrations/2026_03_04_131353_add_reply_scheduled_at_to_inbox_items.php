@@ -8,6 +8,10 @@ return new class extends Migration
 {
     public function up(): void
     {
+        if (! Schema::hasTable('inbox_items')) {
+            return;
+        }
+
         Schema::table('inbox_items', function (Blueprint $table) {
             $table->timestamp('reply_scheduled_at')->nullable()->after('replied_at');
         });

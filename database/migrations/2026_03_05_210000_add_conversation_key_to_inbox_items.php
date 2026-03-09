@@ -9,9 +9,11 @@ return new class extends Migration
 {
     public function up(): void
     {
-        Schema::table('inbox_items', function (Blueprint $table) {
-            $table->string('conversation_key')->nullable()->after('parent_id')->index();
-        });
+        if (! Schema::hasColumn('inbox_items', 'conversation_key')) {
+            Schema::table('inbox_items', function (Blueprint $table) {
+                $table->string('conversation_key')->nullable()->after('parent_id')->index();
+            });
+        }
 
         // Backfill existing items
         // DMs: group by chat/conversation (external_post_id)

@@ -8,6 +8,10 @@ return new class extends Migration
 {
     public function up(): void
     {
+        if (! Schema::hasTable('inbox_items')) {
+            return;
+        }
+
         Schema::table('inbox_items', function (Blueprint $table) {
             $table->string('media_url', 1024)->nullable()->after('content');
             $table->string('media_type', 20)->nullable()->after('media_url'); // image, gif, video, sticker
