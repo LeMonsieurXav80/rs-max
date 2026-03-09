@@ -87,7 +87,7 @@ class ThreadPublishingService
             // Inject the first post's URL into the last segment.
             if ($segment->position === $lastPosition && $firstExternalId) {
                 $firstPostUrl = $firstPostPermalink
-                    ?? $this->buildPostUrl($account->platform->slug, $account->platform_account_id, $firstExternalId);
+                    ?? $this->buildPostUrl($account, $firstExternalId);
                 if ($firstPostUrl) {
                     $content .= "\n\n" . $firstPostUrl;
                 }
@@ -439,12 +439,14 @@ class ThreadPublishingService
         }
     }
 
-    private function buildPostUrl(string $platformSlug, string $handle, string $externalId): ?string
+    private function buildPostUrl(SocialAccount $account, string $externalId): ?string
     {
-        return match ($platformSlug) {
-            'twitter' => "https://x.com/{$handle}/status/{$externalId}",
-            'threads' => "https://www.threads.net/@{$handle}/post/{$externalId}",
-            'bluesky' => BlueskyAdapter::buildPostUrl($handle, $externalId),
+        $slug = $account->platform->slug;
+
+        return match ($slug) {
+            'twitter' => "https://x.com/{$account->platform_account_id}/status/{$externalId}",
+            'threads' => "https://www.threads.net/@{$account->name}/post/{$externalId}",
+            'bluesky' => BlueskyAdapter::buildPostUrl($account->credentials['handle'] ?? $account->name, $externalId),
             default => null,
         };
     }
