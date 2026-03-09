@@ -82,7 +82,7 @@ class InstagramStatsService implements PlatformStatsInterface
                 'likes' => $data['like_count'] ?? 0,
                 'comments' => $data['comments_count'] ?? 0,
                 'shares' => $shares,
-                'saved' => $saved,
+                'bookmarks' => $saved,
                 'followers' => $followersCount,
             ];
         } catch (\Throwable $e) {

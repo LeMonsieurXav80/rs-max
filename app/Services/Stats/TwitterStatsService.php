@@ -70,6 +70,7 @@ class TwitterStatsService implements PlatformStatsInterface
                 'likes' => $metrics['like_count'] ?? 0,
                 'comments' => $metrics['reply_count'] ?? 0,
                 'shares' => $metrics['retweet_count'] ?? 0,
+                'bookmarks' => $metrics['bookmark_count'] ?? 0,
                 'followers' => $user['public_metrics']['followers_count'] ?? null,
             ];
         } catch (\Throwable $e) {
