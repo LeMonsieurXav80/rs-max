@@ -74,6 +74,17 @@ if [ "$DB_CONNECTION" = "mysql" ]; then
     echo "Database is ready!"
 fi
 
+# Ensure SQLite database exists with correct permissions
+if [ "$DB_CONNECTION" != "mysql" ]; then
+    DB_PATH="${DB_DATABASE:-/var/www/html/database/database.sqlite}"
+    touch "$DB_PATH"
+    chown www-data:www-data "$DB_PATH"
+    chmod 664 "$DB_PATH"
+    chown www-data:www-data "$(dirname "$DB_PATH")"
+    chmod 775 "$(dirname "$DB_PATH")"
+    echo "SQLite database ready: $DB_PATH"
+fi
+
 # Run migrations
 echo "Running migrations..."
 php artisan migrate --force
