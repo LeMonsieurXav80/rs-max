@@ -123,6 +123,16 @@
             <p class="text-xs text-amber-600 truncate" x-text="currentPost?.caption?.substring(0, 120) + '...'"></p>
         </div>
 
+        {{-- Waiting countdown --}}
+        <div x-show="waitingUntil && !currentPost" class="bg-blue-50 border border-blue-200 rounded-xl p-4">
+            <div class="flex items-center gap-2">
+                <svg class="w-4 h-4 text-blue-500" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M12 6v6h4.5m4.5 0a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z" />
+                </svg>
+                <span class="text-sm font-medium text-blue-700">Prochain post dans <span x-text="countdownText" class="font-bold"></span></span>
+            </div>
+        </div>
+
         {{-- Post list --}}
         <div class="bg-white rounded-xl border border-gray-200 overflow-hidden">
             <div class="max-h-[500px] overflow-y-auto divide-y divide-gray-100">
@@ -203,6 +213,9 @@ function crossPostApp() {
         running: false,
         stopped: false,
         currentPost: null,
+        waitingUntil: null,
+        countdownText: '',
+        countdownInterval: null,
 
         get selectedCount() { return this.posts.filter(p => p.selected).length; },
         get doneCount() { return this.posts.filter(p => p.status === 'done').length; },
@@ -218,6 +231,20 @@ function crossPostApp() {
 
         selectAll() { this.posts.forEach(p => { if (p.status !== 'done') p.selected = true; }); },
         deselectAll() { this.posts.forEach(p => { if (p.status !== 'done') p.selected = false; }); },
+
+        init() {
+            this.countdownInterval = setInterval(() => {
+                if (this.waitingUntil) {
+                    const diff = this.waitingUntil - Date.now();
+                    if (diff <= 0) { this.countdownText = ''; return; }
+                    const m = Math.floor(diff / 60000);
+                    const s = Math.floor((diff % 60000) / 1000);
+                    this.countdownText = `${m}m ${s.toString().padStart(2, '0')}s`;
+                } else {
+                    this.countdownText = '';
+                }
+            }, 1000);
+        },
 
         selectPair(igId, bsId, igName, bsName) {
             this.instagramId = igId;
@@ -243,7 +270,13 @@ function crossPostApp() {
                 });
                 const data = await res.json();
                 if (data.success) {
-                    this.posts = data.posts.map(p => ({ ...p, selected: true, status: null, error: null }));
+                    const doneIds = data.done_ids || [];
+                    this.posts = data.posts.map(p => ({
+                        ...p,
+                        selected: !doneIds.includes(p.id),
+                        status: doneIds.includes(p.id) ? 'done' : null,
+                        error: null,
+                    }));
                 } else {
                     alert(data.error || 'Erreur');
                 }
@@ -306,9 +339,11 @@ function crossPostApp() {
 
                 this.currentPost = null;
 
-                // Pause 5s between posts to avoid rate limits
+                // Pause 1h15 between posts to space out publications
                 if (!this.stopped && i < this.posts.length - 1) {
-                    await new Promise(r => setTimeout(r, 5000));
+                    this.waitingUntil = new Date(Date.now() + 75 * 60 * 1000);
+                    await new Promise(r => setTimeout(r, 75 * 60 * 1000));
+                    this.waitingUntil = null;
                 }
             }
 
@@ -319,6 +354,7 @@ function crossPostApp() {
             this.stopped = true;
             this.running = false;
             this.currentPost = null;
+            this.waitingUntil = null;
         },
     };
 }

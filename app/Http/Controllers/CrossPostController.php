@@ -7,6 +7,7 @@ use App\Services\Adapters\BlueskyAdapter;
 use App\Services\AiAssistService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 use Illuminate\View\View;
@@ -111,10 +112,14 @@ class CrossPostController extends Controller
         // Reverse to get oldest first
         $posts = array_reverse($posts);
 
+        // Get already cross-posted IDs from cache
+        $doneIds = Cache::get("crosspost_done_{$igId}", []);
+
         return response()->json([
             'success' => true,
             'count' => count($posts),
             'posts' => $posts,
+            'done_ids' => $doneIds,
         ]);
     }
 
@@ -224,6 +229,15 @@ class CrossPostController extends Controller
                 $caption ?: '📸',
                 ! empty($blueskyMedia) ? $blueskyMedia : null
             );
+
+            // Remember this post as done (persists 30 days)
+            if ($result['success'] ?? false) {
+                $postId = $request->input('post_id');
+                $cacheKey = "crosspost_done_{$igId}";
+                $doneIds = Cache::get($cacheKey, []);
+                $doneIds[] = $postId;
+                Cache::put($cacheKey, array_unique($doneIds), now()->addDays(30));
+            }
 
             return response()->json($result);
 
