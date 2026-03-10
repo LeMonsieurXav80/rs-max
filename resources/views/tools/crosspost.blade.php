@@ -146,7 +146,7 @@
                          }">
                         {{-- Checkbox / Status icon --}}
                         <div class="flex-shrink-0 w-6">
-                            <template x-if="!post.status">
+                            <template x-if="!post.status || post.status === 'retry'">
                                 <input type="checkbox" x-model="post.selected"
                                     class="w-4 h-4 text-indigo-600 rounded border-gray-300 focus:ring-indigo-500 cursor-pointer"
                                     :disabled="running">
@@ -158,19 +158,31 @@
                                 </svg>
                             </template>
                             <template x-if="post.status === 'done'">
-                                <svg class="w-4 h-4 text-green-500" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2">
-                                    <path stroke-linecap="round" stroke-linejoin="round" d="m4.5 12.75 6 6 9-13.5" />
-                                </svg>
+                                <button @click="if (!running) { post.status = 'retry'; post.selected = true; post.error = null; }"
+                                    class="cursor-pointer hover:opacity-60 transition-opacity" :class="{ 'pointer-events-none': running }"
+                                    title="Cliquer pour re-publier">
+                                    <svg class="w-4 h-4 text-green-500" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2">
+                                        <path stroke-linecap="round" stroke-linejoin="round" d="m4.5 12.75 6 6 9-13.5" />
+                                    </svg>
+                                </button>
                             </template>
                             <template x-if="post.status === 'error'">
-                                <svg class="w-4 h-4 text-red-500" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2">
-                                    <path stroke-linecap="round" stroke-linejoin="round" d="M6 18 18 6M6 6l12 12" />
-                                </svg>
+                                <button @click="if (!running) { post.status = 'retry'; post.selected = true; post.error = null; }"
+                                    class="cursor-pointer hover:opacity-60 transition-opacity" :class="{ 'pointer-events-none': running }"
+                                    title="Cliquer pour réessayer">
+                                    <svg class="w-4 h-4 text-red-500" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2">
+                                        <path stroke-linecap="round" stroke-linejoin="round" d="M6 18 18 6M6 6l12 12" />
+                                    </svg>
+                                </button>
                             </template>
                             <template x-if="post.status === 'skipped'">
-                                <svg class="w-4 h-4 text-yellow-500" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2">
-                                    <path stroke-linecap="round" stroke-linejoin="round" d="M3 8.689c0-.864.933-1.406 1.683-.977l7.108 4.061a1.125 1.125 0 0 1 0 1.954l-7.108 4.061A1.125 1.125 0 0 1 3 16.811V8.69ZM12.75 8.689c0-.864.933-1.406 1.683-.977l7.108 4.061a1.125 1.125 0 0 1 0 1.954l-7.108 4.061a1.125 1.125 0 0 1-1.683-.977V8.69Z" />
-                                </svg>
+                                <button @click="if (!running) { post.status = 'retry'; post.selected = true; post.error = null; }"
+                                    class="cursor-pointer hover:opacity-60 transition-opacity" :class="{ 'pointer-events-none': running }"
+                                    title="Cliquer pour réessayer">
+                                    <svg class="w-4 h-4 text-yellow-500" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2">
+                                        <path stroke-linecap="round" stroke-linejoin="round" d="M3 8.689c0-.864.933-1.406 1.683-.977l7.108 4.061a1.125 1.125 0 0 1 0 1.954l-7.108 4.061A1.125 1.125 0 0 1 3 16.811V8.69ZM12.75 8.689c0-.864.933-1.406 1.683-.977l7.108 4.061a1.125 1.125 0 0 1 0 1.954l-7.108 4.061a1.125 1.125 0 0 1-1.683-.977V8.69Z" />
+                                    </svg>
+                                </button>
                             </template>
                         </div>
 
@@ -229,8 +241,8 @@ function crossPostApp() {
             return processed / selected * 100;
         },
 
-        selectAll() { this.posts.forEach(p => { if (p.status !== 'done') p.selected = true; }); },
-        deselectAll() { this.posts.forEach(p => { if (p.status !== 'done') p.selected = false; }); },
+        selectAll() { this.posts.forEach(p => { if (!p.status || p.status === 'retry' || p.status === 'error') p.selected = true; }); },
+        deselectAll() { this.posts.forEach(p => { if (!p.status || p.status === 'retry' || p.status === 'error') p.selected = false; }); },
 
         init() {
             this.countdownInterval = setInterval(() => {
@@ -293,7 +305,7 @@ function crossPostApp() {
 
             for (let i = 0; i < this.posts.length; i++) {
                 if (this.stopped) break;
-                if (this.posts[i].status === 'done') continue;
+                if (this.posts[i].status === 'done' || this.posts[i].status === 'skipped') continue;
                 if (!this.posts[i].selected) continue;
 
                 const post = this.posts[i];
