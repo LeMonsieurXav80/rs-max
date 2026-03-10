@@ -60,6 +60,8 @@
                     <p class="text-sm text-gray-700">
                         <span class="font-bold text-lg" x-text="posts.length"></span> posts trouvés
                         <span class="text-gray-400 mx-2">|</span>
+                        <span class="text-indigo-600 font-medium" x-text="selectedCount"></span> sélectionnés
+                        <span class="text-gray-400 mx-2">|</span>
                         <span class="text-green-600 font-medium" x-text="doneCount"></span> publiés
                         <span class="text-gray-400 mx-2">|</span>
                         <span class="text-red-600 font-medium" x-text="errorCount"></span> erreurs
@@ -69,14 +71,24 @@
                 </div>
                 <div class="flex items-center gap-2">
                     <button
-                        x-show="!running && doneCount < posts.length"
+                        x-show="!running"
+                        @click="selectAll"
+                        class="px-3 py-1.5 text-xs font-medium text-gray-600 bg-gray-100 rounded-lg hover:bg-gray-200 transition-colors"
+                    >Tout cocher</button>
+                    <button
+                        x-show="!running"
+                        @click="deselectAll"
+                        class="px-3 py-1.5 text-xs font-medium text-gray-600 bg-gray-100 rounded-lg hover:bg-gray-200 transition-colors"
+                    >Tout décocher</button>
+                    <button
+                        x-show="!running && selectedCount > 0"
                         @click="startCrossPost"
                         class="flex items-center gap-2 px-4 py-2 bg-green-600 text-white rounded-lg text-sm font-medium hover:bg-green-700 transition-colors"
                     >
                         <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2">
                             <path stroke-linecap="round" stroke-linejoin="round" d="M5.25 5.653c0-.856.917-1.398 1.667-.986l11.54 6.347a1.125 1.125 0 0 1 0 1.972l-11.54 6.347a1.125 1.125 0 0 1-1.667-.986V5.653Z" />
                         </svg>
-                        Lancer le cross-post
+                        Lancer (<span x-text="selectedCount"></span> posts)
                     </button>
                     <button
                         x-show="running"
@@ -122,10 +134,12 @@
                              'bg-yellow-50': post.status === 'skipped',
                              'bg-amber-50': post.status === 'processing',
                          }">
-                        {{-- Status icon --}}
+                        {{-- Checkbox / Status icon --}}
                         <div class="flex-shrink-0 w-6">
                             <template x-if="!post.status">
-                                <span class="text-gray-300 text-xs" x-text="index + 1"></span>
+                                <input type="checkbox" x-model="post.selected"
+                                    class="w-4 h-4 text-indigo-600 rounded border-gray-300 focus:ring-indigo-500 cursor-pointer"
+                                    :disabled="running">
                             </template>
                             <template x-if="post.status === 'processing'">
                                 <svg class="w-4 h-4 text-amber-500 animate-spin" fill="none" viewBox="0 0 24 24">
@@ -190,11 +204,20 @@ function crossPostApp() {
         stopped: false,
         currentPost: null,
 
+        get selectedCount() { return this.posts.filter(p => p.selected).length; },
         get doneCount() { return this.posts.filter(p => p.status === 'done').length; },
         get errorCount() { return this.posts.filter(p => p.status === 'error').length; },
         get skippedCount() { return this.posts.filter(p => p.status === 'skipped').length; },
         get processedCount() { return this.doneCount + this.errorCount + this.skippedCount; },
-        get progressPercent() { return this.posts.length ? (this.processedCount / this.posts.length * 100) : 0; },
+        get progressPercent() {
+            const selected = this.selectedCount;
+            if (!selected) return 0;
+            const processed = this.posts.filter(p => p.selected && (p.status === 'done' || p.status === 'error' || p.status === 'skipped')).length;
+            return processed / selected * 100;
+        },
+
+        selectAll() { this.posts.forEach(p => { if (p.status !== 'done') p.selected = true; }); },
+        deselectAll() { this.posts.forEach(p => { if (p.status !== 'done') p.selected = false; }); },
 
         selectPair(igId, bsId, igName, bsName) {
             this.instagramId = igId;
@@ -220,7 +243,7 @@ function crossPostApp() {
                 });
                 const data = await res.json();
                 if (data.success) {
-                    this.posts = data.posts.map(p => ({ ...p, status: null, error: null }));
+                    this.posts = data.posts.map(p => ({ ...p, selected: true, status: null, error: null }));
                 } else {
                     alert(data.error || 'Erreur');
                 }
@@ -238,6 +261,7 @@ function crossPostApp() {
             for (let i = 0; i < this.posts.length; i++) {
                 if (this.stopped) break;
                 if (this.posts[i].status === 'done') continue;
+                if (!this.posts[i].selected) continue;
 
                 const post = this.posts[i];
 
