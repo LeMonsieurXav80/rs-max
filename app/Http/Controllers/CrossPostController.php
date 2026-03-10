@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Models\SocialAccount;
 use App\Services\Adapters\BlueskyAdapter;
+use App\Services\AiAssistService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Http;
@@ -141,9 +142,21 @@ class CrossPostController extends Controller
 
         $caption = $request->input('caption', '');
 
-        // Bluesky has 300 char limit — truncate if needed
+        // Bluesky has 300 char limit — use AI with persona to rewrite if needed
         if (mb_strlen($caption) > 300) {
-            $caption = mb_substr($caption, 0, 297) . '...';
+            $persona = $bsAccount->persona;
+            if ($persona) {
+                $aiService = new AiAssistService;
+                $aiCaption = $aiService->generate($caption, $persona, $bsAccount);
+                if ($aiCaption && mb_strlen($aiCaption) <= 300) {
+                    $caption = $aiCaption;
+                } else {
+                    // AI returned text still too long or failed — truncate
+                    $caption = mb_substr($aiCaption ?: $caption, 0, 297) . '...';
+                }
+            } else {
+                $caption = mb_substr($caption, 0, 297) . '...';
+            }
         }
 
         $mediaItems = $request->input('media', []);
