@@ -32,11 +32,16 @@ class BlueskyAdapter implements PlatformAdapterInterface, ThreadableAdapterInter
 
             $record = $this->buildRecord($content);
 
-            // Attach media embed.
+            // Attach media embed, or external link card if no media.
             if (! empty($media)) {
                 $embed = $this->buildMediaEmbed($jwt, $media);
                 if ($embed) {
                     $record['embed'] = $embed;
+                }
+            } else {
+                $externalEmbed = $this->buildExternalEmbed($content, $jwt);
+                if ($externalEmbed) {
+                    $record['embed'] = $externalEmbed;
                 }
             }
 
@@ -89,6 +94,11 @@ class BlueskyAdapter implements PlatformAdapterInterface, ThreadableAdapterInter
                 $embed = $this->buildMediaEmbed($jwt, $media);
                 if ($embed) {
                     $record['embed'] = $embed;
+                }
+            } else {
+                $externalEmbed = $this->buildExternalEmbed($content, $jwt);
+                if ($externalEmbed) {
+                    $record['embed'] = $externalEmbed;
                 }
             }
 
@@ -456,6 +466,135 @@ class BlueskyAdapter implements PlatformAdapterInterface, ThreadableAdapterInter
         return null;
     }
 
+    // ─── External link card embed ────────────────────────────────────
+
+    /**
+     * Build an app.bsky.embed.external card by fetching OG meta from the first URL in text.
+     * Returns null if no URL found or fetch fails — publishing continues without card.
+     */
+    private function buildExternalEmbed(string $text, string $accessJwt): ?array
+    {
+        // Find first URL in text (with or without protocol)
+        if (! preg_match('/(https?:\/\/[^\s\]\)]+|www\.[^\s\]\)]+)/u', $text, $match)) {
+            return null;
+        }
+
+        $url = $match[0];
+        if (! str_starts_with($url, 'http')) {
+            $url = 'https://' . $url;
+        }
+
+        try {
+            $response = Http::timeout(10)
+                ->withHeaders(['User-Agent' => 'Mozilla/5.0 (compatible; RSMax/1.0)'])
+                ->get($url);
+
+            if (! $response->successful()) {
+                return null;
+            }
+
+            $html = $response->body();
+
+            // Parse OG meta tags
+            $title = $this->extractMeta($html, 'og:title')
+                  ?? $this->extractHtmlTitle($html)
+                  ?? $url;
+            $description = $this->extractMeta($html, 'og:description')
+                        ?? $this->extractMeta($html, 'description')
+                        ?? '';
+            $imageUrl = $this->extractMeta($html, 'og:image');
+
+            $external = [
+                '$type' => 'app.bsky.embed.external',
+                'external' => [
+                    'uri' => $url,
+                    'title' => mb_substr($title, 0, 300),
+                    'description' => mb_substr($description, 0, 1000),
+                ],
+            ];
+
+            // Upload OG image as thumbnail blob
+            if ($imageUrl) {
+                if (! str_starts_with($imageUrl, 'http')) {
+                    $parsed = parse_url($url);
+                    $imageUrl = ($parsed['scheme'] ?? 'https') . '://' . ($parsed['host'] ?? '') . $imageUrl;
+                }
+
+                $thumbBlob = $this->uploadBlobFromUrl($accessJwt, $imageUrl);
+                if ($thumbBlob) {
+                    $external['external']['thumb'] = $thumbBlob;
+                }
+            }
+
+            return $external;
+
+        } catch (\Throwable $e) {
+            Log::debug('BlueskyAdapter: buildExternalEmbed failed', ['url' => $url, 'error' => $e->getMessage()]);
+
+            return null;
+        }
+    }
+
+    private function extractMeta(string $html, string $property): ?string
+    {
+        // Try og: property
+        if (preg_match('/<meta[^>]+property=["\']' . preg_quote($property, '/') . '["\'][^>]+content=["\']([^"\']*)["\']/', $html, $m)) {
+            return html_entity_decode($m[1], ENT_QUOTES, 'UTF-8');
+        }
+        // Try name= (for description)
+        if (preg_match('/<meta[^>]+name=["\']' . preg_quote($property, '/') . '["\'][^>]+content=["\']([^"\']*)["\']/', $html, $m)) {
+            return html_entity_decode($m[1], ENT_QUOTES, 'UTF-8');
+        }
+        // Try reversed attribute order (content before property/name)
+        if (preg_match('/<meta[^>]+content=["\']([^"\']*)["\'][^>]+(?:property|name)=["\']' . preg_quote($property, '/') . '["\']/', $html, $m)) {
+            return html_entity_decode($m[1], ENT_QUOTES, 'UTF-8');
+        }
+
+        return null;
+    }
+
+    private function extractHtmlTitle(string $html): ?string
+    {
+        if (preg_match('/<title[^>]*>([^<]+)<\/title>/i', $html, $m)) {
+            return html_entity_decode(trim($m[1]), ENT_QUOTES, 'UTF-8');
+        }
+
+        return null;
+    }
+
+    private function uploadBlobFromUrl(string $accessJwt, string $imageUrl): ?array
+    {
+        try {
+            $response = Http::timeout(15)->get($imageUrl);
+            if (! $response->successful()) {
+                return null;
+            }
+
+            $imageData = $response->body();
+            $mimetype = $response->header('Content-Type', 'image/jpeg');
+
+            // Bluesky blob limit: 1MB
+            if (strlen($imageData) > 1_000_000) {
+                return null;
+            }
+
+            $blobResponse = Http::withToken($accessJwt)
+                ->withHeaders(['Content-Type' => $mimetype])
+                ->withBody($imageData, $mimetype)
+                ->post(self::PDS_BASE . '/xrpc/com.atproto.repo.uploadBlob');
+
+            if ($blobResponse->successful()) {
+                return $blobResponse->json('blob');
+            }
+
+            return null;
+        } catch (\Throwable $e) {
+            Log::debug('BlueskyAdapter: uploadBlobFromUrl failed', ['url' => $imageUrl]);
+
+            return null;
+        }
+    }
+
     // ─── Rich text facets ────────────────────────────────────────────
 
     /**
@@ -465,13 +604,16 @@ class BlueskyAdapter implements PlatformAdapterInterface, ThreadableAdapterInter
     {
         $facets = [];
 
-        // Match URLs.
-        $pattern = '/(https?:\/\/[^\s\]\)]+)/u';
+        // Match URLs (with or without protocol — www. prefix is also detected).
+        $pattern = '/(https?:\/\/[^\s\]\)]+|www\.[^\s\]\)]+)/u';
         if (preg_match_all($pattern, $text, $matches, PREG_OFFSET_CAPTURE)) {
             foreach ($matches[0] as $match) {
                 $url = $match[0];
                 $byteStart = $match[1]; // preg with PREG_OFFSET_CAPTURE gives byte offset
                 $byteEnd = $byteStart + strlen($url);
+
+                // Ensure URL has protocol for the facet URI
+                $uri = str_starts_with($url, 'http') ? $url : 'https://' . $url;
 
                 $facets[] = [
                     'index' => [
@@ -481,7 +623,7 @@ class BlueskyAdapter implements PlatformAdapterInterface, ThreadableAdapterInter
                     'features' => [
                         [
                             '$type' => 'app.bsky.richtext.facet#link',
-                            'uri' => $url,
+                            'uri' => $uri,
                         ],
                     ],
                 ];
