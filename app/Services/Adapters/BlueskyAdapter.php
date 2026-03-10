@@ -39,6 +39,13 @@ class BlueskyAdapter implements PlatformAdapterInterface, ThreadableAdapterInter
                 $embed = $this->buildMediaEmbed($jwt, $media);
                 if ($embed) {
                     $record['embed'] = $embed;
+                } else {
+                    // Media was provided but embed failed (e.g. video upload error)
+                    // Don't publish a text-only post when media was expected
+                    $hasVideo = collect($media)->contains(fn ($m) => str_starts_with($m['mimetype'] ?? '', 'video/'));
+                    if ($hasVideo) {
+                        return $this->error('Échec de l\'upload vidéo sur Bluesky.');
+                    }
                 }
             } else {
                 $externalEmbed = $this->buildExternalEmbed($content, $jwt);
