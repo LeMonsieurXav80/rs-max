@@ -224,11 +224,24 @@ class CrossPostController extends Controller
             }
 
             // Post to Bluesky
+            Log::info('CrossPost: publishing to Bluesky', [
+                'ig_id' => $igId,
+                'post_id' => $request->input('post_id'),
+                'media_count' => count($blueskyMedia),
+                'has_video' => $hasVideo,
+            ]);
+
             $result = $adapter->publish(
                 $bsAccount,
                 $caption ?: '📸',
                 ! empty($blueskyMedia) ? $blueskyMedia : null
             );
+
+            Log::info('CrossPost: publish result', [
+                'post_id' => $request->input('post_id'),
+                'success' => $result['success'] ?? false,
+                'error' => $result['error'] ?? null,
+            ]);
 
             // Remember this post as done (persists 30 days)
             if ($result['success'] ?? false) {

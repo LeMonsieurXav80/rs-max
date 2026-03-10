@@ -309,8 +309,12 @@ function crossPostApp() {
                 this.currentPost = post;
 
                 try {
+                    const controller = new AbortController();
+                    const timeout = setTimeout(() => controller.abort(), 10 * 60 * 1000); // 10 min
+
                     const res = await fetch('{{ route("crosspost.post") }}', {
                         method: 'POST',
+                        signal: controller.signal,
                         headers: {
                             'Content-Type': 'application/json',
                             'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').content,
@@ -323,18 +327,23 @@ function crossPostApp() {
                             media: post.media,
                         }),
                     });
+                    clearTimeout(timeout);
 
-                    const data = await res.json();
-
-                    if (data.success) {
-                        this.posts[i].status = 'done';
-                    } else {
+                    if (!res.ok) {
                         this.posts[i].status = 'error';
-                        this.posts[i].error = data.error || 'Erreur inconnue';
+                        this.posts[i].error = `HTTP ${res.status} — ${res.statusText}`;
+                    } else {
+                        const data = await res.json();
+                        if (data.success) {
+                            this.posts[i].status = 'done';
+                        } else {
+                            this.posts[i].status = 'error';
+                            this.posts[i].error = data.error || 'Erreur inconnue';
+                        }
                     }
                 } catch (e) {
                     this.posts[i].status = 'error';
-                    this.posts[i].error = e.message;
+                    this.posts[i].error = e.name === 'AbortError' ? 'Timeout (10 min)' : e.message;
                 }
 
                 this.currentPost = null;
