@@ -24,6 +24,7 @@ use App\Http\Controllers\SettingsController;
 use App\Http\Controllers\SourceItemController;
 use App\Http\Controllers\RedditSourceController;
 use App\Http\Controllers\UserController;
+use App\Http\Controllers\CrossPostController;
 use App\Http\Controllers\WordPressSiteController;
 use App\Http\Controllers\SocialAccountController;
 use App\Http\Controllers\YouTubeChannelController;
@@ -250,6 +251,11 @@ Route::middleware(['auth', 'verified', 'throttle:60,1'])->group(function () {
         Route::post('bot/targets/{target}/reset', [BotController::class, 'resetTarget'])->name('bot.resetTarget');
         Route::get('bot/target-status/{target}', [BotController::class, 'targetStatus'])->name('bot.targetStatus');
         Route::get('bot/api-status/{account}', [BotController::class, 'apiStatus'])->name('bot.apiStatus');
+
+        // Cross-post (temporary tool)
+        Route::get('tools/crosspost', [CrossPostController::class, 'index'])->name('crosspost.index');
+        Route::post('tools/crosspost/fetch', [CrossPostController::class, 'fetchPosts'])->name('crosspost.fetch');
+        Route::post('tools/crosspost/post', [CrossPostController::class, 'crossPost'])->name('crosspost.post');
 
         // Settings
         Route::get('settings', [SettingsController::class, 'index'])->name('settings.index');
