@@ -423,17 +423,44 @@ class BlueskyAdapter implements PlatformAdapterInterface, ThreadableAdapterInter
 
     private function uploadVideo(string $accessJwt, string $did, string $filePath, string $mimeType): ?array
     {
-        $fileContents = file_get_contents($filePath);
+        // Step 1: Resolve the user's PDS DID (required for service auth)
+        $pdsDid = $this->resolvePdsDid($did);
+        if (! $pdsDid) {
+            Log::error('BlueskyAdapter: could not resolve PDS DID for video upload', ['did' => $did]);
 
-        // Step 1: Upload to video service
-        $response = Http::withToken($accessJwt)
+            return null;
+        }
+
+        // Step 2: Get a service auth token scoped to the PDS
+        $serviceAuth = Http::withToken($accessJwt)
+            ->get(self::PDS_BASE . '/xrpc/com.atproto.server.getServiceAuth', [
+                'aud' => $pdsDid,
+                'lxm' => 'com.atproto.repo.uploadBlob',
+                'exp' => time() + 300,
+            ]);
+
+        if (! $serviceAuth->successful()) {
+            Log::error('BlueskyAdapter: getServiceAuth failed for video', [
+                'status' => $serviceAuth->status(),
+                'body' => $serviceAuth->body(),
+            ]);
+
+            return null;
+        }
+
+        $serviceToken = $serviceAuth->json('token');
+
+        // Step 3: Upload to video service with service token and query params
+        $fileContents = file_get_contents($filePath);
+        $uploadUrl = self::VIDEO_API . '/xrpc/app.bsky.video.uploadVideo'
+            . '?did=' . urlencode($did)
+            . '&name=video_' . time() . '.mp4';
+
+        $response = Http::withToken($serviceToken)
             ->withHeaders(['Content-Type' => $mimeType])
             ->withBody($fileContents, $mimeType)
             ->timeout(300)
-            ->post(self::VIDEO_API . '/xrpc/app.bsky.video.uploadVideo', [
-                'did' => $did,
-                'name' => 'video_' . time() . '.mp4',
-            ]);
+            ->post($uploadUrl);
 
         if (! $response->successful()) {
             Log::error('BlueskyAdapter: video upload failed', [
@@ -447,7 +474,6 @@ class BlueskyAdapter implements PlatformAdapterInterface, ThreadableAdapterInter
 
         $jobId = $response->json('jobId');
         if (! $jobId) {
-            // Some responses return the blob directly
             $blob = $response->json('blob');
             if ($blob) {
                 return $blob;
@@ -457,7 +483,7 @@ class BlueskyAdapter implements PlatformAdapterInterface, ThreadableAdapterInter
             return null;
         }
 
-        // Step 2: Poll for processing completion (max 5 minutes)
+        // Step 4: Poll for processing completion (max 5 minutes)
         $maxAttempts = 60;
         for ($i = 0; $i < $maxAttempts; $i++) {
             sleep(5);
@@ -501,13 +527,36 @@ class BlueskyAdapter implements PlatformAdapterInterface, ThreadableAdapterInter
                 return null;
             }
 
-            // Still processing — continue polling
             Log::debug('BlueskyAdapter: video processing...', ['state' => $state, 'attempt' => $i]);
         }
 
         Log::error('BlueskyAdapter: video processing timed out', ['jobId' => $jobId]);
 
         return null;
+    }
+
+    private function resolvePdsDid(string $did): ?string
+    {
+        try {
+            $response = Http::timeout(10)->get("https://plc.directory/{$did}");
+            if (! $response->successful()) {
+                return null;
+            }
+
+            foreach ($response->json('service') ?? [] as $svc) {
+                if (($svc['type'] ?? '') === 'AtprotoPersonalDataServer') {
+                    $host = parse_url($svc['serviceEndpoint'] ?? '', PHP_URL_HOST);
+
+                    return $host ? "did:web:{$host}" : null;
+                }
+            }
+
+            return null;
+        } catch (\Throwable $e) {
+            Log::warning('BlueskyAdapter: resolvePdsDid failed', ['did' => $did, 'error' => $e->getMessage()]);
+
+            return null;
+        }
     }
 
     private function uploadBlob(string $accessJwt, string $filePath, string $mimeType): ?array
