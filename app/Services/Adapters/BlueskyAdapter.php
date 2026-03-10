@@ -12,6 +12,8 @@ class BlueskyAdapter implements PlatformAdapterInterface, ThreadableAdapterInter
 
     private const PUBLIC_API = 'https://public.api.bsky.app';
 
+    private const VIDEO_API = 'https://video.bsky.app';
+
     /** Root post reference kept for thread chaining. */
     private ?string $rootUri = null;
 
@@ -365,15 +367,32 @@ class BlueskyAdapter implements PlatformAdapterInterface, ThreadableAdapterInter
         $tempFile = tempnam(sys_get_temp_dir(), 'bsky_vid_');
 
         try {
-            $downloaded = Http::timeout(120)->withOptions(['sink' => $tempFile])->get($url);
+            $downloaded = Http::timeout(180)->withOptions(['sink' => $tempFile])->get($url);
             if (! $downloaded->successful()) {
                 Log::warning('BlueskyAdapter: failed to download video', ['url' => $url]);
 
                 return null;
             }
 
+            $fileSize = filesize($tempFile);
+            if ($fileSize > 50_000_000) {
+                Log::warning('BlueskyAdapter: video too large for Bluesky', ['size' => $fileSize]);
+
+                return null;
+            }
+
             $mimeType = mime_content_type($tempFile) ?: 'video/mp4';
-            $blob = $this->uploadBlob($accessJwt, $tempFile, $mimeType);
+
+            // Get DID from JWT for the upload
+            $did = $this->getDidFromJwt($accessJwt);
+            if (! $did) {
+                Log::error('BlueskyAdapter: could not extract DID from JWT for video upload');
+
+                return null;
+            }
+
+            // Upload via Bluesky video service (not uploadBlob)
+            $blob = $this->uploadVideo($accessJwt, $did, $tempFile, $mimeType);
 
             if (! $blob) {
                 return null;
@@ -388,6 +407,107 @@ class BlueskyAdapter implements PlatformAdapterInterface, ThreadableAdapterInter
                 @unlink($tempFile);
             }
         }
+    }
+
+    private function getDidFromJwt(string $jwt): ?string
+    {
+        $parts = explode('.', $jwt);
+        if (count($parts) !== 3) {
+            return null;
+        }
+
+        $payload = json_decode(base64_decode(strtr($parts[1], '-_', '+/')), true);
+
+        return $payload['sub'] ?? null;
+    }
+
+    private function uploadVideo(string $accessJwt, string $did, string $filePath, string $mimeType): ?array
+    {
+        $fileContents = file_get_contents($filePath);
+
+        // Step 1: Upload to video service
+        $response = Http::withToken($accessJwt)
+            ->withHeaders(['Content-Type' => $mimeType])
+            ->withBody($fileContents, $mimeType)
+            ->timeout(300)
+            ->post(self::VIDEO_API . '/xrpc/app.bsky.video.uploadVideo', [
+                'did' => $did,
+                'name' => 'video_' . time() . '.mp4',
+            ]);
+
+        if (! $response->successful()) {
+            Log::error('BlueskyAdapter: video upload failed', [
+                'status' => $response->status(),
+                'body' => $response->body(),
+                'size' => strlen($fileContents),
+            ]);
+
+            return null;
+        }
+
+        $jobId = $response->json('jobId');
+        if (! $jobId) {
+            // Some responses return the blob directly
+            $blob = $response->json('blob');
+            if ($blob) {
+                return $blob;
+            }
+            Log::error('BlueskyAdapter: video upload returned no jobId or blob', ['body' => $response->json()]);
+
+            return null;
+        }
+
+        // Step 2: Poll for processing completion (max 5 minutes)
+        $maxAttempts = 60;
+        for ($i = 0; $i < $maxAttempts; $i++) {
+            sleep(5);
+
+            $status = Http::withToken($accessJwt)
+                ->get(self::VIDEO_API . '/xrpc/app.bsky.video.getJobStatus', [
+                    'jobId' => $jobId,
+                ]);
+
+            if (! $status->successful()) {
+                Log::warning('BlueskyAdapter: video status check failed', ['attempt' => $i]);
+
+                continue;
+            }
+
+            $jobStatus = $status->json('jobStatus');
+            $state = $jobStatus['state'] ?? '';
+
+            if ($state === 'JOB_STATE_COMPLETED') {
+                $blob = $jobStatus['blob'] ?? null;
+                if ($blob) {
+                    Log::info('BlueskyAdapter: video processed successfully', ['jobId' => $jobId]);
+
+                    return $blob;
+                }
+
+                Log::error('BlueskyAdapter: video completed but no blob', ['jobStatus' => $jobStatus]);
+
+                return null;
+            }
+
+            if ($state === 'JOB_STATE_FAILED') {
+                $error = $jobStatus['error'] ?? 'Unknown';
+                $message = $jobStatus['message'] ?? '';
+                Log::error('BlueskyAdapter: video processing failed', [
+                    'jobId' => $jobId,
+                    'error' => $error,
+                    'message' => $message,
+                ]);
+
+                return null;
+            }
+
+            // Still processing — continue polling
+            Log::debug('BlueskyAdapter: video processing...', ['state' => $state, 'attempt' => $i]);
+        }
+
+        Log::error('BlueskyAdapter: video processing timed out', ['jobId' => $jobId]);
+
+        return null;
     }
 
     private function uploadBlob(string $accessJwt, string $filePath, string $mimeType): ?array
