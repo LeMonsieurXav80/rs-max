@@ -106,6 +106,13 @@ class StatsController extends Controller
             $deltas[$account->id] = $accountDeltas;
         }
 
+        // Compute total deltas across all selected accounts
+        $totalDeltas = [];
+        foreach ($deltaPeriods as $days) {
+            $values = collect($deltas)->pluck($days)->filter(fn ($v) => $v !== null);
+            $totalDeltas[$days] = $values->isNotEmpty() ? $values->sum() : null;
+        }
+
         return view('stats.audience', compact(
             'socialAccounts',
             'selectedAccounts',
@@ -113,6 +120,7 @@ class StatsController extends Controller
             'chartData',
             'totalFollowers',
             'deltas',
+            'totalDeltas',
         ));
     }
 

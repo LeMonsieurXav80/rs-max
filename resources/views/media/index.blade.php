@@ -145,13 +145,15 @@
             this.uploadFiles(e.dataTransfer.files);
         },
         handleFileSelect(e) {
-            this.uploadFiles(e.target.files);
+            const files = Array.from(e.target.files);
             e.target.value = '';
+            this.uploadFiles(files);
         },
         async uploadFiles(files) {
             for (const file of files) {
                 await this.uploadFile(file);
             }
+            window.location.reload();
         },
         async uploadFile(file) {
             this.uploading = true;
@@ -186,7 +188,6 @@
                     xhr.setRequestHeader('Accept', 'application/json');
                     xhr.send(formData);
                 });
-                window.location.reload();
             } catch (error) {
                 alert('Erreur : ' + error);
             } finally {

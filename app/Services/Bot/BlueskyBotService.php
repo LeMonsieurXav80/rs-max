@@ -2,6 +2,7 @@
 
 namespace App\Services\Bot;
 
+use Carbon\Carbon;
 use App\Models\BotActionLog;
 use App\Models\BotSearchTerm;
 use App\Models\Setting;
@@ -618,16 +619,59 @@ class BlueskyBotService
             return 0;
         }
 
+        // Grace period: don't unfollow accounts followed less than 7 days ago
+        $graceDays = (int) Setting::get("bot_unfollow_grace_days_bluesky_{$account->id}", 7);
+        $graceLimit = now()->subDays($graceDays);
+
+        // Get follow dates from BotActionLog to sort by oldest first
+        $followDates = BotActionLog::where('social_account_id', $account->id)
+            ->where('action_type', 'follow_active_user')
+            ->where('success', true)
+            ->pluck('created_at', 'target_uri')
+            ->mapWithKeys(fn ($date, $uri) => [str_replace('follow:', '', $uri) => $date]);
+
+        // Filter out recently followed accounts and sort oldest first
+        $eligible = [];
+        $skippedGrace = 0;
+        foreach ($nonFollowers as $nf) {
+            $followedAt = $followDates[$nf['did']] ?? null;
+
+            // If we have a follow date and it's within the grace period, skip
+            if ($followedAt && $followedAt->greaterThan($graceLimit)) {
+                $skippedGrace++;
+                continue;
+            }
+
+            // Use follow date for sorting (null = unknown/old = epoch for oldest-first)
+            $nf['followed_at'] = $followedAt;
+            $eligible[] = $nf;
+        }
+
+        // Sort: oldest follows first (unknown dates treated as very old)
+        usort($eligible, function ($a, $b) {
+            $dateA = $a['followed_at'] ?? Carbon::createFromTimestamp(0);
+            $dateB = $b['followed_at'] ?? Carbon::createFromTimestamp(0);
+
+            return $dateA->timestamp <=> $dateB->timestamp;
+        });
+
         Log::info('BlueskyBotService: found non-followers', [
             'account_id' => $account->id,
             'following' => count($following),
             'followers' => count($followers),
             'non_followers' => count($nonFollowers),
+            'eligible_after_grace' => count($eligible),
+            'skipped_grace_period' => $skippedGrace,
+            'grace_days' => $graceDays,
         ]);
+
+        if (empty($eligible)) {
+            return 0;
+        }
 
         $unfollowCount = 0;
 
-        foreach ($nonFollowers as $nf) {
+        foreach ($eligible as $nf) {
             if ($unfollowCount >= $maxUnfollows || $this->shouldStop()) {
                 break;
             }
