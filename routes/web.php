@@ -10,7 +10,9 @@ use App\Http\Controllers\ImportController;
 use App\Http\Controllers\LocationController;
 use App\Http\Controllers\MediaController;
 use App\Http\Controllers\MediaFolderController;
+use App\Http\Controllers\MediaStudioController;
 use App\Http\Controllers\PersonaController;
+use App\Http\Controllers\PromptGeneratorController;
 use App\Http\Controllers\PlatformController;
 use App\Http\Controllers\PostController;
 use App\Http\Controllers\ProfileController;
@@ -130,6 +132,18 @@ Route::middleware(['auth', 'verified', 'throttle:60,1'])->group(function () {
     Route::patch('media/folders/{folder}', [MediaFolderController::class, 'update'])->name('media.folders.update');
     Route::delete('media/folders/{folder}', [MediaFolderController::class, 'destroy'])->name('media.folders.destroy');
     Route::post('media/folders/move', [MediaFolderController::class, 'moveFiles'])->name('media.folders.move');
+
+    // Media Studio
+    Route::get('media/studio', [MediaStudioController::class, 'index'])->name('media.studio');
+    Route::post('media/studio/process', [MediaStudioController::class, 'process'])->name('media.studio.process');
+    Route::post('media/studio/logo', [MediaStudioController::class, 'uploadLogo'])->name('media.studio.logo');
+
+    // Prompt Generator
+    Route::get('prompts/image', [PromptGeneratorController::class, 'image'])->name('prompts.image');
+    Route::post('prompts/image/generate', [PromptGeneratorController::class, 'generateImage'])->name('prompts.image.generate');
+    Route::get('prompts/video', [PromptGeneratorController::class, 'video'])->name('prompts.video');
+    Route::post('prompts/video/analyze', [PromptGeneratorController::class, 'analyzePhoto'])->name('prompts.video.analyze');
+    Route::post('prompts/video/generate', [PromptGeneratorController::class, 'generateVideo'])->name('prompts.video.generate');
 
     // Media library
     Route::get('media', [MediaController::class, 'index'])->name('media.index');

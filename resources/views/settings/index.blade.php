@@ -49,6 +49,11 @@
                             class="px-4 py-3 text-sm font-medium border-b-2 transition-colors whitespace-nowrap">
                         Messagerie
                     </button>
+                    <button type="button" @click="activeTab = 'studio'"
+                            :class="activeTab === 'studio' ? 'border-indigo-500 text-indigo-600' : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'"
+                            class="px-4 py-3 text-sm font-medium border-b-2 transition-colors whitespace-nowrap">
+                        Studio
+                    </button>
                 </nav>
             </div>
 
@@ -510,6 +515,126 @@
                         @error('inbox_reply_prompt')
                             <p class="text-xs text-red-600 mt-1">{{ $message }}</p>
                         @enderror
+                    </div>
+                </div>
+            </div>
+
+            {{-- ═══════════════════════════════════════ --}}
+            {{-- TAB: Studio                            --}}
+            {{-- ═══════════════════════════════════════ --}}
+            <div x-show="activeTab === 'studio'" x-cloak class="space-y-6">
+
+                {{-- Video encoding --}}
+                <div class="bg-white rounded-2xl border border-gray-100 shadow-sm p-6">
+                    <div class="flex items-center gap-3 mb-1">
+                        <svg class="w-5 h-5 text-indigo-500" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1.5">
+                            <path stroke-linecap="round" stroke-linejoin="round" d="m15.75 10.5 4.72-4.72a.75.75 0 0 1 1.28.53v11.38a.75.75 0 0 1-1.28.53l-4.72-4.72M4.5 18.75h9a2.25 2.25 0 0 0 2.25-2.25v-9a2.25 2.25 0 0 0-2.25-2.25h-9A2.25 2.25 0 0 0 2.25 7.5v9a2.25 2.25 0 0 0 2.25 2.25Z" />
+                        </svg>
+                        <h3 class="text-sm font-semibold text-gray-900">Encodage video Studio</h3>
+                    </div>
+                    <p class="text-xs text-gray-400 mb-4">Parametres utilises lors du traitement video dans le Media Studio</p>
+
+                    <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                        <div>
+                            <label for="studio_video_crf" class="block text-xs font-medium text-gray-700 mb-1">CRF (qualite)</label>
+                            <input type="number" id="studio_video_crf" name="studio_video_crf"
+                                   value="{{ old('studio_video_crf', $settings['studio_video_crf'] ?? 28) }}"
+                                   min="18" max="40" step="1"
+                                   class="w-full rounded-lg border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 text-sm">
+                            <p class="text-xs text-gray-400 mt-1">18 = meilleure qualite, 40 = plus petit fichier (defaut: 28)</p>
+                        </div>
+                        <div>
+                            <label for="studio_audio_bitrate" class="block text-xs font-medium text-gray-700 mb-1">Bitrate audio (kbps)</label>
+                            <input type="number" id="studio_audio_bitrate" name="studio_audio_bitrate"
+                                   value="{{ old('studio_audio_bitrate', $settings['studio_audio_bitrate'] ?? 96) }}"
+                                   min="64" max="320" step="32"
+                                   class="w-full rounded-lg border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 text-sm">
+                        </div>
+                    </div>
+                </div>
+
+                {{-- Logo overlay --}}
+                <div class="bg-white rounded-2xl border border-gray-100 shadow-sm p-6">
+                    <div class="flex items-center gap-3 mb-1">
+                        <svg class="w-5 h-5 text-indigo-500" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1.5">
+                            <path stroke-linecap="round" stroke-linejoin="round" d="m2.25 15.75 5.159-5.159a2.25 2.25 0 0 1 3.182 0l5.159 5.159m-1.5-1.5 1.409-1.409a2.25 2.25 0 0 1 3.182 0l2.909 2.909M3.75 21h16.5A2.25 2.25 0 0 0 22.5 18.75V5.25A2.25 2.25 0 0 0 20.25 3H3.75A2.25 2.25 0 0 0 1.5 5.25v13.5A2.25 2.25 0 0 0 3.75 21Z" />
+                        </svg>
+                        <h3 class="text-sm font-semibold text-gray-900">Logo en superposition</h3>
+                    </div>
+                    <p class="text-xs text-gray-400 mb-4">Image qui sera superposee sur les videos traitees dans le Studio</p>
+
+                    <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                        <div>
+                            <label for="studio_logo_size" class="block text-xs font-medium text-gray-700 mb-1">Taille du logo (px)</label>
+                            <input type="number" id="studio_logo_size" name="studio_logo_size"
+                                   value="{{ old('studio_logo_size', $settings['studio_logo_size'] ?? 50) }}"
+                                   min="16" max="200" step="1"
+                                   class="w-full rounded-lg border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 text-sm">
+                        </div>
+                        <div>
+                            <label for="studio_logo_x" class="block text-xs font-medium text-gray-700 mb-1">Position X</label>
+                            <input type="number" id="studio_logo_x" name="studio_logo_x"
+                                   value="{{ old('studio_logo_x', $settings['studio_logo_x'] ?? 20) }}"
+                                   min="0" max="1000" step="1"
+                                   class="w-full rounded-lg border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 text-sm">
+                        </div>
+                        <div>
+                            <label for="studio_logo_y" class="block text-xs font-medium text-gray-700 mb-1">Position Y</label>
+                            <input type="number" id="studio_logo_y" name="studio_logo_y"
+                                   value="{{ old('studio_logo_y', $settings['studio_logo_y'] ?? 35) }}"
+                                   min="0" max="2000" step="1"
+                                   class="w-full rounded-lg border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 text-sm">
+                        </div>
+                    </div>
+
+                    @php $logoPath = \App\Models\Setting::get('studio_logo_path'); @endphp
+                    <div class="mt-4 flex items-center gap-4">
+                        @if($logoPath && \Illuminate\Support\Facades\Storage::disk('local')->exists($logoPath))
+                            <div class="flex items-center gap-2">
+                                <div class="w-10 h-10 rounded bg-gray-100 flex items-center justify-center overflow-hidden">
+                                    <img src="data:image/png;base64,{{ base64_encode(\Illuminate\Support\Facades\Storage::disk('local')->get($logoPath)) }}" class="w-full h-full object-contain">
+                                </div>
+                                <span class="text-xs text-green-600 font-medium">Logo configure</span>
+                            </div>
+                        @else
+                            <span class="text-xs text-gray-400">Aucun logo configure</span>
+                        @endif
+                        <p class="text-xs text-gray-400">Uploadez le logo depuis la page <a href="{{ route('media.studio') }}" class="text-indigo-600 hover:underline">Studio</a></p>
+                    </div>
+                </div>
+
+                {{-- Text overlay --}}
+                <div class="bg-white rounded-2xl border border-gray-100 shadow-sm p-6">
+                    <div class="flex items-center gap-3 mb-1">
+                        <svg class="w-5 h-5 text-indigo-500" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1.5">
+                            <path stroke-linecap="round" stroke-linejoin="round" d="M7.5 8.25h9m-9 3H12m-9.75 1.51c0 1.6 1.123 2.994 2.707 3.227 1.129.166 2.27.293 3.423.379.35.026.67.21.865.501L12 21l2.755-4.133a1.14 1.14 0 0 1 .865-.501 48.172 48.172 0 0 0 3.423-.379c1.584-.233 2.707-1.626 2.707-3.228V6.741c0-1.602-1.123-2.995-2.707-3.228A48.394 48.394 0 0 0 12 3c-2.392 0-4.744.175-7.043.513C3.373 3.746 2.25 5.14 2.25 6.741v6.018Z" />
+                        </svg>
+                        <h3 class="text-sm font-semibold text-gray-900">Texte en superposition</h3>
+                    </div>
+                    <p class="text-xs text-gray-400 mb-4">Parametres par defaut du texte affiche sur les videos</p>
+
+                    <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                        <div>
+                            <label for="studio_text_font_size" class="block text-xs font-medium text-gray-700 mb-1">Taille police</label>
+                            <input type="number" id="studio_text_font_size" name="studio_text_font_size"
+                                   value="{{ old('studio_text_font_size', $settings['studio_text_font_size'] ?? 28) }}"
+                                   min="10" max="100" step="1"
+                                   class="w-full rounded-lg border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 text-sm">
+                        </div>
+                        <div>
+                            <label for="studio_text_x" class="block text-xs font-medium text-gray-700 mb-1">Position X</label>
+                            <input type="number" id="studio_text_x" name="studio_text_x"
+                                   value="{{ old('studio_text_x', $settings['studio_text_x'] ?? 65) }}"
+                                   min="0" max="1000" step="1"
+                                   class="w-full rounded-lg border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 text-sm">
+                        </div>
+                        <div>
+                            <label for="studio_text_y" class="block text-xs font-medium text-gray-700 mb-1">Position Y</label>
+                            <input type="number" id="studio_text_y" name="studio_text_y"
+                                   value="{{ old('studio_text_y', $settings['studio_text_y'] ?? 35) }}"
+                                   min="0" max="2000" step="1"
+                                   class="w-full rounded-lg border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 text-sm">
+                        </div>
                     </div>
                 </div>
             </div>

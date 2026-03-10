@@ -67,6 +67,15 @@ class SettingsController extends Controller
         'ai_model_inbox',
         'inbox_use_persona',
         'inbox_reply_prompt',
+        // Studio
+        'studio_video_crf',
+        'studio_audio_bitrate',
+        'studio_logo_size',
+        'studio_logo_x',
+        'studio_logo_y',
+        'studio_text_font_size',
+        'studio_text_x',
+        'studio_text_y',
     ];
 
     private const DEFAULTS = [
@@ -126,6 +135,15 @@ class SettingsController extends Controller
         'inbox_sync_freq_twitter' => 'hourly',
         'ai_model_inbox' => 'gpt-4o-mini',
         'inbox_use_persona' => true,
+        // Studio
+        'studio_video_crf' => 28,
+        'studio_audio_bitrate' => 96,
+        'studio_logo_size' => 50,
+        'studio_logo_x' => 20,
+        'studio_logo_y' => 35,
+        'studio_text_font_size' => 28,
+        'studio_text_x' => 65,
+        'studio_text_y' => 35,
         'inbox_reply_prompt' => "Tu reponds a des commentaires et messages sur les reseaux sociaux. Adapte la longueur et le style de ta reponse au message recu :\n- Emoji seul ou reaction simple (coeur, flamme, applaudissements...) → reponds par 1-2 emojis adaptes, rien d'autre\n- Compliment court (\"bravo\", \"top\", \"j'adore\", \"genial\") → remercie en 2-5 mots max, tu peux ajouter un emoji\n- Question → reponds brievement et precisement, 1-2 phrases max\n- Commentaire developpe ou avis → 1-2 phrases engageantes max\n- Message prive → reponds de maniere naturelle et conversationnelle\n\nRegles absolues :\n- Ne fais JAMAIS une reponse plus longue que le message original\n- Pas de hashtags\n- Pas de formule de politesse generique (\"Merci pour votre commentaire !\")\n- Sois authentique, pas corporate\n- Garde le ton et la personnalite definis dans ton profil",
     ];
 
