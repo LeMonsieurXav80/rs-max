@@ -23,6 +23,8 @@
               selectedTypes: @js($wpSource->post_types ?? []),
               availableCategories: [],
               selectedCategories: @js($wpSource->categories ?? []),
+              availableLanguages: [],
+              selectedLanguage: @js($wpSource->language ?? ''),
               selectedAccounts: @js(collect($linkedAccounts)->map(fn($data, $id) => array_merge($data, ['id' => (int)$id, 'persona_id' => $data['persona_id'] ?? '', 'auto_post' => (bool)$data['auto_post']]))->values()),
               toggleType(slug) {
                   const idx = this.selectedTypes.indexOf(slug);
@@ -86,6 +88,7 @@
                           this.testResult = data;
                           this.availableTypes = data.post_types || [];
                           this.availableCategories = data.categories || [];
+                          this.availableLanguages = data.languages || [];
                       } else {
                           this.testError = data.error || 'Erreur inconnue.';
                       }
@@ -257,6 +260,53 @@
                 <template x-for="catId in selectedCategories" :key="'cat-saved-' + catId">
                     <input type="hidden" name="categories[]" :value="catId">
                 </template>
+            </div>
+
+            {{-- Langue (sites multilingues WPML / Polylang) --}}
+            <template x-if="availableLanguages.length > 0">
+                <div>
+                    <hr class="border-gray-100 mb-6">
+                    <h3 class="text-sm font-semibold text-gray-900 mb-2 flex items-center gap-2">
+                        <svg class="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1.5">
+                            <path stroke-linecap="round" stroke-linejoin="round" d="m10.5 21 5.25-11.25L21 21m-9-3h7.5M3 5.621a48.474 48.474 0 0 1 6-.371m0 0c1.12 0 2.233.038 3.334.114M9 5.25V3m3.334 2.364C11.176 10.658 7.69 15.08 3 17.502m9.334-12.138c.896.061 1.785.147 2.666.257m-4.589 8.495a18.023 18.023 0 0 1-3.827-5.802" />
+                        </svg>
+                        Langue du contenu
+                    </h3>
+                    <p class="text-xs text-gray-500 mb-4">Site multilingue détecté. Sélectionnez la langue des articles à importer.</p>
+
+                    <div class="flex flex-wrap gap-3">
+                        <div class="border rounded-xl p-3 cursor-pointer transition-colors"
+                             :class="selectedLanguage === '' ? 'border-blue-300 bg-blue-50/50' : 'border-gray-200 hover:border-gray-300'"
+                             @click="selectedLanguage = ''">
+                            <div class="flex items-center gap-3">
+                                <input type="radio" :checked="selectedLanguage === ''"
+                                       class="border-gray-300 text-blue-600 shadow-sm focus:ring-blue-500"
+                                       @click.stop="selectedLanguage = ''">
+                                <span class="text-sm font-medium text-gray-900">Toutes les langues</span>
+                            </div>
+                        </div>
+                        <template x-for="lang in availableLanguages" :key="lang.code">
+                            <div class="border rounded-xl p-3 cursor-pointer transition-colors"
+                                 :class="selectedLanguage === lang.code ? 'border-blue-300 bg-blue-50/50' : 'border-gray-200 hover:border-gray-300'"
+                                 @click="selectedLanguage = lang.code">
+                                <div class="flex items-center gap-3">
+                                    <input type="radio" :checked="selectedLanguage === lang.code"
+                                           class="border-gray-300 text-blue-600 shadow-sm focus:ring-blue-500"
+                                           @click.stop="selectedLanguage = lang.code">
+                                    <span class="text-sm font-medium text-gray-900" x-text="lang.name"></span>
+                                    <span class="text-xs text-gray-400" x-text="lang.code"></span>
+                                </div>
+                            </div>
+                        </template>
+                    </div>
+
+                    <input type="hidden" name="language" :value="selectedLanguage">
+                </div>
+            </template>
+
+            <div x-show="availableLanguages.length === 0 && selectedLanguage !== ''" class="mt-2">
+                <p class="text-xs text-gray-400 italic">Langue filtrée : <span x-text="selectedLanguage"></span>. Cliquez "Re-tester la connexion" pour voir les langues disponibles.</p>
+                <input type="hidden" name="language" :value="selectedLanguage">
             </div>
 
             <hr class="border-gray-100">

@@ -52,15 +52,17 @@ class WordPressFetchService
 
             $siteName = $siteResponse->json('name', 'Site WordPress');
 
-            // Fetch available post types and categories
+            // Fetch available post types, categories, and languages
             $postTypes = $this->fetchAvailablePostTypes($baseUrl, $username, $password);
             $categories = $this->fetchAvailableCategories($baseUrl, $username, $password);
+            $languages = $this->fetchAvailableLanguages($baseUrl, $username, $password);
 
             return [
                 'success' => true,
                 'site_name' => $siteName,
                 'post_types' => $postTypes,
                 'categories' => $categories,
+                'languages' => $languages,
             ];
         } catch (\Illuminate\Http\Client\ConnectionException $e) {
             return [
@@ -168,6 +170,52 @@ class WordPressFetchService
     }
 
     /**
+     * Detect available languages from a multilingual WordPress site (WPML / Polylang).
+     */
+    public function fetchAvailableLanguages(string $baseUrl, ?string $username = null, ?string $password = null): array
+    {
+        $baseUrl = rtrim($baseUrl, '/');
+
+        $request = Http::timeout(10)->acceptJson();
+
+        if ($username && $password) {
+            $request = $request->withBasicAuth($username, $password);
+        }
+
+        // Try Polylang REST endpoint
+        $response = $request->get("{$baseUrl}/wp-json/pll/v1/languages");
+        if ($response->successful() && is_array($response->json())) {
+            $languages = [];
+            foreach ($response->json() as $lang) {
+                $languages[] = [
+                    'code' => $lang['slug'] ?? $lang['locale'] ?? '',
+                    'name' => $lang['name'] ?? $lang['slug'] ?? '',
+                ];
+            }
+            if (! empty($languages)) {
+                return $languages;
+            }
+        }
+
+        // Try WPML REST endpoint
+        $response = $request->get("{$baseUrl}/wp-json/wpml/v1/languages");
+        if ($response->successful() && is_array($response->json())) {
+            $languages = [];
+            foreach ($response->json() as $code => $lang) {
+                $languages[] = [
+                    'code' => $lang['code'] ?? $code,
+                    'name' => $lang['translated_name'] ?? $lang['native_name'] ?? $code,
+                ];
+            }
+            if (! empty($languages)) {
+                return $languages;
+            }
+        }
+
+        return [];
+    }
+
+    /**
      * Fetch content from a WordPress source for all selected post types.
      */
     public function fetchSource(WpSource $source): int
@@ -258,6 +306,11 @@ class WordPressFetchService
         $categories = $source->categories ?? [];
         if (! empty($categories) && $postType === 'post') {
             $params['categories'] = implode(',', $categories);
+        }
+
+        // Filter by language if configured (WPML / Polylang)
+        if (! empty($source->language)) {
+            $params['lang'] = $source->language;
         }
 
         do {

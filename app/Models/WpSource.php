@@ -16,6 +16,7 @@ class WpSource extends Model
         'auth_password',
         'post_types',
         'categories',
+        'language',
         'schedule_frequency',
         'schedule_time',
         'is_active',
