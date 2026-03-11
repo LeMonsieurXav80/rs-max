@@ -11,6 +11,8 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Facades\URL;
 use Illuminate\View\View;
 
 /**
@@ -191,6 +193,7 @@ class CrossPostController extends Controller
         $mediaItems = $request->input('media', []);
         $allMedia = [];
         $tempFiles = [];
+        $storageFiles = []; // files copied to storage for signed URLs
 
         try {
             foreach ($mediaItems as $item) {
@@ -201,7 +204,7 @@ class CrossPostController extends Controller
                     continue;
                 }
 
-                // Download to temp file for mimetype detection
+                // Download media from Instagram CDN
                 $tempFile = tempnam(sys_get_temp_dir(), 'xpost_');
                 $tempFiles[] = $tempFile;
 
@@ -218,14 +221,28 @@ class CrossPostController extends Controller
                     continue;
                 }
 
+                // Copy to storage so we can serve via signed URL (Threads API needs a reliable URL)
+                $ext = match (true) {
+                    str_starts_with($mimetype, 'video/') => 'mp4',
+                    $mimetype === 'image/png' => 'png',
+                    $mimetype === 'image/webp' => 'webp',
+                    default => 'jpg',
+                };
+                $filename = 'xpost_' . uniqid() . '.' . $ext;
+                copy($tempFile, storage_path("app/private/media/{$filename}"));
+                $storageFiles[] = $filename;
+
+                $signedUrl = URL::temporarySignedRoute('media.show', now()->addHours(2), ['filename' => $filename]);
+
                 $allMedia[] = [
                     'url' => $mediaUrl,
+                    'signed_url' => $signedUrl,
                     'mimetype' => $mimetype,
                     'title' => '',
                 ];
             }
 
-            // Bluesky: max 4 images, or 1 video (no mix)
+            // Bluesky: max 4 images, or 1 video (no mix) — uses Instagram CDN URLs
             $hasVideo = collect($allMedia)->contains(fn ($m) => str_starts_with($m['mimetype'], 'video/'));
             if ($hasVideo) {
                 $blueskyMedia = [collect($allMedia)->first(fn ($m) => str_starts_with($m['mimetype'], 'video/'))];
@@ -233,8 +250,12 @@ class CrossPostController extends Controller
                 $blueskyMedia = array_slice($allMedia, 0, 4);
             }
 
-            // Threads: all media as-is (carousel supported)
-            $threadsMedia = $allMedia;
+            // Threads: use signed URLs served from our server (Threads API can't always fetch Instagram CDN)
+            $threadsMedia = array_map(fn ($m) => [
+                'url' => $m['signed_url'],
+                'mimetype' => $m['mimetype'],
+                'title' => $m['title'],
+            ], $allMedia);
 
             // --- Publish to Bluesky ---
             $bsResult = null;
@@ -317,11 +338,15 @@ class CrossPostController extends Controller
             ]);
 
         } finally {
-            // Clean up ALL temp files
+            // Clean up temp files
             foreach ($tempFiles as $f) {
                 if (file_exists($f)) {
                     @unlink($f);
                 }
+            }
+            // Clean up storage files used for signed URLs
+            foreach ($storageFiles as $filename) {
+                Storage::disk('local')->delete("media/{$filename}");
             }
         }
     }

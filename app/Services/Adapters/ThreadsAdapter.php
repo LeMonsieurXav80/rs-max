@@ -341,28 +341,41 @@ class ThreadsAdapter implements PlatformAdapterInterface, ThreadableAdapterInter
      */
     private function waitForProcessing(string $containerId, string $accessToken): bool
     {
+        $lastStatus = null;
+
         for ($attempt = 0; $attempt < self::VIDEO_POLL_MAX_ATTEMPTS; $attempt++) {
             sleep(self::VIDEO_POLL_INTERVAL);
 
             $response = Http::get(self::API_BASE . "/{$containerId}", [
-                'fields' => 'status',
+                'fields' => 'status,error_message',
                 'access_token' => $accessToken,
             ]);
 
             $status = $response->json('status');
+            $lastStatus = $status;
 
             if ($status === 'FINISHED') {
                 return true;
             }
 
-            if ($status === 'ERROR') {
-                Log::error('ThreadsAdapter: container processing returned ERROR', [
+            if ($status === 'ERROR' || $status === 'EXPIRED') {
+                Log::error('ThreadsAdapter: container processing failed', [
                     'container_id' => $containerId,
+                    'status' => $status,
+                    'error_message' => $response->json('error_message'),
+                    'attempt' => $attempt + 1,
                 ]);
 
                 return false;
             }
         }
+
+        Log::warning('ThreadsAdapter: video processing timed out', [
+            'container_id' => $containerId,
+            'last_status' => $lastStatus,
+            'attempts' => self::VIDEO_POLL_MAX_ATTEMPTS,
+            'total_seconds' => self::VIDEO_POLL_MAX_ATTEMPTS * self::VIDEO_POLL_INTERVAL,
+        ]);
 
         return false;
     }
