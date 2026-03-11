@@ -16,12 +16,24 @@ mkdir -p /var/www/html/bootstrap/cache
 chown -R www-data:www-data /var/www/html/storage /var/www/html/bootstrap/cache
 chmod -R 775 /var/www/html/storage /var/www/html/bootstrap/cache
 
+# Preserve APP_KEY across redeploys (credentials are encrypted with it)
+SAVED_APP_KEY=""
+if [ -f /var/www/html/.env ]; then
+    SAVED_APP_KEY=$(grep "^APP_KEY=base64:" /var/www/html/.env | head -1)
+fi
+
 # Create .env file from .env.example as base
 echo "Setting up .env file..."
 if [ -f /var/www/html/.env.example ]; then
     cp /var/www/html/.env.example /var/www/html/.env
 else
     touch /var/www/html/.env
+fi
+
+# Restore preserved APP_KEY (so encrypted data remains readable)
+if [ -n "$SAVED_APP_KEY" ]; then
+    sed -i "/^APP_KEY=/d" /var/www/html/.env
+    echo "$SAVED_APP_KEY" >> /var/www/html/.env
 fi
 
 # Override .env with Docker environment variables (Coolify injects these)
