@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Models\SocialAccount;
 use App\Services\Adapters\BlueskyAdapter;
+use App\Services\Adapters\ThreadsAdapter;
 use App\Services\AiAssistService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -13,7 +14,7 @@ use Illuminate\Support\Facades\Log;
 use Illuminate\View\View;
 
 /**
- * Temporary controller for one-time Instagram → Bluesky cross-posting.
+ * Temporary controller for one-time Instagram → Bluesky + Threads cross-posting.
  * Delete after use.
  */
 class CrossPostController extends Controller
@@ -32,9 +33,18 @@ class CrossPostController extends Controller
     {
         $pairs = [];
         foreach (self::PAIRS as $igId => $bsId) {
+            $igAccount = SocialAccount::find($igId);
+            $bsAccount = SocialAccount::find($bsId);
+
+            // Auto-discover Threads account linked to same user(s)
+            $threadsAccount = SocialAccount::whereHas('platform', fn ($q) => $q->where('slug', 'threads'))
+                ->whereHas('users', fn ($q) => $q->whereIn('user_id', $igAccount->users->pluck('id')))
+                ->first();
+
             $pairs[] = [
-                'instagram' => SocialAccount::find($igId),
-                'bluesky' => SocialAccount::find($bsId),
+                'instagram' => $igAccount,
+                'bluesky' => $bsAccount,
+                'threads' => $threadsAccount,
             ];
         }
 
@@ -124,7 +134,7 @@ class CrossPostController extends Controller
     }
 
     /**
-     * Cross-post a single Instagram post to Bluesky.
+     * Cross-post a single Instagram post to Bluesky + Threads.
      */
     public function crossPost(Request $request): JsonResponse
     {
@@ -143,29 +153,37 @@ class CrossPostController extends Controller
         }
 
         $bsAccount = SocialAccount::findOrFail(self::PAIRS[$igId]);
-        $adapter = new BlueskyAdapter;
+
+        // Auto-discover Threads account linked to same user(s)
+        $igAccount = SocialAccount::findOrFail($igId);
+        $threadsAccount = SocialAccount::whereHas('platform', fn ($q) => $q->where('slug', 'threads'))
+            ->whereHas('users', fn ($q) => $q->whereIn('user_id', $igAccount->users->pluck('id')))
+            ->first();
 
         $caption = $request->input('caption', '');
 
-        // Bluesky has 300 char limit — use AI with persona to rewrite if needed
-        if (mb_strlen($caption) > 300) {
+        // Bluesky caption: 300 char limit — use AI with persona to rewrite if needed
+        $bsCaption = $caption;
+        if (mb_strlen($bsCaption) > 300) {
             $persona = $bsAccount->persona;
             if ($persona) {
                 $aiService = new AiAssistService;
-                $aiCaption = $aiService->generate($caption, $persona, $bsAccount);
+                $aiCaption = $aiService->generate($bsCaption, $persona, $bsAccount);
                 if ($aiCaption && mb_strlen($aiCaption) <= 300) {
-                    $caption = $aiCaption;
+                    $bsCaption = $aiCaption;
                 } else {
-                    // AI returned text still too long or failed — truncate
-                    $caption = mb_substr($aiCaption ?: $caption, 0, 297) . '...';
+                    $bsCaption = mb_substr($aiCaption ?: $bsCaption, 0, 297) . '...';
                 }
             } else {
-                $caption = mb_substr($caption, 0, 297) . '...';
+                $bsCaption = mb_substr($bsCaption, 0, 297) . '...';
             }
         }
 
+        // Threads caption: 500 char limit — simple truncate
+        $thCaption = mb_strlen($caption) > 500 ? mb_substr($caption, 0, 497) . '...' : $caption;
+
         $mediaItems = $request->input('media', []);
-        $blueskyMedia = [];
+        $allMedia = [];
         $tempFiles = [];
 
         try {
@@ -177,7 +195,7 @@ class CrossPostController extends Controller
                     continue;
                 }
 
-                // Download to temp file
+                // Download to temp file for mimetype detection
                 $tempFile = tempnam(sys_get_temp_dir(), 'xpost_');
                 $tempFiles[] = $tempFile;
 
@@ -189,41 +207,30 @@ class CrossPostController extends Controller
 
                 $mimetype = mime_content_type($tempFile) ?: 'image/jpeg';
 
-                if ($mediaType === 'VIDEO') {
-                    // Bluesky video limit: ~50MB, but keep reasonable
-                    $fileSize = filesize($tempFile);
-                    if ($fileSize > 50_000_000) {
-                        Log::warning('CrossPost: video too large, skipping', ['size' => $fileSize]);
-                        continue;
-                    }
-
-                    $blueskyMedia[] = [
-                        'url' => $mediaUrl,
-                        'mimetype' => $mimetype,
-                        'title' => '',
-                    ];
-                } else {
-                    // Image — Bluesky handles compression in the adapter
-                    $blueskyMedia[] = [
-                        'url' => $mediaUrl,
-                        'mimetype' => $mimetype,
-                        'title' => '',
-                    ];
+                if ($mediaType === 'VIDEO' && filesize($tempFile) > 50_000_000) {
+                    Log::warning('CrossPost: video too large, skipping', ['size' => filesize($tempFile)]);
+                    continue;
                 }
+
+                $allMedia[] = [
+                    'url' => $mediaUrl,
+                    'mimetype' => $mimetype,
+                    'title' => '',
+                ];
             }
 
             // Bluesky: max 4 images, or 1 video (no mix)
-            $hasVideo = collect($blueskyMedia)->contains(fn ($m) => str_starts_with($m['mimetype'], 'video/'));
-
+            $hasVideo = collect($allMedia)->contains(fn ($m) => str_starts_with($m['mimetype'], 'video/'));
             if ($hasVideo) {
-                // Keep only first video
-                $blueskyMedia = [collect($blueskyMedia)->first(fn ($m) => str_starts_with($m['mimetype'], 'video/'))];
+                $blueskyMedia = [collect($allMedia)->first(fn ($m) => str_starts_with($m['mimetype'], 'video/'))];
             } else {
-                // Keep max 4 images
-                $blueskyMedia = array_slice($blueskyMedia, 0, 4);
+                $blueskyMedia = array_slice($allMedia, 0, 4);
             }
 
-            // Post to Bluesky
+            // Threads: all media as-is (carousel supported)
+            $threadsMedia = $allMedia;
+
+            // --- Publish to Bluesky ---
             Log::info('CrossPost: publishing to Bluesky', [
                 'ig_id' => $igId,
                 'post_id' => $request->input('post_id'),
@@ -231,20 +238,55 @@ class CrossPostController extends Controller
                 'has_video' => $hasVideo,
             ]);
 
-            $result = $adapter->publish(
+            $bsResult = (new BlueskyAdapter)->publish(
                 $bsAccount,
-                $caption ?: '📸',
+                $bsCaption ?: "\u{1F4F8}",
                 ! empty($blueskyMedia) ? $blueskyMedia : null
             );
 
-            Log::info('CrossPost: publish result', [
+            Log::info('CrossPost: Bluesky result', [
                 'post_id' => $request->input('post_id'),
-                'success' => $result['success'] ?? false,
-                'error' => $result['error'] ?? null,
+                'success' => $bsResult['success'] ?? false,
+                'error' => $bsResult['error'] ?? null,
             ]);
 
+            // --- Publish to Threads ---
+            $thResult = null;
+            if ($threadsAccount) {
+                Log::info('CrossPost: publishing to Threads', [
+                    'ig_id' => $igId,
+                    'post_id' => $request->input('post_id'),
+                    'media_count' => count($threadsMedia),
+                ]);
+
+                $thResult = (new ThreadsAdapter)->publish(
+                    $threadsAccount,
+                    $thCaption ?: "\u{1F4F8}",
+                    ! empty($threadsMedia) ? $threadsMedia : null
+                );
+
+                Log::info('CrossPost: Threads result', [
+                    'post_id' => $request->input('post_id'),
+                    'success' => $thResult['success'] ?? false,
+                    'error' => $thResult['error'] ?? null,
+                ]);
+            }
+
+            // Combine results
+            $bsOk = $bsResult['success'] ?? false;
+            $thOk = ! $threadsAccount || ($thResult['success'] ?? false);
+            $allSuccess = $bsOk && $thOk;
+
+            $errors = [];
+            if (! $bsOk) {
+                $errors[] = 'Bluesky: ' . ($bsResult['error'] ?? 'erreur');
+            }
+            if ($threadsAccount && ! ($thResult['success'] ?? false)) {
+                $errors[] = 'Threads: ' . ($thResult['error'] ?? 'erreur');
+            }
+
             // Remember this post as done (persists 30 days)
-            if ($result['success'] ?? false) {
+            if ($allSuccess) {
                 $postId = $request->input('post_id');
                 $cacheKey = "crosspost_done_{$igId}";
                 $doneIds = Cache::get($cacheKey, []);
@@ -252,7 +294,16 @@ class CrossPostController extends Controller
                 Cache::put($cacheKey, array_unique($doneIds), now()->addDays(30));
             }
 
-            return response()->json($result);
+            return response()->json([
+                'success' => $allSuccess,
+                'error' => implode(' | ', $errors) ?: null,
+                'platforms' => [
+                    'bluesky' => ['success' => $bsOk, 'error' => $bsResult['error'] ?? null],
+                    'threads' => $thResult
+                        ? ['success' => $thResult['success'] ?? false, 'error' => $thResult['error'] ?? null]
+                        : null,
+                ],
+            ]);
 
         } finally {
             // Clean up ALL temp files

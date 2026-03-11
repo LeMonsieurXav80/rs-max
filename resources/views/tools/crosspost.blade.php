@@ -1,12 +1,12 @@
 @extends('layouts.app')
-@section('title', 'Cross-post Instagram → Bluesky')
+@section('title', 'Cross-post Instagram → Bluesky + Threads')
 
 @section('content')
 <div class="max-w-5xl mx-auto" x-data="crossPostApp()">
     <div class="flex items-center justify-between mb-6">
         <div>
-            <h1 class="text-2xl font-bold text-gray-900">Cross-post Instagram → Bluesky</h1>
-            <p class="text-sm text-gray-500 mt-1">Outil temporaire - publie les posts Instagram sur Bluesky (du plus ancien au plus récent)</p>
+            <h1 class="text-2xl font-bold text-gray-900">Cross-post Instagram → Bluesky + Threads</h1>
+            <p class="text-sm text-gray-500 mt-1">Outil temporaire - publie les posts Instagram sur Bluesky et Threads (du plus ancien au plus récent)</p>
         </div>
     </div>
 
@@ -16,13 +16,18 @@
         <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
             @foreach($pairs as $i => $pair)
                 <button
-                    @click="selectPair({{ $pair['instagram']->id }}, {{ $pair['bluesky']->id }}, '{{ addslashes($pair['instagram']->name) }}', '{{ addslashes($pair['bluesky']->name) }}')"
+                    @click="selectPair({{ $pair['instagram']->id }}, {{ $pair['bluesky']->id }}, '{{ addslashes($pair['instagram']->name) }}', '{{ addslashes($pair['bluesky']->name) }}', {{ $pair['threads'] ? 'true' : 'false' }}, '{{ $pair['threads'] ? addslashes($pair['threads']->name) : '' }}')"
                     class="flex items-center gap-3 p-4 rounded-xl border-2 transition-colors text-left"
                     :class="instagramId === {{ $pair['instagram']->id }} ? 'border-indigo-500 bg-indigo-50' : 'border-gray-200 hover:border-gray-300'"
                 >
                     <div class="flex-1">
                         <p class="text-sm font-medium text-gray-900">{{ $pair['instagram']->name }}</p>
-                        <p class="text-xs text-gray-500">Instagram → {{ $pair['bluesky']->name }} (Bluesky)</p>
+                        <p class="text-xs text-gray-500">
+                            Instagram → {{ $pair['bluesky']->name }} (Bluesky)
+                            @if($pair['threads'])
+                                + {{ $pair['threads']->name }} (Threads)
+                            @endif
+                        </p>
                     </div>
                 </button>
             @endforeach
@@ -158,7 +163,7 @@
                                 </svg>
                             </template>
                             <template x-if="post.status === 'done'">
-                                <button @click="if (!running) { post.status = 'retry'; post.selected = true; post.error = null; }"
+                                <button @click="if (!running) { post.status = 'retry'; post.selected = true; post.error = null; post.platforms = null; }"
                                     class="cursor-pointer hover:opacity-60 transition-opacity" :class="{ 'pointer-events-none': running }"
                                     title="Cliquer pour re-publier">
                                     <svg class="w-4 h-4 text-green-500" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2">
@@ -167,7 +172,7 @@
                                 </button>
                             </template>
                             <template x-if="post.status === 'error'">
-                                <button @click="if (!running) { post.status = 'retry'; post.selected = true; post.error = null; }"
+                                <button @click="if (!running) { post.status = 'retry'; post.selected = true; post.error = null; post.platforms = null; }"
                                     class="cursor-pointer hover:opacity-60 transition-opacity" :class="{ 'pointer-events-none': running }"
                                     title="Cliquer pour réessayer">
                                     <svg class="w-4 h-4 text-red-500" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2">
@@ -176,7 +181,7 @@
                                 </button>
                             </template>
                             <template x-if="post.status === 'skipped'">
-                                <button @click="if (!running) { post.status = 'retry'; post.selected = true; post.error = null; }"
+                                <button @click="if (!running) { post.status = 'retry'; post.selected = true; post.error = null; post.platforms = null; }"
                                     class="cursor-pointer hover:opacity-60 transition-opacity" :class="{ 'pointer-events-none': running }"
                                     title="Cliquer pour réessayer">
                                     <svg class="w-4 h-4 text-yellow-500" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2">
@@ -204,6 +209,18 @@
                         {{-- Caption --}}
                         <span class="flex-1 text-gray-600 truncate" x-text="post.caption?.substring(0, 80) || '(sans texte)'"></span>
 
+                        {{-- Platform badges (shown after publish attempt) --}}
+                        <template x-if="post.platforms">
+                            <div class="flex gap-1 flex-shrink-0">
+                                <span class="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-bold"
+                                    :class="post.platforms.bluesky?.success ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'">BS</span>
+                                <template x-if="post.platforms.threads">
+                                    <span class="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-bold"
+                                        :class="post.platforms.threads?.success ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'">TH</span>
+                                </template>
+                            </div>
+                        </template>
+
                         {{-- Error message --}}
                         <span x-show="post.error" class="text-xs text-red-500 max-w-48 truncate" x-text="post.error"></span>
                     </div>
@@ -220,6 +237,8 @@ function crossPostApp() {
         blueskyId: null,
         igName: '',
         bsName: '',
+        hasThreads: false,
+        thName: '',
         fetching: false,
         posts: [],
         running: false,
@@ -258,11 +277,13 @@ function crossPostApp() {
             }, 1000);
         },
 
-        selectPair(igId, bsId, igName, bsName) {
+        selectPair(igId, bsId, igName, bsName, hasThreads, thName) {
             this.instagramId = igId;
             this.blueskyId = bsId;
             this.igName = igName;
             this.bsName = bsName;
+            this.hasThreads = hasThreads;
+            this.thName = thName;
             this.posts = [];
             this.running = false;
             this.stopped = false;
@@ -288,6 +309,7 @@ function crossPostApp() {
                         selected: !doneIds.includes(p.id),
                         status: doneIds.includes(p.id) ? 'done' : null,
                         error: null,
+                        platforms: null,
                     }));
                 } else {
                     alert(data.error || 'Erreur');
@@ -346,6 +368,7 @@ function crossPostApp() {
                         this.posts[i].error = `HTTP ${res.status} — ${res.statusText}`;
                     } else {
                         const data = await res.json();
+                        this.posts[i].platforms = data.platforms || null;
                         if (data.success) {
                             this.posts[i].status = 'done';
                         } else {
