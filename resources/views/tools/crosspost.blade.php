@@ -209,14 +209,30 @@
                         {{-- Caption --}}
                         <span class="flex-1 text-gray-600 truncate" x-text="post.caption?.substring(0, 80) || '(sans texte)'"></span>
 
-                        {{-- Platform badges (shown after publish attempt) --}}
+                        {{-- Platform badges (shown after publish attempt) — click failed ones to retry --}}
                         <template x-if="post.platforms">
                             <div class="flex gap-1 flex-shrink-0">
-                                <span class="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-bold"
-                                    :class="post.platforms.bluesky?.success ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'">BS</span>
+                                <template x-if="post.platforms.bluesky">
+                                    <button
+                                        @click="if (!running && !post.platforms.bluesky.success) { retryPlatform(index, 'bluesky'); }"
+                                        class="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-bold transition-opacity"
+                                        :class="[
+                                            post.platforms.bluesky?.success ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700 cursor-pointer hover:opacity-60',
+                                            running ? 'pointer-events-none' : ''
+                                        ]"
+                                        :title="post.platforms.bluesky?.success ? 'Bluesky OK' : 'Cliquer pour retenter Bluesky'"
+                                    >BS</button>
+                                </template>
                                 <template x-if="post.platforms.threads">
-                                    <span class="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-bold"
-                                        :class="post.platforms.threads?.success ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'">TH</span>
+                                    <button
+                                        @click="if (!running && !post.platforms.threads.success) { retryPlatform(index, 'threads'); }"
+                                        class="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-bold transition-opacity"
+                                        :class="[
+                                            post.platforms.threads?.success ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700 cursor-pointer hover:opacity-60',
+                                            running ? 'pointer-events-none' : ''
+                                        ]"
+                                        :title="post.platforms.threads?.success ? 'Threads OK' : 'Cliquer pour retenter Threads'"
+                                    >TH</button>
                                 </template>
                             </div>
                         </template>
@@ -346,6 +362,11 @@ function crossPostApp() {
                     const controller = new AbortController();
                     const timeout = setTimeout(() => controller.abort(), 10 * 60 * 1000); // 10 min
 
+                    // Build skip list: skip platforms that already succeeded
+                    const skipPlatforms = [];
+                    if (post.platforms?.bluesky?.success) skipPlatforms.push('bluesky');
+                    if (post.platforms?.threads?.success) skipPlatforms.push('threads');
+
                     const res = await fetch('{{ route("crosspost.post") }}', {
                         method: 'POST',
                         signal: controller.signal,
@@ -359,6 +380,7 @@ function crossPostApp() {
                             post_id: post.id,
                             caption: post.caption,
                             media: post.media,
+                            skip_platforms: skipPlatforms,
                         }),
                     });
                     clearTimeout(timeout);
@@ -368,9 +390,16 @@ function crossPostApp() {
                         this.posts[i].error = `HTTP ${res.status} — ${res.statusText}`;
                     } else {
                         const data = await res.json();
-                        this.posts[i].platforms = data.platforms || null;
+                        // Merge new platform results with existing (keep previous successes)
+                        const prev = this.posts[i].platforms || {};
+                        const incoming = data.platforms || {};
+                        this.posts[i].platforms = {
+                            bluesky: incoming.bluesky || prev.bluesky || null,
+                            threads: incoming.threads || prev.threads || null,
+                        };
                         if (data.success) {
                             this.posts[i].status = 'done';
+                            this.posts[i].error = null;
                         } else {
                             this.posts[i].status = 'error';
                             this.posts[i].error = data.error || 'Erreur inconnue';
@@ -391,6 +420,69 @@ function crossPostApp() {
                 }
             }
 
+            this.running = false;
+        },
+
+        async retryPlatform(index, platform) {
+            if (this.running) return;
+            const post = this.posts[index];
+
+            // Build skip list: skip all platforms EXCEPT the one we're retrying
+            const skipPlatforms = [];
+            if (platform !== 'bluesky') skipPlatforms.push('bluesky');
+            if (platform !== 'threads') skipPlatforms.push('threads');
+
+            this.posts[index].status = 'processing';
+            this.posts[index].error = null;
+            this.running = true;
+            this.currentPost = post;
+
+            try {
+                const controller = new AbortController();
+                const timeout = setTimeout(() => controller.abort(), 10 * 60 * 1000);
+
+                const res = await fetch('{{ route("crosspost.post") }}', {
+                    method: 'POST',
+                    signal: controller.signal,
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').content,
+                        'Accept': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        instagram_id: this.instagramId,
+                        post_id: post.id,
+                        caption: post.caption,
+                        media: post.media,
+                        skip_platforms: skipPlatforms,
+                    }),
+                });
+                clearTimeout(timeout);
+
+                if (!res.ok) {
+                    this.posts[index].status = 'error';
+                    this.posts[index].error = `HTTP ${res.status} — ${res.statusText}`;
+                } else {
+                    const data = await res.json();
+                    // Merge: keep previous results, update only the retried platform
+                    const prev = this.posts[index].platforms || {};
+                    const incoming = data.platforms || {};
+                    this.posts[index].platforms = {
+                        bluesky: incoming.bluesky || prev.bluesky || null,
+                        threads: incoming.threads || prev.threads || null,
+                    };
+                    // Check if ALL platforms now succeeded
+                    const p = this.posts[index].platforms;
+                    const allOk = (p.bluesky?.success !== false) && (!p.threads || p.threads?.success !== false);
+                    this.posts[index].status = allOk ? 'done' : 'error';
+                    this.posts[index].error = allOk ? null : data.error;
+                }
+            } catch (e) {
+                this.posts[index].status = 'error';
+                this.posts[index].error = e.name === 'AbortError' ? 'Timeout (10 min)' : e.message;
+            }
+
+            this.currentPost = null;
             this.running = false;
         },
 

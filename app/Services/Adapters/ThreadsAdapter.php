@@ -10,7 +10,7 @@ class ThreadsAdapter implements PlatformAdapterInterface, ThreadableAdapterInter
 {
     private const API_BASE = 'https://graph.threads.net/v1.0';
 
-    private const VIDEO_POLL_MAX_ATTEMPTS = 30;
+    private const VIDEO_POLL_MAX_ATTEMPTS = 60;
 
     private const VIDEO_POLL_INTERVAL = 5;
 

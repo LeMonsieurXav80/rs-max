@@ -145,6 +145,8 @@ class CrossPostController extends Controller
             'media' => 'nullable|array',
             'media.*.type' => 'required|string',
             'media.*.url' => 'required|url',
+            'skip_platforms' => 'nullable|array',
+            'skip_platforms.*' => 'string|in:bluesky,threads',
         ]);
 
         $igId = (int) $request->input('instagram_id');
@@ -159,6 +161,10 @@ class CrossPostController extends Controller
         $threadsAccount = SocialAccount::whereHas('platform', fn ($q) => $q->where('slug', 'threads'))
             ->whereHas('users', fn ($q) => $q->whereIn('user_id', $igAccount->users->pluck('id')))
             ->first();
+
+        $skipPlatforms = $request->input('skip_platforms', []);
+        $doBluesky = ! in_array('bluesky', $skipPlatforms);
+        $doThreads = ! in_array('threads', $skipPlatforms) && $threadsAccount;
 
         $caption = $request->input('caption', '');
 
@@ -231,28 +237,31 @@ class CrossPostController extends Controller
             $threadsMedia = $allMedia;
 
             // --- Publish to Bluesky ---
-            Log::info('CrossPost: publishing to Bluesky', [
-                'ig_id' => $igId,
-                'post_id' => $request->input('post_id'),
-                'media_count' => count($blueskyMedia),
-                'has_video' => $hasVideo,
-            ]);
+            $bsResult = null;
+            if ($doBluesky) {
+                Log::info('CrossPost: publishing to Bluesky', [
+                    'ig_id' => $igId,
+                    'post_id' => $request->input('post_id'),
+                    'media_count' => count($blueskyMedia),
+                    'has_video' => $hasVideo,
+                ]);
 
-            $bsResult = (new BlueskyAdapter)->publish(
-                $bsAccount,
-                $bsCaption ?: "\u{1F4F8}",
-                ! empty($blueskyMedia) ? $blueskyMedia : null
-            );
+                $bsResult = (new BlueskyAdapter)->publish(
+                    $bsAccount,
+                    $bsCaption ?: "\u{1F4F8}",
+                    ! empty($blueskyMedia) ? $blueskyMedia : null
+                );
 
-            Log::info('CrossPost: Bluesky result', [
-                'post_id' => $request->input('post_id'),
-                'success' => $bsResult['success'] ?? false,
-                'error' => $bsResult['error'] ?? null,
-            ]);
+                Log::info('CrossPost: Bluesky result', [
+                    'post_id' => $request->input('post_id'),
+                    'success' => $bsResult['success'] ?? false,
+                    'error' => $bsResult['error'] ?? null,
+                ]);
+            }
 
             // --- Publish to Threads ---
             $thResult = null;
-            if ($threadsAccount) {
+            if ($doThreads) {
                 Log::info('CrossPost: publishing to Threads', [
                     'ig_id' => $igId,
                     'post_id' => $request->input('post_id'),
@@ -272,16 +281,16 @@ class CrossPostController extends Controller
                 ]);
             }
 
-            // Combine results
-            $bsOk = $bsResult['success'] ?? false;
-            $thOk = ! $threadsAccount || ($thResult['success'] ?? false);
+            // Combine results (skipped platforms count as OK)
+            $bsOk = ! $doBluesky || ($bsResult['success'] ?? false);
+            $thOk = ! $doThreads || ($thResult['success'] ?? false);
             $allSuccess = $bsOk && $thOk;
 
             $errors = [];
-            if (! $bsOk) {
+            if ($doBluesky && ! ($bsResult['success'] ?? false)) {
                 $errors[] = 'Bluesky: ' . ($bsResult['error'] ?? 'erreur');
             }
-            if ($threadsAccount && ! ($thResult['success'] ?? false)) {
+            if ($doThreads && ! ($thResult['success'] ?? false)) {
                 $errors[] = 'Threads: ' . ($thResult['error'] ?? 'erreur');
             }
 
@@ -298,7 +307,9 @@ class CrossPostController extends Controller
                 'success' => $allSuccess,
                 'error' => implode(' | ', $errors) ?: null,
                 'platforms' => [
-                    'bluesky' => ['success' => $bsOk, 'error' => $bsResult['error'] ?? null],
+                    'bluesky' => $bsResult
+                        ? ['success' => $bsResult['success'] ?? false, 'error' => $bsResult['error'] ?? null]
+                        : null,
                     'threads' => $thResult
                         ? ['success' => $thResult['success'] ?? false, 'error' => $thResult['error'] ?? null]
                         : null,
