@@ -86,7 +86,9 @@ class StatsController extends Controller
             ];
         }
 
-        $totalFollowers = $socialAccounts->sum('followers_count');
+        $totalFollowers = $socialAccounts
+            ->when(! empty($selectedAccounts), fn ($c) => $c->whereIn('id', $selectedAccounts))
+            ->sum('followers_count');
 
         // Compute follower deltas for each account (vs 1d, 7d, 14d, 28d ago)
         $deltas = [];

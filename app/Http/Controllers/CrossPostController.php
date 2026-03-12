@@ -24,23 +24,22 @@ class CrossPostController extends Controller
     private const IG_API = 'https://graph.facebook.com/v21.0';
 
     /**
-     * Account pairs: Instagram ID => Bluesky ID.
+     * Account pairs: Instagram ID => [bluesky DB id, threads platform_account_id].
      */
     private const PAIRS = [
-        21 => 52, // wearealgarve → We Are Algarve (Bluesky)
-        25 => 51, // the.van.tour → VanTour (Bluesky)
+        21 => ['bluesky' => 52, 'threads_pid' => '34190130283965450'], // wearealgarve
+        25 => ['bluesky' => 51, 'threads_pid' => '26159333080368687'], // the.van.tour
     ];
 
     public function index(): View
     {
         $pairs = [];
-        foreach (self::PAIRS as $igId => $bsId) {
+        foreach (self::PAIRS as $igId => $pair) {
             $igAccount = SocialAccount::find($igId);
-            $bsAccount = SocialAccount::find($bsId);
+            $bsAccount = SocialAccount::find($pair['bluesky']);
 
-            // Auto-discover Threads account linked to same user(s)
             $threadsAccount = SocialAccount::whereHas('platform', fn ($q) => $q->where('slug', 'threads'))
-                ->whereHas('users', fn ($q) => $q->whereIn('user_id', $igAccount->users->pluck('id')))
+                ->where('platform_account_id', $pair['threads_pid'])
                 ->first();
 
             $pairs[] = [
@@ -156,12 +155,12 @@ class CrossPostController extends Controller
             return response()->json(['error' => 'Compte non autorisé.'], 403);
         }
 
-        $bsAccount = SocialAccount::findOrFail(self::PAIRS[$igId]);
-
-        // Auto-discover Threads account linked to same user(s)
+        $pair = self::PAIRS[$igId];
+        $bsAccount = SocialAccount::findOrFail($pair['bluesky']);
         $igAccount = SocialAccount::findOrFail($igId);
+
         $threadsAccount = SocialAccount::whereHas('platform', fn ($q) => $q->where('slug', 'threads'))
-            ->whereHas('users', fn ($q) => $q->whereIn('user_id', $igAccount->users->pluck('id')))
+            ->where('platform_account_id', $pair['threads_pid'])
             ->first();
 
         $skipPlatforms = $request->input('skip_platforms', []);
