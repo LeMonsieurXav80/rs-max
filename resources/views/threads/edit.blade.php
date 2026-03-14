@@ -62,13 +62,13 @@
         <div class="bg-white rounded-2xl shadow-sm border border-gray-100 p-6 lg:p-8" x-data="{
             groups: {{ json_encode($groupsData) }},
             isGroupActive(group) {
-                const checked = new Set([...this.$el.querySelectorAll('input[name=\'accounts[]\']:checked')].map(el => parseInt(el.value)));
+                const checked = new Set([...this.$el.querySelectorAll('input[type="checkbox"]:checked')].map(el => parseInt(el.value)));
                 return group.account_ids.length > 0 && group.account_ids.every(id => checked.has(id));
             },
             toggleGroup(group) {
                 const allChecked = this.isGroupActive(group);
                 group.account_ids.forEach(id => {
-                    const cb = this.$el.querySelector('input[name=\'accounts[]\'][value=\'' + id + '\']');
+                    const cb = [...this.$el.querySelectorAll('input[type="checkbox"]')].find(el => parseInt(el.value) === id);
                     if (cb) cb.checked = !allChecked;
                 });
             },
