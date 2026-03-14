@@ -301,13 +301,9 @@
             toggleGroup(group) {
                 const allChecked = this.isGroupActive(group);
                 group.account_ids.forEach(id => {
-                    const cb = this.$el.querySelector('input[name=\'accounts[]\'][value=\'' + id + '\']');
-                    if (cb) {
-                        cb.checked = !allChecked;
-                        this.checked[id] = !allChecked;
-                        cb.dispatchEvent(new Event('change', { bubbles: true }));
-                    }
+                    this.checked[id] = !allChecked;
                 });
+                this.$dispatch('accounts-changed');
             },
         }">
             <div class="flex items-center justify-between mb-4">
@@ -384,7 +380,7 @@
                                                 value="{{ $account->id }}"
                                                 data-platform="{{ $slug }}"
                                                 data-has-persona="{{ $account->persona_id ? '1' : '0' }}"
-                                                {{ in_array($account->id, old('accounts', $defaultAccountIds ?? [])) ? 'checked' : '' }}
+                                                :checked="!!checked[{{ $account->id }}]"
                                                 @change="toggleAccount({{ $account->id }}, $el.checked); $dispatch('accounts-changed')"
                                                 class="rounded border-gray-300 text-indigo-600 focus:ring-indigo-500 transition-colors"
                                             >

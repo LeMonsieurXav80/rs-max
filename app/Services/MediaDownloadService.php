@@ -101,7 +101,7 @@ class MediaDownloadService
 
             return $mediaFile;
 
-        } catch (\Exception $e) {
+        } catch (\Throwable $e) {
             Log::error('MediaDownloadService: Exception', [
                 'url' => $imageUrl,
                 'error' => $e->getMessage(),

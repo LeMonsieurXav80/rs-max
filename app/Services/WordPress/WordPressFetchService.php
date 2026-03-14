@@ -155,7 +155,7 @@ class WordPressFetchService
             foreach ($items as $cat) {
                 $categories[] = [
                     'id' => $cat['id'],
-                    'name' => $cat['name'] ?? '',
+                    'name' => html_entity_decode($cat['name'] ?? '', ENT_QUOTES, 'UTF-8'),
                     'slug' => $cat['slug'] ?? '',
                     'count' => $cat['count'] ?? 0,
                     'parent' => $cat['parent'] ?? 0,
@@ -349,9 +349,9 @@ class WordPressFetchService
 
                 $fetchedWpPostIds[] = $wpPostId;
 
-                $title = strip_tags($post['title']['rendered'] ?? '');
+                $title = html_entity_decode(strip_tags($post['title']['rendered'] ?? ''), ENT_QUOTES, 'UTF-8');
                 $content = $this->cleanHtmlContent($post['content']['rendered'] ?? '');
-                $summary = strip_tags($post['excerpt']['rendered'] ?? '');
+                $summary = html_entity_decode(strip_tags($post['excerpt']['rendered'] ?? ''), ENT_QUOTES, 'UTF-8');
                 $url = $post['link'] ?? '';
                 $publishedAt = $post['date'] ?? null;
 

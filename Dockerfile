@@ -16,6 +16,7 @@ RUN apk add --no-cache \
     libpng-dev \
     libjpeg-turbo-dev \
     freetype-dev \
+    libwebp-dev \
     libzip-dev \
     icu-dev \
     oniguruma-dev \
@@ -24,7 +25,7 @@ RUN apk add --no-cache \
     ffmpeg
 
 # Install PHP extensions
-RUN docker-php-ext-configure gd --with-freetype --with-jpeg \
+RUN docker-php-ext-configure gd --with-freetype --with-jpeg --with-webp \
     && docker-php-ext-install -j$(nproc) \
     pdo_mysql \
     mbstring \

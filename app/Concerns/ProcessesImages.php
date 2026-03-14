@@ -36,7 +36,7 @@ trait ProcessesImages
             'image/jpeg' => @imagecreatefromjpeg($sourcePath),
             'image/png' => @imagecreatefrompng($sourcePath),
             'image/gif' => @imagecreatefromgif($sourcePath),
-            'image/webp' => @imagecreatefromwebp($sourcePath),
+            'image/webp' => function_exists('imagecreatefromwebp') ? @imagecreatefromwebp($sourcePath) : null,
             default => null,
         };
 

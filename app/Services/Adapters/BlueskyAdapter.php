@@ -32,6 +32,7 @@ class BlueskyAdapter implements PlatformAdapterInterface, ThreadableAdapterInter
             $did = $auth['did'];
             $jwt = $auth['accessJwt'];
 
+            $content = $this->enforceCharLimit($content);
             $record = $this->buildRecord($content);
 
             // Attach media embed, or external link card if no media.
@@ -859,6 +860,36 @@ class BlueskyAdapter implements PlatformAdapterInterface, ThreadableAdapterInter
     }
 
     // ─── Helpers ─────────────────────────────────────────────────────
+
+    /**
+     * Ensure content stays within Bluesky's 300-grapheme limit.
+     * Tries to preserve any URL found in the content (usually the article link).
+     */
+    private function enforceCharLimit(string $content, int $limit = 300): string
+    {
+        if (mb_strlen($content) <= $limit) {
+            return $content;
+        }
+
+        Log::warning('BlueskyAdapter: content exceeds limit, truncating', [
+            'length' => mb_strlen($content),
+            'limit' => $limit,
+        ]);
+
+        // Try to extract the last URL so we can preserve it
+        if (preg_match_all('/(https?:\/\/\S+)/u', $content, $matches)) {
+            $lastUrl = end($matches[1]);
+            $urlLen = mb_strlen($lastUrl);
+            $availableForText = $limit - $urlLen - 2; // -2 for "\n\n"
+
+            if ($availableForText > 20) {
+                $textOnly = trim(mb_substr(str_replace($lastUrl, '', $content), 0, $availableForText - 3));
+                return rtrim($textOnly) . '...' . "\n\n" . $lastUrl;
+            }
+        }
+
+        return mb_substr($content, 0, $limit - 3) . '...';
+    }
 
     private function error(string $message): array
     {

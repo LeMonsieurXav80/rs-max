@@ -152,14 +152,25 @@ class ContentGenerationService
             "platform_char_limit_{$account->platform->slug}",
             $this->getDefaultCharLimit($account->platform->slug)
         );
-        if ($charLimit > 0) {
-            $userPrompt .= "\nLe contenu ne doit pas dépasser {$charLimit} caractères (limite {$account->platform->name}).\n";
-        }
 
         // Instagram links are not clickable, so don't ask to include the URL
         if ($account->platform->slug !== 'instagram') {
             $linkUrl = ($item instanceof RedditItem) ? $item->permalink : $item->url;
+
+            if ($charLimit > 0) {
+                if ($account->platform->slug === 'bluesky') {
+                    // Bluesky: URLs count toward the 300-grapheme limit — give AI the exact text budget
+                    $urlLength = mb_strlen($linkUrl) + 2; // +2 for "\n\n" separator
+                    $textBudget = max(50, $charLimit - $urlLength);
+                    $userPrompt .= "\nIMPORTANT — limite Bluesky : {$charLimit} graphèmes AU TOTAL (URL incluse). L'URL fait {$urlLength} caractères. Le texte seul ne doit donc PAS dépasser {$textBudget} caractères.\n";
+                } else {
+                    $userPrompt .= "\nLe contenu ne doit pas dépasser {$charLimit} caractères (limite {$account->platform->name}).\n";
+                }
+            }
+
             $userPrompt .= "\nInclus le lien dans la publication : {$linkUrl}";
+        } elseif ($charLimit > 0) {
+            $userPrompt .= "\nLe contenu ne doit pas dépasser {$charLimit} caractères (limite {$account->platform->name}).\n";
         }
 
         // 5. Call OpenAI API
