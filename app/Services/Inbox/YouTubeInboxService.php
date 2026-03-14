@@ -143,8 +143,7 @@ class YouTubeInboxService implements PlatformInboxInterface
             $parentId = $item->parent_id ?? $item->external_id;
 
             $response = Http::withToken($accessToken)
-                ->post(self::API_BASE . '/comments', [
-                    'part' => 'snippet',
+                ->post(self::API_BASE . '/comments?part=snippet', [
                     'snippet' => [
                         'parentId' => $parentId,
                         'textOriginal' => $replyText,

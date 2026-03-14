@@ -624,8 +624,9 @@ class BlueskyBotService
         $graceLimit = now()->subDays($graceDays);
 
         // Get follow dates from BotActionLog to sort by oldest first
+        // Includes both 'follow_active_user' (bot:run) and 'prospect_follow' (bot:prospect)
         $followDates = BotActionLog::where('social_account_id', $account->id)
-            ->where('action_type', 'follow_active_user')
+            ->whereIn('action_type', ['follow_active_user', 'prospect_follow'])
             ->where('success', true)
             ->pluck('created_at', 'target_uri')
             ->mapWithKeys(fn ($date, $uri) => [str_replace('follow:', '', $uri) => $date]);
