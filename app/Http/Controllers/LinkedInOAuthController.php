@@ -28,7 +28,7 @@ class LinkedInOAuthController extends Controller
             'response_type' => 'code',
             'client_id' => config('services.linkedin.client_id'),
             'redirect_uri' => config('services.linkedin.redirect'),
-            'scope' => 'openid profile w_member_social r_organization_admin w_organization_social rw_organization_admin',
+            'scope' => 'openid profile w_member_social',
             'state' => $state,
         ]);
 
@@ -81,10 +81,10 @@ class LinkedInOAuthController extends Controller
             $displayName = trim(($profile['given_name'] ?? '') . ' ' . ($profile['family_name'] ?? '')) ?: 'LinkedIn User';
             $remoteProfilePic = $profile['picture'] ?? null;
 
-            // Fetch organization pages the user administers
+            // Try to fetch organization pages (requires org scopes — may return empty)
             $organizations = $this->fetchOrganizations($accessToken);
 
-            // Store data in session for selection page
+            // Store data in session
             session([
                 'linkedin_oauth_data' => [
                     'access_token' => $accessToken,
@@ -95,6 +95,15 @@ class LinkedInOAuthController extends Controller
                     'organizations' => $organizations,
                 ],
             ]);
+
+            // If no organizations found, skip selection and connect personal profile directly
+            if (empty($organizations)) {
+                // Simulate selecting just the personal profile
+                $fakeRequest = $request;
+                $fakeRequest->merge(['accounts' => [$personId]]);
+
+                return $this->connect($fakeRequest);
+            }
 
             return redirect()->route('linkedin.select');
         } catch (\Throwable $e) {
