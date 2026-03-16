@@ -117,6 +117,11 @@
                             @endforeach
                         </div>
                     </div>
+                    @else
+                        {{-- Hidden inputs to preserve default AI model values when no OpenAI key is configured --}}
+                        @foreach($aiModelSettings as $m)
+                            <input type="hidden" name="{{ $m['key'] }}" value="{{ $settings[$m['key']] }}">
+                        @endforeach
                     @endif
                 </div>
             </div>
@@ -503,6 +508,8 @@
                             @enderror
                         </div>
                     </div>
+                    @else
+                        <input type="hidden" name="ai_model_inbox" value="{{ $settings['ai_model_inbox'] }}">
                     @endif
 
                     {{-- Inbox reply prompt --}}
