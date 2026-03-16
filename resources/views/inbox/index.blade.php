@@ -627,6 +627,41 @@ function inboxManager() {
 
         csrfToken: document.querySelector('meta[name="csrf-token"]').getAttribute('content'),
 
+        async refreshCsrfToken() {
+            try {
+                const resp = await fetch(window.location.href, { headers: { 'Accept': 'text/html' } });
+                const html = await resp.text();
+                const match = html.match(/meta\s+name="csrf-token"\s+content="([^"]+)"/);
+                if (match) {
+                    this.csrfToken = match[1];
+                    const meta = document.querySelector('meta[name="csrf-token"]');
+                    if (meta) meta.setAttribute('content', match[1]);
+                    return true;
+                }
+            } catch(e) {}
+            return false;
+        },
+
+        async csrfFetch(url, options = {}) {
+            options.headers = {
+                'Content-Type': 'application/json',
+                'Accept': 'application/json',
+                'X-CSRF-TOKEN': this.csrfToken,
+                ...(options.headers || {}),
+            };
+            let resp = await fetch(url, options);
+            if (resp.status === 419) {
+                const refreshed = await this.refreshCsrfToken();
+                if (refreshed) {
+                    options.headers['X-CSRF-TOKEN'] = this.csrfToken;
+                    resp = await fetch(url, options);
+                } else {
+                    window.location.reload();
+                }
+            }
+            return resp;
+        },
+
         toggleConversation(ids, index, event) {
             // Shift+Click: select range between last clicked and current
             if (event && event.shiftKey && this.lastClickedConvoIndex !== null) {
@@ -671,13 +706,8 @@ function inboxManager() {
             this.sendingReply = true;
 
             try {
-                const resp = await fetch(`/inbox/${this.replyToId}/reply`, {
+                const resp = await this.csrfFetch(`/inbox/${this.replyToId}/reply`, {
                     method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                        'X-CSRF-TOKEN': this.csrfToken,
-                        'Accept': 'application/json',
-                    },
                     body: JSON.stringify({ reply_text: this.replyText }),
                 });
 
@@ -709,13 +739,8 @@ function inboxManager() {
             this.aiLoading = true;
 
             try {
-                const resp = await fetch(`/inbox/${this.replyToId}/ai-suggest`, {
+                const resp = await this.csrfFetch(`/inbox/${this.replyToId}/ai-suggest`, {
                     method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                        'X-CSRF-TOKEN': this.csrfToken,
-                        'Accept': 'application/json',
-                    },
                 });
                 const data = await resp.json();
 
@@ -736,13 +761,8 @@ function inboxManager() {
             this.aiLoading = true;
 
             try {
-                const resp = await fetch(`/inbox/${id}/ai-suggest`, {
+                const resp = await this.csrfFetch(`/inbox/${id}/ai-suggest`, {
                     method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                        'X-CSRF-TOKEN': this.csrfToken,
-                        'Accept': 'application/json',
-                    },
                 });
                 const data = await resp.json();
 
@@ -768,13 +788,8 @@ function inboxManager() {
 
         async ignoreBulk() {
             try {
-                await fetch('/inbox/ignore', {
+                await this.csrfFetch('/inbox/ignore', {
                     method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                        'X-CSRF-TOKEN': this.csrfToken,
-                        'Accept': 'application/json',
-                    },
                     body: JSON.stringify({ ids: this.selectedIds }),
                 });
                 location.reload();
@@ -785,13 +800,8 @@ function inboxManager() {
 
         async markReadBulk() {
             try {
-                await fetch('/inbox/mark-read', {
+                await this.csrfFetch('/inbox/mark-read', {
                     method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                        'X-CSRF-TOKEN': this.csrfToken,
-                        'Accept': 'application/json',
-                    },
                     body: JSON.stringify({ ids: this.selectedIds }),
                 });
                 location.reload();
@@ -804,13 +814,8 @@ function inboxManager() {
             if (!confirm('Archiver les éléments sélectionnés ?')) return;
 
             try {
-                await fetch('/inbox/archive', {
+                await this.csrfFetch('/inbox/archive', {
                     method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                        'X-CSRF-TOKEN': this.csrfToken,
-                        'Accept': 'application/json',
-                    },
                     body: JSON.stringify({ ids: this.selectedIds }),
                 });
                 location.reload();
@@ -823,13 +828,8 @@ function inboxManager() {
             this.bulkLoading = true;
 
             try {
-                const resp = await fetch('/inbox/bulk-ai-reply', {
+                const resp = await this.csrfFetch('/inbox/bulk-ai-reply', {
                     method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                        'X-CSRF-TOKEN': this.csrfToken,
-                        'Accept': 'application/json',
-                    },
                     body: JSON.stringify({ ids: this.selectedIds }),
                 });
                 const data = await resp.json();
@@ -862,13 +862,8 @@ function inboxManager() {
             const spreadMinutes = (this.spreadHours * 60) + this.spreadMinutes;
 
             try {
-                const resp = await fetch('/inbox/bulk-send', {
+                const resp = await this.csrfFetch('/inbox/bulk-send', {
                     method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                        'X-CSRF-TOKEN': this.csrfToken,
-                        'Accept': 'application/json',
-                    },
                     body: JSON.stringify({ items, spread_minutes: spreadMinutes }),
                 });
 
@@ -909,13 +904,8 @@ function inboxManager() {
                 } else if (accountIds.length > 1) {
                     // Sync each selected account
                     for (const id of accountIds) {
-                        await fetch('/inbox/sync', {
+                        await this.csrfFetch('/inbox/sync', {
                             method: 'POST',
-                            headers: {
-                                'Content-Type': 'application/json',
-                                'X-CSRF-TOKEN': this.csrfToken,
-                                'Accept': 'application/json',
-                            },
                             body: JSON.stringify({ account_id: id }),
                         });
                     }
@@ -923,13 +913,8 @@ function inboxManager() {
                     return;
                 }
 
-                await fetch('/inbox/sync', {
+                await this.csrfFetch('/inbox/sync', {
                     method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                        'X-CSRF-TOKEN': this.csrfToken,
-                        'Accept': 'application/json',
-                    },
                     body: JSON.stringify(body),
                 });
                 location.reload();
@@ -996,15 +981,13 @@ function scheduledCountdown(info) {
             this.dismissing = true;
             try {
                 const ids = this.failedItems.map(i => i.id);
-                await fetch('{{ route("inbox.dismissFailed") }}', {
+                const token = document.querySelector('meta[name="csrf-token"]').content;
+                let resp = await fetch('{{ route("inbox.dismissFailed") }}', {
                     method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                        'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').content,
-                        'Accept': 'application/json',
-                    },
+                    headers: { 'Content-Type': 'application/json', 'Accept': 'application/json', 'X-CSRF-TOKEN': token },
                     body: JSON.stringify({ ids }),
                 });
+                if (resp.status === 419) window.location.reload();
                 this.failed = 0;
                 this.failedItems = [];
             } catch (e) { /* silent */ }
