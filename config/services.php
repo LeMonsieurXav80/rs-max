@@ -58,6 +58,12 @@ return [
         'redirect' => env('APP_URL').'/oauth/youtube/callback',
     ],
 
+    'linkedin' => [
+        'client_id' => env('LINKEDIN_CLIENT_ID'),
+        'client_secret' => env('LINKEDIN_CLIENT_SECRET'),
+        'redirect' => env('APP_URL').'/auth/linkedin/callback',
+    ],
+
     'deploy' => [
         'api_url' => env('DEPLOY_API_URL'),
         'api_token' => env('DEPLOY_API_TOKEN'),

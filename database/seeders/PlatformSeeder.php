@@ -126,6 +126,21 @@ class PlatformSeeder extends Seeder
                     ],
                 ]),
             ],
+            [
+                'slug' => 'linkedin',
+                'name' => 'LinkedIn',
+                'description' => 'Publications sur LinkedIn (profils et pages)',
+                'color' => '#0A66C2',
+                'auth_type' => 'oauth',
+                'config' => json_encode([
+                    'api_version' => '202402',
+                    'credential_fields' => [
+                        ['key' => 'person_urn', 'label' => 'Person/Org URN', 'type' => 'text'],
+                        ['key' => 'access_token', 'label' => 'Access Token', 'type' => 'password'],
+                        ['key' => 'refresh_token', 'label' => 'Refresh Token', 'type' => 'password'],
+                    ],
+                ]),
+            ],
         ];
 
         foreach ($platforms as $platform) {

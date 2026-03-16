@@ -30,6 +30,7 @@ use App\Http\Controllers\SocialAccountController;
 use App\Http\Controllers\YouTubeChannelController;
 use App\Http\Controllers\StatsController;
 use App\Http\Controllers\ThreadController;
+use App\Http\Controllers\LinkedInOAuthController;
 use App\Http\Controllers\ThreadsOAuthController;
 use App\Http\Controllers\HealthController;
 use App\Http\Controllers\HelpController;
@@ -72,6 +73,7 @@ Route::middleware(['auth', 'verified', 'throttle:60,1'])->group(function () {
     Route::get('platforms/youtube', [PlatformController::class, 'youtube'])->name('platforms.youtube');
     Route::get('platforms/bluesky', [PlatformController::class, 'bluesky'])->name('platforms.bluesky');
     Route::get('platforms/reddit', [PlatformController::class, 'reddit'])->name('platforms.reddit');
+    Route::get('platforms/linkedin', [PlatformController::class, 'linkedin'])->name('platforms.linkedin');
 
     // Platform validation (AJAX test connection — read-only, no cost concern)
     Route::post('platforms/telegram/validate-bot', [PlatformController::class, 'validateTelegramBot'])->name('platforms.telegram.validateBot');
@@ -160,6 +162,10 @@ Route::middleware(['auth', 'verified', 'throttle:60,1'])->group(function () {
     Route::post('auth/facebook/connect', [FacebookOAuthController::class, 'connect'])->name('facebook.connect');
     Route::get('auth/threads/redirect', [ThreadsOAuthController::class, 'redirect'])->name('threads.redirect');
     Route::get('auth/threads/callback', [ThreadsOAuthController::class, 'callback'])->name('threads.callback');
+    Route::get('auth/linkedin/redirect', [LinkedInOAuthController::class, 'redirect'])->name('linkedin.redirect');
+    Route::get('auth/linkedin/callback', [LinkedInOAuthController::class, 'callback'])->name('linkedin.callback');
+    Route::get('auth/linkedin/select', [LinkedInOAuthController::class, 'select'])->name('linkedin.select');
+    Route::post('auth/linkedin/connect', [LinkedInOAuthController::class, 'connect'])->name('linkedin.connect');
     Route::get('oauth/youtube/redirect', [YouTubeOAuthController::class, 'redirect'])->name('youtube.redirect');
     Route::get('oauth/youtube/callback', [YouTubeOAuthController::class, 'callback'])->name('youtube.callback');
     Route::get('oauth/youtube/select', [YouTubeOAuthController::class, 'select'])->name('youtube.select');

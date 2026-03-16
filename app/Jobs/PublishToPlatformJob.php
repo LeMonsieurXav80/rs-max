@@ -12,6 +12,7 @@ use App\Services\Adapters\TelegramAdapter;
 use App\Services\Adapters\ThreadsAdapter;
 use App\Services\Adapters\TwitterAdapter;
 use App\Services\Adapters\BlueskyAdapter;
+use App\Services\Adapters\LinkedInAdapter;
 use App\Services\Adapters\RedditAdapter;
 use App\Services\Adapters\YouTubeAdapter;
 use App\Services\PublishingService;
@@ -106,6 +107,7 @@ class PublishToPlatformJob implements ShouldQueue
             'youtube' => new YouTubeAdapter(),
             'bluesky' => new BlueskyAdapter(),
             'reddit' => new RedditAdapter(),
+            'linkedin' => new LinkedInAdapter(),
             default => null,
         };
     }

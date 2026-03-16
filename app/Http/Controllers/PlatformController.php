@@ -763,6 +763,16 @@ class PlatformController extends Controller
      * Reddit configuration page.
      * Accounts grouped by client_id, with app records separated from subreddits.
      */
+    /**
+     * LinkedIn configuration page.
+     */
+    public function linkedin(Request $request): View
+    {
+        $accounts = $this->accountsForSlugs($request, ['linkedin']);
+
+        return view('platforms.linkedin', compact('accounts'));
+    }
+
     public function reddit(Request $request): View
     {
         $accounts = $this->accountsForSlugs($request, ['reddit']);
