@@ -121,9 +121,9 @@ class PublishingService
             return $post->content_en;
         }
 
-        // Auto-translate if enabled
+        // Translate automatically (language is set on the account, so always translate)
         $sourceText = $platformSlug ? $post->getContentForPlatform($platformSlug) : $post->content_fr;
-        if (! $post->auto_translate || empty($sourceText)) {
+        if (empty($sourceText)) {
             return null;
         }
 

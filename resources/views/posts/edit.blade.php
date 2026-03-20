@@ -644,23 +644,7 @@
                     </div>
                 </div>
 
-                {{-- Traduction automatique --}}
-                <div class="flex items-start gap-3">
-                    <input
-                        type="checkbox"
-                        id="auto_translate"
-                        name="auto_translate"
-                        value="1"
-                        {{ old('auto_translate', $post->auto_translate) ? 'checked' : '' }}
-                        class="mt-0.5 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500 transition-colors"
-                    >
-                    <div>
-                        <label for="auto_translate" class="text-sm text-gray-700 font-medium">
-                            Traduction automatique
-                        </label>
-                        <p class="text-xs text-gray-400 mt-0.5">Traduit le contenu dans les langues configurees sur chaque compte social</p>
-                    </div>
-                </div>
+                {{-- Translation is automatic based on account language settings --}}
             </div>
         </div>
 
