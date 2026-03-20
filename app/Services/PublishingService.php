@@ -80,6 +80,11 @@ class PublishingService
 
         $content = implode("\n\n", $sections);
 
+        // Fallback: never publish empty content when we have a base text
+        if (trim($content) === '' && $baseContent) {
+            $content = $baseContent;
+        }
+
         // Append link_url if set and not already present in the content
         if ($post->link_url && ! str_contains($content, $post->link_url)) {
             $content .= "\n\n" . $post->link_url;
