@@ -462,21 +462,31 @@
 
                             {{-- Logs --}}
                             @if($pp->logs->count())
-                                <div class="mt-2 ml-7 space-y-1">
+                                <div class="mt-2 ml-7 space-y-1.5">
                                     @foreach($pp->logs->sortByDesc('created_at') as $log)
-                                        <div class="flex items-center gap-2 text-xs text-gray-400">
-                                            <span class="font-medium text-gray-500">{{ $log->action }}</span>
-                                            <span>&middot;</span>
-                                            <span>{{ $log->created_at->format('d/m/Y H:i:s') }}</span>
-                                            @if($log->details)
+                                        @php
+                                            $logColors = [
+                                                'submitted' => 'text-blue-500',
+                                                'published' => 'text-green-600',
+                                                'failed' => 'text-red-500',
+                                            ];
+                                            $logColor = $logColors[$log->action] ?? 'text-gray-500';
+                                            $details = is_array($log->details) ? $log->details : [];
+                                            $errorText = $details['error'] ?? null;
+                                            $displayDetails = array_filter($details, fn($k) => $k !== 'error', ARRAY_FILTER_USE_KEY);
+                                        @endphp
+                                        <div class="text-xs text-gray-400">
+                                            <div class="flex items-center gap-2">
+                                                <span class="font-medium {{ $logColor }}">{{ $log->action }}</span>
                                                 <span>&middot;</span>
-                                                <span class="truncate max-w-xs">
-                                                    @if(is_array($log->details))
-                                                        {{ json_encode($log->details, JSON_UNESCAPED_UNICODE) }}
-                                                    @else
-                                                        {{ $log->details }}
-                                                    @endif
-                                                </span>
+                                                <span>{{ $log->created_at->format('d/m/Y H:i:s') }}</span>
+                                                @foreach($displayDetails as $key => $value)
+                                                    <span>&middot;</span>
+                                                    <span class="text-gray-500">{{ $key }}=<span class="text-gray-600">{{ $value }}</span></span>
+                                                @endforeach
+                                            </div>
+                                            @if($errorText)
+                                                <div class="mt-1 p-2 bg-red-50 rounded border border-red-100 text-red-700 font-mono text-[11px] break-all select-all cursor-text">{{ $errorText }}</div>
                                             @endif
                                         </div>
                                     @endforeach

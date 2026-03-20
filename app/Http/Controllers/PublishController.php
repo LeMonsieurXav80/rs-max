@@ -97,7 +97,11 @@ class PublishController extends Controller
             PostLog::create([
                 'post_platform_id' => $postPlatform->id,
                 'action' => 'published',
-                'details' => ['external_id' => $result['external_id'] ?? null],
+                'details' => [
+                    'external_id' => $result['external_id'] ?? null,
+                    'platform' => $platform->slug,
+                    'account' => $account->name,
+                ],
             ]);
 
             $this->updatePostStatus($post);
@@ -117,7 +121,13 @@ class PublishController extends Controller
         PostLog::create([
             'post_platform_id' => $postPlatform->id,
             'action' => 'failed',
-            'details' => ['error' => $result['error'] ?? 'Erreur inconnue'],
+            'details' => [
+                'error' => $result['error'] ?? 'Erreur inconnue',
+                'platform' => $platform->slug,
+                'account' => $account->name,
+                'account_id' => $account->id,
+                'post_id' => $post->id,
+            ],
         ]);
 
         $this->updatePostStatus($post);
@@ -193,7 +203,11 @@ class PublishController extends Controller
                 PostLog::create([
                     'post_platform_id' => $pp->id,
                     'action' => 'published',
-                    'details' => ['external_id' => $result['external_id'] ?? null],
+                    'details' => [
+                        'external_id' => $result['external_id'] ?? null,
+                        'platform' => $platform->slug,
+                        'account' => $account->name,
+                    ],
                 ]);
 
                 $results[] = ['account' => $account->name, 'success' => true, 'external_id' => $result['external_id'] ?? null];
@@ -206,7 +220,13 @@ class PublishController extends Controller
                 PostLog::create([
                     'post_platform_id' => $pp->id,
                     'action' => 'failed',
-                    'details' => ['error' => $result['error'] ?? 'Erreur inconnue'],
+                    'details' => [
+                        'error' => $result['error'] ?? 'Erreur inconnue',
+                        'platform' => $platform->slug,
+                        'account' => $account->name,
+                        'account_id' => $account->id,
+                        'post_id' => $post->id,
+                    ],
                 ]);
 
                 $results[] = ['account' => $account->name, 'success' => false, 'error' => $result['error'] ?? 'Erreur inconnue'];

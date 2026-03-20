@@ -15,7 +15,7 @@ class FacebookAdapter implements PlatformAdapterInterface
      *
      * @param  SocialAccount  $account  Credentials: page_id, access_token.
      * @param  string  $content  The post text / message.
-     * @param  array|null  $media  Optional media items (each with url, mimetype, size, title).
+     * @param  array|null  $media  Optional media items (each with url, mimetype, size, title, local_path).
      * @return array{success: bool, external_id: string|null, error: string|null}
      */
     public function publish(SocialAccount $account, string $content, ?array $media = null, ?array $options = null): array
@@ -38,7 +38,7 @@ class FacebookAdapter implements PlatformAdapterInterface
 
             // Single video.
             if (count($media) === 1 && $this->isVideo($media[0]['mimetype'])) {
-                return $this->publishSingleVideo($pageId, $accessToken, $content, $media[0]['url'], $placeId);
+                return $this->publishSingleVideo($pageId, $accessToken, $content, $media[0], $placeId);
             }
 
             // Multiple images -- unpublished photo upload then multi-photo post.
@@ -59,7 +59,7 @@ class FacebookAdapter implements PlatformAdapterInterface
             }
 
             // No images at all -- publish first video.
-            return $this->publishSingleVideo($pageId, $accessToken, $content, $media[0]['url'], $placeId);
+            return $this->publishSingleVideo($pageId, $accessToken, $content, $media[0], $placeId);
 
         } catch (\Throwable $e) {
             Log::error('FacebookAdapter: publish failed', [
@@ -127,8 +127,12 @@ class FacebookAdapter implements PlatformAdapterInterface
      * 2. Upload the video via hosted URL.
      * 3. Publish the reel.
      */
-    private function publishSingleVideo(string $pageId, string $accessToken, string $content, string $videoUrl, ?string $placeId = null): array
+    private function publishSingleVideo(string $pageId, string $accessToken, string $content, array $mediaItem, ?string $placeId = null): array
     {
+        $videoUrl = $mediaItem['url'];
+        $localPath = $mediaItem['local_path'] ?? null;
+        $fileSize = $mediaItem['size'] ?? null;
+
         // Step 1 -- initialize the upload session.
         $initResponse = Http::post(self::API_BASE . "/{$pageId}/video_reels", [
             'upload_phase' => 'start',
@@ -138,15 +142,16 @@ class FacebookAdapter implements PlatformAdapterInterface
         $initBody = $initResponse->json();
 
         if (! $initResponse->successful() || empty($initBody['video_id'])) {
-            $error = $initBody['error']['message'] ?? 'Failed to initialize reel upload';
-            Log::error('FacebookAdapter: reel init failed', ['error' => $error]);
+            $error = $this->buildErrorMessage('Reel init failed', $initResponse->status(), $initBody);
+            Log::error('FacebookAdapter: reel init failed', ['status' => $initResponse->status(), 'body' => $initBody]);
 
             return ['success' => false, 'external_id' => null, 'error' => $error];
         }
 
         $videoId = $initBody['video_id'];
 
-        // Step 2 -- upload the video via hosted URL.
+        // Step 2 -- upload the video.
+        // Try file_url first (Facebook fetches from our server), fall back to binary upload.
         $uploadResponse = Http::withHeaders([
             'Authorization' => "OAuth {$accessToken}",
             'file_url' => $videoUrl,
@@ -154,9 +159,29 @@ class FacebookAdapter implements PlatformAdapterInterface
 
         $uploadBody = $uploadResponse->json();
 
+        // If file_url fails (Facebook can't reach our server), try binary upload from local file.
+        if ((! $uploadResponse->successful() || empty($uploadBody['success'])) && $localPath && file_exists($localPath)) {
+            Log::info('FacebookAdapter: file_url upload failed, trying binary upload', [
+                'video_id' => $videoId,
+                'file_url_status' => $uploadResponse->status(),
+                'file_url_error' => $uploadBody,
+            ]);
+
+            $uploadResponse = $this->uploadVideoBinary($videoId, $accessToken, $localPath, $fileSize);
+            $uploadBody = $uploadResponse->json();
+        }
+
         if (! $uploadResponse->successful() || empty($uploadBody['success'])) {
-            $error = $uploadBody['error']['message'] ?? 'Failed to upload reel video';
-            Log::error('FacebookAdapter: reel upload failed', ['video_id' => $videoId, 'error' => $error]);
+            $error = $this->buildErrorMessage('Reel upload failed', $uploadResponse->status(), $uploadBody, [
+                'video_id' => $videoId,
+                'video_url' => $videoUrl,
+            ]);
+            Log::error('FacebookAdapter: reel upload failed', [
+                'video_id' => $videoId,
+                'status' => $uploadResponse->status(),
+                'body' => $uploadBody,
+                'video_url' => $videoUrl,
+            ]);
 
             return ['success' => false, 'external_id' => null, 'error' => $error];
         }
@@ -186,8 +211,8 @@ class FacebookAdapter implements PlatformAdapterInterface
             ];
         }
 
-        $error = $publishBody['error']['message'] ?? 'Failed to publish reel';
-        Log::error('FacebookAdapter: reel publish failed', ['video_id' => $videoId, 'error' => $error]);
+        $error = $this->buildErrorMessage('Reel publish failed', $publishResponse->status(), $publishBody, ['video_id' => $videoId]);
+        Log::error('FacebookAdapter: reel publish failed', ['video_id' => $videoId, 'status' => $publishResponse->status(), 'body' => $publishBody]);
 
         return ['success' => false, 'external_id' => null, 'error' => $error];
     }
@@ -212,11 +237,12 @@ class FacebookAdapter implements PlatformAdapterInterface
             $body = $response->json();
 
             if (! $response->successful() || empty($body['id'])) {
-                $error = $body['error']['message'] ?? 'Failed to upload unpublished photo';
+                $error = $this->buildErrorMessage('Photo upload failed', $response->status(), $body, ['url' => $image['url']]);
 
                 Log::error('FacebookAdapter: unpublished photo upload failed', [
                     'url' => $image['url'],
-                    'error' => $error,
+                    'status' => $response->status(),
+                    'body' => $body,
                 ]);
 
                 return [
@@ -264,11 +290,11 @@ class FacebookAdapter implements PlatformAdapterInterface
             ];
         }
 
-        $error = $body['error']['message'] ?? 'Unknown Facebook API error';
+        $error = $this->buildErrorMessage('API error', $response->status(), $body);
 
         Log::error('FacebookAdapter: API error', [
             'status' => $response->status(),
-            'error' => $error,
+            'body' => $body,
         ]);
 
         return [
@@ -276,6 +302,55 @@ class FacebookAdapter implements PlatformAdapterInterface
             'external_id' => null,
             'error' => $error,
         ];
+    }
+
+    /**
+     * Upload video binary directly to rupload.facebook.com.
+     * Fallback when Facebook can't fetch the video via file_url (503, firewall, etc.).
+     */
+    private function uploadVideoBinary(string $videoId, string $accessToken, string $localPath, ?int $fileSize = null): \Illuminate\Http\Client\Response
+    {
+        $fileSize = $fileSize ?: filesize($localPath);
+
+        return Http::withHeaders([
+            'Authorization' => "OAuth {$accessToken}",
+            'offset' => '0',
+            'file_size' => (string) $fileSize,
+        ])->withBody(
+            file_get_contents($localPath),
+            'application/octet-stream'
+        )->post("https://rupload.facebook.com/video-upload/v21.0/{$videoId}");
+    }
+
+    /**
+     * Build a detailed, human-readable error message from an API response.
+     */
+    private function buildErrorMessage(string $context, int $httpStatus, ?array $body, array $extra = []): string
+    {
+        $parts = ["Facebook: {$context} (HTTP {$httpStatus})"];
+
+        if (isset($body['error']['message'])) {
+            $parts[] = $body['error']['message'];
+            if (isset($body['error']['code'])) {
+                $parts[] = "code={$body['error']['code']}";
+            }
+            if (isset($body['error']['error_subcode'])) {
+                $parts[] = "subcode={$body['error']['error_subcode']}";
+            }
+        } elseif ($body) {
+            // Non-standard error format -- include raw body summary
+            $raw = json_encode($body, JSON_UNESCAPED_UNICODE);
+            if (strlen($raw) > 300) {
+                $raw = substr($raw, 0, 300) . '…';
+            }
+            $parts[] = $raw;
+        }
+
+        foreach ($extra as $key => $value) {
+            $parts[] = "{$key}={$value}";
+        }
+
+        return implode(' | ', $parts);
     }
 
     /**

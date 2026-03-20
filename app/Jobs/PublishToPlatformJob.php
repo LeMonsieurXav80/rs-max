@@ -86,7 +86,11 @@ class PublishToPlatformJob implements ShouldQueue
             PostLog::create([
                 'post_platform_id' => $postPlatform->id,
                 'action' => 'published',
-                'details' => ['external_id' => $result['external_id'] ?? null],
+                'details' => [
+                    'external_id' => $result['external_id'] ?? null,
+                    'platform' => $platform->slug,
+                    'account' => $account->name,
+                ],
             ]);
 
             // Check if all platforms are done -> update post status
@@ -141,6 +145,10 @@ class PublishToPlatformJob implements ShouldQueue
 
     private function markFailed(string $error): void
     {
+        $this->postPlatform->load('socialAccount.platform');
+        $account = $this->postPlatform->socialAccount;
+        $platform = $account?->platform;
+
         $this->postPlatform->update([
             'status' => 'failed',
             'error_message' => $error,
@@ -149,7 +157,13 @@ class PublishToPlatformJob implements ShouldQueue
         PostLog::create([
             'post_platform_id' => $this->postPlatform->id,
             'action' => 'failed',
-            'details' => ['error' => $error],
+            'details' => [
+                'error' => $error,
+                'platform' => $platform?->slug ?? 'unknown',
+                'account' => $account?->name ?? 'unknown',
+                'account_id' => $account?->id,
+                'post_id' => $this->postPlatform->post_id,
+            ],
         ]);
 
         // Update parent post status
@@ -159,6 +173,8 @@ class PublishToPlatformJob implements ShouldQueue
 
         Log::error("PublishToPlatformJob failed: {$error}", [
             'post_platform_id' => $this->postPlatform->id,
+            'platform' => $platform?->slug,
+            'account' => $account?->name,
         ]);
     }
 
