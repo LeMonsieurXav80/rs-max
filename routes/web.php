@@ -36,6 +36,7 @@ use App\Http\Controllers\HealthController;
 use App\Http\Controllers\HelpController;
 use App\Http\Controllers\UpdateController;
 use App\Http\Controllers\YouTubeOAuthController;
+use App\Http\Controllers\YouTubeTranslatorController;
 use Illuminate\Support\Facades\Route;
 
 Route::get('/', function () {
@@ -262,6 +263,16 @@ Route::middleware(['auth', 'verified', 'throttle:60,1'])->group(function () {
         Route::get('tools/crosspost', [CrossPostController::class, 'index'])->name('crosspost.index');
         Route::post('tools/crosspost/fetch', [CrossPostController::class, 'fetchPosts'])->name('crosspost.fetch');
         Route::post('tools/crosspost/post', [CrossPostController::class, 'crossPost'])->name('crosspost.post');
+
+        // YouTube Translator
+        Route::get('tools/yt-translator', [YouTubeTranslatorController::class, 'index'])->name('yt-translator.index');
+        Route::post('tools/yt-translator/videos', [YouTubeTranslatorController::class, 'videos'])->name('yt-translator.videos');
+        Route::post('tools/yt-translator/captions', [YouTubeTranslatorController::class, 'captions'])->name('yt-translator.captions');
+        Route::post('tools/yt-translator/translate', [YouTubeTranslatorController::class, 'translate'])->name('yt-translator.translate');
+        Route::post('tools/yt-translator/status', [YouTubeTranslatorController::class, 'status'])->name('yt-translator.status');
+        Route::post('tools/yt-translator/language-groups', [YouTubeTranslatorController::class, 'storeLanguageGroup'])->name('yt-translator.languageGroups.store');
+        Route::put('tools/yt-translator/language-groups/{languageGroup}', [YouTubeTranslatorController::class, 'updateLanguageGroup'])->name('yt-translator.languageGroups.update');
+        Route::delete('tools/yt-translator/language-groups/{languageGroup}', [YouTubeTranslatorController::class, 'destroyLanguageGroup'])->name('yt-translator.languageGroups.destroy');
 
         // Settings
         Route::get('settings', [SettingsController::class, 'index'])->name('settings.index');
