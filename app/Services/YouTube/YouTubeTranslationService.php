@@ -453,36 +453,106 @@ class YouTubeTranslationService
     }
 
     public const LANGUAGE_NAMES = [
-        'fr' => 'Français',
+        // Major
         'en' => 'English',
+        'fr' => 'Français',
         'es' => 'Español',
         'de' => 'Deutsch',
         'it' => 'Italiano',
         'pt' => 'Português',
-        'pt-BR' => 'Português (Brasil)',
+        'ru' => 'Русский',
         'ja' => '日本語',
         'ko' => '한국어',
+        'ar' => 'العربية',
+        'hi' => 'हिन्दी',
+        // Regional variants
+        'pt-BR' => 'Português (Brasil)',
+        'pt-PT' => 'Português (Portugal)',
         'zh-CN' => '中文 (简体)',
         'zh-TW' => '中文 (繁體)',
-        'ar' => 'العربية',
-        'ru' => 'Русский',
-        'pl' => 'Polski',
+        'en-GB' => 'English (UK)',
+        'en-US' => 'English (US)',
+        'es-MX' => 'Español (México)',
+        'fr-CA' => 'Français (Canada)',
+        // Europe - Western
         'nl' => 'Nederlands',
+        // Europe - Northern
         'sv' => 'Svenska',
-        'tr' => 'Türkçe',
         'da' => 'Dansk',
         'no' => 'Norsk',
+        'fi' => 'Suomi',
+        'is' => 'Íslenska',
+        // Europe - Eastern
+        'pl' => 'Polski',
         'cs' => 'Čeština',
+        'sk' => 'Slovenčina',
+        'hu' => 'Magyar',
+        'ro' => 'Română',
+        'bg' => 'Български',
+        'uk' => 'Українська',
+        // Europe - Southern
+        'el' => 'Ελληνικά',
         'hr' => 'Hrvatski',
         'sl' => 'Slovenščina',
-        'el' => 'Ελληνικά',
+        'sr' => 'Српски',
+        'mk' => 'Македонски',
+        'sq' => 'Shqip',
+        'bs' => 'Bosanski',
+        'mt' => 'Malti',
+        // Europe - Baltic
+        'et' => 'Eesti',
+        'lv' => 'Latviešu',
+        'lt' => 'Lietuvių',
+        // Europe - Other
+        'tr' => 'Türkçe',
         'ka' => 'ქართული',
+        // Asia
+        'th' => 'ไทย',
+        'vi' => 'Tiếng Việt',
+        'id' => 'Bahasa Indonesia',
+        'ms' => 'Bahasa Melayu',
+        'tl' => 'Filipino',
+        'km' => 'ខ្មែរ',
+        // Middle East
+        'he' => 'עברית',
+        'fa' => 'فارسی',
+        // South Asia
+        'bn' => 'বাংলা',
+        'ne' => 'नेपाली',
+        'ur' => 'اردو',
+        // Africa
+        'sw' => 'Kiswahili',
+        'af' => 'Afrikaans',
+        // Other
+        'kk' => 'Қазақша',
     ];
 
     public const AVAILABLE_LANGUAGES = [
-        'fr', 'en', 'es', 'de', 'it', 'pt', 'pt-BR',
-        'ja', 'ko', 'zh-CN', 'zh-TW', 'ar', 'ru',
-        'pl', 'nl', 'sv', 'tr', 'da', 'no',
-        'cs', 'hr', 'sl', 'el', 'ka',
+        // Major
+        'en', 'fr', 'es', 'de', 'it', 'pt', 'ru', 'ja', 'ko', 'ar', 'hi',
+        // Regional variants
+        'pt-BR', 'pt-PT', 'zh-CN', 'zh-TW', 'en-GB', 'en-US', 'es-MX', 'fr-CA',
+        // Europe - Western
+        'nl',
+        // Europe - Northern
+        'sv', 'da', 'no', 'fi', 'is',
+        // Europe - Eastern
+        'pl', 'cs', 'sk', 'hu', 'ro', 'bg', 'uk',
+        // Europe - Southern
+        'el', 'hr', 'sl', 'sr', 'mk', 'sq', 'bs', 'mt',
+        // Europe - Baltic
+        'et', 'lv', 'lt',
+        // Europe - Other
+        'tr', 'ka',
+        // Asia
+        'th', 'vi', 'id', 'ms', 'tl', 'km',
+        // Middle East
+        'he', 'fa',
+        // South Asia
+        'bn', 'ne', 'ur',
+        // Africa
+        'sw', 'af',
+        // Other
+        'kk',
     ];
 }
