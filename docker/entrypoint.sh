@@ -12,6 +12,8 @@ chown www-data:www-data /var/log/php/error.log
 mkdir -p /var/www/html/storage/framework/{sessions,views,cache}
 mkdir -p /var/www/html/storage/logs
 mkdir -p /var/www/html/storage/app/private/media
+mkdir -p /var/www/html/storage/app/fonts
+mkdir -p /var/www/html/storage/app/pinterest-defaults
 mkdir -p /var/www/html/bootstrap/cache
 chown -R www-data:www-data /var/www/html/storage /var/www/html/bootstrap/cache
 chmod -R 775 /var/www/html/storage /var/www/html/bootstrap/cache
@@ -49,7 +51,9 @@ for var in APP_NAME APP_ENV APP_DEBUG APP_URL APP_KEY \
            APP_LOCALE APP_TIMEZONE REGISTRATION_ENABLED \
            DEPLOY_API_URL DEPLOY_API_TOKEN DEPLOY_APP_UUID \
            DEPLOY_GIT_REPO DEPLOY_GIT_BRANCH \
-           OPENAI_API_KEY; do
+           OPENAI_API_KEY \
+           PINTEREST_APP_ID PINTEREST_APP_SECRET \
+           LINKEDIN_CLIENT_ID LINKEDIN_CLIENT_SECRET; do
     val=$(eval "echo \"\$$var\"")
     if [ -n "$val" ]; then
         # Remove existing line and append new value
