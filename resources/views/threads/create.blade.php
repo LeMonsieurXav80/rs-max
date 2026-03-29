@@ -80,10 +80,15 @@
                     @endif
 
                     {{-- URL mode --}}
-                    <div x-show="sourceMode === 'url'" class="flex gap-3">
-                        <input type="url" x-model="sourceUrl"
-                               placeholder="https://example.com/article..."
-                               class="flex-1 rounded-xl border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 text-sm">
+                    <div x-show="sourceMode === 'url'" class="space-y-3">
+                        <div class="flex gap-3">
+                            <input type="url" x-model="sourceUrl"
+                                   placeholder="https://example.com/article..."
+                                   class="flex-1 rounded-xl border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 text-sm">
+                        </div>
+                        <textarea x-model="contextInstructions" rows="2"
+                                  placeholder="Contexte ou instructions (ex: Cet article parle du jardin botanique de Coimbra au Portugal, mets en avant la ville et le lieu.)"
+                                  class="w-full rounded-xl border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 text-sm"></textarea>
                         <button type="button" @click="generateFromUrl()"
                                 :disabled="generating || !sourceUrl || !selectedPersonaId || selectedAccounts.length === 0"
                                 class="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-medium bg-indigo-600 text-white hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors shadow-sm">
@@ -742,6 +747,7 @@
         function threadForm() {
             return {
                 sourceUrl: '',
+                contextInstructions: '',
                 title: '',
                 selectedPersonaId: '',
                 selectedHookCategoryId: '',
@@ -1017,6 +1023,7 @@
                             },
                             body: JSON.stringify({
                                 source_url: this.sourceUrl,
+                                context_instructions: this.contextInstructions || null,
                                 persona_id: this.selectedPersonaId,
                                 hook_category_id: this.selectedHookCategoryId || null,
                                 accounts: accountIds,

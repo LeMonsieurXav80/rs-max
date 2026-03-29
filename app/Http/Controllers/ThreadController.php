@@ -358,6 +358,7 @@ class ThreadController extends Controller
     {
         $validated = $request->validate([
             'source_url' => 'required|url|max:2048',
+            'context_instructions' => 'nullable|string|max:1000',
             'persona_id' => 'required|exists:personas,id',
             'hook_category_id' => 'nullable|integer|exists:hook_categories,id',
             'accounts' => 'required|array|min:1',
@@ -377,7 +378,8 @@ class ThreadController extends Controller
         $service = new ThreadContentGenerationService;
 
         $hookCategoryId = $validated['hook_category_id'] ?? null;
-        $result = $service->generate($validated['source_url'], $persona, $platformSlugs, $hookCategoryId);
+        $contextInstructions = $validated['context_instructions'] ?? null;
+        $result = $service->generate($validated['source_url'], $persona, $platformSlugs, $hookCategoryId, $contextInstructions);
 
         if (! $result) {
             return response()->json([

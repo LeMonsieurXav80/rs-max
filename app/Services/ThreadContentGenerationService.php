@@ -26,7 +26,7 @@ class ThreadContentGenerationService
      *   - 'compiled' => ['facebook' => '...', 'telegram' => '...']
      *   - 'title' => '...'
      */
-    public function generate(string $sourceUrl, Persona $persona, array $platformSlugs, ?int $hookCategoryId = null): ?array
+    public function generate(string $sourceUrl, Persona $persona, array $platformSlugs, ?int $hookCategoryId = null, ?string $contextInstructions = null): ?array
     {
         $apiKey = Setting::getEncrypted('openai_api_key');
         if (! $apiKey) {
@@ -63,6 +63,12 @@ class ThreadContentGenerationService
         $userPrompt .= "Titre : {$articleTitle}\n";
         $userPrompt .= "URL source : {$sourceUrl}\n\n";
         $userPrompt .= "Contenu de l'article :\n{$articleContent}\n\n";
+
+        if ($contextInstructions) {
+            $userPrompt .= "=== CONTEXTE ET INSTRUCTIONS DE L'UTILISATEUR ===\n";
+            $userPrompt .= "{$contextInstructions}\n";
+            $userPrompt .= "Prends en compte ces indications pour orienter le contenu du fil.\n\n";
+        }
 
         $userPrompt .= "=== RÈGLES ===\n";
         $userPrompt .= "- Découpe le contenu en 3 à 10 segments logiques.\n";
