@@ -36,6 +36,8 @@ use App\Http\Controllers\HealthController;
 use App\Http\Controllers\HelpController;
 use App\Http\Controllers\UpdateController;
 use App\Http\Controllers\YouTubeOAuthController;
+use App\Http\Controllers\PinterestFeedController;
+use App\Http\Controllers\PinterestOAuthController;
 use App\Http\Controllers\YouTubeTranslatorController;
 use Illuminate\Support\Facades\Route;
 
@@ -75,6 +77,7 @@ Route::middleware(['auth', 'verified', 'throttle:60,1'])->group(function () {
     Route::get('platforms/bluesky', [PlatformController::class, 'bluesky'])->name('platforms.bluesky');
     Route::get('platforms/reddit', [PlatformController::class, 'reddit'])->name('platforms.reddit');
     Route::get('platforms/linkedin', [PlatformController::class, 'linkedin'])->name('platforms.linkedin');
+    Route::get('platforms/pinterest', [PlatformController::class, 'pinterest'])->name('platforms.pinterest');
 
     // Platform validation (AJAX test connection — read-only, no cost concern)
     Route::post('platforms/telegram/validate-bot', [PlatformController::class, 'validateTelegramBot'])->name('platforms.telegram.validateBot');
@@ -171,6 +174,10 @@ Route::middleware(['auth', 'verified', 'throttle:60,1'])->group(function () {
     Route::get('oauth/youtube/callback', [YouTubeOAuthController::class, 'callback'])->name('youtube.callback');
     Route::get('oauth/youtube/select', [YouTubeOAuthController::class, 'select'])->name('youtube.select');
     Route::post('oauth/youtube/store', [YouTubeOAuthController::class, 'store'])->name('youtube.store');
+    Route::get('auth/pinterest/redirect', [PinterestOAuthController::class, 'redirect'])->name('pinterest.redirect');
+    Route::get('auth/pinterest/callback', [PinterestOAuthController::class, 'callback'])->name('pinterest.callback');
+    Route::get('auth/pinterest/select', [PinterestOAuthController::class, 'select'])->name('pinterest.select');
+    Route::post('auth/pinterest/connect', [PinterestOAuthController::class, 'connect'])->name('pinterest.connect');
 
     // Platform account management (update credentials — user must own the account)
     Route::post('platforms/telegram/register-bot', [PlatformController::class, 'registerTelegramBot'])->name('platforms.telegram.registerBot');
@@ -264,6 +271,19 @@ Route::middleware(['auth', 'verified', 'throttle:60,1'])->group(function () {
         Route::post('tools/crosspost/fetch', [CrossPostController::class, 'fetchPosts'])->name('crosspost.fetch');
         Route::post('tools/crosspost/post', [CrossPostController::class, 'crossPost'])->name('crosspost.post');
 
+        // Pinterest Feeds
+        Route::get('tools/pinterest-feeds', [PinterestFeedController::class, 'index'])->name('pinterest-feeds.index');
+        Route::post('tools/pinterest-feeds', [PinterestFeedController::class, 'store'])->name('pinterest-feeds.store');
+        Route::put('tools/pinterest-feeds/{feed}', [PinterestFeedController::class, 'update'])->name('pinterest-feeds.update');
+        Route::delete('tools/pinterest-feeds/{feed}', [PinterestFeedController::class, 'destroy'])->name('pinterest-feeds.destroy');
+        Route::post('tools/pinterest-feeds/boards', [PinterestFeedController::class, 'boards'])->name('pinterest-feeds.boards');
+        Route::post('tools/pinterest-feeds/{feed}/generate-pins', [PinterestFeedController::class, 'generatePins'])->name('pinterest-feeds.generatePins');
+        Route::post('tools/pinterest-feeds/{feed}/batch-generate', [PinterestFeedController::class, 'batchGenerate'])->name('pinterest-feeds.batchGenerate');
+        Route::get('tools/pinterest-feeds/{feed}/pins', [PinterestFeedController::class, 'pins'])->name('pinterest-feeds.pins');
+        Route::post('tools/pinterest-feeds/pin/{pin}/generate', [PinterestFeedController::class, 'generatePinImage'])->name('pinterest-feeds.generatePinImage');
+        Route::post('tools/pinterest-feeds/pin/{pin}/add-to-feed', [PinterestFeedController::class, 'addToFeed'])->name('pinterest-feeds.addToFeed');
+        Route::post('tools/pinterest-feeds/pin/{pin}/repost', [PinterestFeedController::class, 'repost'])->name('pinterest-feeds.repost');
+
         // YouTube Translator
         Route::get('tools/yt-translator', [YouTubeTranslatorController::class, 'index'])->name('yt-translator.index');
         Route::post('tools/yt-translator/videos', [YouTubeTranslatorController::class, 'videos'])->name('yt-translator.videos');
@@ -319,6 +339,9 @@ Route::middleware('auth')->group(function () {
 Route::get('/media/{filename}', [MediaController::class, 'show'])
     ->where('filename', '[^/]+\.[a-zA-Z0-9]+')
     ->name('media.show');
+
+// Pinterest RSS feeds (public, consumed by Pinterest)
+Route::get('/feeds/pinterest/{slug}.xml', [PinterestFeedController::class, 'serveFeed'])->name('pinterest-feeds.serve');
 
 // Health check (public, for monitoring)
 Route::get('/health', HealthController::class)->name('health');

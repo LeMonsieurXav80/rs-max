@@ -64,6 +64,12 @@ return [
         'redirect' => env('APP_URL').'/auth/linkedin/callback',
     ],
 
+    'pinterest' => [
+        'client_id' => env('PINTEREST_APP_ID'),
+        'client_secret' => env('PINTEREST_APP_SECRET'),
+        'redirect' => env('APP_URL').'/auth/pinterest/callback',
+    ],
+
     'deploy' => [
         'api_url' => env('DEPLOY_API_URL'),
         'api_token' => env('DEPLOY_API_TOKEN'),

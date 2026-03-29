@@ -141,6 +141,21 @@ class PlatformSeeder extends Seeder
                     ],
                 ]),
             ],
+            [
+                'slug' => 'pinterest',
+                'name' => 'Pinterest',
+                'description' => 'Publications sur Pinterest (tableaux et épingles)',
+                'color' => '#E60023',
+                'auth_type' => 'oauth',
+                'config' => json_encode([
+                    'api_version' => 'v5',
+                    'credential_fields' => [
+                        ['key' => 'user_id', 'label' => 'User ID', 'type' => 'text'],
+                        ['key' => 'access_token', 'label' => 'Access Token', 'type' => 'password'],
+                        ['key' => 'refresh_token', 'label' => 'Refresh Token', 'type' => 'password'],
+                    ],
+                ]),
+            ],
         ];
 
         foreach ($platforms as $platform) {

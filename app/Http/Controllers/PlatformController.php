@@ -773,6 +773,13 @@ class PlatformController extends Controller
         return view('platforms.linkedin', compact('accounts'));
     }
 
+    public function pinterest(Request $request): View
+    {
+        $accounts = $this->accountsForSlugs($request, ['pinterest']);
+
+        return view('platforms.pinterest', compact('accounts'));
+    }
+
     public function reddit(Request $request): View
     {
         $accounts = $this->accountsForSlugs($request, ['reddit']);

@@ -228,10 +228,10 @@
                     @if(auth()->user()->isManager())
                     <p class="px-3 pt-4 pb-1 text-[10px] font-semibold uppercase tracking-widest text-gray-400">Automatisation</p>
 
-                    <div x-data="{ autoOpen: {{ str_starts_with($currentRoute, 'bot') || str_starts_with($currentRoute, 'tools/yt-translator') ? 'true' : 'false' }} }">
+                    <div x-data="{ autoOpen: {{ str_starts_with($currentRoute, 'bot') || str_starts_with($currentRoute, 'tools/yt-translator') || str_starts_with($currentRoute, 'tools/pinterest-feeds') ? 'true' : 'false' }} }">
                         <button
                             @click="autoOpen = !autoOpen"
-                            class="w-full flex items-center justify-between px-3 py-2.5 rounded-xl text-sm font-medium transition-colors {{ str_starts_with($currentRoute, 'bot') || str_starts_with($currentRoute, 'tools/yt-translator') ? 'text-indigo-600' : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900' }}"
+                            class="w-full flex items-center justify-between px-3 py-2.5 rounded-xl text-sm font-medium transition-colors {{ str_starts_with($currentRoute, 'bot') || str_starts_with($currentRoute, 'tools/yt-translator') || str_starts_with($currentRoute, 'tools/pinterest-feeds') ? 'text-indigo-600' : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900' }}"
                         >
                             <span class="flex items-center gap-3">
                                 <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1.5">
@@ -258,6 +258,13 @@
                                     <path d="M23.498 6.186a3.016 3.016 0 0 0-2.122-2.136C19.505 3.545 12 3.545 12 3.545s-7.505 0-9.377.505A3.017 3.017 0 0 0 .502 6.186C0 8.07 0 12 0 12s0 3.93.502 5.814a3.016 3.016 0 0 0 2.122 2.136c1.871.505 9.376.505 9.376.505s7.505 0 9.377-.505a3.015 3.015 0 0 0 2.122-2.136C24 15.93 24 12 24 12s0-3.93-.502-5.814zM9.545 15.568V8.432L15.818 12l-6.273 3.568z"/>
                                 </svg>
                                 YT Traducteur
+                            </a>
+                            <a href="{{ url('/tools/pinterest-feeds') }}"
+                               class="flex items-center gap-3 px-3 py-2 rounded-lg text-sm transition-colors {{ str_starts_with($currentRoute, 'tools/pinterest-feeds') ? 'bg-indigo-50 text-indigo-600 font-medium' : 'text-gray-500 hover:bg-gray-50 hover:text-gray-900' }}">
+                                <svg class="w-4 h-4" fill="#E60023" viewBox="0 0 24 24">
+                                    <path d="M12.017 0C5.396 0 .029 5.367.029 11.987c0 5.079 3.158 9.417 7.618 11.162-.105-.949-.199-2.403.041-3.439.219-.937 1.406-5.957 1.406-5.957s-.359-.72-.359-1.781c0-1.668.967-2.914 2.171-2.914 1.023 0 1.518.769 1.518 1.69 0 1.029-.655 2.568-.994 3.995-.283 1.194.599 2.169 1.777 2.169 2.133 0 3.772-2.249 3.772-5.495 0-2.873-2.064-4.882-5.012-4.882-3.414 0-5.418 2.561-5.418 5.207 0 1.031.397 2.138.893 2.738a.36.36 0 0 1 .083.345l-.333 1.36c-.053.22-.174.267-.402.161-1.499-.698-2.436-2.889-2.436-4.649 0-3.785 2.75-7.262 7.929-7.262 4.163 0 7.398 2.967 7.398 6.931 0 4.136-2.607 7.464-6.227 7.464-1.216 0-2.359-.631-2.75-1.378l-.748 2.853c-.271 1.043-1.002 2.35-1.492 3.146C9.57 23.812 10.763 24 12.017 24c6.624 0 11.99-5.367 11.99-11.988C24.007 5.367 18.641 0 12.017 0z"/>
+                                </svg>
+                                Pinterest Feeds
                             </a>
                         </div>
                     </div>
@@ -376,6 +383,13 @@
                                     <path d="M14.238 15.348c.085.084.085.221 0 .306-.465.462-1.194.687-2.231.687l-.008-.002-.008.002c-1.036 0-1.766-.225-2.231-.688-.085-.084-.085-.221 0-.305.084-.084.222-.084.307 0 .379.377 1.008.561 1.924.561l.008.002.008-.002c.915 0 1.544-.184 1.924-.561.085-.084.223-.084.307 0zm-3.44-2.418a1.269 1.269 0 0 0-1.27 1.27 1.27 1.27 0 1 0 1.27-1.27zm4.132 0a1.27 1.27 0 1 0 0 2.54 1.27 1.27 0 0 0 0-2.54zM12 0C5.373 0 0 5.373 0 12s5.373 12 12 12 12-5.373 12-12S18.627 0 12 0zm5.492 13.612c.036.174.055.353.055.536 0 2.726-3.173 4.937-7.088 4.937s-7.088-2.211-7.088-4.937c0-.183.018-.362.055-.536a1.657 1.657 0 0 1-.653-1.315c0-.916.742-1.659 1.659-1.659.443 0 .845.177 1.14.465a8.134 8.134 0 0 1 4.382-1.384l.862-4.067a.279.279 0 0 1 .334-.223l2.874.613a1.14 1.14 0 1 1-.13.611l-2.571-.548-.756 3.563a8.097 8.097 0 0 1 4.327 1.383 1.65 1.65 0 0 1 1.14-.465c.916 0 1.659.743 1.659 1.659 0 .548-.268 1.033-.653 1.315v.036z"/>
                                 </svg>
                                 Reddit
+                            </a>
+                            <a href="{{ url('/platforms/pinterest') }}"
+                               class="flex items-center gap-3 px-3 py-2 rounded-lg text-sm transition-colors {{ $currentRoute === 'platforms/pinterest' ? 'bg-indigo-50 text-indigo-600 font-medium' : 'text-gray-500 hover:bg-gray-50 hover:text-gray-900' }}">
+                                <svg class="w-4 h-4" fill="#E60023" viewBox="0 0 24 24">
+                                    <path d="M12.017 0C5.396 0 .029 5.367.029 11.987c0 5.079 3.158 9.417 7.618 11.162-.105-.949-.199-2.403.041-3.439.219-.937 1.406-5.957 1.406-5.957s-.359-.72-.359-1.781c0-1.668.967-2.914 2.171-2.914 1.023 0 1.518.769 1.518 1.69 0 1.029-.655 2.568-.994 3.995-.283 1.194.599 2.169 1.777 2.169 2.133 0 3.772-2.249 3.772-5.495 0-2.873-2.064-4.882-5.012-4.882-3.414 0-5.418 2.561-5.418 5.207 0 1.031.397 2.138.893 2.738a.36.36 0 0 1 .083.345l-.333 1.36c-.053.22-.174.267-.402.161-1.499-.698-2.436-2.889-2.436-4.649 0-3.785 2.75-7.262 7.929-7.262 4.163 0 7.398 2.967 7.398 6.931 0 4.136-2.607 7.464-6.227 7.464-1.216 0-2.359-.631-2.75-1.378l-.748 2.853c-.271 1.043-1.002 2.35-1.492 3.146C9.57 23.812 10.763 24 12.017 24c6.624 0 11.99-5.367 11.99-11.988C24.007 5.367 18.641 0 12.017 0z"/>
+                                </svg>
+                                Pinterest
                             </a>
                         </div>
                     </div>
