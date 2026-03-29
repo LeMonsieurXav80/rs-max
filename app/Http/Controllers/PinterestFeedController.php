@@ -9,6 +9,7 @@ use App\Models\WpItem;
 use App\Models\WpSource;
 use App\Services\Pinterest\PinterestApiService;
 use App\Services\Pinterest\PinterestImageService;
+use App\Services\WordPress\WordPressFetchService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -34,7 +35,37 @@ class PinterestFeedController extends Controller
 
         $wpSources = WpSource::orderBy('name')->get();
 
-        return view('pinterest-feeds.index', compact('pinterestAccounts', 'feeds', 'wpSources'));
+        // Fetch categories with names for each WP source (cached 24h)
+        $wpSourceCategories = [];
+        $fetchService = new WordPressFetchService;
+        foreach ($wpSources as $source) {
+            $cacheKey = "wp_source_categories_{$source->id}";
+            $cats = cache($cacheKey);
+            if ($cats === null) {
+                $cats = $fetchService->fetchAvailableCategories(
+                    $source->url,
+                    $source->auth_username,
+                    $source->auth_password
+                );
+                cache([$cacheKey => $cats], now()->addHours(24));
+            }
+            $wpSourceCategories[$source->id] = $cats;
+        }
+
+        // Load existing feed categories for edit modal
+        $feedCategories = [];
+        foreach ($feeds as $feed) {
+            $feedCategories[$feed->id] = DB::table('pinterest_feed_wp_category')
+                ->where('pinterest_feed_id', $feed->id)
+                ->get()
+                ->map(fn ($row) => [
+                    'wp_source_id' => $row->wp_source_id,
+                    'wp_category_id' => $row->wp_category_id,
+                ])
+                ->toArray();
+        }
+
+        return view('pinterest-feeds.index', compact('pinterestAccounts', 'feeds', 'wpSources', 'wpSourceCategories', 'feedCategories'));
     }
 
     public function store(Request $request): RedirectResponse
@@ -397,7 +428,12 @@ class PinterestFeedController extends Controller
             ->delete();
 
         foreach ($categories as $cat) {
-            if (empty($cat['wp_source_id']) || empty($cat['wp_category_id'])) {
+            // Values come as JSON strings from the form checkboxes
+            if (is_string($cat)) {
+                $cat = json_decode($cat, true);
+            }
+
+            if (! is_array($cat) || empty($cat['wp_source_id']) || empty($cat['wp_category_id'])) {
                 continue;
             }
 

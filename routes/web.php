@@ -36,6 +36,7 @@ use App\Http\Controllers\HealthController;
 use App\Http\Controllers\HelpController;
 use App\Http\Controllers\UpdateController;
 use App\Http\Controllers\YouTubeOAuthController;
+use App\Http\Controllers\MediaTemplateController;
 use App\Http\Controllers\PinterestFeedController;
 use App\Http\Controllers\PinterestOAuthController;
 use App\Http\Controllers\YouTubeTranslatorController;
@@ -144,6 +145,14 @@ Route::middleware(['auth', 'verified', 'throttle:60,1'])->group(function () {
     Route::get('media/studio', [MediaStudioController::class, 'index'])->name('media.studio');
     Route::post('media/studio/process', [MediaStudioController::class, 'process'])->name('media.studio.process');
     Route::post('media/studio/logo', [MediaStudioController::class, 'uploadLogo'])->name('media.studio.logo');
+
+    // Media Templates
+    Route::get('media/templates', [MediaTemplateController::class, 'index'])->name('media.templates');
+    Route::post('media/templates', [MediaTemplateController::class, 'store'])->name('media.templates.store');
+    Route::put('media/templates/{template}', [MediaTemplateController::class, 'update'])->name('media.templates.update');
+    Route::delete('media/templates/{template}', [MediaTemplateController::class, 'destroy'])->name('media.templates.destroy');
+    Route::post('media/templates/download-font', [MediaTemplateController::class, 'downloadFont'])->name('media.templates.downloadFont');
+    Route::post('media/templates/{template}/preview', [MediaTemplateController::class, 'preview'])->name('media.templates.preview');
 
     // Prompt Generator
     Route::get('prompts/image', [PromptGeneratorController::class, 'image'])->name('prompts.image');

@@ -82,6 +82,21 @@
 
             {{-- Actions --}}
             <div class="flex items-center gap-2 pt-3 border-t border-gray-100">
+                <button @click="openEditModal({{ $feed->id }}, {{ json_encode([
+                    'name' => $feed->name,
+                    'social_account_id' => $feed->social_account_id,
+                    'board_id' => $feed->board_id,
+                    'board_name' => $feed->board_name,
+                    'template' => $feed->template,
+                    'colors' => $feed->colors ?? ['background' => '#1a1a2e', 'text' => '#ffffff'],
+                    'language' => $feed->language,
+                    'interest' => $feed->interest ?? '',
+                ]) }}, {{ json_encode($feedCategories[$feed->id] ?? []) }})" class="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-gray-700 bg-gray-100 rounded-lg hover:bg-gray-200 transition" title="Modifier">
+                    <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1.5">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="m16.862 4.487 1.687-1.688a1.875 1.875 0 1 1 2.652 2.652L10.582 16.07a4.5 4.5 0 0 1-1.897 1.13L6 18l.8-2.685a4.5 4.5 0 0 1 1.13-1.897l8.932-8.931Zm0 0L19.5 7.125M18 14v4.75A2.25 2.25 0 0 1 15.75 21H5.25A2.25 2.25 0 0 1 3 18.75V8.25A2.25 2.25 0 0 1 5.25 6H10" />
+                    </svg>
+                    Modifier
+                </button>
                 <button @click="loadPins({{ $feed->id }})" class="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-gray-700 bg-gray-100 rounded-lg hover:bg-gray-200 transition">
                     <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1.5">
                         <path stroke-linecap="round" stroke-linejoin="round" d="M2.036 12.322a1.012 1.012 0 0 1 0-.639C3.423 7.51 7.36 4.5 12 4.5c4.638 0 8.573 3.007 9.963 7.178.07.207.07.431 0 .639C20.577 16.49 16.64 19.5 12 19.5c-4.638 0-8.573-3.007-9.963-7.178Z" />
@@ -324,11 +339,7 @@
 
                     @foreach($wpSources as $source)
                     @php
-                        $categories = $source->categories;
-                        if (is_string($categories)) {
-                            $categories = json_decode($categories, true) ?? [];
-                        }
-                        $categories = is_array($categories) ? $categories : [];
+                        $categories = $wpSourceCategories[$source->id] ?? [];
                     @endphp
                     @if(count($categories))
                     <div class="mb-3">
@@ -363,6 +374,167 @@
         </div>
     </div>
 
+    {{-- Edit feed modal --}}
+    <div x-show="showEditModal" x-cloak class="fixed inset-0 z-50 flex items-center justify-center bg-black/40" @keydown.escape.window="showEditModal = false">
+        <div @click.away="showEditModal = false" class="bg-white rounded-2xl shadow-xl w-full max-w-2xl mx-4 max-h-[90vh] overflow-y-auto p-6">
+            <h2 class="text-lg font-semibold text-gray-900 mb-4">Modifier le flux Pinterest</h2>
+
+            <form method="POST" :action="'/tools/pinterest-feeds/' + editFeedId" x-ref="editForm">
+                @csrf
+                @method('PUT')
+
+                {{-- Feed name --}}
+                <div class="mb-4">
+                    <label class="block text-sm font-medium text-gray-700 mb-1">Nom du flux / tableau</label>
+                    <input type="text" name="name" x-model="editFeed.name" class="w-full rounded-lg border-gray-300 text-sm focus:ring-indigo-500 focus:border-indigo-500" required>
+                </div>
+
+                {{-- Board selection --}}
+                <div class="mb-4" x-show="editBoards.length > 0">
+                    <label class="block text-sm font-medium text-gray-700 mb-1">Tableau Pinterest</label>
+                    <select name="board_id" x-model="editFeed.board_id" @change="updateEditBoardName()" class="w-full rounded-lg border-gray-300 text-sm focus:ring-indigo-500 focus:border-indigo-500">
+                        <option value="">Aucun</option>
+                        <template x-for="board in editBoards" :key="board.id">
+                            <option :value="board.id" x-text="board.name + ' (' + board.pin_count + ' pins)'"></option>
+                        </template>
+                    </select>
+                    <input type="hidden" name="board_name" x-model="editFeed.board_name">
+                </div>
+
+                <div class="mb-4" x-show="loadingEditBoards">
+                    <p class="text-sm text-gray-500 animate-pulse">Chargement des tableaux...</p>
+                </div>
+
+                {{-- Template --}}
+                <div class="mb-4">
+                    <label class="block text-sm font-medium text-gray-700 mb-2">Template d'image</label>
+                    <div class="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                        <label class="relative cursor-pointer">
+                            <input type="radio" name="template" value="overlay" x-model="editFeed.template" class="sr-only peer">
+                            <div class="p-3 rounded-xl border-2 text-center transition peer-checked:border-indigo-500 peer-checked:bg-indigo-50 border-gray-200 hover:border-gray-300">
+                                <div class="w-full h-16 bg-gradient-to-t from-black/70 to-transparent rounded-lg mb-2 relative overflow-hidden">
+                                    <div class="absolute bottom-1 left-1 right-1 h-2 bg-white/80 rounded"></div>
+                                </div>
+                                <span class="text-xs font-medium">Overlay</span>
+                            </div>
+                        </label>
+                        <label class="relative cursor-pointer">
+                            <input type="radio" name="template" value="split" x-model="editFeed.template" class="sr-only peer">
+                            <div class="p-3 rounded-xl border-2 text-center transition peer-checked:border-indigo-500 peer-checked:bg-indigo-50 border-gray-200 hover:border-gray-300">
+                                <div class="w-full h-16 rounded-lg mb-2 overflow-hidden">
+                                    <div class="h-8 bg-gray-300"></div>
+                                    <div class="h-8 bg-indigo-900 flex items-center justify-center">
+                                        <div class="h-1.5 w-8 bg-white/80 rounded"></div>
+                                    </div>
+                                </div>
+                                <span class="text-xs font-medium">Split</span>
+                            </div>
+                        </label>
+                        <label class="relative cursor-pointer">
+                            <input type="radio" name="template" value="bold_text" x-model="editFeed.template" class="sr-only peer">
+                            <div class="p-3 rounded-xl border-2 text-center transition peer-checked:border-indigo-500 peer-checked:bg-indigo-50 border-gray-200 hover:border-gray-300">
+                                <div class="w-full h-16 bg-indigo-900 rounded-lg mb-2 flex items-center justify-center">
+                                    <div class="space-y-1">
+                                        <div class="h-2 w-10 bg-white/80 rounded mx-auto"></div>
+                                        <div class="h-2 w-8 bg-white/60 rounded mx-auto"></div>
+                                    </div>
+                                </div>
+                                <span class="text-xs font-medium">Bold Text</span>
+                            </div>
+                        </label>
+                        <label class="relative cursor-pointer">
+                            <input type="radio" name="template" value="numbered" x-model="editFeed.template" class="sr-only peer">
+                            <div class="p-3 rounded-xl border-2 text-center transition peer-checked:border-indigo-500 peer-checked:bg-indigo-50 border-gray-200 hover:border-gray-300">
+                                <div class="w-full h-16 bg-indigo-900 rounded-lg mb-2 flex items-center justify-center">
+                                    <span class="text-2xl font-black text-white/80">7</span>
+                                </div>
+                                <span class="text-xs font-medium">Numbered</span>
+                            </div>
+                        </label>
+                    </div>
+                </div>
+
+                {{-- Colors --}}
+                <div class="grid grid-cols-2 gap-4 mb-4">
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-1">Couleur de fond</label>
+                        <div class="flex items-center gap-2">
+                            <input type="color" name="colors[background]" x-model="editFeed.colors.background" class="h-9 w-14 rounded cursor-pointer border border-gray-300">
+                            <input type="text" x-model="editFeed.colors.background" class="flex-1 rounded-lg border-gray-300 text-sm font-mono" maxlength="7">
+                        </div>
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-1">Couleur du texte</label>
+                        <div class="flex items-center gap-2">
+                            <input type="color" name="colors[text]" x-model="editFeed.colors.text" class="h-9 w-14 rounded cursor-pointer border border-gray-300">
+                            <input type="text" x-model="editFeed.colors.text" class="flex-1 rounded-lg border-gray-300 text-sm font-mono" maxlength="7">
+                        </div>
+                    </div>
+                </div>
+
+                {{-- Language --}}
+                <div class="mb-4">
+                    <label class="block text-sm font-medium text-gray-700 mb-1">Langue des titres</label>
+                    <select name="language" x-model="editFeed.language" class="w-full rounded-lg border-gray-300 text-sm focus:ring-indigo-500 focus:border-indigo-500">
+                        <option value="fr">Français</option>
+                        <option value="en">English</option>
+                        <option value="es">Español</option>
+                        <option value="de">Deutsch</option>
+                        <option value="it">Italiano</option>
+                        <option value="pt">Português</option>
+                    </select>
+                </div>
+
+                {{-- Interest --}}
+                <div class="mb-4">
+                    <label class="block text-sm font-medium text-gray-700 mb-1">Thématique Pinterest</label>
+                    <select name="interest" x-model="editFeed.interest" class="w-full rounded-lg border-gray-300 text-sm focus:ring-indigo-500 focus:border-indigo-500">
+                        <option value="">Aucune (pas de tendances)</option>
+                        @foreach(\App\Services\Pinterest\PinterestApiService::INTERESTS as $key => $label)
+                        <option value="{{ $key }}">{{ $label }}</option>
+                        @endforeach
+                    </select>
+                </div>
+
+                {{-- WordPress categories --}}
+                <div class="mb-4">
+                    <label class="block text-sm font-medium text-gray-700 mb-2">Catégories WordPress</label>
+                    @foreach($wpSources as $source)
+                    @php $categories = $wpSourceCategories[$source->id] ?? []; @endphp
+                    @if(count($categories))
+                    <div class="mb-3">
+                        <p class="text-xs font-semibold text-gray-600 mb-1">{{ $source->name }}</p>
+                        <div class="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                            @foreach($categories as $cat)
+                            @if(is_array($cat) && isset($cat['id'], $cat['name']))
+                            <label class="flex items-center gap-2 p-2 rounded-lg border border-gray-200 hover:bg-gray-50 cursor-pointer text-xs">
+                                <input type="checkbox" name="wp_categories[]"
+                                       :value="JSON.stringify({wp_source_id: {{ $source->id }}, wp_category_id: {{ $cat['id'] }}, wp_category_name: '{{ addslashes($cat['name']) }}'})"
+                                       :checked="isEditCategoryChecked({{ $source->id }}, {{ $cat['id'] }})"
+                                       class="rounded border-gray-300 text-indigo-600 focus:ring-indigo-500">
+                                <span>{{ $cat['name'] }} ({{ $cat['count'] ?? 0 }})</span>
+                            </label>
+                            @endif
+                            @endforeach
+                        </div>
+                    </div>
+                    @endif
+                    @endforeach
+                </div>
+
+                {{-- Actions --}}
+                <div class="flex justify-end gap-3 pt-4 border-t border-gray-100">
+                    <button type="button" @click="showEditModal = false" class="px-4 py-2 text-sm font-medium text-gray-700 hover:text-gray-900 transition">
+                        Annuler
+                    </button>
+                    <button type="submit" class="px-6 py-2.5 text-white text-sm font-medium rounded-xl shadow-sm hover:opacity-90 transition" style="background-color: #E60023">
+                        Enregistrer
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+
     {{-- Toast --}}
     <div x-show="toast.show" x-cloak
          x-transition:enter="transition ease-out duration-300"
@@ -381,15 +553,30 @@
 function pinterestFeedManager() {
     return {
         showCreateModal: false,
+        showEditModal: false,
         generating: false,
         boards: [],
+        editBoards: [],
         loadingBoards: false,
+        loadingEditBoards: false,
         selectedFeedPins: [],
         selectedFeedName: '',
         toast: { show: false, message: '', type: 'success' },
+        editFeedId: null,
+        editFeedCategories: [],
 
         newFeed: {
             social_account_id: '',
+            name: '',
+            board_id: '',
+            board_name: '',
+            template: 'overlay',
+            colors: { background: '#1a1a2e', text: '#ffffff' },
+            language: 'fr',
+            interest: '',
+        },
+
+        editFeed: {
             name: '',
             board_id: '',
             board_name: '',
@@ -425,6 +612,50 @@ function pinterestFeedManager() {
         updateBoardName() {
             const board = this.boards.find(b => b.id === this.newFeed.board_id);
             this.newFeed.board_name = board ? board.name : '';
+        },
+
+        updateEditBoardName() {
+            const board = this.editBoards.find(b => b.id === this.editFeed.board_id);
+            this.editFeed.board_name = board ? board.name : '';
+        },
+
+        async openEditModal(feedId, feedData, categories) {
+            this.editFeedId = feedId;
+            this.editFeed = {
+                name: feedData.name,
+                board_id: feedData.board_id || '',
+                board_name: feedData.board_name || '',
+                template: feedData.template,
+                colors: feedData.colors || { background: '#1a1a2e', text: '#ffffff' },
+                language: feedData.language || 'fr',
+                interest: feedData.interest || '',
+            };
+            this.editFeedCategories = categories || [];
+            this.showEditModal = true;
+
+            // Fetch boards for this account
+            if (feedData.social_account_id) {
+                this.loadingEditBoards = true;
+                this.editBoards = [];
+                try {
+                    const resp = await fetch('{{ route("pinterest-feeds.boards") }}', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json', 'X-CSRF-TOKEN': '{{ csrf_token() }}' },
+                        body: JSON.stringify({ social_account_id: feedData.social_account_id })
+                    });
+                    const data = await resp.json();
+                    if (resp.ok && Array.isArray(data)) {
+                        this.editBoards = data;
+                    }
+                } catch (e) {
+                    console.error(e);
+                }
+                this.loadingEditBoards = false;
+            }
+        },
+
+        isEditCategoryChecked(sourceId, categoryId) {
+            return this.editFeedCategories.some(c => c.wp_source_id == sourceId && c.wp_category_id == categoryId);
         },
 
         async generatePins(feedId) {
