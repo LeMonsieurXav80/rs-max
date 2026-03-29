@@ -318,18 +318,26 @@
                     <p class="text-xs text-gray-500 mb-2">Sélectionnez les catégories à inclure dans ce flux.</p>
 
                     @foreach($wpSources as $source)
-                    @php $categories = $source->categories ?? []; @endphp
+                    @php
+                        $categories = $source->categories;
+                        if (is_string($categories)) {
+                            $categories = json_decode($categories, true) ?? [];
+                        }
+                        $categories = is_array($categories) ? $categories : [];
+                    @endphp
                     @if(count($categories))
                     <div class="mb-3">
                         <p class="text-xs font-semibold text-gray-600 mb-1">{{ $source->name }}</p>
                         <div class="grid grid-cols-2 sm:grid-cols-3 gap-2">
                             @foreach($categories as $cat)
+                            @if(is_array($cat) && isset($cat['id'], $cat['name']))
                             <label class="flex items-center gap-2 p-2 rounded-lg border border-gray-200 hover:bg-gray-50 cursor-pointer text-xs">
                                 <input type="checkbox" name="wp_categories[]"
                                        :value="JSON.stringify({wp_source_id: {{ $source->id }}, wp_category_id: {{ $cat['id'] }}, wp_category_name: '{{ addslashes($cat['name']) }}'})"
                                        class="rounded border-gray-300 text-indigo-600 focus:ring-indigo-500">
                                 <span>{{ $cat['name'] }} ({{ $cat['count'] ?? 0 }})</span>
                             </label>
+                            @endif
                             @endforeach
                         </div>
                     </div>
