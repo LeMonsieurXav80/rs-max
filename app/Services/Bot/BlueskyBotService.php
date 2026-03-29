@@ -755,44 +755,38 @@ class BlueskyBotService
 
     private function findFollowRecord(array $auth, string $targetDid): ?string
     {
-        // List follow records to find the one for this DID
-        $response = Http::withToken($auth['accessJwt'])
-            ->get(self::PDS_BASE . '/xrpc/com.atproto.repo.listRecords', [
+        $cursor = null;
+        $maxPages = 100; // Safety limit (10,000 follows max)
+
+        for ($i = 0; $i < $maxPages; $i++) {
+            $params = [
                 'repo' => $auth['did'],
                 'collection' => 'app.bsky.graph.follow',
                 'limit' => 100,
-            ]);
-
-        if (! $response->successful()) {
-            return null;
-        }
-
-        $records = $response->json('records', []);
-        foreach ($records as $record) {
-            $subject = $record['value']['subject'] ?? null;
-            if ($subject === $targetDid) {
-                return $record['uri'];
+            ];
+            if ($cursor) {
+                $params['cursor'] = $cursor;
             }
-        }
 
-        // If not found in first page, try paginating
-        $cursor = $response->json('cursor');
-        if ($cursor) {
             $response = Http::withToken($auth['accessJwt'])
-                ->get(self::PDS_BASE . '/xrpc/com.atproto.repo.listRecords', [
-                    'repo' => $auth['did'],
-                    'collection' => 'app.bsky.graph.follow',
-                    'limit' => 100,
-                    'cursor' => $cursor,
-                ]);
+                ->get(self::PDS_BASE . '/xrpc/com.atproto.repo.listRecords', $params);
 
-            if ($response->successful()) {
-                foreach ($response->json('records', []) as $record) {
-                    if (($record['value']['subject'] ?? null) === $targetDid) {
-                        return $record['uri'];
-                    }
+            if (! $response->successful()) {
+                return null;
+            }
+
+            foreach ($response->json('records', []) as $record) {
+                if (($record['value']['subject'] ?? null) === $targetDid) {
+                    return $record['uri'];
                 }
             }
+
+            $cursor = $response->json('cursor');
+            if (! $cursor) {
+                break;
+            }
+
+            usleep(200_000);
         }
 
         return null;
