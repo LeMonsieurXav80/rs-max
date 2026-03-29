@@ -133,6 +133,7 @@
                         <th class="text-left py-2 px-3 text-xs font-medium text-gray-500 uppercase">Image</th>
                         <th class="text-left py-2 px-3 text-xs font-medium text-gray-500 uppercase">Titre original</th>
                         <th class="text-left py-2 px-3 text-xs font-medium text-gray-500 uppercase">Titre Pinterest</th>
+                        <th class="text-left py-2 px-3 text-xs font-medium text-gray-500 uppercase">Description</th>
                         <th class="text-left py-2 px-3 text-xs font-medium text-gray-500 uppercase">V.</th>
                         <th class="text-left py-2 px-3 text-xs font-medium text-gray-500 uppercase">Statut</th>
                         <th class="text-left py-2 px-3 text-xs font-medium text-gray-500 uppercase">Actions</th>
@@ -147,6 +148,7 @@
                             </td>
                             <td class="py-2 px-3 max-w-[200px] truncate" x-text="pin.title_original"></td>
                             <td class="py-2 px-3 max-w-[200px] truncate font-medium" x-text="pin.title_generated || '—'"></td>
+                            <td class="py-2 px-3 max-w-[180px] text-xs text-gray-500 truncate" x-text="pin.description || '—'"></td>
                             <td class="py-2 px-3 text-xs text-gray-500" x-text="'v' + pin.version"></td>
                             <td class="py-2 px-3">
                                 <span class="inline-flex px-2 py-0.5 rounded-full text-xs font-medium"
@@ -300,18 +302,6 @@
                     </select>
                 </div>
 
-                {{-- Items per day & max --}}
-                <div class="grid grid-cols-2 gap-4 mb-4">
-                    <div>
-                        <label class="block text-sm font-medium text-gray-700 mb-1">Items par jour</label>
-                        <input type="number" name="items_per_day" x-model="newFeed.items_per_day" min="1" max="20" class="w-full rounded-lg border-gray-300 text-sm">
-                    </div>
-                    <div>
-                        <label class="block text-sm font-medium text-gray-700 mb-1">Max items dans le flux</label>
-                        <input type="number" name="max_items" x-model="newFeed.max_items" min="10" max="200" class="w-full rounded-lg border-gray-300 text-sm">
-                    </div>
-                </div>
-
                 {{-- WordPress categories --}}
                 <div class="mb-4">
                     <label class="block text-sm font-medium text-gray-700 mb-2">Catégories WordPress</label>
@@ -391,8 +381,6 @@ function pinterestFeedManager() {
             template: 'overlay',
             colors: { background: '#1a1a2e', text: '#ffffff' },
             language: 'fr',
-            items_per_day: 3,
-            max_items: 50,
         },
 
         async fetchBoards() {
@@ -405,8 +393,14 @@ function pinterestFeedManager() {
                     headers: { 'Content-Type': 'application/json', 'X-CSRF-TOKEN': '{{ csrf_token() }}' },
                     body: JSON.stringify({ social_account_id: this.newFeed.social_account_id })
                 });
-                this.boards = await resp.json();
+                const data = await resp.json();
+                if (resp.ok && Array.isArray(data)) {
+                    this.boards = data;
+                } else {
+                    this.showToast(data.error || 'Impossible de charger les tableaux', 'error');
+                }
             } catch (e) {
+                this.showToast('Erreur de connexion Pinterest', 'error');
                 console.error(e);
             }
             this.loadingBoards = false;
@@ -476,6 +470,7 @@ function pinterestFeedManager() {
                     const idx = this.selectedFeedPins.findIndex(p => p.id === pinId);
                     if (idx >= 0) {
                         this.selectedFeedPins[idx].title_generated = data.title;
+                        this.selectedFeedPins[idx].description = data.description;
                         this.selectedFeedPins[idx].generated_image_url = data.image_url;
                         this.selectedFeedPins[idx].status = data.status;
                     }

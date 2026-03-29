@@ -49,8 +49,6 @@ class PinterestFeedController extends Controller
             'colors.background' => 'nullable|string|max:7',
             'colors.text' => 'nullable|string|max:7',
             'language' => 'required|string|max:10',
-            'max_items' => 'nullable|integer|min:10|max:200',
-            'items_per_day' => 'nullable|integer|min:1|max:20',
             'wp_categories' => 'nullable|array',
         ]);
 
@@ -65,8 +63,6 @@ class PinterestFeedController extends Controller
             'template' => $validated['template'],
             'colors' => $validated['colors'] ?? ['background' => '#1a1a2e', 'text' => '#ffffff'],
             'language' => $validated['language'],
-            'max_items' => $validated['max_items'] ?? 50,
-            'items_per_day' => $validated['items_per_day'] ?? 3,
         ]);
 
         // Attach WordPress categories
@@ -88,8 +84,6 @@ class PinterestFeedController extends Controller
             'colors.background' => 'nullable|string|max:7',
             'colors.text' => 'nullable|string|max:7',
             'language' => 'required|string|max:10',
-            'max_items' => 'nullable|integer|min:10|max:200',
-            'items_per_day' => 'nullable|integer|min:1|max:20',
             'wp_categories' => 'nullable|array',
         ]);
 
@@ -100,8 +94,6 @@ class PinterestFeedController extends Controller
             'template' => $validated['template'],
             'colors' => $validated['colors'] ?? $feed->colors,
             'language' => $validated['language'],
-            'max_items' => $validated['max_items'] ?? $feed->max_items,
-            'items_per_day' => $validated['items_per_day'] ?? $feed->items_per_day,
         ]);
 
         if (isset($validated['wp_categories'])) {
@@ -124,11 +116,17 @@ class PinterestFeedController extends Controller
      */
     public function boards(Request $request): JsonResponse
     {
-        $account = SocialAccount::findOrFail($request->input('social_account_id'));
-        $service = new PinterestApiService;
-        $boards = $service->getBoards($account);
+        try {
+            $account = SocialAccount::findOrFail($request->input('social_account_id'));
+            $service = new PinterestApiService;
+            $boards = $service->getBoards($account);
 
-        return response()->json($boards);
+            return response()->json($boards);
+        } catch (\Exception $e) {
+            Log::error('Pinterest boards fetch failed', ['error' => $e->getMessage()]);
+
+            return response()->json(['error' => 'Impossible de récupérer les tableaux Pinterest.'], 500);
+        }
     }
 
     /**
@@ -149,9 +147,7 @@ class PinterestFeedController extends Controller
         $wpCategoryIds = $categories->pluck('wp_category_id')->toArray();
 
         $items = WpItem::whereIn('wp_source_id', $wpSourceIds)
-            ->whereNotNull('image_url')
             ->orderByDesc('published_at')
-            ->limit($feed->max_items)
             ->get();
 
         // Filter items by category (stored in the WP source's categories JSON)
@@ -198,22 +194,22 @@ class PinterestFeedController extends Controller
     {
         $feed = $pin->feed;
 
-        // Generate AI title
-        $title = $this->generateAiTitle($pin->title_original, $feed->template, $feed->language);
-        if (! $title) {
-            $pin->update(['status' => 'failed', 'error_message' => 'Échec génération titre IA']);
+        // Generate AI title + description
+        $aiContent = $this->generateAiContent($pin->title_original, $feed->template, $feed->language);
+        if (! $aiContent || ! $aiContent['title']) {
+            $pin->update(['status' => 'failed', 'error_message' => 'Échec génération contenu IA']);
 
-            return response()->json(['error' => 'AI title generation failed'], 500);
+            return response()->json(['error' => 'AI content generation failed'], 500);
         }
 
         // Generate image
         $imageService = new PinterestImageService;
         $imagePath = $imageService->generate(
             $feed->template,
-            $title,
+            $aiContent['title'],
             $pin->source_image_url,
             $feed->colors ?? [],
-            $this->extractNumber($title),
+            $this->extractNumber($aiContent['title']),
         );
 
         if (! $imagePath) {
@@ -223,13 +219,15 @@ class PinterestFeedController extends Controller
         }
 
         $pin->update([
-            'title_generated' => $title,
+            'title_generated' => $aiContent['title'],
+            'description' => $aiContent['description'],
             'generated_image_path' => $imagePath,
             'status' => 'generated',
         ]);
 
         return response()->json([
-            'title' => $title,
+            'title' => $aiContent['title'],
+            'description' => $aiContent['description'],
             'image_url' => $pin->generated_image_url,
             'status' => 'generated',
         ]);
@@ -296,9 +294,9 @@ class PinterestFeedController extends Controller
         $imageService = new PinterestImageService;
 
         foreach ($pendingPins as $pin) {
-            $title = $this->generateAiTitle($pin->title_original, $feed->template, $feed->language);
-            if (! $title) {
-                $pin->update(['status' => 'failed', 'error_message' => 'Échec titre IA']);
+            $aiContent = $this->generateAiContent($pin->title_original, $feed->template, $feed->language);
+            if (! $aiContent || ! $aiContent['title']) {
+                $pin->update(['status' => 'failed', 'error_message' => 'Échec contenu IA']);
                 $results['failed']++;
 
                 continue;
@@ -306,10 +304,10 @@ class PinterestFeedController extends Controller
 
             $imagePath = $imageService->generate(
                 $feed->template,
-                $title,
+                $aiContent['title'],
                 $pin->source_image_url,
                 $feed->colors ?? [],
-                $this->extractNumber($title),
+                $this->extractNumber($aiContent['title']),
             );
 
             if (! $imagePath) {
@@ -320,7 +318,8 @@ class PinterestFeedController extends Controller
             }
 
             $pin->update([
-                'title_generated' => $title,
+                'title_generated' => $aiContent['title'],
+                'description' => $aiContent['description'],
                 'generated_image_path' => $imagePath,
                 'status' => 'generated',
             ]);
@@ -343,7 +342,6 @@ class PinterestFeedController extends Controller
             ->whereNotNull('generated_image_path')
             ->whereNotNull('title_generated')
             ->orderByDesc('added_to_feed_at')
-            ->limit($feed->max_items)
             ->get();
 
         $xml = $this->buildRssXml($feed, $pins);
@@ -367,6 +365,7 @@ class PinterestFeedController extends Controller
                 'id' => $pin->id,
                 'title_original' => $pin->title_original,
                 'title_generated' => $pin->title_generated,
+                'description' => $pin->description,
                 'link_url' => $pin->link_url,
                 'source_image_url' => $pin->source_image_url,
                 'generated_image_url' => $pin->generated_image_url,
@@ -403,9 +402,9 @@ class PinterestFeedController extends Controller
         }
     }
 
-    private function generateAiTitle(string $originalTitle, string $template, string $language): ?string
+    private function generateAiContent(string $originalTitle, string $template, string $language): ?array
     {
-        $maxChars = match ($template) {
+        $maxTitleChars = match ($template) {
             'bold_text' => 60,
             'numbered' => 80,
             'overlay' => 70,
@@ -423,25 +422,26 @@ class PinterestFeedController extends Controller
             default => $language,
         };
 
-        $prompt = "Transforme ce titre d'article en titre Pinterest optimisé pour le clic.\n\n";
+        $prompt = "Transforme ce titre d'article en contenu Pinterest optimisé pour le clic.\n\n";
         $prompt .= "Titre original : {$originalTitle}\n\n";
+        $prompt .= "Génère un JSON avec deux champs :\n";
+        $prompt .= "1. \"title\" : titre Pinterest accrocheur ({$maxTitleChars} caractères max)\n";
+        $prompt .= "2. \"description\" : description Pinterest SEO (150-300 caractères) avec des mots-clés pertinents et 3-5 hashtags\n\n";
         $prompt .= "Règles :\n";
-        $prompt .= "- Maximum {$maxChars} caractères\n";
         $prompt .= "- Langue : {$langName}\n";
-        $prompt .= "- Utilise des chiffres si possible (ex: '7 façons de...', '10 astuces pour...')\n";
-        $prompt .= "- Accrocheur et donnant envie de cliquer\n";
-        $prompt .= "- Pas de guillemets autour du résultat\n";
-        $prompt .= "- Réponds UNIQUEMENT avec le titre, rien d'autre";
+        $prompt .= "- Titre : utilise des chiffres si possible (ex: '7 façons de...'), accrocheur\n";
+        $prompt .= "- Description : informative, inclut des mots-clés pour le SEO Pinterest, termine par des hashtags pertinents\n";
+        $prompt .= "- Réponds UNIQUEMENT avec le JSON valide, rien d'autre";
 
         try {
             $response = Http::withToken(config('services.openai.api_key'))
-                ->timeout(15)
+                ->timeout(20)
                 ->post('https://api.openai.com/v1/chat/completions', [
                     'model' => 'gpt-4o-mini',
                     'messages' => [
                         ['role' => 'user', 'content' => $prompt],
                     ],
-                    'max_tokens' => 100,
+                    'max_tokens' => 300,
                     'temperature' => 0.8,
                 ]);
 
@@ -449,12 +449,32 @@ class PinterestFeedController extends Controller
                 return null;
             }
 
-            $title = trim($response->json('choices.0.message.content', ''));
-            $title = trim($title, '"\'');
+            $content = trim($response->json('choices.0.message.content', ''));
+            // Clean markdown code blocks if present
+            $content = preg_replace('/^```json?\s*/i', '', $content);
+            $content = preg_replace('/\s*```$/', '', $content);
 
-            return mb_strlen($title) <= $maxChars + 10 ? $title : mb_substr($title, 0, $maxChars);
+            $parsed = json_decode($content, true);
+            if (! $parsed || empty($parsed['title'])) {
+                // Fallback: treat entire response as title, no description
+                $title = trim($content, '"\' ');
+
+                return [
+                    'title' => mb_strlen($title) <= $maxTitleChars + 10 ? $title : mb_substr($title, 0, $maxTitleChars),
+                    'description' => null,
+                ];
+            }
+
+            $title = trim($parsed['title'], '"\'');
+            $title = mb_strlen($title) <= $maxTitleChars + 10 ? $title : mb_substr($title, 0, $maxTitleChars);
+            $description = isset($parsed['description']) ? mb_substr(trim($parsed['description']), 0, 500) : null;
+
+            return [
+                'title' => $title,
+                'description' => $description,
+            ];
         } catch (\Exception $e) {
-            Log::error('Pinterest AI title generation failed', ['error' => $e->getMessage()]);
+            Log::error('Pinterest AI content generation failed', ['error' => $e->getMessage()]);
 
             return null;
         }

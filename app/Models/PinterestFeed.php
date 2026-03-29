@@ -17,8 +17,6 @@ class PinterestFeed extends Model
         'template',
         'colors',
         'language',
-        'max_items',
-        'items_per_day',
         'is_active',
     ];
 
