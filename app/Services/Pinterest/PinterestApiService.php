@@ -122,6 +122,99 @@ class PinterestApiService
         return $boards;
     }
 
+    private const LANGUAGE_TO_REGION = [
+        'fr' => 'FR',
+        'en' => 'US',
+        'es' => 'ES',
+        'de' => 'DE',
+        'it' => 'IT',
+        'pt' => 'BR',
+        'nl' => 'NL+BE+LU',
+        'sv' => 'SE+DK+FI+NO',
+        'pl' => 'PL+RO+HU+SK+CZ',
+    ];
+
+    public const INTERESTS = [
+        'animals' => 'Animaux',
+        'architecture' => 'Architecture',
+        'art' => 'Art',
+        'beauty' => 'Beauté',
+        'childrens_fashion' => 'Mode enfant',
+        'design' => 'Design',
+        'diy_and_crafts' => 'DIY & Loisirs créatifs',
+        'education' => 'Éducation',
+        'electronics' => 'Électronique',
+        'entertainment' => 'Divertissement',
+        'event_planning' => 'Événementiel',
+        'finance' => 'Finance',
+        'food_and_drinks' => 'Cuisine & Boissons',
+        'gardening' => 'Jardinage',
+        'health' => 'Santé',
+        'home_decor' => 'Décoration',
+        'mens_fashion' => 'Mode homme',
+        'parenting' => 'Parentalité',
+        'quotes' => 'Citations',
+        'sport' => 'Sport',
+        'travel' => 'Voyage',
+        'vehicles' => 'Véhicules',
+        'wedding' => 'Mariage',
+        'womens_fashion' => 'Mode femme',
+    ];
+
+    /**
+     * Get trending keywords from Pinterest Trends API.
+     */
+    public function getTrendingKeywords(SocialAccount $account, string $language, ?string $interest = null, string $trendType = 'growing', int $limit = 20): array
+    {
+        $accessToken = $this->getValidToken($account);
+        if (! $accessToken) {
+            return [];
+        }
+
+        $region = self::LANGUAGE_TO_REGION[$language] ?? 'US';
+
+        $params = ['limit' => $limit];
+        if ($interest) {
+            $params['interests'] = [$interest];
+        }
+
+        try {
+            $response = Http::withToken($accessToken)
+                ->timeout(10)
+                ->get(self::API_BASE . "/trends/keywords/{$region}/top/{$trendType}", $params);
+
+            if (! $response->successful()) {
+                Log::warning('Pinterest Trends API failed', [
+                    'status' => $response->status(),
+                    'region' => $region,
+                    'interest' => $interest,
+                    'body' => $response->body(),
+                ]);
+
+                return [];
+            }
+
+            $trends = [];
+            foreach ($response->json('items', []) ?? $response->json() as $item) {
+                $keyword = $item['keyword'] ?? $item['normalized_keyword'] ?? null;
+                if ($keyword) {
+                    $trends[] = $keyword;
+                }
+            }
+
+            return $trends;
+        } catch (\Exception $e) {
+            Log::error('Pinterest Trends fetch failed', ['error' => $e->getMessage()]);
+
+            return [];
+        }
+    }
+
+    public static function getRegionForLanguage(string $language): string
+    {
+        return self::LANGUAGE_TO_REGION[$language] ?? 'US';
+    }
+
     public function getBoardPins(SocialAccount $account, string $boardId, int $limit = 25): array
     {
         $accessToken = $this->getValidToken($account);

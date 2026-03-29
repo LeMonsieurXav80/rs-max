@@ -52,6 +52,9 @@
                         {{ $feed->socialAccount->name }} &middot;
                         Template: <span class="font-medium">{{ $feed->template }}</span> &middot;
                         {{ $feed->pins_count }} pins
+                        @if($feed->interest)
+                            &middot; <span class="text-indigo-600">{{ \App\Services\Pinterest\PinterestApiService::INTERESTS[$feed->interest] ?? $feed->interest }}</span>
+                        @endif
                     </p>
                 </div>
                 <div class="flex items-center gap-1">
@@ -302,6 +305,18 @@
                     </select>
                 </div>
 
+                {{-- Interest / Thématique --}}
+                <div class="mb-4">
+                    <label class="block text-sm font-medium text-gray-700 mb-1">Thématique Pinterest</label>
+                    <p class="text-xs text-gray-500 mb-1">Utilisée pour récupérer les tendances et optimiser les titres/descriptions.</p>
+                    <select name="interest" x-model="newFeed.interest" class="w-full rounded-lg border-gray-300 text-sm focus:ring-indigo-500 focus:border-indigo-500">
+                        <option value="">Aucune (pas de tendances)</option>
+                        @foreach(\App\Services\Pinterest\PinterestApiService::INTERESTS as $key => $label)
+                        <option value="{{ $key }}">{{ $label }}</option>
+                        @endforeach
+                    </select>
+                </div>
+
                 {{-- WordPress categories --}}
                 <div class="mb-4">
                     <label class="block text-sm font-medium text-gray-700 mb-2">Catégories WordPress</label>
@@ -381,6 +396,7 @@ function pinterestFeedManager() {
             template: 'overlay',
             colors: { background: '#1a1a2e', text: '#ffffff' },
             language: 'fr',
+            interest: '',
         },
 
         async fetchBoards() {

@@ -49,6 +49,7 @@ class PinterestFeedController extends Controller
             'colors.background' => 'nullable|string|max:7',
             'colors.text' => 'nullable|string|max:7',
             'language' => 'required|string|max:10',
+            'interest' => 'nullable|string|max:50',
             'wp_categories' => 'nullable|array',
         ]);
 
@@ -63,6 +64,7 @@ class PinterestFeedController extends Controller
             'template' => $validated['template'],
             'colors' => $validated['colors'] ?? ['background' => '#1a1a2e', 'text' => '#ffffff'],
             'language' => $validated['language'],
+            'interest' => $validated['interest'] ?? null,
         ]);
 
         // Attach WordPress categories
@@ -84,6 +86,7 @@ class PinterestFeedController extends Controller
             'colors.background' => 'nullable|string|max:7',
             'colors.text' => 'nullable|string|max:7',
             'language' => 'required|string|max:10',
+            'interest' => 'nullable|string|max:50',
             'wp_categories' => 'nullable|array',
         ]);
 
@@ -94,6 +97,7 @@ class PinterestFeedController extends Controller
             'template' => $validated['template'],
             'colors' => $validated['colors'] ?? $feed->colors,
             'language' => $validated['language'],
+            'interest' => $validated['interest'] ?? $feed->interest,
         ]);
 
         if (isset($validated['wp_categories'])) {
@@ -194,8 +198,11 @@ class PinterestFeedController extends Controller
     {
         $feed = $pin->feed;
 
-        // Generate AI title + description
-        $aiContent = $this->generateAiContent($pin->title_original, $feed->template, $feed->language);
+        // Fetch Pinterest trending keywords for this feed's interest/region
+        $trendingKeywords = $this->fetchTrendingKeywords($feed);
+
+        // Generate AI title + description with trends context
+        $aiContent = $this->generateAiContent($pin->title_original, $feed->template, $feed->language, $trendingKeywords);
         if (! $aiContent || ! $aiContent['title']) {
             $pin->update(['status' => 'failed', 'error_message' => 'Échec génération contenu IA']);
 
@@ -291,10 +298,13 @@ class PinterestFeedController extends Controller
         $pendingPins = $feed->pins()->where('status', 'pending')->limit(10)->get();
         $results = ['success' => 0, 'failed' => 0];
 
+        // Fetch trends once for the entire batch
+        $trendingKeywords = $this->fetchTrendingKeywords($feed);
+
         $imageService = new PinterestImageService;
 
         foreach ($pendingPins as $pin) {
-            $aiContent = $this->generateAiContent($pin->title_original, $feed->template, $feed->language);
+            $aiContent = $this->generateAiContent($pin->title_original, $feed->template, $feed->language, $trendingKeywords);
             if (! $aiContent || ! $aiContent['title']) {
                 $pin->update(['status' => 'failed', 'error_message' => 'Échec contenu IA']);
                 $results['failed']++;
@@ -402,7 +412,37 @@ class PinterestFeedController extends Controller
         }
     }
 
-    private function generateAiContent(string $originalTitle, string $template, string $language): ?array
+    private function fetchTrendingKeywords(PinterestFeed $feed): array
+    {
+        $account = $feed->socialAccount;
+        if (! $account) {
+            return [];
+        }
+
+        $cacheKey = "pinterest_trends_{$feed->language}_{$feed->interest}";
+        $cached = cache($cacheKey);
+        if ($cached) {
+            return $cached;
+        }
+
+        $service = new PinterestApiService;
+        $keywords = $service->getTrendingKeywords($account, $feed->language, $feed->interest, 'growing', 15);
+
+        // Also fetch monthly trends and merge
+        if ($feed->interest) {
+            $monthly = $service->getTrendingKeywords($account, $feed->language, $feed->interest, 'monthly', 10);
+            $keywords = array_unique(array_merge($keywords, $monthly));
+        }
+
+        // Cache for 6 hours (trends don't change that fast)
+        if (! empty($keywords)) {
+            cache([$cacheKey => $keywords], now()->addHours(6));
+        }
+
+        return $keywords;
+    }
+
+    private function generateAiContent(string $originalTitle, string $template, string $language, array $trendingKeywords = []): ?array
     {
         $maxTitleChars = match ($template) {
             'bold_text' => 60,
@@ -424,6 +464,14 @@ class PinterestFeedController extends Controller
 
         $prompt = "Transforme ce titre d'article en contenu Pinterest optimisé pour le clic.\n\n";
         $prompt .= "Titre original : {$originalTitle}\n\n";
+
+        // Inject trending keywords if available
+        if (! empty($trendingKeywords)) {
+            $trendsStr = implode(', ', array_slice($trendingKeywords, 0, 20));
+            $prompt .= "Tendances Pinterest actuelles en croissance : {$trendsStr}\n";
+            $prompt .= "Si certains de ces mots-clés sont pertinents pour l'article, intègre-les naturellement dans le titre et/ou la description pour maximiser la visibilité.\n\n";
+        }
+
         $prompt .= "Génère un JSON avec deux champs :\n";
         $prompt .= "1. \"title\" : titre Pinterest accrocheur ({$maxTitleChars} caractères max)\n";
         $prompt .= "2. \"description\" : description Pinterest SEO (150-300 caractères) avec des mots-clés pertinents et 3-5 hashtags\n\n";
