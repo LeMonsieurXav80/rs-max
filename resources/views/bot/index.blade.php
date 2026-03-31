@@ -60,7 +60,7 @@
         </div>
 
         {{-- Tabs --}}
-        <div x-data="{ activeTab: 'bluesky' }">
+        <div x-data="{ activeTab: new URLSearchParams(window.location.search).get('tab') || 'bluesky' }">
 
             <div class="bg-white rounded-2xl border border-gray-100 shadow-sm">
                 <nav class="flex border-b border-gray-100 px-2 overflow-x-auto" aria-label="Tabs">
@@ -519,7 +519,8 @@
                     </h2>
                     <div class="flex items-center gap-2 flex-wrap">
                         {{-- Filters --}}
-                        <form method="GET" action="{{ route('bot.index') }}#logs" class="flex items-center gap-2">
+                        <form method="GET" action="{{ route('bot.index') }}" class="flex items-center gap-2">
+                            <input type="hidden" name="tab" value="logs">
                             <select name="log_account" class="rounded-lg border-gray-300 text-xs py-1.5" onchange="this.form.submit()">
                                 <option value="">Tous les comptes</option>
                                 @foreach($allBotAccounts as $acc)
