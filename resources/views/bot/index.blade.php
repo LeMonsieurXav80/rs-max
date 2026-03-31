@@ -318,9 +318,23 @@
                                            class="rounded border-gray-300 text-orange-600 focus:ring-orange-500">
                                     <div>
                                         <p class="text-xs font-medium text-gray-900">Unfollow non-followers</p>
-                                        <p class="text-[10px] text-gray-500">Defollow ceux qui ne follow pas</p>
+                                        <p class="text-[10px] text-gray-500">Defollow ceux qui ne follow pas (grace 7j)</p>
                                     </div>
                                 </label>
+                                {{-- Max unfollows per run --}}
+                                <div x-show="enabled" x-data="{ max: {{ $botUnfollowMax['bluesky_' . $bsAccount->id] ?? 10 }}, saved: false }" class="mt-2 flex items-center gap-2">
+                                    <label class="text-[10px] text-gray-500 whitespace-nowrap">Max / run :</label>
+                                    <input type="number" x-model="max" min="1" max="100"
+                                           class="w-16 rounded-lg border-gray-300 text-xs py-1 px-2"
+                                           @change="
+                                            fetch('{{ route('bot.updateUnfollowMax') }}', {
+                                                method: 'POST',
+                                                headers: { 'Content-Type': 'application/json', 'X-CSRF-TOKEN': '{{ csrf_token() }}' },
+                                                body: JSON.stringify({ account_id: {{ $bsAccount->id }}, max: parseInt(max) })
+                                            }).then(() => { saved = true; setTimeout(() => saved = false, 1500) })
+                                           ">
+                                    <span x-show="saved" class="text-[10px] text-green-600">Sauvegarde</span>
+                                </div>
                             </div>
                         </div>
                     </div>
@@ -498,18 +512,48 @@
             {{-- ═══════════ TAB: Historique ═══════════ --}}
             <div x-show="activeTab === 'logs'" x-cloak class="mt-6 space-y-4">
 
-                <div class="flex items-center justify-between">
-                    <h2 class="text-sm font-semibold text-gray-900">Dernieres actions ({{ $logs->count() }})</h2>
-                    @if ($logs->isNotEmpty())
+                <div class="flex flex-wrap items-center gap-3 justify-between">
+                    <h2 class="text-sm font-semibold text-gray-900">
+                        Historique 7 jours
+                        <span class="text-gray-400 font-normal">({{ $logs->count() }} actions)</span>
+                    </h2>
+                    <div class="flex items-center gap-2 flex-wrap">
+                        {{-- Filters --}}
+                        <form method="GET" action="{{ route('bot.index') }}#logs" class="flex items-center gap-2">
+                            <select name="log_account" class="rounded-lg border-gray-300 text-xs py-1.5" onchange="this.form.submit()">
+                                <option value="">Tous les comptes</option>
+                                @foreach($allBotAccounts as $acc)
+                                <option value="{{ $acc->id }}" {{ $filterAccount == $acc->id ? 'selected' : '' }}>{{ $acc->name }}</option>
+                                @endforeach
+                            </select>
+                            <select name="log_type" class="rounded-lg border-gray-300 text-xs py-1.5" onchange="this.form.submit()">
+                                <option value="">Tous les types</option>
+                                <option value="like_post" {{ $filterType === 'like_post' ? 'selected' : '' }}>Like post</option>
+                                <option value="like_reply" {{ $filterType === 'like_reply' ? 'selected' : '' }}>Like reply</option>
+                                <option value="like_back" {{ $filterType === 'like_back' ? 'selected' : '' }}>Like-back</option>
+                                <option value="like_feed" {{ $filterType === 'like_feed' ? 'selected' : '' }}>Like feed</option>
+                                <option value="like_own_comment" {{ $filterType === 'like_own_comment' ? 'selected' : '' }}>Like commentaire</option>
+                                <option value="unfollow" {{ $filterType === 'unfollow' ? 'selected' : '' }}>Unfollow</option>
+                                <option value="follow_active_user" {{ $filterType === 'follow_active_user' ? 'selected' : '' }}>Follow</option>
+                                <option value="prospect_like" {{ $filterType === 'prospect_like' ? 'selected' : '' }}>Prospect like</option>
+                                <option value="prospect_follow" {{ $filterType === 'prospect_follow' ? 'selected' : '' }}>Prospect follow</option>
+                                <option value="like_comment" {{ $filterType === 'like_comment' ? 'selected' : '' }}>Like commentaire FB</option>
+                            </select>
+                            @if($filterAccount || $filterType)
+                            <a href="{{ route('bot.index') }}" class="text-xs text-gray-500 hover:text-gray-700">Effacer</a>
+                            @endif
+                        </form>
+                        @if ($logs->isNotEmpty())
                         <form method="POST" action="{{ route('bot.clearLogs') }}">
                             @csrf
                             @method('DELETE')
-                            <button type="submit" class="text-xs text-red-600 hover:text-red-700 font-medium"
+                            <button type="submit" class="text-xs text-red-500 hover:text-red-700 font-medium"
                                     onclick="return confirm('Vider tout l\'historique ?')">
-                                Vider l'historique
+                                Vider
                             </button>
                         </form>
-                    @endif
+                        @endif
+                    </div>
                 </div>
 
                 <div class="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
@@ -531,8 +575,18 @@
                             @endif
 
                             <div class="flex-1 min-w-0">
-                                <div class="flex items-center gap-2 text-xs">
-                                    <span class="font-medium text-gray-900">
+                                <div class="flex items-center gap-2 text-xs flex-wrap">
+                                    {{-- Action type badge --}}
+                                    <span class="font-semibold
+                                        @switch($log->action_type)
+                                            @case('unfollow') text-orange-600 @break
+                                            @case('follow_active_user') text-green-600 @break
+                                            @case('prospect_follow') text-purple-600 @break
+                                            @case('prospect_like') text-purple-500 @break
+                                            @case('like_back') text-blue-600 @break
+                                            @default text-gray-800
+                                        @endswitch
+                                    ">
                                         @switch($log->action_type)
                                             @case('like_post') Like post @break
                                             @case('like_reply') Like reply @break
@@ -540,20 +594,28 @@
                                             @case('like_own_comment') Like comm. @break
                                             @case('like_feed') Like feed @break
                                             @case('unfollow') Unfollow @break
+                                            @case('follow_active_user') Follow @break
                                             @case('prospect_like') Prospect like @break
                                             @case('prospect_follow') Prospect follow @break
-                                            @case('like_comment') Like commentaire @break
+                                            @case('like_comment') Like comm. FB @break
                                             @default {{ $log->action_type }}
                                         @endswitch
                                     </span>
                                     @if ($log->target_author)
-                                        <span class="text-gray-400">par</span>
-                                        <span class="text-indigo-600 font-medium">{{ $log->target_author }}</span>
+                                        <span class="text-indigo-600 font-medium truncate max-w-[150px]">{{ $log->target_author }}</span>
                                     @endif
                                     @if ($log->search_term)
                                         <span class="px-1.5 py-0.5 bg-gray-100 text-gray-600 rounded text-[10px]">{{ $log->search_term }}</span>
                                     @endif
-                                    <span class="text-gray-400 ml-auto flex-shrink-0">{{ $log->created_at->diffForHumans() }}</span>
+                                    {{-- Account badge --}}
+                                    <span class="px-1.5 py-0.5 bg-indigo-50 text-indigo-500 rounded text-[10px] flex-shrink-0">
+                                        {{ $log->socialAccount?->name ?? '—' }}
+                                    </span>
+                                    {{-- Timestamp precise --}}
+                                    <span class="text-gray-400 ml-auto flex-shrink-0 font-mono text-[10px]"
+                                          title="{{ $log->created_at->format('d/m/Y H:i:s') }}">
+                                        {{ $log->created_at->format('d/m H:i') }}
+                                    </span>
                                 </div>
                                 @if ($log->target_text)
                                     <p class="text-xs text-gray-500 mt-0.5 truncate">{{ Str::limit($log->target_text, 120) }}</p>

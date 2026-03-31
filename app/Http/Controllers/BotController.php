@@ -34,11 +34,25 @@ class BotController extends Controller
             ->orderBy('term')
             ->get();
 
-        // Recent action logs
-        $logs = BotActionLog::with('socialAccount.platform')
-            ->orderByDesc('created_at')
-            ->limit(100)
-            ->get();
+        // Auto-purge logs older than 7 days
+        BotActionLog::where('created_at', '<', now()->subDays(7))->delete();
+
+        // Recent action logs (last 7 days, max 500)
+        $filterAccount = $request->input('log_account');
+        $filterType = $request->input('log_type');
+
+        $logsQuery = BotActionLog::with('socialAccount.platform')
+            ->where('created_at', '>=', now()->subDays(7))
+            ->orderByDesc('created_at');
+
+        if ($filterAccount) {
+            $logsQuery->where('social_account_id', $filterAccount);
+        }
+        if ($filterType) {
+            $logsQuery->where('action_type', $filterType);
+        }
+
+        $logs = $logsQuery->limit(500)->get();
 
         // Stats summary
         $todayStats = BotActionLog::where('success', true)
@@ -47,12 +61,14 @@ class BotController extends Controller
             ->groupBy('action_type')
             ->pluck('total', 'action_type');
 
-        // Bot frequency and active state per account
+        // Bot frequency, active state and unfollow max per account
         $botFrequencies = [];
         $botActiveStates = [];
+        $botUnfollowMax = [];
         foreach ($blueskyAccounts as $acc) {
             $botFrequencies["bluesky_{$acc->id}"] = Setting::get("bot_freq_bluesky_{$acc->id}", 'every_30_min');
             $botActiveStates["bluesky_{$acc->id}"] = Setting::get("bot_active_bluesky_{$acc->id}") === '1';
+            $botUnfollowMax["bluesky_{$acc->id}"] = (int) Setting::get("bot_unfollow_max_bluesky_{$acc->id}", 10);
         }
         foreach ($facebookAccounts as $acc) {
             $botFrequencies["facebook_{$acc->id}"] = Setting::get("bot_freq_facebook_{$acc->id}", 'every_30_min');
@@ -63,6 +79,9 @@ class BotController extends Controller
             ->orderByDesc('created_at')
             ->get();
 
+        // All accounts for log filter dropdown
+        $allBotAccounts = $blueskyAccounts->merge($facebookAccounts);
+
         return view('bot.index', compact(
             'blueskyAccounts',
             'facebookAccounts',
@@ -72,6 +91,10 @@ class BotController extends Controller
             'todayStats',
             'botFrequencies',
             'botActiveStates',
+            'botUnfollowMax',
+            'allBotAccounts',
+            'filterAccount',
+            'filterType',
         ));
     }
 
@@ -203,6 +226,21 @@ class BotController extends Controller
         Setting::set(
             "bot_{$validated['feature']}_bluesky_{$validated['account_id']}",
             $validated['enabled'] ? '1' : '0'
+        );
+
+        return response()->json(['saved' => true]);
+    }
+
+    public function updateUnfollowMax(Request $request): JsonResponse
+    {
+        $validated = $request->validate([
+            'account_id' => 'required|integer|exists:social_accounts,id',
+            'max' => 'required|integer|min:1|max:100',
+        ]);
+
+        Setting::set(
+            "bot_unfollow_max_bluesky_{$validated['account_id']}",
+            (string) $validated['max']
         );
 
         return response()->json(['saved' => true]);
