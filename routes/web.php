@@ -2,6 +2,7 @@
 
 use App\Http\Controllers\AccountGroupController;
 use App\Http\Controllers\BotController;
+use App\Http\Controllers\BulkPostController;
 use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\FacebookOAuthController;
 use App\Http\Controllers\HashtagController;
@@ -54,6 +55,11 @@ Route::middleware(['auth', 'verified', 'throttle:60,1'])->group(function () {
 
     // Help
     Route::get('/help', [HelpController::class, 'index'])->name('help.index');
+
+    // Bulk post creation (must be before posts resource to avoid route conflict)
+    Route::get('posts/bulk', [BulkPostController::class, 'create'])->name('posts.bulk.create');
+    Route::post('posts/bulk/save-row', [BulkPostController::class, 'saveRow'])->name('posts.bulk.saveRow');
+    Route::post('posts/bulk/delete-row', [BulkPostController::class, 'deleteRow'])->name('posts.bulk.deleteRow');
 
     // AI Assist (must be before posts resource to avoid route conflict)
     Route::post('posts/ai-assist', [AiAssistController::class, 'generate'])->name('posts.aiAssist');
