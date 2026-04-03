@@ -153,6 +153,23 @@
                                         class="w-full rounded-lg border-gray-200 text-sm resize-y focus:border-indigo-400 focus:ring-1 focus:ring-indigo-400 placeholder-gray-300"
                                         placeholder="Contenu de la publication..."
                                     ></textarea>
+                                    <button type="button" @click="generateAi(index)"
+                                        :disabled="row._generating || row.media.length === 0"
+                                        class="mt-1 inline-flex items-center gap-1 px-2 py-1 rounded-lg text-xs transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
+                                        :class="row._generating ? 'bg-purple-100 text-purple-600' : 'bg-gray-100 text-gray-500 hover:bg-purple-100 hover:text-purple-600'">
+                                        <template x-if="!row._generating">
+                                            <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1.5">
+                                                <path stroke-linecap="round" stroke-linejoin="round" d="M9.813 15.904 9 18.75l-.813-2.846a4.5 4.5 0 0 0-3.09-3.09L2.25 12l2.846-.813a4.5 4.5 0 0 0 3.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 0 0 3.09 3.09L15.75 12l-2.846.813a4.5 4.5 0 0 0-3.09 3.09ZM18.259 8.715 18 9.75l-.259-1.035a3.375 3.375 0 0 0-2.455-2.456L14.25 6l1.036-.259a3.375 3.375 0 0 0 2.455-2.456L18 2.25l.259 1.035a3.375 3.375 0 0 0 2.455 2.456L21.75 6l-1.036.259a3.375 3.375 0 0 0-2.455 2.456Z"/>
+                                            </svg>
+                                        </template>
+                                        <template x-if="row._generating">
+                                            <svg class="w-3.5 h-3.5 animate-spin" fill="none" viewBox="0 0 24 24">
+                                                <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                                                <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path>
+                                            </svg>
+                                        </template>
+                                        <span x-text="row._generating ? 'Generation...' : 'IA'"></span>
+                                    </button>
                                 </td>
 
                                 {{-- Media --}}
@@ -466,6 +483,7 @@ function bulkEditor() {
                     _uploading: false,
                     _uploadProgress: 0,
                     _uploadPhase: 'upload',
+                    _generating: false,
                     error: null,
                 });
             }
@@ -508,6 +526,7 @@ function bulkEditor() {
                 _uploading: false,
                 _uploadProgress: 0,
                 _uploadPhase: 'upload',
+                _generating: false,
                 error: null,
             });
         },
@@ -550,6 +569,68 @@ function bulkEditor() {
                 this.saveRow(idx);
             }
             this.showLibrary = false;
+        },
+
+        async generateAi(index) {
+            const row = this.rows[index];
+            if (!row || row.media.length === 0) return;
+
+            // Find the first account that has a persona
+            const accountId = this.findAccountWithPersona(row.accounts);
+            if (!accountId) {
+                row.error = 'Aucun compte avec persona configuree';
+                return;
+            }
+
+            // Get unique platforms from selected accounts
+            const platforms = [...new Set(row.accounts.map(id => {
+                const acc = this.accountsData.find(a => a.id === id);
+                return acc ? acc.platform : null;
+            }).filter(Boolean))];
+
+            row._generating = true;
+            row.error = null;
+
+            try {
+                const resp = await fetch('{{ route("posts.aiAssistMedia") }}', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'X-CSRF-TOKEN': document.querySelector('meta[name=csrf-token]').content,
+                        'Accept': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        media_urls: row.media.map(m => m.url),
+                        platforms: platforms,
+                        account_id: accountId,
+                        content: row.content_fr || '',
+                    }),
+                });
+
+                const data = await resp.json();
+
+                if (data.error) {
+                    row.error = data.error;
+                } else if (data.platform_contents) {
+                    // Use the first platform content as the main content
+                    const firstContent = Object.values(data.platform_contents)[0];
+                    if (firstContent) {
+                        row.content_fr = firstContent;
+                        row._dirty = true;
+                        await this.saveRow(index);
+                    }
+                }
+            } catch (e) {
+                row.error = 'Erreur de generation IA';
+            }
+
+            row._generating = false;
+        },
+
+        findAccountWithPersona(accountIds) {
+            // Return the first account ID — the backend checks persona
+            // We try accounts in order, frontend doesn't know persona status
+            return accountIds.length > 0 ? accountIds[0] : null;
         },
 
         async saveRow(index) {
