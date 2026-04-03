@@ -14,12 +14,12 @@ class InstagramAdapter implements PlatformAdapterInterface
      * Maximum number of polling attempts when waiting for a video container
      * to finish processing (status_code === 'FINISHED').
      */
-    private const VIDEO_POLL_MAX_ATTEMPTS = 30;
+    private const VIDEO_POLL_MAX_ATTEMPTS = 60;
 
     /**
      * Seconds to wait between polling attempts for video processing.
      */
-    private const VIDEO_POLL_INTERVAL = 5;
+    private const VIDEO_POLL_INTERVAL = 10;
 
     /**
      * Publish content to Instagram via the Container-based Graph API.

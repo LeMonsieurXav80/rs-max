@@ -12,7 +12,7 @@ class ThreadsAdapter implements PlatformAdapterInterface, ThreadableAdapterInter
 
     private const VIDEO_POLL_MAX_ATTEMPTS = 60;
 
-    private const VIDEO_POLL_INTERVAL = 5;
+    private const VIDEO_POLL_INTERVAL = 10;
 
     public function publish(SocialAccount $account, string $content, ?array $media = null, ?array $options = null): array
     {
