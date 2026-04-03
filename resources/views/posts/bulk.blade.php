@@ -2,6 +2,15 @@
 
 @section('title', 'Publication en masse')
 
+@php
+    $accountsJson = $accounts->map(fn($a) => [
+        'id' => $a->id,
+        'name' => $a->name,
+        'picture' => $a->profile_picture_url,
+        'platform' => $a->platform->slug,
+    ])->values();
+@endphp
+
 @section('content')
 <div x-data="bulkEditor()" class="space-y-6">
 
@@ -317,12 +326,7 @@ function bulkEditor() {
         _keyCounter: 0,
 
         // Account data from server
-        accountsData: @json($accounts->map(fn($a) => [
-            'id' => $a->id,
-            'name' => $a->name,
-            'picture' => $a->profile_picture_url,
-            'platform' => $a->platform->slug,
-        ])->values()),
+        accountsData: @json($accountsJson),
 
         getSelectedAccountIds() {
             const checkboxes = document.querySelectorAll('input[name="bulk_accounts[]"]:checked');
