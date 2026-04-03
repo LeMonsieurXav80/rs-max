@@ -104,7 +104,18 @@ class InstagramAdapter implements PlatformAdapterInterface
             return $this->errorFromResponse($container, 'Failed to create image container');
         }
 
-        // Step 2 -- publish.
+        // Step 2 -- wait for processing.
+        $processingError = $this->waitForProcessing($containerId, $accessToken);
+
+        if ($processingError !== null) {
+            return [
+                'success' => false,
+                'external_id' => null,
+                'error' => $processingError,
+            ];
+        }
+
+        // Step 3 -- publish.
         return $this->publishContainer($accountId, $accessToken, $containerId);
     }
 
@@ -229,7 +240,18 @@ class InstagramAdapter implements PlatformAdapterInterface
             return $this->errorFromResponse($carouselResponse, 'Failed to create carousel container');
         }
 
-        // Step 3 -- publish.
+        // Step 3 -- wait for carousel container processing.
+        $processingError = $this->waitForProcessing($carouselId, $accessToken);
+
+        if ($processingError !== null) {
+            return [
+                'success' => false,
+                'external_id' => null,
+                'error' => "Carousel container: {$processingError}",
+            ];
+        }
+
+        // Step 4 -- publish.
         return $this->publishContainer($accountId, $accessToken, $carouselId);
     }
 
