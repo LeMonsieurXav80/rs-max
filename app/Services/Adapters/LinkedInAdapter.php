@@ -207,9 +207,12 @@ class LinkedInAdapter implements PlatformAdapterInterface
             ]);
 
         // Step 4: Wait for video processing (poll status)
-        $ready = $this->waitForVideoProcessing($accessToken, $videoUrn);
-        if (! $ready) {
-            Log::warning('LinkedInAdapter: video processing timeout, attempting post anyway', ['video' => $videoUrn]);
+        $processingError = $this->waitForVideoProcessing($accessToken, $videoUrn);
+        if ($processingError !== null) {
+            Log::warning('LinkedInAdapter: video processing issue, attempting post anyway', [
+                'video' => $videoUrn,
+                'error' => $processingError,
+            ]);
         }
 
         // Step 5: Create the post
@@ -369,8 +372,13 @@ class LinkedInAdapter implements PlatformAdapterInterface
         return $response->successful() ? $response->body() : null;
     }
 
-    private function waitForVideoProcessing(string $accessToken, string $videoUrn, int $maxAttempts = 30): bool
+    /**
+     * @return string|null  Null on success, error message on failure.
+     */
+    private function waitForVideoProcessing(string $accessToken, string $videoUrn, int $maxAttempts = 30): ?string
     {
+        $lastStatus = null;
+
         for ($i = 0; $i < $maxAttempts; $i++) {
             sleep(5);
 
@@ -382,15 +390,20 @@ class LinkedInAdapter implements PlatformAdapterInterface
             }
 
             $status = $response->json('status') ?? '';
+            $lastStatus = $status;
+
             if ($status === 'AVAILABLE') {
-                return true;
+                return null;
             }
-            if (in_array($status, ['PROCESSING_FAILED', 'WAITING_UPLOAD'])) {
-                return false;
+            if ($status === 'PROCESSING_FAILED') {
+                return "LinkedIn video processing failed (status: PROCESSING_FAILED)";
+            }
+            if ($status === 'WAITING_UPLOAD') {
+                return "LinkedIn video upload incomplete (status: WAITING_UPLOAD)";
             }
         }
 
-        return false;
+        return "LinkedIn video processing timed out after " . ($maxAttempts * 5) . "s (last status: {$lastStatus})";
     }
 
     private function extractLink(string $content): ?string

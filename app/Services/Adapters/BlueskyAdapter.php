@@ -37,15 +37,16 @@ class BlueskyAdapter implements PlatformAdapterInterface, ThreadableAdapterInter
 
             // Attach media embed, or external link card if no media.
             if (! empty($media)) {
-                $embed = $this->buildMediaEmbed($jwt, $media);
-                if ($embed) {
-                    $record['embed'] = $embed;
+                $embedResult = $this->buildMediaEmbed($jwt, $media);
+                if (is_array($embedResult) && isset($embedResult['error'])) {
+                    return $this->error($embedResult['error']);
+                }
+                if ($embedResult) {
+                    $record['embed'] = $embedResult;
                 } else {
-                    // Media was provided but embed failed (e.g. video upload error)
-                    // Don't publish a text-only post when media was expected
                     $hasVideo = collect($media)->contains(fn ($m) => str_starts_with($m['mimetype'] ?? '', 'video/'));
                     if ($hasVideo) {
-                        return $this->error('Échec de l\'upload vidéo sur Bluesky.');
+                        return $this->error('Bluesky: échec de l\'upload vidéo (raison inconnue).');
                     }
                 }
             } else {
@@ -379,14 +380,15 @@ class BlueskyAdapter implements PlatformAdapterInterface, ThreadableAdapterInter
             if (! $downloaded->successful()) {
                 Log::warning('BlueskyAdapter: failed to download video', ['url' => $url]);
 
-                return null;
+                return ['error' => 'Bluesky: impossible de télécharger la vidéo (HTTP ' . $downloaded->status() . ')'];
             }
 
             $fileSize = filesize($tempFile);
             if ($fileSize > 50_000_000) {
+                $sizeMb = round($fileSize / 1_000_000, 1);
                 Log::warning('BlueskyAdapter: video too large for Bluesky', ['size' => $fileSize]);
 
-                return null;
+                return ['error' => "Bluesky: vidéo trop volumineuse ({$sizeMb} MB, max 50 MB)"];
             }
 
             $mimeType = mime_content_type($tempFile) ?: 'video/mp4';
@@ -396,19 +398,23 @@ class BlueskyAdapter implements PlatformAdapterInterface, ThreadableAdapterInter
             if (! $did) {
                 Log::error('BlueskyAdapter: could not extract DID from JWT for video upload');
 
-                return null;
+                return ['error' => 'Bluesky: impossible d\'extraire le DID pour l\'upload vidéo'];
             }
 
             // Upload via Bluesky video service (not uploadBlob)
-            $blob = $this->uploadVideo($accessJwt, $did, $tempFile, $mimeType);
+            $result = $this->uploadVideo($accessJwt, $did, $tempFile, $mimeType);
 
-            if (! $blob) {
-                return null;
+            if (is_string($result)) {
+                return ['error' => $result];
+            }
+
+            if (! $result) {
+                return ['error' => 'Bluesky: échec de l\'upload vidéo (raison inconnue)'];
             }
 
             return [
                 '$type' => 'app.bsky.embed.video',
-                'video' => $blob,
+                'video' => $result,
             ];
         } finally {
             if (file_exists($tempFile)) {
@@ -429,14 +435,19 @@ class BlueskyAdapter implements PlatformAdapterInterface, ThreadableAdapterInter
         return $payload['sub'] ?? null;
     }
 
-    private function uploadVideo(string $accessJwt, string $did, string $filePath, string $mimeType): ?array
+    /**
+     * Upload a video to Bluesky's video service.
+     *
+     * @return array|string|null  Blob array on success, error string on failure, null for unknown failure.
+     */
+    private function uploadVideo(string $accessJwt, string $did, string $filePath, string $mimeType): array|string|null
     {
         // Step 1: Resolve the user's PDS DID (required for service auth)
         $pdsDid = $this->resolvePdsDid($did);
         if (! $pdsDid) {
             Log::error('BlueskyAdapter: could not resolve PDS DID for video upload', ['did' => $did]);
 
-            return null;
+            return 'Bluesky: impossible de résoudre le PDS DID';
         }
 
         // Step 2: Get a service auth token scoped to the PDS
@@ -453,7 +464,7 @@ class BlueskyAdapter implements PlatformAdapterInterface, ThreadableAdapterInter
                 'body' => $serviceAuth->body(),
             ]);
 
-            return null;
+            return "Bluesky: échec auth service vidéo (HTTP {$serviceAuth->status()})";
         }
 
         $serviceToken = $serviceAuth->json('token');
@@ -471,13 +482,14 @@ class BlueskyAdapter implements PlatformAdapterInterface, ThreadableAdapterInter
             ->post($uploadUrl);
 
         if (! $response->successful()) {
+            $sizeMb = round(strlen($fileContents) / 1_000_000, 1);
             Log::error('BlueskyAdapter: video upload failed', [
                 'status' => $response->status(),
                 'body' => $response->body(),
                 'size' => strlen($fileContents),
             ]);
 
-            return null;
+            return "Bluesky: upload vidéo échoué (HTTP {$response->status()}, {$sizeMb} MB)";
         }
 
         $jobId = $response->json('jobId');
@@ -488,13 +500,14 @@ class BlueskyAdapter implements PlatformAdapterInterface, ThreadableAdapterInter
             }
             Log::error('BlueskyAdapter: video upload returned no jobId or blob', ['body' => $response->json()]);
 
-            return null;
+            return 'Bluesky: réponse upload sans jobId ni blob';
         }
 
-        // Step 4: Poll for processing completion (max 5 minutes)
+        // Step 4: Poll for processing completion (max 10 minutes)
         $maxAttempts = 60;
+        $lastState = null;
         for ($i = 0; $i < $maxAttempts; $i++) {
-            sleep(5);
+            sleep(10);
 
             $status = Http::withToken($accessJwt)
                 ->get(self::VIDEO_API . '/xrpc/app.bsky.video.getJobStatus', [
@@ -509,6 +522,7 @@ class BlueskyAdapter implements PlatformAdapterInterface, ThreadableAdapterInter
 
             $jobStatus = $status->json('jobStatus');
             $state = $jobStatus['state'] ?? '';
+            $lastState = $state;
 
             if ($state === 'JOB_STATE_COMPLETED') {
                 $blob = $jobStatus['blob'] ?? null;
@@ -520,7 +534,7 @@ class BlueskyAdapter implements PlatformAdapterInterface, ThreadableAdapterInter
 
                 Log::error('BlueskyAdapter: video completed but no blob', ['jobStatus' => $jobStatus]);
 
-                return null;
+                return 'Bluesky: traitement vidéo terminé mais aucun blob retourné';
             }
 
             if ($state === 'JOB_STATE_FAILED') {
@@ -532,7 +546,12 @@ class BlueskyAdapter implements PlatformAdapterInterface, ThreadableAdapterInter
                     'message' => $message,
                 ]);
 
-                return null;
+                $detail = "Bluesky: traitement vidéo échoué - {$error}";
+                if ($message) {
+                    $detail .= " ({$message})";
+                }
+
+                return $detail;
             }
 
             Log::debug('BlueskyAdapter: video processing...', ['state' => $state, 'attempt' => $i]);
@@ -540,7 +559,7 @@ class BlueskyAdapter implements PlatformAdapterInterface, ThreadableAdapterInter
 
         Log::error('BlueskyAdapter: video processing timed out', ['jobId' => $jobId]);
 
-        return null;
+        return "Bluesky: traitement vidéo timeout après 10min (dernier état: {$lastState})";
     }
 
     private function resolvePdsDid(string $did): ?string

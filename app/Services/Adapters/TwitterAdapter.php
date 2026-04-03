@@ -44,23 +44,15 @@ class TwitterAdapter implements PlatformAdapterInterface, ThreadableAdapterInter
 
             // Upload media if provided.
             if (! empty($media)) {
-                $mediaIds = [];
-
-                foreach ($media as $item) {
-                    $mediaId = $this->uploadMedia($item['url']);
-
-                    if ($mediaId === null) {
-                        return [
-                            'success' => false,
-                            'external_id' => null,
-                            'error' => "Failed to upload media: {$item['url']}",
-                        ];
-                    }
-
-                    $mediaIds[] = $mediaId;
+                $result = $this->uploadAllMedia($media);
+                if ($result['error']) {
+                    return [
+                        'success' => false,
+                        'external_id' => null,
+                        'error' => $result['error'],
+                    ];
                 }
-
-                $tweetPayload['media'] = ['media_ids' => $mediaIds];
+                $tweetPayload['media'] = ['media_ids' => $result['media_ids']];
             }
 
             return $this->postTweet($tweetPayload);
@@ -99,23 +91,15 @@ class TwitterAdapter implements PlatformAdapterInterface, ThreadableAdapterInter
             ];
 
             if (! empty($media)) {
-                $mediaIds = [];
-
-                foreach ($media as $item) {
-                    $mediaId = $this->uploadMedia($item['url']);
-
-                    if ($mediaId === null) {
-                        return [
-                            'success' => false,
-                            'external_id' => null,
-                            'error' => "Failed to upload media: {$item['url']}",
-                        ];
-                    }
-
-                    $mediaIds[] = $mediaId;
+                $result = $this->uploadAllMedia($media);
+                if ($result['error']) {
+                    return [
+                        'success' => false,
+                        'external_id' => null,
+                        'error' => $result['error'],
+                    ];
                 }
-
-                $tweetPayload['media'] = ['media_ids' => $mediaIds];
+                $tweetPayload['media'] = ['media_ids' => $result['media_ids']];
             }
 
             return $this->postTweet($tweetPayload);
@@ -140,6 +124,29 @@ class TwitterAdapter implements PlatformAdapterInterface, ThreadableAdapterInter
     // -------------------------------------------------------------------------
 
     /**
+     * Upload all media items. Returns media_ids or an error message.
+     */
+    private function uploadAllMedia(array $media): array
+    {
+        $mediaIds = [];
+
+        foreach ($media as $item) {
+            $mediaId = $this->uploadMedia($item['url']);
+
+            if ($mediaId === null) {
+                return [
+                    'media_ids' => [],
+                    'error' => "Twitter: failed to upload media ({$item['mimetype']}). URL: " . basename($item['url']),
+                ];
+            }
+
+            $mediaIds[] = $mediaId;
+        }
+
+        return ['media_ids' => $mediaIds, 'error' => null];
+    }
+
+    /**
      * Post a tweet via the v2 API.
      */
     private function postTweet(array $payload): array
@@ -161,17 +168,22 @@ class TwitterAdapter implements PlatformAdapterInterface, ThreadableAdapterInter
             ];
         }
 
-        $error = $body['detail'] ?? $body['title'] ?? json_encode($body['errors'] ?? $body);
+        $apiError = $body['detail'] ?? $body['title'] ?? null;
+        if (! $apiError && isset($body['errors'])) {
+            $apiError = collect($body['errors'])->pluck('message')->implode('; ');
+        }
+        $apiError = $apiError ?: json_encode($body);
 
         Log::error('TwitterAdapter: tweet creation failed', [
             'status' => $response->status(),
-            'error' => $error,
+            'error' => $apiError,
+            'body' => $body,
         ]);
 
         return [
             'success' => false,
             'external_id' => null,
-            'error' => $error,
+            'error' => "Twitter (HTTP {$response->status()}): {$apiError}",
         ];
     }
 
@@ -371,10 +383,10 @@ class TwitterAdapter implements PlatformAdapterInterface, ThreadableAdapterInter
 
         // Step 4: Poll STATUS if processing_info is present
         if (isset($finalizeBody['processing_info'])) {
-            $processed = $this->pollMediaStatus($mediaId);
+            $processingError = $this->pollMediaStatus($mediaId);
 
-            if (! $processed) {
-                Log::error('TwitterAdapter: video processing timed out', ['media_id' => $mediaId]);
+            if ($processingError !== null) {
+                Log::error('TwitterAdapter: video processing failed', ['media_id' => $mediaId, 'error' => $processingError]);
 
                 return null;
             }
@@ -386,7 +398,12 @@ class TwitterAdapter implements PlatformAdapterInterface, ThreadableAdapterInter
     /**
      * Poll the media upload status until processing is complete.
      */
-    private function pollMediaStatus(string $mediaId): bool
+    /**
+     * Poll the media upload status until processing is complete.
+     *
+     * @return string|null  Null on success, error message on failure.
+     */
+    private function pollMediaStatus(string $mediaId): ?string
     {
         $maxAttempts = 30;
 
@@ -406,22 +423,25 @@ class TwitterAdapter implements PlatformAdapterInterface, ThreadableAdapterInter
             $processingInfo = $body['processing_info'] ?? null;
 
             if (! $processingInfo) {
-                return true; // No processing info means it's done
+                return null; // No processing info means it's done
             }
 
             $state = $processingInfo['state'] ?? '';
 
             if ($state === 'succeeded') {
-                return true;
+                return null;
             }
 
             if ($state === 'failed') {
+                $errorName = $processingInfo['error']['name'] ?? 'UnknownError';
+                $errorMessage = $processingInfo['error']['message'] ?? 'No detail provided';
+
                 Log::error('TwitterAdapter: video processing failed', [
                     'media_id' => $mediaId,
                     'error' => $processingInfo['error'] ?? null,
                 ]);
 
-                return false;
+                return "Twitter video processing failed: {$errorName} - {$errorMessage}";
             }
 
             // Wait the recommended time (or 5 seconds)
@@ -429,7 +449,7 @@ class TwitterAdapter implements PlatformAdapterInterface, ThreadableAdapterInter
             sleep($waitSeconds);
         }
 
-        return false;
+        return "Twitter video processing timed out after {$maxAttempts} attempts";
     }
 
     // -------------------------------------------------------------------------

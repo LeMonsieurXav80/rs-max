@@ -142,13 +142,13 @@ class InstagramAdapter implements PlatformAdapterInterface
         }
 
         // Step 2 -- poll until processing is complete.
-        $ready = $this->waitForProcessing($containerId, $accessToken);
+        $processingError = $this->waitForProcessing($containerId, $accessToken);
 
-        if (! $ready) {
+        if ($processingError !== null) {
             return [
                 'success' => false,
                 'external_id' => null,
-                'error' => 'Video processing timed out. The container did not reach FINISHED status.',
+                'error' => $processingError,
             ];
         }
 
@@ -196,13 +196,13 @@ class InstagramAdapter implements PlatformAdapterInterface
             }
 
             // Wait for child container to be FINISHED (required for all types, not just videos)
-            $ready = $this->waitForProcessing($childId, $accessToken);
+            $processingError = $this->waitForProcessing($childId, $accessToken);
 
-            if (! $ready) {
+            if ($processingError !== null) {
                 return [
                     'success' => false,
                     'external_id' => null,
-                    'error' => "Processing timed out for carousel child {$childId}.",
+                    'error' => "Carousel child {$childId}: {$processingError}",
                 ];
             }
 
@@ -261,45 +261,102 @@ class InstagramAdapter implements PlatformAdapterInterface
 
         Log::error('InstagramAdapter: media_publish failed', [
             'creation_id' => $creationId,
+            'status' => $response->status(),
             'error' => $error,
+            'body' => $body,
         ]);
 
         return [
             'success' => false,
             'external_id' => null,
-            'error' => $error,
+            'error' => "Instagram publish failed: {$error}",
         ];
     }
 
     /**
-     * Poll the status of a media container until it reaches FINISHED or we time out.
+     * Poll the status of a media container until it reaches FINISHED or fails.
+     *
+     * @return string|null  Null on success, error message string on failure.
      */
-    private function waitForProcessing(string $containerId, string $accessToken): bool
+    private function waitForProcessing(string $containerId, string $accessToken): ?string
     {
+        $lastStatus = null;
+
         for ($attempt = 0; $attempt < self::VIDEO_POLL_MAX_ATTEMPTS; $attempt++) {
             sleep(self::VIDEO_POLL_INTERVAL);
 
             $response = Http::get(self::API_BASE . "/{$containerId}", [
-                'fields' => 'status_code',
+                'fields' => 'status_code,status',
                 'access_token' => $accessToken,
             ]);
 
+            if (! $response->successful()) {
+                Log::warning('InstagramAdapter: status check HTTP error', [
+                    'container_id' => $containerId,
+                    'http_status' => $response->status(),
+                    'attempt' => $attempt + 1,
+                ]);
+                continue;
+            }
+
             $status = $response->json('status_code');
+            $lastStatus = $status;
 
             if ($status === 'FINISHED') {
-                return true;
+                return null;
             }
 
             if ($status === 'ERROR') {
+                // Fetch detailed error info from the container
+                $errorDetail = $this->fetchContainerError($containerId, $accessToken);
+
                 Log::error('InstagramAdapter: container processing returned ERROR', [
                     'container_id' => $containerId,
+                    'error_detail' => $errorDetail,
+                    'attempt' => $attempt + 1,
                 ]);
 
-                return false;
+                return "Instagram container error: {$errorDetail}";
             }
         }
 
-        return false;
+        $totalSeconds = self::VIDEO_POLL_MAX_ATTEMPTS * self::VIDEO_POLL_INTERVAL;
+
+        Log::warning('InstagramAdapter: video processing timed out', [
+            'container_id' => $containerId,
+            'last_status' => $lastStatus,
+            'attempts' => self::VIDEO_POLL_MAX_ATTEMPTS,
+            'total_seconds' => $totalSeconds,
+        ]);
+
+        return "Instagram video processing timed out after {$totalSeconds}s (last status: {$lastStatus})";
+    }
+
+    /**
+     * Fetch detailed error information from a failed container.
+     */
+    private function fetchContainerError(string $containerId, string $accessToken): string
+    {
+        $response = Http::get(self::API_BASE . "/{$containerId}", [
+            'fields' => 'status_code,status,id',
+            'access_token' => $accessToken,
+        ]);
+
+        if (! $response->successful()) {
+            return "Could not fetch error details (HTTP {$response->status()})";
+        }
+
+        $data = $response->json();
+
+        // status field often contains the human-readable error message
+        $statusMessage = $data['status'] ?? null;
+        $statusCode = $data['status_code'] ?? 'UNKNOWN';
+
+        if ($statusMessage) {
+            return "{$statusCode}: {$statusMessage}";
+        }
+
+        return "Status: {$statusCode} (no detail available)";
     }
 
     /**
@@ -328,11 +385,22 @@ class InstagramAdapter implements PlatformAdapterInterface
     {
         $body = $response->json();
         $error = $body['error']['message'] ?? $fallback;
+        $code = $body['error']['code'] ?? null;
+        $subcode = $body['error']['error_subcode'] ?? null;
+
+        $detail = "Instagram: {$error}";
+        if ($code) {
+            $detail .= " (code={$code}";
+            if ($subcode) {
+                $detail .= ", subcode={$subcode}";
+            }
+            $detail .= ')';
+        }
 
         return [
             'success' => false,
             'external_id' => null,
-            'error' => $error,
+            'error' => $detail,
         ];
     }
 

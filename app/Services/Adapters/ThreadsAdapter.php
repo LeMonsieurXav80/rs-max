@@ -93,13 +93,13 @@ class ThreadsAdapter implements PlatformAdapterInterface, ThreadableAdapterInter
 
             // Wait for video processing if needed.
             if (($params['media_type'] ?? '') === 'VIDEO') {
-                $ready = $this->waitForProcessing($containerId, $accessToken);
+                $processingError = $this->waitForProcessing($containerId, $accessToken);
 
-                if (! $ready) {
+                if ($processingError !== null) {
                     return [
                         'success' => false,
                         'external_id' => null,
-                        'error' => 'Reply video processing timed out.',
+                        'error' => $processingError,
                     ];
                 }
             }
@@ -193,13 +193,13 @@ class ThreadsAdapter implements PlatformAdapterInterface, ThreadableAdapterInter
         }
 
         // Poll until processing is complete.
-        $ready = $this->waitForProcessing($containerId, $accessToken);
+        $processingError = $this->waitForProcessing($containerId, $accessToken);
 
-        if (! $ready) {
+        if ($processingError !== null) {
             return [
                 'success' => false,
                 'external_id' => null,
-                'error' => 'Video processing timed out.',
+                'error' => $processingError,
             ];
         }
 
@@ -239,15 +239,17 @@ class ThreadsAdapter implements PlatformAdapterInterface, ThreadableAdapterInter
             }
 
             // Wait for child container to be FINISHED (required for all types, not just videos)
-            $ready = $isVideo
-                ? $this->waitForProcessing($childId, $accessToken)
-                : $this->waitUntilReady($childId, $accessToken);
+            if ($isVideo) {
+                $processingError = $this->waitForProcessing($childId, $accessToken);
+            } else {
+                $processingError = $this->waitUntilReady($childId, $accessToken);
+            }
 
-            if (! $ready) {
+            if ($processingError !== null) {
                 return [
                     'success' => false,
                     'external_id' => null,
-                    'error' => "Processing timed out for carousel child {$childId}.",
+                    'error' => "Carousel child {$childId}: {$processingError}",
                 ];
             }
 
@@ -282,13 +284,13 @@ class ThreadsAdapter implements PlatformAdapterInterface, ThreadableAdapterInter
     {
         // Wait for the container to be ready before publishing.
         // Even text posts can have a brief delay before FINISHED status.
-        $ready = $this->waitUntilReady($creationId, $accessToken);
+        $readyError = $this->waitUntilReady($creationId, $accessToken);
 
-        if (! $ready) {
+        if ($readyError !== null) {
             return [
                 'success' => false,
                 'external_id' => null,
-                'error' => 'Container not ready after waiting. Status check timed out.',
+                'error' => $readyError,
             ];
         }
 
@@ -323,23 +325,33 @@ class ThreadsAdapter implements PlatformAdapterInterface, ThreadableAdapterInter
         }
 
         $error = $body['error']['message'] ?? 'Unknown error during threads_publish';
+        $code = $body['error']['code'] ?? null;
 
         Log::error('ThreadsAdapter: threads_publish failed', [
             'creation_id' => $creationId,
+            'status' => $response->status(),
             'error' => $error,
+            'body' => $body,
         ]);
+
+        $detail = "Threads publish failed: {$error}";
+        if ($code) {
+            $detail .= " (code={$code})";
+        }
 
         return [
             'success' => false,
             'external_id' => null,
-            'error' => $error,
+            'error' => $detail,
         ];
     }
 
     /**
      * Wait for a container to reach FINISHED status (used for videos before publishContainer).
+     *
+     * @return string|null  Null on success, error message on failure.
      */
-    private function waitForProcessing(string $containerId, string $accessToken): bool
+    private function waitForProcessing(string $containerId, string $accessToken): ?string
     {
         $lastStatus = null;
 
@@ -351,64 +363,82 @@ class ThreadsAdapter implements PlatformAdapterInterface, ThreadableAdapterInter
                 'access_token' => $accessToken,
             ]);
 
+            if (! $response->successful()) {
+                Log::warning('ThreadsAdapter: status check HTTP error', [
+                    'container_id' => $containerId,
+                    'http_status' => $response->status(),
+                    'attempt' => $attempt + 1,
+                ]);
+                continue;
+            }
+
             $status = $response->json('status');
             $lastStatus = $status;
 
             if ($status === 'FINISHED') {
-                return true;
+                return null;
             }
 
             if ($status === 'ERROR' || $status === 'EXPIRED') {
+                $errorMessage = $response->json('error_message') ?? 'No detail provided';
+
                 Log::error('ThreadsAdapter: container processing failed', [
                     'container_id' => $containerId,
                     'status' => $status,
-                    'error_message' => $response->json('error_message'),
+                    'error_message' => $errorMessage,
                     'attempt' => $attempt + 1,
                 ]);
 
-                return false;
+                return "Threads {$status}: {$errorMessage}";
             }
         }
+
+        $totalSeconds = self::VIDEO_POLL_MAX_ATTEMPTS * self::VIDEO_POLL_INTERVAL;
 
         Log::warning('ThreadsAdapter: video processing timed out', [
             'container_id' => $containerId,
             'last_status' => $lastStatus,
             'attempts' => self::VIDEO_POLL_MAX_ATTEMPTS,
-            'total_seconds' => self::VIDEO_POLL_MAX_ATTEMPTS * self::VIDEO_POLL_INTERVAL,
+            'total_seconds' => $totalSeconds,
         ]);
 
-        return false;
+        return "Threads video processing timed out after {$totalSeconds}s (last status: {$lastStatus})";
     }
 
     /**
      * Lightweight wait before publishing — handles the brief delay even text/image containers can have.
+     *
+     * @return string|null  Null on success, error message on failure.
      */
-    private function waitUntilReady(string $containerId, string $accessToken, int $maxAttempts = 10, int $intervalSeconds = 1): bool
+    private function waitUntilReady(string $containerId, string $accessToken, int $maxAttempts = 10, int $intervalSeconds = 1): ?string
     {
         for ($attempt = 0; $attempt < $maxAttempts; $attempt++) {
             $response = Http::get(self::API_BASE . "/{$containerId}", [
-                'fields' => 'status',
+                'fields' => 'status,error_message',
                 'access_token' => $accessToken,
             ]);
 
             $status = $response->json('status');
 
             if ($status === 'FINISHED') {
-                return true;
+                return null;
             }
 
             if ($status === 'ERROR') {
+                $errorMessage = $response->json('error_message') ?? 'No detail provided';
+
                 Log::error('ThreadsAdapter: container returned ERROR during ready check', [
                     'container_id' => $containerId,
+                    'error_message' => $errorMessage,
                 ]);
 
-                return false;
+                return "Threads container error: {$errorMessage}";
             }
 
             sleep($intervalSeconds);
         }
 
-        return false;
+        return "Threads container not ready after {$maxAttempts}s";
     }
 
     private function addLocationParams(array &$params, ?array $options): void
@@ -438,11 +468,17 @@ class ThreadsAdapter implements PlatformAdapterInterface, ThreadableAdapterInter
     {
         $body = $response->json();
         $error = $body['error']['message'] ?? $fallback;
+        $code = $body['error']['code'] ?? null;
+
+        $detail = "Threads: {$error}";
+        if ($code) {
+            $detail .= " (code={$code})";
+        }
 
         return [
             'success' => false,
             'external_id' => null,
-            'error' => $error,
+            'error' => $detail,
         ];
     }
 
