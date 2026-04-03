@@ -16,6 +16,7 @@ use App\Services\Adapters\LinkedInAdapter;
 use App\Services\Adapters\RedditAdapter;
 use App\Services\Adapters\YouTubeAdapter;
 use App\Services\PublishingService;
+use App\Services\TelegramNotificationService;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Bus\Dispatchable;
@@ -176,6 +177,14 @@ class PublishToPlatformJob implements ShouldQueue
             'platform' => $platform?->slug,
             'account' => $account?->name,
         ]);
+
+        // Send Telegram notification
+        TelegramNotificationService::notifyPublishError(
+            $platform?->slug ?? 'unknown',
+            $account?->name ?? 'unknown',
+            $error,
+            $this->postPlatform->post_id,
+        );
     }
 
     private function updatePostStatus(Post $post): void

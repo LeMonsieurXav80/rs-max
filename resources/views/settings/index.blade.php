@@ -54,6 +54,11 @@
                             class="px-4 py-3 text-sm font-medium border-b-2 transition-colors whitespace-nowrap">
                         Studio
                     </button>
+                    <button type="button" @click="activeTab = 'notifications'"
+                            :class="activeTab === 'notifications' ? 'border-indigo-500 text-indigo-600' : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'"
+                            class="px-4 py-3 text-sm font-medium border-b-2 transition-colors whitespace-nowrap">
+                        Notifications
+                    </button>
                 </nav>
             </div>
 
@@ -643,6 +648,88 @@
                                    class="w-full rounded-lg border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 text-sm">
                         </div>
                     </div>
+                </div>
+            </div>
+
+            {{-- ═══════════════════════════════════════ --}}
+            {{-- TAB: Notifications                    --}}
+            {{-- ═══════════════════════════════════════ --}}
+            <div x-show="activeTab === 'notifications'" x-cloak class="space-y-4">
+
+                {{-- Telegram alerts --}}
+                <div class="bg-white rounded-2xl border border-gray-100 shadow-sm p-6">
+                    <div class="flex items-center gap-3 mb-1">
+                        <svg class="w-5 h-5 text-blue-500" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1.5">
+                            <path stroke-linecap="round" stroke-linejoin="round" d="M14.857 17.082a23.848 23.848 0 0 0 5.454-1.31A8.967 8.967 0 0 1 18 9.75V9A6 6 0 0 0 6 9v.75a8.967 8.967 0 0 1-2.312 6.022c1.733.64 3.56 1.085 5.455 1.31m5.714 0a24.255 24.255 0 0 1-5.714 0m5.714 0a3 3 0 1 1-5.714 0" />
+                        </svg>
+                        <h3 class="text-sm font-semibold text-gray-900">Alertes Telegram</h3>
+                    </div>
+                    <p class="text-xs text-gray-400 mb-4">Recevez une notification Telegram quand une publication echoue.</p>
+
+                    {{-- Enable toggle --}}
+                    <label class="flex items-center gap-3 mb-4 cursor-pointer">
+                        <input type="checkbox" name="notify_publish_error" value="1"
+                               {{ old('notify_publish_error', $settings['notify_publish_error'] ?? false) ? 'checked' : '' }}
+                               class="rounded border-gray-300 text-indigo-600 shadow-sm focus:ring-indigo-500">
+                        <span class="text-sm text-gray-700">Activer les alertes d'erreur de publication</span>
+                    </label>
+
+                    <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                        <div>
+                            <label for="notify_telegram_bot_token" class="block text-xs font-medium text-gray-700 mb-1">Bot Token</label>
+                            <input type="password" id="notify_telegram_bot_token" name="notify_telegram_bot_token"
+                                   placeholder="{{ $hasNotifyBotToken ? '••••••••••••••••' : 'Collez le token du bot' }}"
+                                   class="w-full rounded-lg border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 text-sm">
+                            @if($hasNotifyBotToken)
+                                <p class="text-xs text-green-600 mt-1">Token configure. Laissez vide pour ne pas changer.</p>
+                            @endif
+                        </div>
+                        <div>
+                            <label for="notify_telegram_chat_id" class="block text-xs font-medium text-gray-700 mb-1">Chat ID</label>
+                            <input type="text" id="notify_telegram_chat_id" name="notify_telegram_chat_id"
+                                   value="{{ old('notify_telegram_chat_id', $settings['notify_telegram_chat_id'] ?? '') }}"
+                                   placeholder="Votre chat ID personnel"
+                                   class="w-full rounded-lg border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 text-sm">
+                            <p class="text-xs text-gray-400 mt-1">Envoyez /start a @userinfobot sur Telegram pour obtenir votre ID.</p>
+                        </div>
+                    </div>
+
+                    {{-- Test button --}}
+                    @if($hasNotifyBotToken && ($settings['notify_telegram_chat_id'] ?? ''))
+                        <div class="mt-4 pt-4 border-t border-gray-100">
+                            <button type="button" onclick="testNotification()"
+                                    class="px-4 py-2 bg-blue-50 text-blue-700 text-xs font-medium rounded-lg hover:bg-blue-100 transition-colors">
+                                Envoyer une notification test
+                            </button>
+                            <span id="test-notify-result" class="text-xs ml-2"></span>
+                        </div>
+                        <script>
+                            function testNotification() {
+                                const btn = event.target;
+                                const result = document.getElementById('test-notify-result');
+                                btn.disabled = true;
+                                btn.textContent = 'Envoi...';
+                                result.textContent = '';
+
+                                fetch('{{ route("settings.testNotification") }}', {
+                                    method: 'POST',
+                                    headers: {
+                                        'X-CSRF-TOKEN': '{{ csrf_token() }}',
+                                        'Accept': 'application/json',
+                                    },
+                                }).then(r => r.json()).then(data => {
+                                    result.textContent = data.success ? 'Notification envoyee !' : 'Erreur: ' + (data.error || 'inconnue');
+                                    result.className = 'text-xs ml-2 ' + (data.success ? 'text-green-600' : 'text-red-600');
+                                }).catch(() => {
+                                    result.textContent = 'Erreur reseau';
+                                    result.className = 'text-xs ml-2 text-red-600';
+                                }).finally(() => {
+                                    btn.disabled = false;
+                                    btn.textContent = 'Envoyer une notification test';
+                                });
+                            }
+                        </script>
+                    @endif
                 </div>
             </div>
 

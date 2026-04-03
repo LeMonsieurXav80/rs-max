@@ -3,6 +3,8 @@
 namespace App\Http\Controllers;
 
 use App\Models\Setting;
+use App\Services\TelegramNotificationService;
+use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Http;
 use Illuminate\View\View;
@@ -76,6 +78,9 @@ class SettingsController extends Controller
         'studio_text_font_size',
         'studio_text_x',
         'studio_text_y',
+        // Notifications
+        'notify_publish_error',
+        'notify_telegram_chat_id',
     ];
 
     private const DEFAULTS = [
@@ -144,6 +149,9 @@ class SettingsController extends Controller
         'studio_text_font_size' => 28,
         'studio_text_x' => 65,
         'studio_text_y' => 35,
+        // Notifications
+        'notify_publish_error' => false,
+        'notify_telegram_chat_id' => '',
         'inbox_reply_prompt' => "Tu reponds a des commentaires et messages sur les reseaux sociaux. Adapte la longueur et le style de ta reponse au message recu :\n- Emoji seul ou reaction simple (coeur, flamme, applaudissements...) → reponds par 1-2 emojis adaptes, rien d'autre\n- Compliment court (\"bravo\", \"top\", \"j'adore\", \"genial\") → remercie en 2-5 mots max, tu peux ajouter un emoji\n- Question → reponds brievement et precisement, 1-2 phrases max\n- Commentaire developpe ou avis → 1-2 phrases engageantes max\n- Message prive → reponds de maniere naturelle et conversationnelle\n\nRegles absolues :\n- Ne fais JAMAIS une reponse plus longue que le message original\n- Pas de hashtags\n- Pas de formule de politesse generique (\"Merci pour votre commentaire !\")\n- Sois authentique, pas corporate\n- Garde le ton et la personnalite definis dans ton profil",
     ];
 
@@ -188,7 +196,9 @@ class SettingsController extends Controller
             }, [], false);
         }
 
-        return view('settings.index', compact('settings', 'hasOpenaiKey', 'availableModels'));
+        $hasNotifyBotToken = (bool) Setting::getEncrypted('notify_telegram_bot_token');
+
+        return view('settings.index', compact('settings', 'hasOpenaiKey', 'availableModels', 'hasNotifyBotToken'));
     }
 
     public function update(Request $request)
@@ -256,6 +266,10 @@ class SettingsController extends Controller
             'ai_model_inbox' => 'required|string|max:50',
             'inbox_use_persona' => 'nullable',
             'inbox_reply_prompt' => 'nullable|string|max:5000',
+            // Notifications
+            'notify_publish_error' => 'nullable',
+            'notify_telegram_bot_token' => 'nullable|string|max:100',
+            'notify_telegram_chat_id' => 'nullable|string|max:50',
         ]);
 
         // Handle encrypted keys separately
@@ -263,6 +277,11 @@ class SettingsController extends Controller
             Setting::setEncrypted('openai_api_key', $validated['openai_api_key']);
         }
         unset($validated['openai_api_key']);
+
+        if ($request->filled('notify_telegram_bot_token')) {
+            Setting::setEncrypted('notify_telegram_bot_token', $validated['notify_telegram_bot_token']);
+        }
+        unset($validated['notify_telegram_bot_token']);
 
         // Handle inbox platform toggles (checkboxes: absent = false)
         $inboxPlatforms = ['facebook', 'instagram', 'threads', 'youtube', 'bluesky', 'telegram', 'reddit', 'twitter'];
@@ -274,10 +293,24 @@ class SettingsController extends Controller
         // Handle inbox_use_persona checkbox
         $validated['inbox_use_persona'] = $request->has('inbox_use_persona') ? true : false;
 
+        // Handle notify_publish_error checkbox
+        $validated['notify_publish_error'] = $request->has('notify_publish_error') ? true : false;
+
         foreach ($validated as $key => $value) {
             Setting::set($key, $value);
         }
 
         return redirect()->route('settings.index', ['tab' => $request->input('_active_tab', 'ia')])->with('status', 'settings-updated');
+    }
+
+    public function testNotification(Request $request): JsonResponse
+    {
+        if (! $request->user()->isManager()) {
+            abort(403);
+        }
+
+        $success = TelegramNotificationService::sendTest();
+
+        return response()->json(['success' => $success, 'error' => $success ? null : 'Echec envoi']);
     }
 }
