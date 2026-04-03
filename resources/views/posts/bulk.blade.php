@@ -190,16 +190,23 @@
                                             <span class="text-xs text-gray-400" x-text="row._uploadPhase === 'processing' ? 'Compression...' : row._uploadProgress + '%'"></span>
                                         </div>
 
-                                        {{-- Drop zone / add button --}}
+                                        {{-- Drop zone / add buttons --}}
                                         <div class="flex gap-1.5"
                                             @dragover.prevent="$el.classList.add('ring-2','ring-indigo-300')"
                                             @dragleave.prevent="$el.classList.remove('ring-2','ring-indigo-300')"
                                             @drop.prevent="$el.classList.remove('ring-2','ring-indigo-300'); uploadFilesForRow(index, $event.dataTransfer.files)">
-                                            <label class="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border border-dashed border-gray-300 text-xs text-gray-400 hover:border-indigo-400 hover:text-indigo-500 cursor-pointer transition-colors">
-                                                <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2">
-                                                    <path stroke-linecap="round" stroke-linejoin="round" d="M12 4.5v15m7.5-7.5h-15"/>
+                                            <button type="button" @click="openLibrary(index)"
+                                                class="flex items-center gap-1 px-2.5 py-1.5 rounded-lg border border-dashed border-gray-300 text-xs text-gray-400 hover:border-indigo-400 hover:text-indigo-500 cursor-pointer transition-colors">
+                                                <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1.5">
+                                                    <path stroke-linecap="round" stroke-linejoin="round" d="m2.25 15.75 5.159-5.159a2.25 2.25 0 0 1 3.182 0l5.159 5.159m-1.5-1.5 1.409-1.409a2.25 2.25 0 0 1 3.182 0l2.909 2.909M3.75 21h16.5A2.25 2.25 0 0 0 22.5 18.75V5.25A2.25 2.25 0 0 0 20.25 3H3.75A2.25 2.25 0 0 0 1.5 5.25v13.5A2.25 2.25 0 0 0 3.75 21Z"/>
                                                 </svg>
-                                                Ajouter
+                                                Bibliotheque
+                                            </button>
+                                            <label class="flex items-center gap-1 px-2.5 py-1.5 rounded-lg border border-dashed border-gray-300 text-xs text-gray-400 hover:border-indigo-400 hover:text-indigo-500 cursor-pointer transition-colors">
+                                                <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2">
+                                                    <path stroke-linecap="round" stroke-linejoin="round" d="M3 16.5v2.25A2.25 2.25 0 0 0 5.25 21h13.5A2.25 2.25 0 0 0 21 18.75V16.5m-13.5-9L12 3m0 0 4.5 4.5M12 3v13.5"/>
+                                                </svg>
+                                                Upload
                                                 <input type="file" multiple accept="image/*,video/*"
                                                     @change="uploadFilesForRow(index, $event.target.files); $event.target.value=''"
                                                     class="hidden">
@@ -306,6 +313,70 @@
             </button>
         </div>
     </div>
+
+    {{-- ═══ Library Modal ═══ --}}
+    <div x-show="showLibrary" x-transition.opacity class="fixed inset-0 z-50 flex items-center justify-center p-4" style="display:none">
+        <div class="absolute inset-0 bg-black/50" @click="showLibrary = false"></div>
+        <div class="relative bg-white rounded-2xl shadow-xl w-full max-w-3xl max-h-[80vh] flex flex-col">
+            {{-- Header --}}
+            <div class="flex items-center justify-between px-6 py-4 border-b border-gray-200">
+                <h3 class="text-lg font-semibold text-gray-900">Bibliotheque media</h3>
+                <button type="button" @click="showLibrary = false" class="text-gray-400 hover:text-gray-600">
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M6 18 18 6M6 6l12 12"/>
+                    </svg>
+                </button>
+            </div>
+
+            {{-- Folders --}}
+            <div class="px-6 py-3 border-b border-gray-100 flex items-center gap-2 flex-wrap" x-show="libraryFolders.length > 0 || libraryFolder">
+                <button type="button" @click="libraryFolder = null; fetchLibrary()"
+                    class="px-3 py-1 rounded-lg text-xs font-medium transition-colors"
+                    :class="!libraryFolder ? 'bg-indigo-100 text-indigo-700' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'">
+                    Tout
+                </button>
+                <template x-for="folder in libraryFolders" :key="folder.id">
+                    <button type="button" @click="libraryFolder = folder.id; fetchLibrary(folder.id)"
+                        class="px-3 py-1 rounded-lg text-xs font-medium transition-colors"
+                        :class="libraryFolder === folder.id ? 'bg-indigo-100 text-indigo-700' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'"
+                        x-text="folder.name"></button>
+                </template>
+            </div>
+
+            {{-- Grid --}}
+            <div class="flex-1 overflow-y-auto p-6">
+                <div x-show="libraryLoading" class="flex items-center justify-center py-12">
+                    <svg class="w-6 h-6 animate-spin text-indigo-500" fill="none" viewBox="0 0 24 24">
+                        <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                        <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path>
+                    </svg>
+                </div>
+                <div x-show="!libraryLoading" class="grid grid-cols-4 sm:grid-cols-5 md:grid-cols-6 gap-3">
+                    <template x-for="item in libraryItems" :key="item.url">
+                        <button type="button" @click="selectLibraryItem(item)"
+                            class="relative aspect-square rounded-lg overflow-hidden border-2 border-transparent hover:border-indigo-400 transition-colors group cursor-pointer">
+                            <template x-if="item.mimetype && item.mimetype.startsWith('image/')">
+                                <img :src="item.url" class="w-full h-full object-cover" alt="">
+                            </template>
+                            <template x-if="item.mimetype && item.mimetype.startsWith('video/')">
+                                <div class="w-full h-full bg-gray-800 flex items-center justify-center">
+                                    <svg class="w-8 h-8 text-white/70" fill="currentColor" viewBox="0 0 24 24">
+                                        <path d="M8 5v14l11-7z"/>
+                                    </svg>
+                                </div>
+                            </template>
+                            <div class="absolute inset-0 bg-indigo-600/0 group-hover:bg-indigo-600/20 transition-colors flex items-center justify-center">
+                                <svg class="w-6 h-6 text-white opacity-0 group-hover:opacity-100 transition-opacity drop-shadow" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2">
+                                    <path stroke-linecap="round" stroke-linejoin="round" d="M12 4.5v15m7.5-7.5h-15"/>
+                                </svg>
+                            </div>
+                        </button>
+                    </template>
+                </div>
+                <p x-show="!libraryLoading && libraryItems.length === 0" class="text-center text-gray-400 py-8">Aucun media dans la bibliotheque</p>
+            </div>
+        </div>
+    </div>
 </div>
 
 @push('scripts')
@@ -324,6 +395,14 @@ function bulkEditor() {
         })(),
         rows: [],
         _keyCounter: 0,
+
+        // Library modal
+        showLibrary: false,
+        libraryItems: [],
+        libraryFolders: [],
+        libraryFolder: null,
+        libraryLoading: false,
+        libraryTargetRow: null,
 
         // Account data from server
         accountsData: @json($accountsJson),
@@ -431,6 +510,46 @@ function bulkEditor() {
                 _uploadPhase: 'upload',
                 error: null,
             });
+        },
+
+        async openLibrary(rowIndex) {
+            this.libraryTargetRow = rowIndex;
+            this.showLibrary = true;
+            this.libraryFolder = null;
+            await this.fetchLibrary();
+        },
+
+        async fetchLibrary(folderId) {
+            this.libraryLoading = true;
+            try {
+                let url = '{{ route("media.list") }}';
+                if (folderId) url += '?folder=' + folderId;
+                const resp = await fetch(url, { headers: { 'Accept': 'application/json' } });
+                const data = await resp.json();
+                this.libraryItems = data.items || [];
+                this.libraryFolders = data.folders || [];
+            } catch(e) {
+                this.libraryItems = [];
+            }
+            this.libraryLoading = false;
+        },
+
+        selectLibraryItem(item) {
+            const idx = this.libraryTargetRow;
+            if (idx === null || !this.rows[idx]) return;
+
+            // Avoid duplicates
+            if (!this.rows[idx].media.some(m => m.url === item.url)) {
+                this.rows[idx].media.push({
+                    url: item.url,
+                    mimetype: item.mimetype,
+                    size: item.size,
+                    title: item.title || item.filename,
+                });
+                this.rows[idx]._dirty = true;
+                this.saveRow(idx);
+            }
+            this.showLibrary = false;
         },
 
         async saveRow(index) {
