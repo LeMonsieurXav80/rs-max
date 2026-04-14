@@ -90,7 +90,7 @@ Le regroupement final utilise la cle composite `{social_account_id}:{conversatio
 | POST | `/inbox/archive` | archive | Archiver des items |
 | POST | `/inbox/{item}/reply` | reply | Repondre a un item |
 | POST | `/inbox/{item}/ai-suggest` | aiSuggest | Suggestion de reponse IA |
-| POST | `/inbox/bulk-ai-reply` | bulkAiReply | Generer des reponses IA en masse (max 50) |
+| POST | `/inbox/bulk-ai-prepare` | bulkAiPrepare | Renvoyer les metadatas des items selectionnes (max 250). La generation IA est ensuite faite cote front, item par item via `/inbox/{item}/ai-suggest` (3 en parallele), pour eviter les timeouts HTTP sur les gros lots. |
 | POST | `/inbox/bulk-send` | bulkSend | Envoyer plusieurs reponses (avec spread optionnel) |
 | GET | `/inbox/scheduled-status` | scheduledStatus | Statut des reponses programmees |
 | POST | `/inbox/sync` | sync | Declenchement manuel du sync (admin) |

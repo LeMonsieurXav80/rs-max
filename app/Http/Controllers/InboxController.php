@@ -105,7 +105,7 @@ class InboxController extends Controller
                 $key = $replyExternalToConvoKey->get($item->parent_id);
             }
 
-            return $item->social_account_id . ':' . $key;
+            return $item->social_account_id.':'.$key;
         });
 
         // When status is filtered, only keep conversations that contain at least one
@@ -318,42 +318,39 @@ class InboxController extends Controller
         $reply = $this->generateAiReplyText($inboxItem, $account);
 
         if (! $reply) {
-            return response()->json(['error' => 'Impossible de générer une réponse. Vérifiez la clé API OpenAI' . (Setting::get('inbox_use_persona', true) ? ' et la persona du compte' : '') . '.'], 422);
+            return response()->json(['error' => 'Impossible de générer une réponse. Vérifiez la clé API OpenAI'.(Setting::get('inbox_use_persona', true) ? ' et la persona du compte' : '').'.'], 422);
         }
 
         return response()->json(['reply' => $reply]);
     }
 
-    public function bulkAiReply(Request $request): JsonResponse
+    /**
+     * Return metadata for selected inbox items so the front-end can open
+     * the bulk modal immediately and then call /inbox/{id}/ai-suggest
+     * one item at a time. Avoids HTTP timeouts on large batches.
+     */
+    public function bulkAiPrepare(Request $request): JsonResponse
     {
         $validated = $request->validate([
             'ids' => 'required|array|min:1|max:250',
             'ids.*' => 'integer|exists:inbox_items,id',
         ]);
 
-        $items = InboxItem::with(['socialAccount.platform', 'socialAccount.persona'])
+        $items = InboxItem::with('socialAccount.platform')
             ->whereIn('id', $validated['ids'])
-            ->get();
-
-        $suggestions = [];
-
-        foreach ($items as $item) {
-            $account = $item->socialAccount;
-            $reply = $this->generateAiReplyText($item, $account);
-
-            $suggestions[] = [
+            ->get()
+            ->map(fn ($item) => [
                 'id' => $item->id,
                 'content' => $item->content,
                 'author' => $item->author_name ?? $item->author_username,
-                'platform' => $account->platform->slug,
-                'reply' => $reply,
-                'error' => $reply ? null : 'Impossible de générer',
-            ];
+                'platform' => $item->socialAccount->platform->slug,
+                'reply' => null,
+                'error' => null,
+                'loading' => true,
+            ])
+            ->values();
 
-            usleep(500000); // 500ms between API calls
-        }
-
-        return response()->json(['suggestions' => $suggestions]);
+        return response()->json(['items' => $items]);
     }
 
     public function bulkSend(Request $request): JsonResponse
@@ -525,9 +522,9 @@ class InboxController extends Controller
         } elseif ($item->parent_id || $item->external_id) {
             $rootId = $item->parent_id ?: $item->external_id;
             $threadItems = InboxItem::where('social_account_id', $item->social_account_id)
-                ->where(function ($q) use ($rootId, $item) {
+                ->where(function ($q) use ($rootId) {
                     $q->where('external_id', $rootId)      // the root comment
-                      ->orWhere('parent_id', $rootId);      // other replies to root
+                        ->orWhere('parent_id', $rootId);      // other replies to root
                 })
                 ->where('id', '!=', $item->id)
                 ->orderBy('posted_at', 'asc')
@@ -536,7 +533,7 @@ class InboxController extends Controller
         }
 
         $prompt = "N'entoure JAMAIS ta réponse de guillemets.\n"
-            . "Adapte le style de ta réponse au message reçu : si le message ne contient que des emojis, réponds uniquement avec des emojis. Si le message mélange texte et emojis, réponds avec du texte et des emojis dans des proportions similaires. Si le message est uniquement du texte, réponds avec du texte (tu peux ajouter un emoji en fin de message).\n\n";
+            ."Adapte le style de ta réponse au message reçu : si le message ne contient que des emojis, réponds uniquement avec des emojis. Si le message mélange texte et emojis, réponds avec du texte et des emojis dans des proportions similaires. Si le message est uniquement du texte, réponds avec du texte (tu peux ajouter un emoji en fin de message).\n\n";
 
         if ($threadItems->isNotEmpty()) {
             $prompt .= "Contexte de la conversation :\n";
@@ -551,13 +548,13 @@ class InboxController extends Controller
         }
 
         $prompt .= "{$typeLabel} de {$item->author_name} :\n\"{$item->content}\"\n\n"
-            . "IMPORTANT: You MUST reply in the same language as the message above. If the message is in English, reply in English. If in Italian, reply in Italian. Match the language exactly.";
+            .'IMPORTANT: You MUST reply in the same language as the message above. If the message is in English, reply in English. If in Italian, reply in Italian. Match the language exactly.';
 
         // Build system prompt: persona (if enabled) + inbox reply wrapper
         $replyWrapper = Setting::get('inbox_reply_prompt', '');
         $systemPrompt = ($usePersona && $persona) ? $persona->system_prompt : '';
         if ($replyWrapper) {
-            $systemPrompt .= ($systemPrompt ? "\n\n" : '') . $replyWrapper;
+            $systemPrompt .= ($systemPrompt ? "\n\n" : '').$replyWrapper;
         }
 
         try {

@@ -543,8 +543,27 @@
             <div class="fixed inset-0 bg-gray-500/75" @click="bulkModalOpen = false"></div>
             <div class="relative bg-white rounded-2xl shadow-xl w-full max-w-2xl mx-4 max-h-[80vh] flex flex-col" @click.stop>
                 <div class="p-6 border-b border-gray-100">
-                    <h3 class="text-lg font-semibold text-gray-900">Réponses IA générées</h3>
-                    <p class="text-sm text-gray-500 mt-1" x-text="bulkSuggestions.length + ' réponse(s) générée(s)'"></p>
+                    <div class="flex items-start justify-between gap-4">
+                        <div>
+                            <h3 class="text-lg font-semibold text-gray-900">Réponses IA générées</h3>
+                            <p class="text-sm text-gray-500 mt-1">
+                                <template x-if="bulkGenerating">
+                                    <span><span x-text="bulkProgress"></span> / <span x-text="bulkSuggestions.length"></span> traités…</span>
+                                </template>
+                                <template x-if="!bulkGenerating">
+                                    <span><span x-text="bulkSuggestions.filter(s => s.reply && s.reply.trim()).length"></span> / <span x-text="bulkSuggestions.length"></span> réponse(s) générée(s)</span>
+                                </template>
+                            </p>
+                        </div>
+                        <button x-show="bulkGenerating" @click="bulkAborted = true"
+                                class="px-3 py-1.5 text-sm font-medium text-red-600 bg-red-50 rounded-xl hover:bg-red-100 transition-colors">
+                            Stop
+                        </button>
+                    </div>
+                    <div x-show="bulkGenerating" class="mt-3 h-1.5 bg-gray-100 rounded-full overflow-hidden">
+                        <div class="h-full bg-indigo-600 transition-all"
+                             :style="`width: ${bulkSuggestions.length ? (bulkProgress / bulkSuggestions.length * 100) : 0}%`"></div>
+                    </div>
                 </div>
 
                 <div class="flex-1 overflow-y-auto p-6 space-y-4">
@@ -555,11 +574,20 @@
                                 <span class="text-xs text-gray-400" x-text="suggestion.platform"></span>
                             </div>
                             <p class="text-sm text-gray-600 mb-3 line-clamp-2" x-text="suggestion.content"></p>
-                            <template x-if="suggestion.reply">
+                            <template x-if="suggestion.loading">
+                                <div class="flex items-center gap-2 text-sm text-gray-400">
+                                    <svg class="animate-spin h-4 w-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                                        <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                                        <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z"></path>
+                                    </svg>
+                                    Génération…
+                                </div>
+                            </template>
+                            <template x-if="!suggestion.loading && suggestion.reply">
                                 <textarea x-model="suggestion.reply" rows="2"
                                     class="w-full rounded-xl border-gray-300 text-sm shadow-sm focus:border-indigo-500 focus:ring-indigo-500"></textarea>
                             </template>
-                            <template x-if="suggestion.error">
+                            <template x-if="!suggestion.loading && suggestion.error">
                                 <p class="text-sm text-red-600" x-text="suggestion.error"></p>
                             </template>
                         </div>
@@ -622,6 +650,9 @@ function inboxManager() {
         bulkModalOpen: false,
         bulkSuggestions: [],
         bulkSending: false,
+        bulkGenerating: false,
+        bulkProgress: 0,
+        bulkAborted: false,
         spreadHours: 0,
         spreadMinutes: 0,
 
@@ -825,10 +856,14 @@ function inboxManager() {
         },
 
         async startBulkAiReply() {
+            if (this.selectedIds.length === 0) return;
             this.bulkLoading = true;
+            this.bulkAborted = false;
+            this.bulkProgress = 0;
 
+            // Phase 1: fetch metadata for all selected items (fast, no AI call)
             try {
-                const resp = await this.csrfFetch('/inbox/bulk-ai-reply', {
+                const resp = await this.csrfFetch('/inbox/bulk-ai-prepare', {
                     method: 'POST',
                     body: JSON.stringify({ ids: this.selectedIds }),
                 });
@@ -840,15 +875,54 @@ function inboxManager() {
                     return;
                 }
 
-                if (data.suggestions) {
-                    this.bulkSuggestions = data.suggestions;
-                    this.bulkModalOpen = true;
-                }
+                this.bulkSuggestions = data.items || [];
+                this.bulkModalOpen = true;
             } catch (e) {
-                alert('Erreur de connexion');
+                alert('Erreur de connexion : ' + e.message);
+                return;
             } finally {
                 this.bulkLoading = false;
             }
+
+            if (this.bulkSuggestions.length === 0) return;
+
+            // Phase 2: generate AI replies one item at a time, with concurrency
+            this.bulkGenerating = true;
+
+            const queue = this.bulkSuggestions.map((_, i) => i);
+            const worker = async () => {
+                while (queue.length > 0 && !this.bulkAborted) {
+                    const i = queue.shift();
+                    const item = this.bulkSuggestions[i];
+                    try {
+                        const resp = await this.csrfFetch(`/inbox/${item.id}/ai-suggest`, { method: 'POST' });
+                        const data = await resp.json();
+                        if (resp.ok && data.reply) {
+                            item.reply = data.reply;
+                        } else {
+                            item.error = data.error || 'Échec de la génération';
+                        }
+                    } catch (e) {
+                        item.error = 'Erreur réseau';
+                    } finally {
+                        item.loading = false;
+                        this.bulkProgress++;
+                    }
+                }
+            };
+
+            // Run 3 workers in parallel
+            await Promise.all([worker(), worker(), worker()]);
+
+            // Mark any remaining (aborted) items as cancelled
+            this.bulkSuggestions.forEach(s => {
+                if (s.loading) {
+                    s.loading = false;
+                    s.error = 'Annulé';
+                }
+            });
+
+            this.bulkGenerating = false;
         },
 
         async sendBulkReplies() {
