@@ -886,33 +886,43 @@ function inboxManager() {
 
             if (this.bulkSuggestions.length === 0) return;
 
-            // Phase 2: generate AI replies one item at a time, with concurrency
+            // Phase 2: generate AI replies sequentially with delay and retry
             this.bulkGenerating = true;
 
-            const queue = this.bulkSuggestions.map((_, i) => i);
-            const worker = async () => {
-                while (queue.length > 0 && !this.bulkAborted) {
-                    const i = queue.shift();
-                    const item = this.bulkSuggestions[i];
+            const delay = ms => new Promise(r => setTimeout(r, ms));
+
+            for (let i = 0; i < this.bulkSuggestions.length && !this.bulkAborted; i++) {
+                const item = this.bulkSuggestions[i];
+                let success = false;
+
+                for (let attempt = 0; attempt < 3 && !success; attempt++) {
                     try {
+                        if (attempt > 0) await delay(2000 * attempt);
                         const resp = await this.csrfFetch(`/inbox/${item.id}/ai-suggest`, { method: 'POST' });
                         const data = await resp.json();
                         if (resp.ok && data.reply) {
                             item.reply = data.reply;
+                            success = true;
+                        } else if (resp.status === 429) {
+                            // Rate limited — wait and retry
+                            await delay(5000);
                         } else {
                             item.error = data.error || 'Échec de la génération';
+                            success = true; // Don't retry business errors
                         }
                     } catch (e) {
-                        item.error = 'Erreur réseau';
-                    } finally {
-                        item.loading = false;
-                        this.bulkProgress++;
+                        if (attempt === 2) item.error = 'Erreur réseau';
                     }
                 }
-            };
 
-            // Run 3 workers in parallel
-            await Promise.all([worker(), worker(), worker()]);
+                item.loading = false;
+                this.bulkProgress++;
+
+                // Small pause between items to avoid overwhelming the server
+                if (i < this.bulkSuggestions.length - 1 && !this.bulkAborted) {
+                    await delay(300);
+                }
+            }
 
             // Mark any remaining (aborted) items as cancelled
             this.bulkSuggestions.forEach(s => {
