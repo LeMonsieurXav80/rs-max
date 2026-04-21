@@ -4,8 +4,10 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Models\Persona;
+use App\Models\Setting;
 use App\Services\AiAssistService;
 use App\Services\ThreadContentGenerationService;
+use App\Services\TranslationService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 
@@ -56,14 +58,26 @@ class GenerateApiController extends Controller
 
         $aiService = app(AiAssistService::class);
 
-        // Génère le content_fr (texte principal)
-        $contentFr = $aiService->generate($validated['instructions'], $persona, $account);
+        // Génère le content_fr (toujours en français — ne pas passer $account
+        // pour éviter que languages[0] du compte force une autre langue)
+        $contentFr = $aiService->generate($validated['instructions'], $persona);
 
         if (! $contentFr) {
             return response()->json(['error' => 'Échec de la génération IA.'], 500);
         }
 
-        // Multi-plateforme : génère aussi les versions adaptées
+        $result = ['content_fr' => $contentFr];
+
+        // Traduire dans les langues du compte (hors français)
+        if ($account) {
+            $languages = $account->languages ?? ['fr'];
+            $translations = $this->translateToLanguages($contentFr, $languages);
+            if (! empty($translations)) {
+                $result['translations'] = $translations;
+            }
+        }
+
+        // Multi-plateforme : génère aussi les versions adaptées par plateforme
         if (! empty($validated['platforms'])) {
             $platformContents = $aiService->generateForPlatforms(
                 $contentFr,
@@ -71,20 +85,32 @@ class GenerateApiController extends Controller
                 $persona,
                 $account
             );
+            $result['platform_contents'] = $platformContents ?? [];
 
-            return response()->json([
-                'generated' => [
-                    'content_fr' => $contentFr,
-                    'platform_contents' => $platformContents ?? [],
-                ],
-            ]);
+            // Traduire aussi les platform_contents dans les langues du compte
+            if ($account && ! empty($platformContents)) {
+                $languages = $account->languages ?? ['fr'];
+                $otherLangs = array_filter($languages, fn ($l) => $l !== 'fr');
+                if (! empty($otherLangs)) {
+                    $platformTranslations = [];
+                    $translator = app(TranslationService::class);
+                    $apiKey = Setting::getEncrypted('openai_api_key');
+                    foreach ($otherLangs as $lang) {
+                        foreach ($platformContents as $slug => $text) {
+                            $translated = $translator->translate($text, 'fr', $lang, $apiKey);
+                            if ($translated) {
+                                $platformTranslations["{$slug}_{$lang}"] = $translated;
+                            }
+                        }
+                    }
+                    if (! empty($platformTranslations)) {
+                        $result['platform_translations'] = $platformTranslations;
+                    }
+                }
+            }
         }
 
-        return response()->json([
-            'generated' => [
-                'content_fr' => $contentFr,
-            ],
-        ]);
+        return response()->json(['generated' => $result]);
     }
 
     /**
@@ -153,6 +179,50 @@ class GenerateApiController extends Controller
             return response()->json(['error' => 'Échec de la génération du thread.'], 500);
         }
 
+        // Traduire les segments dans les langues du compte
+        if ($account) {
+            $languages = $account->languages ?? ['fr'];
+            $otherLangs = array_filter($languages, fn ($l) => $l !== 'fr');
+            if (! empty($otherLangs) && ! empty($result['segments'])) {
+                $translator = app(TranslationService::class);
+                $apiKey = Setting::getEncrypted('openai_api_key');
+                foreach ($result['segments'] as &$segment) {
+                    $segment['translations'] = [];
+                    foreach ($otherLangs as $lang) {
+                        $translated = $translator->translate($segment['content_fr'], 'fr', $lang, $apiKey);
+                        if ($translated) {
+                            $segment['translations'][$lang] = $translated;
+                        }
+                    }
+                }
+                unset($segment);
+            }
+        }
+
         return response()->json(['generated' => $result]);
+    }
+
+    /**
+     * Traduit un texte dans toutes les langues du compte (sauf français).
+     */
+    private function translateToLanguages(string $text, array $languages): array
+    {
+        $otherLangs = array_filter($languages, fn ($l) => $l !== 'fr');
+        if (empty($otherLangs)) {
+            return [];
+        }
+
+        $translator = app(TranslationService::class);
+        $apiKey = Setting::getEncrypted('openai_api_key');
+        $translations = [];
+
+        foreach ($otherLangs as $lang) {
+            $translated = $translator->translate($text, 'fr', $lang, $apiKey);
+            if ($translated) {
+                $translations[$lang] = $translated;
+            }
+        }
+
+        return $translations;
     }
 }
