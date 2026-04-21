@@ -6,12 +6,14 @@ use App\Http\Controllers\Controller;
 use App\Models\Persona;
 use App\Models\Post;
 use App\Models\PostPlatform;
+use App\Models\Setting;
 use App\Models\SocialAccount;
 use App\Models\Thread;
 use App\Models\ThreadSegment;
 use App\Models\ThreadSegmentPlatform;
 use App\Services\AiAssistService;
 use App\Services\ThreadContentGenerationService;
+use App\Services\TranslationService;
 use Carbon\Carbon;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -174,7 +176,7 @@ class ApiController extends Controller
             }
 
             try {
-                $content = $aiService->generate($prompt, $persona, $account);
+                $content = $aiService->generate($prompt, $persona);
 
                 if (! $content) {
                     $errors[] = ['index' => $i + 1, 'error' => 'Échec génération IA'];
@@ -182,10 +184,14 @@ class ApiController extends Controller
                     continue;
                 }
 
-                $post = DB::transaction(function () use ($user, $content, $scheduledAt, $account, $validated) {
+                // Pré-traduire dans les langues du compte
+                $translations = $this->translateForAccount($content, $account);
+
+                $post = DB::transaction(function () use ($user, $content, $translations, $scheduledAt, $account, $validated) {
                     $post = Post::create([
                         'user_id' => $user->id,
                         'content_fr' => $content,
+                        'translations' => ! empty($translations) ? $translations : null,
                         'hashtags' => $validated['hashtags'] ?? null,
                         'auto_translate' => true,
                         'status' => 'scheduled',
@@ -336,6 +342,10 @@ class ApiController extends Controller
                     continue;
                 }
 
+                // Pré-traduire les segments dans les langues des comptes
+                $allLanguages = $accounts->pluck('languages')->flatten()->unique()->toArray();
+                $generated['segments'] = $this->translateSegments($generated['segments'], $allLanguages);
+
                 $thread = DB::transaction(function () use ($user, $generated, $scheduledAt, $accounts) {
                     $thread = Thread::create([
                         'user_id' => $user->id,
@@ -351,6 +361,7 @@ class ApiController extends Controller
                             'position' => $segData['position'],
                             'content_fr' => $segData['content_fr'],
                             'platform_contents' => ! empty($segData['platform_contents']) ? $segData['platform_contents'] : null,
+                            'translations' => ! empty($segData['translations']) ? $segData['translations'] : null,
                             'media' => $segData['media'] ?? null,
                         ]);
 
@@ -465,5 +476,61 @@ class ApiController extends Controller
         usort($slots, fn (Carbon $a, Carbon $b) => $a->timestamp <=> $b->timestamp);
 
         return $slots;
+    }
+
+    /**
+     * Traduit un texte dans les langues du compte (hors français).
+     * Retourne un array ['en' => '...', 'pt' => '...'] compatible avec Post->translations.
+     */
+    private function translateForAccount(string $text, SocialAccount $account): array
+    {
+        $languages = $account->languages ?? ['fr'];
+        $otherLangs = array_filter($languages, fn ($l) => $l !== 'fr');
+        if (empty($otherLangs)) {
+            return [];
+        }
+
+        $translator = app(TranslationService::class);
+        $apiKey = Setting::getEncrypted('openai_api_key');
+        $translations = [];
+
+        foreach ($otherLangs as $lang) {
+            $translated = $translator->translate($text, 'fr', $lang, $apiKey);
+            if ($translated) {
+                $translations[$lang] = $translated;
+            }
+        }
+
+        return $translations;
+    }
+
+    /**
+     * Traduit les segments d'un thread dans toutes les langues (hors français).
+     */
+    private function translateSegments(array $segments, array $allLanguages): array
+    {
+        $otherLangs = array_filter($allLanguages, fn ($l) => $l !== 'fr');
+        if (empty($otherLangs)) {
+            return $segments;
+        }
+
+        $translator = app(TranslationService::class);
+        $apiKey = Setting::getEncrypted('openai_api_key');
+
+        foreach ($segments as &$segment) {
+            $translations = [];
+            foreach ($otherLangs as $lang) {
+                $translated = $translator->translate($segment['content_fr'], 'fr', $lang, $apiKey);
+                if ($translated) {
+                    $translations[$lang] = $translated;
+                }
+            }
+            if (! empty($translations)) {
+                $segment['translations'] = $translations;
+            }
+        }
+        unset($segment);
+
+        return $segments;
     }
 }
