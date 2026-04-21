@@ -86,7 +86,7 @@ class ThreadContentGenerationService
             if ($hook) {
                 $userPrompt .= "=== STYLE D'ACCROCHE (PREMIER SEGMENT) ===\n";
                 $userPrompt .= "Inspire-toi du style et du ton de cet exemple pour rédiger le premier segment. Ne le copie pas mot pour mot, adapte-le au sujet de l'article :\n";
-                $userPrompt .= "\"" . $hook->content . "\"\n\n";
+                $userPrompt .= '"'.$hook->content."\"\n\n";
             }
         }
 
@@ -118,7 +118,7 @@ class ThreadContentGenerationService
         $userPrompt .= "  \"segments\": [\n";
         $userPrompt .= "    {\n";
         $userPrompt .= "      \"position\": 1,\n";
-        $userPrompt .= "      \"content_fr\": \"Contenu principal en français\"";
+        $userPrompt .= '      "content_fr": "Contenu principal en français"';
 
         if ($hasThreadPlatforms) {
             foreach (['twitter', 'threads', 'bluesky'] as $slug) {
@@ -199,6 +199,142 @@ class ThreadContentGenerationService
 
         } catch (\Exception $e) {
             Log::error('ThreadContentGenerationService: Exception', ['error' => $e->getMessage()]);
+
+            return null;
+        }
+    }
+
+    /**
+     * Generate a thread from free-form instructions (no source URL).
+     * Used by the API for bulk thread scheduling.
+     */
+    public function generateFromInstructions(string $instructions, Persona $persona, array $platformSlugs, int $threadNumber = 1, int $totalThreads = 1): ?array
+    {
+        $apiKey = Setting::getEncrypted('openai_api_key');
+        if (! $apiKey) {
+            Log::warning('ThreadContentGenerationService: No OpenAI API key configured');
+
+            return null;
+        }
+
+        $charLimits = [];
+        foreach ($platformSlugs as $slug) {
+            $charLimits[$slug] = $this->getCharLimit($slug);
+        }
+
+        $hasThreadPlatforms = ! empty(array_intersect($platformSlugs, ['twitter', 'threads', 'bluesky']));
+        $hasCompiledPlatforms = ! empty(array_intersect($platformSlugs, ['facebook', 'telegram']));
+
+        $userPrompt = "Crée un fil de discussion (thread) original pour les réseaux sociaux.\n\n";
+        $userPrompt .= "=== INSTRUCTIONS ===\n{$instructions}\n\n";
+
+        if ($totalThreads > 1) {
+            $userPrompt .= "C'est le fil n°{$threadNumber} sur {$totalThreads}. ";
+            $userPrompt .= "Génère un contenu UNIQUE et DIFFÉRENT des autres fils. Varie l'angle, le ton et la structure.\n\n";
+        }
+
+        $userPrompt .= "=== RÈGLES ===\n";
+        $userPrompt .= "- Découpe le contenu en 3 à 8 segments logiques.\n";
+        $userPrompt .= "- Le premier segment doit être accrocheur et donner envie de lire la suite.\n";
+        $userPrompt .= "- Chaque segment doit être compréhensible seul mais s'inscrire dans la continuité.\n";
+        $userPrompt .= "- N'utilise PAS de hashtags (#).\n";
+        $userPrompt .= "- N'utilise PAS de liens en format markdown [texte](url).\n";
+        $userPrompt .= "- Le dernier segment doit être un appel à l'action engageant et naturel.\n";
+        $userPrompt .= "- N'utilise PAS de numérotation (1/, 2/, etc.) ni d'indicateurs comme [Thread] ou [Fil].\n\n";
+
+        $userPrompt .= "=== LIMITES DE CARACTÈRES PAR SEGMENT ===\n";
+        foreach ($charLimits as $slug => $limit) {
+            $userPrompt .= "- {$slug} : maximum {$limit} caractères par segment\n";
+        }
+        $userPrompt .= "\n";
+
+        if ($hasThreadPlatforms) {
+            $userPrompt .= "=== RÈGLES PAR PLATEFORME (SEGMENTS) ===\n";
+            if (in_array('twitter', $platformSlugs)) {
+                $userPrompt .= "- twitter : ton concis et percutant, max 280 caractères.\n";
+            }
+            if (in_array('threads', $platformSlugs)) {
+                $userPrompt .= "- threads : ton conversationnel, max 500 caractères.\n";
+            }
+            if (in_array('bluesky', $platformSlugs)) {
+                $userPrompt .= "- bluesky : ton concis et engageant, max 300 caractères (graphèmes).\n";
+            }
+            $userPrompt .= "\n";
+        }
+
+        $userPrompt .= "=== FORMAT DE RÉPONSE ===\n";
+        $userPrompt .= "Réponds UNIQUEMENT en JSON valide avec cette structure exacte :\n";
+        $userPrompt .= "{\n";
+        $userPrompt .= "  \"title\": \"Titre court du fil (pour usage interne)\",\n";
+        $userPrompt .= "  \"segments\": [\n";
+        $userPrompt .= "    {\n";
+        $userPrompt .= "      \"position\": 1,\n";
+        $userPrompt .= '      "content_fr": "Contenu principal en français"';
+
+        if ($hasThreadPlatforms) {
+            foreach (['twitter', 'threads', 'bluesky'] as $slug) {
+                if (in_array($slug, $platformSlugs)) {
+                    $userPrompt .= ",\n      \"{$slug}\": \"Version adaptée pour {$slug}\"";
+                }
+            }
+        }
+
+        $userPrompt .= "\n    }\n  ]";
+
+        if ($hasCompiledPlatforms) {
+            $userPrompt .= ",\n  \"compiled\": {";
+            $compiledParts = [];
+            if (in_array('facebook', $platformSlugs)) {
+                $compiledParts[] = "\n    \"facebook\": \"Texte long complet pour Facebook\"";
+            }
+            if (in_array('telegram', $platformSlugs)) {
+                $compiledParts[] = "\n    \"telegram\": \"Texte long complet pour Telegram\"";
+            }
+            $userPrompt .= implode(',', $compiledParts);
+            $userPrompt .= "\n  }";
+        }
+
+        $userPrompt .= "\n}\n";
+
+        try {
+            $response = Http::withHeaders([
+                'Authorization' => "Bearer {$apiKey}",
+                'Content-Type' => 'application/json',
+            ])->timeout(120)->post('https://api.openai.com/v1/chat/completions', [
+                'model' => Setting::get('ai_model_rss', 'gpt-4o-mini'),
+                'messages' => [
+                    ['role' => 'system', 'content' => $persona->system_prompt],
+                    ['role' => 'user', 'content' => $userPrompt],
+                ],
+                'temperature' => 0.8,
+                'max_tokens' => 8000,
+                'response_format' => ['type' => 'json_object'],
+            ]);
+
+            if (! $response->successful()) {
+                Log::error('ThreadContentGenerationService: API error (fromInstructions)', [
+                    'status' => $response->status(),
+                    'body' => $response->body(),
+                ]);
+
+                return null;
+            }
+
+            $rawContent = $response->json('choices.0.message.content', '');
+            $parsed = json_decode($rawContent, true);
+
+            if (! $parsed || empty($parsed['segments'])) {
+                Log::error('ThreadContentGenerationService: Invalid JSON (fromInstructions)', [
+                    'raw' => $rawContent,
+                ]);
+
+                return null;
+            }
+
+            return $this->normalizeResponse($parsed, $platformSlugs);
+
+        } catch (\Exception $e) {
+            Log::error('ThreadContentGenerationService: Exception (fromInstructions)', ['error' => $e->getMessage()]);
 
             return null;
         }

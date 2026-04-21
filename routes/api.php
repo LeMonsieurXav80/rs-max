@@ -8,4 +8,5 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::get('/accounts', [ApiController::class, 'accounts']);
     Route::get('/personas', [ApiController::class, 'personas']);
     Route::post('/bulk-schedule', [ApiController::class, 'bulkSchedule']);
+    Route::post('/bulk-schedule-threads', [ApiController::class, 'bulkScheduleThreads']);
 });

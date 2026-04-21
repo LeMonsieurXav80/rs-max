@@ -7,7 +7,11 @@ use App\Models\Persona;
 use App\Models\Post;
 use App\Models\PostPlatform;
 use App\Models\SocialAccount;
+use App\Models\Thread;
+use App\Models\ThreadSegment;
+use App\Models\ThreadSegmentPlatform;
 use App\Services\AiAssistService;
+use App\Services\ThreadContentGenerationService;
 use Carbon\Carbon;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -226,6 +230,185 @@ class ApiController extends Controller
             'total_created' => count($created),
             'total_errors' => count($errors),
             'posts' => $created,
+            'errors' => $errors,
+        ], count($created) > 0 ? 201 : 500);
+    }
+
+    private const THREAD_PLATFORM_SLUGS = ['twitter', 'threads', 'bluesky'];
+
+    private const COMPILED_PLATFORM_SLUGS = ['facebook', 'telegram'];
+
+    /**
+     * POST /api/bulk-schedule-threads — Génère des threads IA et les planifie en masse.
+     *
+     * Body JSON :
+     * {
+     *   "account_ids": [3, 5],
+     *   "count": 10,
+     *   "start_date": "2026-04-21",
+     *   "end_date": "2026-05-21",
+     *   "time_from": "09:00",
+     *   "time_to": "18:00",
+     *   "instructions": "Threads sur le SEO local, conseils pratiques",
+     *   "weekdays_only": false,
+     *   "persona_id": null
+     * }
+     */
+    public function bulkScheduleThreads(Request $request): JsonResponse
+    {
+        $validated = $request->validate([
+            'account_ids' => 'required|array|min:1',
+            'account_ids.*' => 'integer|exists:social_accounts,id',
+            'count' => 'required|integer|min:1|max:50',
+            'start_date' => 'required|date|after_or_equal:today',
+            'end_date' => 'nullable|date|after_or_equal:start_date',
+            'time_from' => 'required|date_format:H:i',
+            'time_to' => 'required|date_format:H:i|after:time_from',
+            'instructions' => 'required|string|max:2000',
+            'weekdays_only' => 'nullable|boolean',
+            'persona_id' => 'nullable|integer|exists:personas,id',
+        ]);
+
+        $user = $request->user();
+        $count = $validated['count'];
+
+        // Vérifier accès aux comptes
+        $accounts = $user->activeSocialAccounts()
+            ->with(['platform', 'persona'])
+            ->whereIn('social_accounts.id', $validated['account_ids'])
+            ->get();
+
+        if ($accounts->count() !== count($validated['account_ids'])) {
+            return response()->json(['error' => 'Un ou plusieurs comptes non trouvés ou inactifs.'], 403);
+        }
+
+        // Résoudre la persona (override ou celle du premier compte)
+        $persona = null;
+        if (! empty($validated['persona_id'])) {
+            $persona = Persona::find($validated['persona_id']);
+        }
+        $persona = $persona ?? $accounts->first()->persona;
+
+        if (! $persona) {
+            return response()->json([
+                'error' => 'Aucune persona configurée. Assignez une persona ou passez persona_id.',
+            ], 422);
+        }
+
+        // Déterminer les plateformes cibles
+        $platformSlugs = $accounts->pluck('platform.slug')->unique()->values()->toArray();
+
+        // Calculer les créneaux
+        $startDate = Carbon::parse($validated['start_date']);
+        $endDate = ! empty($validated['end_date'])
+            ? Carbon::parse($validated['end_date'])
+            : $startDate->copy()->addDays($count);
+        $weekdaysOnly = $validated['weekdays_only'] ?? false;
+
+        $slots = $this->generateTimeSlots($startDate, $endDate, $validated['time_from'], $validated['time_to'], $count, $weekdaysOnly);
+
+        if (count($slots) < $count) {
+            return response()->json([
+                'error' => "Impossible de placer {$count} threads. Seulement ".count($slots).' créneaux disponibles.',
+            ], 422);
+        }
+
+        // Générer et créer les threads
+        $threadService = app(ThreadContentGenerationService::class);
+        $created = [];
+        $errors = [];
+
+        for ($i = 0; $i < $count; $i++) {
+            $scheduledAt = $slots[$i];
+
+            try {
+                $generated = $threadService->generateFromInstructions(
+                    $validated['instructions'],
+                    $persona,
+                    $platformSlugs,
+                    $i + 1,
+                    $count
+                );
+
+                if (! $generated || empty($generated['segments'])) {
+                    $errors[] = ['index' => $i + 1, 'error' => 'Échec génération IA'];
+
+                    continue;
+                }
+
+                $thread = DB::transaction(function () use ($user, $generated, $scheduledAt, $accounts) {
+                    $thread = Thread::create([
+                        'user_id' => $user->id,
+                        'title' => $generated['title'] ?? null,
+                        'source_type' => 'manual',
+                        'status' => 'scheduled',
+                        'scheduled_at' => $scheduledAt,
+                    ]);
+
+                    foreach ($generated['segments'] as $segData) {
+                        $segment = ThreadSegment::create([
+                            'thread_id' => $thread->id,
+                            'position' => $segData['position'],
+                            'content_fr' => $segData['content_fr'],
+                            'platform_contents' => ! empty($segData['platform_contents']) ? $segData['platform_contents'] : null,
+                            'media' => $segData['media'] ?? null,
+                        ]);
+
+                        foreach ($accounts as $account) {
+                            ThreadSegmentPlatform::create([
+                                'thread_segment_id' => $segment->id,
+                                'social_account_id' => $account->id,
+                                'platform_id' => $account->platform_id,
+                                'status' => 'pending',
+                            ]);
+                        }
+                    }
+
+                    // Pivot thread <-> accounts
+                    foreach ($accounts as $account) {
+                        $publishMode = in_array($account->platform->slug, self::THREAD_PLATFORM_SLUGS)
+                            ? 'thread'
+                            : 'compiled';
+
+                        $thread->socialAccounts()->attach($account->id, [
+                            'platform_id' => $account->platform_id,
+                            'publish_mode' => $publishMode,
+                            'status' => 'pending',
+                        ]);
+                    }
+
+                    return $thread;
+                });
+
+                $created[] = [
+                    'id' => $thread->id,
+                    'title' => $generated['title'] ?? null,
+                    'scheduled_at' => $scheduledAt->toIso8601String(),
+                    'segments_count' => count($generated['segments']),
+                    'content_preview' => mb_substr($generated['segments'][0]['content_fr'] ?? '', 0, 100).'...',
+                ];
+
+                // Délai entre les appels IA
+                if ($i < $count - 1) {
+                    usleep(800_000); // 800ms
+                }
+
+            } catch (\Exception $e) {
+                Log::error('API bulk-schedule-threads: erreur thread '.($i + 1), [
+                    'error' => $e->getMessage(),
+                ]);
+                $errors[] = ['index' => $i + 1, 'error' => $e->getMessage()];
+            }
+        }
+
+        return response()->json([
+            'success' => true,
+            'accounts' => $accounts->pluck('name')->toArray(),
+            'platforms' => $platformSlugs,
+            'total_requested' => $count,
+            'total_created' => count($created),
+            'total_errors' => count($errors),
+            'threads' => $created,
             'errors' => $errors,
         ], count($created) > 0 ? 201 : 500);
     }
