@@ -56,30 +56,35 @@ class GenerateApiController extends Controller
 
         $aiService = app(AiAssistService::class);
 
-        // Multi-plateforme
+        // Génère le content_fr (texte principal)
+        $contentFr = $aiService->generate($validated['instructions'], $persona, $account);
+
+        if (! $contentFr) {
+            return response()->json(['error' => 'Échec de la génération IA.'], 500);
+        }
+
+        // Multi-plateforme : génère aussi les versions adaptées
         if (! empty($validated['platforms'])) {
-            $result = $aiService->generateForPlatforms(
-                $validated['instructions'],
+            $platformContents = $aiService->generateForPlatforms(
+                $contentFr,
                 $validated['platforms'],
                 $persona,
                 $account
             );
 
-            if (! $result) {
-                return response()->json(['error' => 'Échec de la génération IA.'], 500);
-            }
-
-            return response()->json(['generated' => $result]);
+            return response()->json([
+                'generated' => [
+                    'content_fr' => $contentFr,
+                    'platform_contents' => $platformContents ?? [],
+                ],
+            ]);
         }
 
-        // Mono
-        $result = $aiService->generate($validated['instructions'], $persona, $account);
-
-        if (! $result) {
-            return response()->json(['error' => 'Échec de la génération IA.'], 500);
-        }
-
-        return response()->json(['generated' => $result]);
+        return response()->json([
+            'generated' => [
+                'content_fr' => $contentFr,
+            ],
+        ]);
     }
 
     /**
