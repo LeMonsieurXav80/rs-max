@@ -2,6 +2,7 @@
 
 namespace App\Services\Adapters;
 
+use App\Models\Platform;
 use App\Models\SocialAccount;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
@@ -73,7 +74,7 @@ class ThreadsAdapter implements PlatformAdapterInterface, ThreadableAdapterInter
             // Single image reply.
             if (! empty($media) && count($media) === 1 && $this->isImage($media[0]['mimetype'])) {
                 $params['media_type'] = 'IMAGE';
-                $params['image_url'] = $media[0]['url'];
+                $params['image_url'] = $this->resolveImageUrl($media[0]['url']);
             }
 
             // Single video reply.
@@ -160,7 +161,7 @@ class ThreadsAdapter implements PlatformAdapterInterface, ThreadableAdapterInter
     {
         $params = [
             'text' => $text,
-            'image_url' => $imageUrl,
+            'image_url' => $this->resolveImageUrl($imageUrl),
             'media_type' => 'IMAGE',
             'access_token' => $accessToken,
         ];
@@ -234,7 +235,7 @@ class ThreadsAdapter implements PlatformAdapterInterface, ThreadableAdapterInter
                 $params['video_url'] = $item['url'];
                 $params['media_type'] = 'VIDEO';
             } else {
-                $params['image_url'] = $item['url'];
+                $params['image_url'] = $this->resolveImageUrl($item['url']);
                 $params['media_type'] = 'IMAGE';
             }
 
@@ -503,5 +504,90 @@ class ThreadsAdapter implements PlatformAdapterInterface, ThreadableAdapterInter
     private function isVideo(string $mimetype): bool
     {
         return str_starts_with($mimetype, 'video/');
+    }
+
+    /**
+     * Upload an image to a Facebook Page as unpublished photo to get an fbcdn.net URL.
+     * Threads API (graph.threads.net) often can't fetch images from external servers
+     * (Cloudflare bot protection, etc.), but can always access fbcdn.net URLs.
+     *
+     * @return string|null  The fbcdn.net URL, or null if no Facebook page is available.
+     */
+    private function proxyImageViaFacebook(string $imageUrl): ?string
+    {
+        $fbPlatform = Platform::where('slug', 'facebook')->first();
+        if (! $fbPlatform) {
+            return null;
+        }
+
+        $fbAccount = SocialAccount::where('platform_id', $fbPlatform->id)->first();
+        if (! $fbAccount) {
+            return null;
+        }
+
+        $credentials = $fbAccount->credentials;
+        $pageId = $credentials['page_id'] ?? null;
+        $accessToken = $credentials['access_token'] ?? null;
+
+        if (! $pageId || ! $accessToken) {
+            return null;
+        }
+
+        try {
+            // Upload as unpublished photo.
+            $response = Http::post("https://graph.facebook.com/v21.0/{$pageId}/photos", [
+                'url' => $imageUrl,
+                'published' => 'false',
+                'access_token' => $accessToken,
+            ]);
+
+            $body = $response->json();
+
+            if (! $response->successful() || empty($body['id'])) {
+                Log::warning('ThreadsAdapter: Facebook image proxy upload failed', [
+                    'status' => $response->status(),
+                    'body' => $body,
+                ]);
+
+                return null;
+            }
+
+            $photoId = $body['id'];
+
+            // Fetch the source URL (fbcdn.net).
+            $sourceResponse = Http::get("https://graph.facebook.com/v21.0/{$photoId}", [
+                'fields' => 'images',
+                'access_token' => $accessToken,
+            ]);
+
+            $sourceBody = $sourceResponse->json();
+            $fbcdnUrl = $sourceBody['images'][0]['source'] ?? null;
+
+            if ($fbcdnUrl) {
+                Log::info('ThreadsAdapter: proxied image via Facebook', [
+                    'photo_id' => $photoId,
+                    'original_url' => $imageUrl,
+                    'fbcdn_url' => $fbcdnUrl,
+                ]);
+            }
+
+            return $fbcdnUrl;
+        } catch (\Throwable $e) {
+            Log::warning('ThreadsAdapter: Facebook image proxy error', [
+                'error' => $e->getMessage(),
+            ]);
+
+            return null;
+        }
+    }
+
+    /**
+     * Resolve an image URL for Threads: proxy via Facebook if possible, otherwise use original.
+     */
+    private function resolveImageUrl(string $imageUrl): string
+    {
+        $proxied = $this->proxyImageViaFacebook($imageUrl);
+
+        return $proxied ?? $imageUrl;
     }
 }
