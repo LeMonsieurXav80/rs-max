@@ -135,6 +135,13 @@ class ThreadsAdapter implements PlatformAdapterInterface, ThreadableAdapterInter
 
         $this->addLocationParams($params, $options);
 
+        Log::info('ThreadsAdapter: creating text container', [
+            'user_id' => $userId,
+            'text_length' => mb_strlen($text),
+            'text_preview' => mb_substr($text, 0, 100),
+            'media_type' => $params['media_type'],
+        ]);
+
         $container = Http::post(self::API_BASE . "/{$userId}/threads", $params);
         $containerId = $this->extractId($container, 'text container creation');
 
@@ -457,8 +464,14 @@ class ThreadsAdapter implements PlatformAdapterInterface, ThreadableAdapterInter
         }
 
         Log::error("ThreadsAdapter: {$context} failed", [
-            'status' => $response->status(),
+            'http_status' => $response->status(),
             'body' => $body,
+            'raw_body' => $response->body(),
+            'error_type' => $body['error']['type'] ?? null,
+            'error_code' => $body['error']['code'] ?? null,
+            'error_subcode' => $body['error']['error_subcode'] ?? null,
+            'error_message' => $body['error']['message'] ?? null,
+            'fb_trace_id' => $body['error']['fbtrace_id'] ?? null,
         ]);
 
         return null;
