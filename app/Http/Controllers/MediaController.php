@@ -145,7 +145,7 @@ class MediaController extends Controller
 
         // Generate unique filename
         $extension = $isImage ? $this->outputExtension($mimeType, $file->getRealPath()) : $file->getClientOriginalExtension();
-        $filename = date('Ymd_His') . '_' . Str::random(8) . '.' . $extension;
+        $filename = date('Ymd_His').'_'.Str::random(8).'.'.$extension;
 
         if ($isImage) {
             // Compress and resize with GD
@@ -298,8 +298,8 @@ class MediaController extends Controller
             mkdir($thumbDir, 0755, true);
         }
 
-        $thumbFilename = pathinfo($filename, PATHINFO_FILENAME) . '.jpg';
-        $thumbPath = $thumbDir . '/' . $thumbFilename;
+        $thumbFilename = pathinfo($filename, PATHINFO_FILENAME).'.jpg';
+        $thumbPath = $thumbDir.'/'.$thumbFilename;
 
         if (! file_exists($thumbPath)) {
             $ffmpeg = $this->findBinary('ffmpeg');
@@ -361,7 +361,6 @@ class MediaController extends Controller
         ]);
     }
 
-
     /**
      * Get video resolution (width, height) using ffprobe.
      */
@@ -399,7 +398,7 @@ class MediaController extends Controller
 
         $originalPath = Storage::disk('local')->path("media/{$filename}");
         $originalSize = filesize($originalPath);
-        $mp4Filename = pathinfo($filename, PATHINFO_FILENAME) . '.mp4';
+        $mp4Filename = pathinfo($filename, PATHINFO_FILENAME).'.mp4';
 
         // Read compression settings.
         $bitrate1080 = (int) Setting::get('video_bitrate_1080p', 6000);
@@ -418,10 +417,15 @@ class MediaController extends Controller
             ? Storage::disk('local')->path("media/{$mp4Filename}.tmp.mp4")
             : Storage::disk('local')->path("media/{$mp4Filename}");
 
+        // Cap longest side to 1920 (Meta/IG Reels max). Preserves aspect ratio,
+        // never upscales, forces even dimensions required by libx264.
+        $scaleFilter = "scale='if(gt(iw,ih),min(1920,iw),-2)':'if(gt(iw,ih),-2,min(1920,ih))'";
+
         exec(sprintf(
-            '%s -i %s -c:v libx264 -preset fast -b:v %dk -maxrate %dk -bufsize %dk -c:a aac -b:a %dk -movflags +faststart -y %s 2>&1',
+            '%s -i %s -vf %s -c:v libx264 -preset fast -b:v %dk -maxrate %dk -bufsize %dk -c:a aac -b:a %dk -movflags +faststart -y %s 2>&1',
             escapeshellarg($ffmpeg),
             escapeshellarg($originalPath),
+            escapeshellarg($scaleFilter),
             $videoBitrate,
             $maxRate,
             $bufSize,
@@ -432,8 +436,11 @@ class MediaController extends Controller
         if ($returnCode === 0 && file_exists($outputPath) && filesize($outputPath) > 0) {
             $compressedSize = filesize($outputPath);
 
-            // If compressed is larger, keep original (already well compressed).
-            if ($compressedSize >= $originalSize && strtolower(pathinfo($filename, PATHINFO_EXTENSION)) === 'mp4') {
+            // If source was already ≤1080p (Meta-compatible) AND compression didn't shrink it,
+            // keep original — no downscale happened, just a re-encode that didn't help.
+            $wasMetaCompatible = max($resolution['width'], $resolution['height']) <= 1920;
+
+            if ($wasMetaCompatible && $compressedSize >= $originalSize && strtolower(pathinfo($filename, PATHINFO_EXTENSION)) === 'mp4') {
                 @unlink($outputPath);
 
                 return null;
@@ -480,12 +487,12 @@ class MediaController extends Controller
     private function humanFileSize(int $bytes): string
     {
         if ($bytes >= 1048576) {
-            return round($bytes / 1048576, 1) . ' MB';
+            return round($bytes / 1048576, 1).' MB';
         }
         if ($bytes >= 1024) {
-            return round($bytes / 1024, 0) . ' KB';
+            return round($bytes / 1024, 0).' KB';
         }
 
-        return $bytes . ' B';
+        return $bytes.' B';
     }
 }

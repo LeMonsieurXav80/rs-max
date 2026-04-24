@@ -85,7 +85,7 @@ class ThreadsAdapter implements PlatformAdapterInterface, ThreadableAdapterInter
 
             $this->addLocationParams($params, $options);
 
-            $container = Http::post(self::API_BASE . "/{$userId}/threads", $params);
+            $container = Http::post(self::API_BASE."/{$userId}/threads", $params);
             $containerId = $this->extractId($container, 'reply container creation');
 
             if ($containerId === null) {
@@ -143,7 +143,7 @@ class ThreadsAdapter implements PlatformAdapterInterface, ThreadableAdapterInter
             'media_type' => $params['media_type'],
         ]);
 
-        $container = Http::post(self::API_BASE . "/{$userId}/threads", $params);
+        $container = Http::post(self::API_BASE."/{$userId}/threads", $params);
         $containerId = $this->extractId($container, 'text container creation');
 
         if ($containerId === null) {
@@ -168,7 +168,7 @@ class ThreadsAdapter implements PlatformAdapterInterface, ThreadableAdapterInter
 
         $this->addLocationParams($params, $options);
 
-        $container = Http::post(self::API_BASE . "/{$userId}/threads", $params);
+        $container = Http::post(self::API_BASE."/{$userId}/threads", $params);
         $containerId = $this->extractId($container, 'image container creation');
 
         if ($containerId === null) {
@@ -193,7 +193,7 @@ class ThreadsAdapter implements PlatformAdapterInterface, ThreadableAdapterInter
 
         $this->addLocationParams($params, $options);
 
-        $container = Http::post(self::API_BASE . "/{$userId}/threads", $params);
+        $container = Http::post(self::API_BASE."/{$userId}/threads", $params);
         $containerId = $this->extractId($container, 'video container creation');
 
         if ($containerId === null) {
@@ -239,7 +239,7 @@ class ThreadsAdapter implements PlatformAdapterInterface, ThreadableAdapterInter
                 $params['media_type'] = 'IMAGE';
             }
 
-            $response = Http::post(self::API_BASE . "/{$userId}/threads", $params);
+            $response = Http::post(self::API_BASE."/{$userId}/threads", $params);
             $childId = $this->extractId($response, 'carousel child creation');
 
             if ($childId === null) {
@@ -274,7 +274,7 @@ class ThreadsAdapter implements PlatformAdapterInterface, ThreadableAdapterInter
 
         $this->addLocationParams($carouselParams, $options);
 
-        $carouselResponse = Http::post(self::API_BASE . "/{$userId}/threads", $carouselParams);
+        $carouselResponse = Http::post(self::API_BASE."/{$userId}/threads", $carouselParams);
         $carouselId = $this->extractId($carouselResponse, 'carousel container creation');
 
         if ($carouselId === null) {
@@ -302,7 +302,7 @@ class ThreadsAdapter implements PlatformAdapterInterface, ThreadableAdapterInter
             ];
         }
 
-        $response = Http::post(self::API_BASE . "/{$userId}/threads_publish", [
+        $response = Http::post(self::API_BASE."/{$userId}/threads_publish", [
             'creation_id' => $creationId,
             'access_token' => $accessToken,
         ]);
@@ -315,7 +315,7 @@ class ThreadsAdapter implements PlatformAdapterInterface, ThreadableAdapterInter
             // Fetch permalink for proper URL format.
             $permalink = null;
             try {
-                $plResp = Http::get(self::API_BASE . "/{$mediaId}", [
+                $plResp = Http::get(self::API_BASE."/{$mediaId}", [
                     'fields' => 'permalink',
                     'access_token' => $accessToken,
                 ]);
@@ -357,7 +357,7 @@ class ThreadsAdapter implements PlatformAdapterInterface, ThreadableAdapterInter
     /**
      * Wait for a container to reach FINISHED status (used for videos before publishContainer).
      *
-     * @return string|null  Null on success, error message on failure.
+     * @return string|null Null on success, error message on failure.
      */
     private function waitForProcessing(string $containerId, string $accessToken): ?string
     {
@@ -366,7 +366,7 @@ class ThreadsAdapter implements PlatformAdapterInterface, ThreadableAdapterInter
         for ($attempt = 0; $attempt < self::VIDEO_POLL_MAX_ATTEMPTS; $attempt++) {
             sleep(self::VIDEO_POLL_INTERVAL);
 
-            $response = Http::get(self::API_BASE . "/{$containerId}", [
+            $response = Http::get(self::API_BASE."/{$containerId}", [
                 'fields' => 'status,error_message',
                 'access_token' => $accessToken,
             ]);
@@ -377,6 +377,7 @@ class ThreadsAdapter implements PlatformAdapterInterface, ThreadableAdapterInter
                     'http_status' => $response->status(),
                     'attempt' => $attempt + 1,
                 ]);
+
                 continue;
             }
 
@@ -388,16 +389,16 @@ class ThreadsAdapter implements PlatformAdapterInterface, ThreadableAdapterInter
             }
 
             if ($status === 'ERROR' || $status === 'EXPIRED') {
-                $errorMessage = $response->json('error_message') ?? 'No detail provided';
+                $errorDetail = $this->fetchContainerError($containerId, $accessToken, $response);
 
                 Log::error('ThreadsAdapter: container processing failed', [
                     'container_id' => $containerId,
                     'status' => $status,
-                    'error_message' => $errorMessage,
+                    'error_detail' => $errorDetail,
                     'attempt' => $attempt + 1,
                 ]);
 
-                return "Threads {$status}: {$errorMessage}";
+                return "Threads {$status}: {$errorDetail}";
             }
         }
 
@@ -416,12 +417,12 @@ class ThreadsAdapter implements PlatformAdapterInterface, ThreadableAdapterInter
     /**
      * Lightweight wait before publishing — handles the brief delay even text/image containers can have.
      *
-     * @return string|null  Null on success, error message on failure.
+     * @return string|null Null on success, error message on failure.
      */
     private function waitUntilReady(string $containerId, string $accessToken, int $maxAttempts = 10, int $intervalSeconds = 1): ?string
     {
         for ($attempt = 0; $attempt < $maxAttempts; $attempt++) {
-            $response = Http::get(self::API_BASE . "/{$containerId}", [
+            $response = Http::get(self::API_BASE."/{$containerId}", [
                 'fields' => 'status,error_message',
                 'access_token' => $accessToken,
             ]);
@@ -433,20 +434,56 @@ class ThreadsAdapter implements PlatformAdapterInterface, ThreadableAdapterInter
             }
 
             if ($status === 'ERROR') {
-                $errorMessage = $response->json('error_message') ?? 'No detail provided';
+                $errorDetail = $this->fetchContainerError($containerId, $accessToken, $response);
 
                 Log::error('ThreadsAdapter: container returned ERROR during ready check', [
                     'container_id' => $containerId,
-                    'error_message' => $errorMessage,
+                    'error_detail' => $errorDetail,
                 ]);
 
-                return "Threads container error: {$errorMessage}";
+                return "Threads container error: {$errorDetail}";
             }
 
             sleep($intervalSeconds);
         }
 
         return "Threads container not ready after {$maxAttempts}s";
+    }
+
+    /**
+     * Fetch detailed error info on a failed container. Threads only exposes
+     * `error_message` on the container status endpoint, and often leaves it null —
+     * we re-query with all useful fields and log the raw body so the cause is never
+     * lost as "UNKNOWN".
+     */
+    private function fetchContainerError(string $containerId, string $accessToken, \Illuminate\Http\Client\Response $initialResponse): string
+    {
+        $errorMessage = $initialResponse->json('error_message');
+
+        if (! empty($errorMessage)) {
+            return $errorMessage;
+        }
+
+        $detail = Http::get(self::API_BASE."/{$containerId}", [
+            'fields' => 'id,status,error_message,media_type,permalink',
+            'access_token' => $accessToken,
+        ]);
+
+        $errorMessage = $detail->json('error_message');
+        $status = $detail->json('status') ?? 'UNKNOWN';
+
+        Log::warning('ThreadsAdapter: raw container detail after error', [
+            'container_id' => $containerId,
+            'http_status' => $detail->status(),
+            'body' => $detail->json(),
+            'raw_body' => $detail->body(),
+        ]);
+
+        if (! empty($errorMessage)) {
+            return $errorMessage;
+        }
+
+        return "status={$status} (API returned no error_message — see logs for raw body)";
     }
 
     private function addLocationParams(array &$params, ?array $options): void
@@ -511,7 +548,7 @@ class ThreadsAdapter implements PlatformAdapterInterface, ThreadableAdapterInter
      * Threads API (graph.threads.net) often can't fetch images from external servers
      * (Cloudflare bot protection, etc.), but can always access fbcdn.net URLs.
      *
-     * @return string|null  The fbcdn.net URL, or null if no Facebook page is available.
+     * @return string|null The fbcdn.net URL, or null if no Facebook page is available.
      */
     private function proxyImageViaFacebook(string $imageUrl): ?string
     {

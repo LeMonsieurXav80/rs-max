@@ -50,6 +50,9 @@ class ConvertVideosCommand extends Command
                 // MP4 but with HEVC/VP9/AV1 codec: re-encode
                 $codec = $this->getCodec($ffprobe, $videoPath);
                 $videos[] = ['path' => $videoPath, 'reason' => "codec {$codec}"];
+            } elseif ($ffprobe && ($dims = $this->getDimensions($ffprobe, $videoPath)) && max($dims[0], $dims[1]) > 1920) {
+                // MP4 H.264 but larger than 1080p: Meta refuse > 1920px longest side
+                $videos[] = ['path' => $videoPath, 'reason' => "résolution {$dims[0]}x{$dims[1]} (> 1080p)"];
             }
         }
 
@@ -59,7 +62,7 @@ class ConvertVideosCommand extends Command
             return Command::SUCCESS;
         }
 
-        $this->info(count($videos) . ' vidéo(s) à convertir :');
+        $this->info(count($videos).' vidéo(s) à convertir :');
         $this->newLine();
 
         $converted = 0;
@@ -69,11 +72,11 @@ class ConvertVideosCommand extends Command
             $videoPath = $entry['path'];
             $reason = $entry['reason'];
             $filename = basename($videoPath);
-            $mp4Filename = pathinfo($filename, PATHINFO_FILENAME) . '.mp4';
+            $mp4Filename = pathinfo($filename, PATHINFO_FILENAME).'.mp4';
             $isAlreadyMp4 = strtolower(pathinfo($filename, PATHINFO_EXTENSION)) === 'mp4';
 
             $sizeBefore = filesize($videoPath);
-            $this->line("  {$filename} (" . $this->formatSize($sizeBefore) . ") — {$reason}");
+            $this->line("  {$filename} (".$this->formatSize($sizeBefore).") — {$reason}");
 
             if ($dryRun) {
                 $this->line('    → serait ré-encodé en H.264');
@@ -91,10 +94,16 @@ class ConvertVideosCommand extends Command
                 : "{$mediaPath}/{$mp4Filename}";
 
             $this->line('    Conversion en cours...');
+
+            // Cap longest side to 1920 (Meta/IG Reels max). Preserves aspect ratio,
+            // never upscales, forces even dimensions required by libx264.
+            $scaleFilter = "scale='if(gt(iw,ih),min(1920,iw),-2)':'if(gt(iw,ih),-2,min(1920,ih))'";
+
             exec(sprintf(
-                '%s -i %s -c:v libx264 -preset fast -crf 23 -c:a aac -b:a 128k -movflags +faststart -y %s 2>&1',
+                '%s -i %s -vf %s -c:v libx264 -preset fast -crf 23 -c:a aac -b:a 128k -movflags +faststart -y %s 2>&1',
                 escapeshellarg($ffmpeg),
                 escapeshellarg($videoPath),
+                escapeshellarg($scaleFilter),
                 escapeshellarg($outputPath)
             ), $output, $returnCode);
 
@@ -114,7 +123,7 @@ class ConvertVideosCommand extends Command
             }
 
             $sizeAfter = filesize("{$mediaPath}/{$mp4Filename}");
-            $this->line("    → {$mp4Filename} (" . $this->formatSize($sizeAfter) . ')');
+            $this->line("    → {$mp4Filename} (".$this->formatSize($sizeAfter).')');
 
             // Update post references in database (only if filename changed)
             if (! $isAlreadyMp4) {
@@ -125,7 +134,7 @@ class ConvertVideosCommand extends Command
             }
 
             // Delete old thumbnail if exists
-            $thumbPath = "{$mediaPath}/thumbnails/" . pathinfo($filename, PATHINFO_FILENAME) . '.jpg';
+            $thumbPath = "{$mediaPath}/thumbnails/".pathinfo($filename, PATHINFO_FILENAME).'.jpg';
             if (file_exists($thumbPath)) {
                 @unlink($thumbPath);
                 $this->line('    → ancien thumbnail supprimé');
@@ -161,6 +170,25 @@ class ConvertVideosCommand extends Command
         return $codec ?: null;
     }
 
+    /**
+     * @return array{0:int,1:int}|null [width, height] or null on failure
+     */
+    private function getDimensions(string $ffprobe, string $filePath): ?array
+    {
+        $output = [];
+        exec(sprintf(
+            '%s -v quiet -select_streams v:0 -show_entries stream=width,height -of csv=p=0 %s 2>/dev/null',
+            escapeshellarg($ffprobe),
+            escapeshellarg($filePath)
+        ), $output);
+
+        $parts = explode(',', trim($output[0] ?? ''));
+        $width = (int) ($parts[0] ?? 0);
+        $height = (int) ($parts[1] ?? 0);
+
+        return ($width > 0 && $height > 0) ? [$width, $height] : null;
+    }
+
     private function updatePostReferences(string $oldFilename, string $newFilename, string $newMimetype, bool $dryRun): int
     {
         $posts = Post::whereNotNull('media')
@@ -177,7 +205,7 @@ class ConvertVideosCommand extends Command
                 if (is_array($item)) {
                     $url = $item['url'] ?? '';
                     if (basename($url) === $oldFilename) {
-                        $item['url'] = '/media/' . $newFilename;
+                        $item['url'] = '/media/'.$newFilename;
                         $item['mimetype'] = $newMimetype;
                         $changed = true;
                     }
@@ -218,9 +246,9 @@ class ConvertVideosCommand extends Command
     private function formatSize(int $bytes): string
     {
         if ($bytes >= 1048576) {
-            return round($bytes / 1048576, 1) . ' Mo';
+            return round($bytes / 1048576, 1).' Mo';
         }
 
-        return round($bytes / 1024) . ' Ko';
+        return round($bytes / 1024).' Ko';
     }
 }
