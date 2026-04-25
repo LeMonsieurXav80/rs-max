@@ -174,6 +174,7 @@ Route::middleware(['auth', 'verified', 'throttle:60,1'])->group(function () {
     Route::get('media/list', [MediaController::class, 'list'])->name('media.list');
     Route::get('media/stock-search', [MediaController::class, 'searchStockPhotos'])->name('media.stockSearch');
     Route::get('media/thumbnail/{filename}', [MediaController::class, 'thumbnail'])->name('media.thumbnail');
+    Route::post('media/classify-batch', [MediaController::class, 'classifyBatch'])->name('media.classifyBatch');
     Route::post('media/{media}/classify', [MediaController::class, 'classify'])->name('media.classify');
     Route::delete('media/{filename}', [MediaController::class, 'destroy'])->name('media.destroy');
 

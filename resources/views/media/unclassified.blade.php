@@ -3,16 +3,30 @@
 @section('title', 'Photos à classer')
 
 @section('content')
-<div class="px-6 py-8 max-w-7xl mx-auto"
+<div class="px-6 pt-8 pb-32 max-w-7xl mx-auto"
      x-data="{
         items: @js($items->items()),
         loading: {},
+        selected: [],
+        batchLoading: '',
         toast: '',
         toastTimer: null,
         showToast(msg) {
             this.toast = msg;
             clearTimeout(this.toastTimer);
             this.toastTimer = setTimeout(() => this.toast = '', 2500);
+        },
+        toggleSelect(id) {
+            const idx = this.selected.indexOf(id);
+            if (idx === -1) this.selected.push(id);
+            else this.selected.splice(idx, 1);
+        },
+        selectAllVisible() {
+            if (this.selected.length === this.items.length) this.selected = [];
+            else this.selected = this.items.map(i => i.id);
+        },
+        clearSelection() {
+            this.selected = [];
         },
         async classify(id, action) {
             this.loading[id] = action;
@@ -28,12 +42,38 @@
                 });
                 if (!res.ok) throw new Error('HTTP ' + res.status);
                 this.items = this.items.filter(i => i.id !== id);
+                this.selected = this.selected.filter(s => s !== id);
                 const labels = { wildycaro: 'Wildycaro', pdc_vantour: 'PdC / Vantour', mamawette: 'Mamawette (privé)', never_publish: 'Jamais publier' };
                 this.showToast(`Photo classée : ${labels[action]}`);
             } catch (e) {
                 this.showToast('Erreur : ' + e.message);
             } finally {
                 delete this.loading[id];
+            }
+        },
+        async classifyBatch(action) {
+            if (!this.selected.length) return;
+            const ids = [...this.selected];
+            this.batchLoading = action;
+            try {
+                const res = await fetch('/media/classify-batch', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'X-CSRF-TOKEN': document.querySelector('meta[name=csrf-token]').content,
+                        'Accept': 'application/json',
+                    },
+                    body: JSON.stringify({ ids, action }),
+                });
+                if (!res.ok) throw new Error('HTTP ' + res.status);
+                this.items = this.items.filter(i => !ids.includes(i.id));
+                this.selected = [];
+                const labels = { wildycaro: 'Wildycaro', pdc_vantour: 'PdC / Vantour', mamawette: 'Mamawette (privé)', never_publish: 'Jamais publier' };
+                this.showToast(`${ids.length} photo(s) classée(s) : ${labels[action]}`);
+            } catch (e) {
+                this.showToast('Erreur batch : ' + e.message);
+            } finally {
+                this.batchLoading = '';
             }
         },
         async deleteItem(id) {
@@ -65,7 +105,15 @@
                 Choisissez un pool pour rendre une photo publiable, ou « Jamais publier » pour la verrouiller.
             </p>
         </div>
-        <a href="{{ route('media.index') }}" class="text-sm text-indigo-600 hover:underline">← Retour à la médiathèque</a>
+        <div class="flex items-center gap-4">
+            <button @click="selectAllVisible"
+                    x-show="items.length"
+                    class="text-sm text-indigo-600 hover:underline">
+                <span x-show="selected.length !== items.length">Tout sélectionner</span>
+                <span x-show="selected.length === items.length && items.length">Tout désélectionner</span>
+            </button>
+            <a href="{{ route('media.index') }}" class="text-sm text-indigo-600 hover:underline">← Retour à la médiathèque</a>
+        </div>
     </div>
 
     @if ($items->isEmpty())
@@ -77,14 +125,22 @@
     @else
         <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
             <template x-for="item in items" :key="item.id">
-                <div class="bg-white border border-gray-200 rounded-lg overflow-hidden flex flex-col">
-                    <div class="aspect-square bg-gray-100 relative">
+                <div class="bg-white border-2 rounded-lg overflow-hidden flex flex-col transition-colors"
+                     :class="selected.includes(item.id) ? 'border-indigo-600' : 'border-gray-200'">
+                    <div class="aspect-square bg-gray-100 relative cursor-pointer"
+                         @click="toggleSelect(item.id)">
                         <img :src="item.url" :alt="item.original_name || ''" class="w-full h-full object-cover">
+                        <div class="absolute top-2 left-2 w-7 h-7 rounded-md flex items-center justify-center shadow-md transition-colors pointer-events-none"
+                             :class="selected.includes(item.id) ? 'bg-indigo-600 border-2 border-indigo-600' : 'bg-white/90 border-2 border-gray-300'">
+                            <svg x-show="selected.includes(item.id)" class="w-4 h-4 text-white" fill="none" stroke="currentColor" stroke-width="3" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7"/>
+                            </svg>
+                        </div>
                         <span x-show="item.pool_suggested"
                               class="absolute top-2 right-2 bg-indigo-600 text-white text-[10px] px-2 py-1 rounded-full uppercase tracking-wide"
                               x-text="'IA suggère: ' + item.pool_suggested"></span>
                         <span x-show="item.pending_analysis"
-                              class="absolute top-2 left-2 bg-amber-400 text-amber-900 text-[10px] px-2 py-1 rounded-full uppercase tracking-wide">
+                              class="absolute bottom-2 right-2 bg-amber-400 text-amber-900 text-[10px] px-2 py-1 rounded-full uppercase tracking-wide">
                             Analyse en attente
                         </span>
                     </div>
@@ -150,9 +206,48 @@
         </div>
     @endif
 
+    <div x-show="selected.length"
+         x-transition.opacity
+         class="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 shadow-lg z-40">
+        <div class="max-w-7xl mx-auto px-6 py-3 flex flex-wrap items-center gap-3">
+            <span class="font-semibold text-sm">
+                <span x-text="selected.length"></span> photo(s) sélectionnée(s)
+            </span>
+            <button @click="clearSelection" class="text-xs text-gray-500 hover:text-gray-700 underline">
+                Annuler
+            </button>
+            <div class="flex-1"></div>
+            <span class="text-xs text-gray-500 mr-1">Classer dans :</span>
+            <button @click="classifyBatch('pdc_vantour')"
+                    :class="batchLoading ? 'opacity-50 pointer-events-none' : ''"
+                    class="bg-emerald-500 hover:bg-emerald-600 text-white text-xs font-medium px-3 py-2 rounded">
+                <span x-show="batchLoading !== 'pdc_vantour'">PdC / Vantour</span>
+                <span x-show="batchLoading === 'pdc_vantour'">…</span>
+            </button>
+            <button @click="classifyBatch('wildycaro')"
+                    :class="batchLoading ? 'opacity-50 pointer-events-none' : ''"
+                    class="bg-rose-500 hover:bg-rose-600 text-white text-xs font-medium px-3 py-2 rounded">
+                <span x-show="batchLoading !== 'wildycaro'">Wildycaro</span>
+                <span x-show="batchLoading === 'wildycaro'">…</span>
+            </button>
+            <button @click="classifyBatch('mamawette')"
+                    :class="batchLoading ? 'opacity-50 pointer-events-none' : ''"
+                    class="bg-purple-700 hover:bg-purple-800 text-white text-xs font-medium px-3 py-2 rounded">
+                <span x-show="batchLoading !== 'mamawette'">🔒 Mamawette</span>
+                <span x-show="batchLoading === 'mamawette'">…</span>
+            </button>
+            <button @click="classifyBatch('never_publish')"
+                    :class="batchLoading ? 'opacity-50 pointer-events-none' : ''"
+                    class="bg-gray-700 hover:bg-gray-800 text-white text-xs font-medium px-3 py-2 rounded">
+                <span x-show="batchLoading !== 'never_publish'">Jamais publier</span>
+                <span x-show="batchLoading === 'never_publish'">…</span>
+            </button>
+        </div>
+    </div>
+
     <div x-show="toast"
          x-transition.opacity
-         class="fixed bottom-6 right-6 bg-gray-900 text-white text-sm px-4 py-2 rounded shadow-lg"
+         class="fixed bottom-24 right-6 bg-gray-900 text-white text-sm px-4 py-2 rounded shadow-lg z-50"
          x-text="toast"></div>
 </div>
 @endsection

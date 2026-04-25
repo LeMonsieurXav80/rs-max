@@ -350,6 +350,42 @@ class MediaController extends Controller
     }
 
     /**
+     * Classe plusieurs photos d'un coup dans le même pool.
+     */
+    public function classifyBatch(Request $request): JsonResponse
+    {
+        $data = $request->validate([
+            'ids' => 'required|array|min:1|max:500',
+            'ids.*' => 'integer',
+            'action' => 'required|in:wildycaro,pdc_vantour,mamawette,never_publish',
+        ]);
+
+        $update = match ($data['action']) {
+            'wildycaro' => [
+                'allow_wildycaro' => true, 'allow_pdc_vantour' => false, 'allow_mamawette' => false,
+                'intimacy_level' => 'public',
+            ],
+            'pdc_vantour' => [
+                'allow_wildycaro' => false, 'allow_pdc_vantour' => true, 'allow_mamawette' => false,
+                'intimacy_level' => 'public',
+            ],
+            'mamawette' => [
+                'allow_wildycaro' => false, 'allow_pdc_vantour' => false, 'allow_mamawette' => true,
+                'intimacy_level' => 'prive',
+            ],
+            'never_publish' => ['intimacy_level' => 'never_publish'],
+        };
+
+        $count = MediaFile::whereIn('id', $data['ids'])->update($update);
+
+        return response()->json([
+            'count' => $count,
+            'ids' => $data['ids'],
+            'action' => $data['action'],
+        ]);
+    }
+
+    /**
      * Delete a media file.
      */
     public function destroy(Request $request, string $filename): JsonResponse
