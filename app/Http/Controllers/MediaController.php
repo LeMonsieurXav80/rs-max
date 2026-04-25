@@ -58,7 +58,9 @@ class MediaController extends Controller
                 ->where('allow_wildycaro', false)
                 ->where('allow_pdc_vantour', false)
                 ->where('allow_mamawette', false)
-                ->where('intimacy_level', '!=', 'never_publish');
+                ->where(function ($q) {
+                    $q->whereNull('intimacy_level')->orWhere('intimacy_level', '!=', 'never_publish');
+                });
         }
 
         $mediaFiles = $query->get();
@@ -150,7 +152,9 @@ class MediaController extends Controller
             ->where('allow_wildycaro', false)
             ->where('allow_pdc_vantour', false)
             ->where('allow_mamawette', false)
-            ->where('intimacy_level', '!=', 'never_publish')
+            ->where(function ($q) {
+                $q->whereNull('intimacy_level')->orWhere('intimacy_level', '!=', 'never_publish');
+            })
             ->count();
 
         $poolCounts = [

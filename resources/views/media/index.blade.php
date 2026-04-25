@@ -255,6 +255,16 @@
                 alert('Erreur suppression batch : ' + e.message);
             }
         },
+        copyMacCommand() {
+            if (this.multiSelected.length === 0) return;
+            const ids = this.multiSelected.join(',');
+            const cmd = `python /Volumes/Samsung_T5/DEV/Scripts/analyse-images.py --legacy --env prod --ids ${ids}`;
+            navigator.clipboard.writeText(cmd).then(() => {
+                alert(`Commande copiée pour ${this.multiSelected.length} photo(s).\nColle-la dans ton terminal Mac.`);
+            }).catch(() => {
+                prompt('Copie cette commande dans ton terminal Mac :', cmd);
+            });
+        },
         handleDrop(e) {
             e.preventDefault();
             this.dragOver = false;
@@ -757,6 +767,15 @@
                     </button>
                 </div>
 
+                {{-- Action : envoyer au Mac pour analyse IA (copie la commande) --}}
+                <button @click="copyMacCommand()"
+                        class="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium bg-indigo-50 text-indigo-700 border border-indigo-200 hover:bg-indigo-100 rounded-lg transition-colors">
+                    <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1.5">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M8.25 7.5V6.108c0-1.135.845-2.098 1.976-2.192.373-.03.748-.057 1.123-.08M15.75 18H18a2.25 2.25 0 0 0 2.25-2.25V6.108c0-1.135-.845-2.098-1.976-2.192a48.424 48.424 0 0 0-1.123-.08M15.75 18.75v-1.875a3.375 3.375 0 0 0-3.375-3.375h-1.5a1.125 1.125 0 0 1-1.125-1.125v-1.5A3.375 3.375 0 0 0 6.375 7.5H5.25m11.9-3.664A2.251 2.251 0 0 0 15 2.25h-1.5a2.251 2.251 0 0 0-2.15 1.586m5.8 0c.065.21.1.433.1.664v.75h-6V4.5c0-.231.035-.454.1-.664M6.75 7.5H4.875c-.621 0-1.125.504-1.125 1.125v12c0 .621.504 1.125 1.125 1.125h9.75c.621 0 1.125-.504 1.125-1.125V16.5a9 9 0 0 0-9-9Z" />
+                    </svg>
+                    Copier commande Mac
+                </button>
+
                 {{-- Action : suppression définitive --}}
                 <button @click="bulkDeleteConfirm = true"
                         class="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium bg-red-50 text-red-700 border border-red-200 hover:bg-red-100 rounded-lg transition-colors">
@@ -856,7 +875,7 @@
             </div>
 
             {{-- Right: detail panel (sticky) --}}
-            <div class="hidden lg:block w-80 flex-shrink-0">
+            <div class="hidden lg:block w-[440px] flex-shrink-0">
                 <div class="sticky top-20">
                     <div class="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
                         {{-- No selection --}}
@@ -873,13 +892,13 @@
                         <template x-if="selected">
                             <div>
                                 {{-- Preview --}}
-                                <div class="bg-gray-950 flex items-center justify-center" style="min-height: 220px; max-height: 360px;">
+                                <div class="bg-gray-950 flex items-center justify-center" style="min-height: 160px; max-height: 220px;">
                                     <template x-if="selected.is_image">
-                                        <img :src="selected.url" :alt="selected.filename" class="max-w-full max-h-[360px] object-contain">
+                                        <img :src="selected.url" :alt="selected.filename" class="max-w-full max-h-[220px] object-contain">
                                     </template>
                                     <template x-if="selected.is_video">
                                         <video :src="selected.url" controls playsinline
-                                               class="max-w-full max-h-[360px] object-contain"
+                                               class="max-w-full max-h-[220px] object-contain"
                                                :key="selected.filename">
                                         </video>
                                     </template>
@@ -968,8 +987,11 @@
                                                         <template x-if="selected.allow_mamawette">
                                                             <span class="bg-purple-100 text-purple-900 text-[10px] px-2 py-0.5 rounded font-medium">🔒 Mamawette</span>
                                                         </template>
-                                                        <template x-if="!selected.allow_pdc_vantour && !selected.allow_wildycaro && !selected.allow_mamawette">
+                                                        <template x-if="!selected.allow_pdc_vantour && !selected.allow_wildycaro && !selected.allow_mamawette && selected.intimacy_level !== 'never_publish'">
                                                             <span class="bg-amber-100 text-amber-800 text-[10px] px-2 py-0.5 rounded font-medium">À classer</span>
+                                                        </template>
+                                                        <template x-if="selected.intimacy_level === 'never_publish'">
+                                                            <span class="bg-gray-700 text-white text-[10px] px-2 py-0.5 rounded font-medium">Jamais publier</span>
                                                         </template>
                                                     </div>
                                                 </div>
