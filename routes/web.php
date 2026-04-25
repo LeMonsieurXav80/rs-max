@@ -47,7 +47,7 @@ Route::get('/', function () {
     return auth()->check() ? redirect('/dashboard') : redirect('/login');
 });
 
-Route::middleware(['auth', 'verified', 'throttle:60,1'])->group(function () {
+Route::middleware(['auth', 'verified', 'throttle:600,1'])->group(function () {
     // ─── Accessible a tous les utilisateurs authentifies ──────────
 
     // Dashboard
