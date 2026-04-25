@@ -312,7 +312,7 @@ class MediaController extends Controller
     public function classify(Request $request, MediaFile $media): JsonResponse
     {
         $data = $request->validate([
-            'action' => 'required|in:wildycaro,pdc_vantour,mamawette,both_public,never_publish',
+            'action' => 'required|in:wildycaro,pdc_vantour,mamawette,never_publish',
             'intimacy_level' => 'nullable|in:public,prive,never_publish',
         ]);
 
@@ -330,10 +330,6 @@ class MediaController extends Controller
             'mamawette' => [
                 'allow_wildycaro' => false, 'allow_pdc_vantour' => false, 'allow_mamawette' => true,
                 'intimacy_level' => 'prive',
-            ],
-            'both_public' => [
-                'allow_wildycaro' => true, 'allow_pdc_vantour' => true, 'allow_mamawette' => false,
-                'intimacy_level' => 'public',
             ],
             'never_publish' => ['intimacy_level' => 'never_publish'],
         };

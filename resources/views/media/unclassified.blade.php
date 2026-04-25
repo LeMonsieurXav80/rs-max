@@ -28,7 +28,7 @@
                 });
                 if (!res.ok) throw new Error('HTTP ' + res.status);
                 this.items = this.items.filter(i => i.id !== id);
-                const labels = { wildycaro: 'Wildycaro', pdc_vantour: 'PdC / Vantour', mamawette: 'Mamawette (privé)', both_public: 'PdC + Wildycaro', never_publish: 'Jamais publier' };
+                const labels = { wildycaro: 'Wildycaro', pdc_vantour: 'PdC / Vantour', mamawette: 'Mamawette (privé)', never_publish: 'Jamais publier' };
                 this.showToast(`Photo classée : ${labels[action]}`);
             } catch (e) {
                 this.showToast('Erreur : ' + e.message);
@@ -110,39 +110,33 @@
 
                         <div class="grid grid-cols-2 gap-1 mt-auto pt-2">
                             <button @click="classify(item.id, 'pdc_vantour')"
-                                    :disabled="loading[item.id]"
-                                    class="bg-emerald-500 hover:bg-emerald-600 disabled:opacity-50 text-white text-xs font-medium py-2 rounded">
+                                    :class="loading[item.id] ? 'opacity-50 pointer-events-none' : ''"
+                                    class="bg-emerald-500 hover:bg-emerald-600 text-white text-xs font-medium py-2 rounded">
                                 <span x-show="loading[item.id] !== 'pdc_vantour'">PdC / Vantour</span>
                                 <span x-show="loading[item.id] === 'pdc_vantour'">…</span>
                             </button>
                             <button @click="classify(item.id, 'wildycaro')"
-                                    :disabled="loading[item.id]"
-                                    class="bg-rose-500 hover:bg-rose-600 disabled:opacity-50 text-white text-xs font-medium py-2 rounded">
+                                    :class="loading[item.id] ? 'opacity-50 pointer-events-none' : ''"
+                                    class="bg-rose-500 hover:bg-rose-600 text-white text-xs font-medium py-2 rounded">
                                 <span x-show="loading[item.id] !== 'wildycaro'">Wildycaro</span>
                                 <span x-show="loading[item.id] === 'wildycaro'">…</span>
                             </button>
-                            <button @click="classify(item.id, 'both_public')"
-                                    :disabled="loading[item.id]"
-                                    class="bg-indigo-500 hover:bg-indigo-600 disabled:opacity-50 text-white text-xs font-medium py-2 rounded col-span-2">
-                                <span x-show="loading[item.id] !== 'both_public'">PdC + Wildycaro (public)</span>
-                                <span x-show="loading[item.id] === 'both_public'">…</span>
-                            </button>
                             <button @click="classify(item.id, 'mamawette')"
-                                    :disabled="loading[item.id]"
-                                    class="bg-purple-700 hover:bg-purple-800 disabled:opacity-50 text-white text-xs font-medium py-2 rounded col-span-2">
+                                    :class="loading[item.id] ? 'opacity-50 pointer-events-none' : ''"
+                                    class="bg-purple-700 hover:bg-purple-800 text-white text-xs font-medium py-2 rounded col-span-2">
                                 <span x-show="loading[item.id] !== 'mamawette'">🔒 Mamawette (compte privé)</span>
                                 <span x-show="loading[item.id] === 'mamawette'">…</span>
                             </button>
                             <button @click="classify(item.id, 'never_publish')"
-                                    :disabled="loading[item.id]"
-                                    class="bg-gray-700 hover:bg-gray-800 disabled:opacity-50 text-white text-xs font-medium py-2 rounded col-span-2">
+                                    :class="loading[item.id] ? 'opacity-50 pointer-events-none' : ''"
+                                    class="bg-gray-700 hover:bg-gray-800 text-white text-xs font-medium py-2 rounded col-span-2">
                                 <span x-show="loading[item.id] !== 'never_publish'">Jamais publier</span>
                                 <span x-show="loading[item.id] === 'never_publish'">…</span>
                             </button>
                         </div>
 
                         <button @click="deleteItem(item.id)"
-                                :disabled="loading[item.id]"
+                                :class="loading[item.id] ? 'opacity-50 pointer-events-none' : ''"
                                 class="text-[11px] text-gray-400 hover:text-red-600 mt-1 self-end">
                             Supprimer
                         </button>
