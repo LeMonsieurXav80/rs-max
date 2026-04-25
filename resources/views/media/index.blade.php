@@ -11,7 +11,7 @@
                     <strong>{{ $unclassifiedCount }}</strong> photo(s) à classer (pool non défini).
                 </span>
             </div>
-            <a href="{{ route('media.unclassified') }}" class="text-sm font-medium text-amber-900 hover:underline">Classer maintenant →</a>
+            <a href="{{ route('media.index', ['filter' => 'unclassified']) }}" class="text-sm font-medium text-amber-900 hover:underline">Classer maintenant →</a>
         </div>
     @endif
     @php
@@ -138,6 +138,77 @@
                 }
             } catch(e) {
                 alert('Erreur de connexion.');
+            }
+        },
+        poolUpdateForAction(action) {
+            return action === 'wildycaro'
+                ? { allow_wildycaro: true, allow_pdc_vantour: false, allow_mamawette: false, intimacy_level: 'public' }
+                : action === 'pdc_vantour'
+                ? { allow_wildycaro: false, allow_pdc_vantour: true, allow_mamawette: false, intimacy_level: 'public' }
+                : action === 'mamawette'
+                ? { allow_wildycaro: false, allow_pdc_vantour: false, allow_mamawette: true, intimacy_level: 'prive' }
+                : { intimacy_level: 'never_publish' };
+        },
+        async classifySingle(action) {
+            if (!this.selected || !this.selected.id) return;
+            const id = this.selected.id;
+            try {
+                const res = await fetch(`/media/${id}/classify`, {
+                    method: 'POST',
+                    headers: {
+                        'X-CSRF-TOKEN': document.querySelector('meta[name=csrf-token]').getAttribute('content'),
+                        'Content-Type': 'application/json',
+                        'Accept': 'application/json',
+                    },
+                    body: JSON.stringify({ action }),
+                });
+                if (!res.ok) throw new Error('HTTP ' + res.status);
+                const result = await res.json();
+                Object.assign(this.selected, {
+                    allow_pdc_vantour: !!result.allow_pdc_vantour,
+                    allow_wildycaro: !!result.allow_wildycaro,
+                    allow_mamawette: !!result.allow_mamawette,
+                    intimacy_level: result.intimacy_level,
+                });
+                const idx = this.items.findIndex(i => i.id === id);
+                if (idx !== -1) Object.assign(this.items[idx], {
+                    allow_pdc_vantour: !!result.allow_pdc_vantour,
+                    allow_wildycaro: !!result.allow_wildycaro,
+                    allow_mamawette: !!result.allow_mamawette,
+                    intimacy_level: result.intimacy_level,
+                });
+                if (new URLSearchParams(window.location.search).get('filter') === 'unclassified') {
+                    this.items = this.items.filter(i => i.id !== id);
+                    this.selected = null;
+                }
+            } catch(e) {
+                alert('Erreur classification : ' + e.message);
+            }
+        },
+        async bulkClassify(action) {
+            if (this.multiSelected.length === 0) return;
+            const ids = [...this.multiSelected];
+            try {
+                const res = await fetch('{{ route('media.classifyBatch') }}', {
+                    method: 'POST',
+                    headers: {
+                        'X-CSRF-TOKEN': document.querySelector('meta[name=csrf-token]').getAttribute('content'),
+                        'Content-Type': 'application/json',
+                        'Accept': 'application/json',
+                    },
+                    body: JSON.stringify({ ids, action }),
+                });
+                if (!res.ok) throw new Error('HTTP ' + res.status);
+                const isUnclassifiedFilter = new URLSearchParams(window.location.search).get('filter') === 'unclassified';
+                if (isUnclassifiedFilter) {
+                    this.items = this.items.filter(i => !ids.includes(i.id));
+                } else {
+                    const update = this.poolUpdateForAction(action);
+                    this.items = this.items.map(i => ids.includes(i.id) ? { ...i, ...update } : i);
+                }
+                this.exitMultiSelect();
+            } catch(e) {
+                alert('Erreur classification batch : ' + e.message);
             }
         },
         navigateFolder(folderId) {
@@ -526,6 +597,17 @@
                    class="px-3 py-1.5 text-sm font-medium rounded-lg transition-colors {{ $filter === 'videos' ? 'bg-indigo-600 text-white' : 'bg-white text-gray-600 border border-gray-200 hover:bg-gray-50' }}">
                     Videos
                 </a>
+                @if (($unclassifiedCount ?? 0) > 0 || $filter === 'unclassified')
+                    <a href="{{ route('media.index', array_filter(['filter' => 'unclassified', 'folder' => $currentFolder])) }}"
+                       class="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium rounded-lg transition-colors {{ $filter === 'unclassified' ? 'bg-amber-500 text-white' : 'bg-white text-amber-700 border border-amber-300 hover:bg-amber-50' }}">
+                        À classer
+                        @if (($unclassifiedCount ?? 0) > 0)
+                            <span class="inline-flex items-center justify-center min-w-[20px] h-5 px-1.5 text-[10px] font-semibold rounded-full {{ $filter === 'unclassified' ? 'bg-white/20 text-white' : 'bg-amber-100 text-amber-700' }}">
+                                {{ $unclassifiedCount }}
+                            </span>
+                        @endif
+                    </a>
+                @endif
             </div>
             <div class="flex items-center gap-2">
                 {{-- Toggle multi-select --}}
@@ -557,22 +639,43 @@
             <span class="text-sm text-amber-600" x-show="multiSelected.length > 0">
                 <span x-text="multiSelected.length"></span> fichier(s) selectionne(s)
             </span>
-            <div class="flex items-center gap-2 ml-auto" x-show="multiSelected.length > 0">
-                <label class="text-sm text-gray-600">Deplacer vers :</label>
-                <select x-model="bulkMoveFolder" class="text-sm border border-gray-200 rounded-lg px-2.5 py-1.5 focus:border-indigo-400 focus:ring-1 focus:ring-indigo-400">
-                    <option value="">-- Choisir --</option>
-                    <option value="uncategorized">Non classe</option>
-                    <template x-for="folder in folders" :key="folder.id">
-                        <option :value="folder.id" x-text="folder.name"></option>
-                    </template>
-                </select>
-                <button @click="bulkMove()" :disabled="bulkMoveFolder === ''"
-                        class="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 disabled:opacity-50 transition-colors">
-                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1.5">
-                        <path stroke-linecap="round" stroke-linejoin="round" d="M3.75 9.776c.112-.017.227-.026.344-.026h15.812c.117 0 .232.009.344.026m-16.5 0a2.25 2.25 0 0 0-1.883 2.542l.857 6a2.25 2.25 0 0 0 2.227 1.932H19.05a2.25 2.25 0 0 0 2.227-1.932l.857-6a2.25 2.25 0 0 0-1.883-2.542m-16.5 0V6A2.25 2.25 0 0 1 6 3.75h3.879a1.5 1.5 0 0 1 1.06.44l2.122 2.12a1.5 1.5 0 0 0 1.06.44H18A2.25 2.25 0 0 1 20.25 9v.776" />
-                    </svg>
-                    Deplacer
-                </button>
+            <div class="flex items-center gap-2 flex-wrap ml-auto" x-show="multiSelected.length > 0">
+                {{-- Action : déplacer vers un DOSSIER (organisation) --}}
+                <div class="flex items-center gap-1.5 px-2 py-1 bg-white border border-amber-200 rounded-lg">
+                    <span class="text-[11px] font-medium text-gray-500 uppercase tracking-wide">Dossier</span>
+                    <select x-model="bulkMoveFolder" class="text-sm border border-gray-200 rounded px-2 py-1 focus:border-indigo-400 focus:ring-1 focus:ring-indigo-400">
+                        <option value="">— Choisir —</option>
+                        <option value="uncategorized">Non classé</option>
+                        <template x-for="folder in folders" :key="folder.id">
+                            <option :value="folder.id" x-text="folder.name"></option>
+                        </template>
+                    </select>
+                    <button @click="bulkMove()" :disabled="bulkMoveFolder === ''"
+                            class="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-medium bg-indigo-600 text-white rounded hover:bg-indigo-700 disabled:opacity-50 transition-colors">
+                        Déplacer
+                    </button>
+                </div>
+
+                {{-- Action : classer dans un POOL de publication --}}
+                <div class="flex items-center gap-1.5 px-2 py-1 bg-white border border-amber-200 rounded-lg">
+                    <span class="text-[11px] font-medium text-gray-500 uppercase tracking-wide">Pool</span>
+                    <button @click="bulkClassify('pdc_vantour')"
+                            class="px-2.5 py-1 text-xs font-medium bg-emerald-500 hover:bg-emerald-600 text-white rounded">
+                        PdC / Vantour
+                    </button>
+                    <button @click="bulkClassify('wildycaro')"
+                            class="px-2.5 py-1 text-xs font-medium bg-rose-500 hover:bg-rose-600 text-white rounded">
+                        Wildycaro
+                    </button>
+                    <button @click="bulkClassify('mamawette')"
+                            class="px-2.5 py-1 text-xs font-medium bg-purple-700 hover:bg-purple-800 text-white rounded">
+                        🔒 Mamawette
+                    </button>
+                    <button @click="bulkClassify('never_publish')"
+                            class="px-2.5 py-1 text-xs font-medium bg-gray-700 hover:bg-gray-800 text-white rounded">
+                        Jamais publier
+                    </button>
+                </div>
             </div>
         </div>
 
@@ -843,6 +946,35 @@
                                             <p class="text-xs text-gray-400 italic">Ce media n'est lie a aucune publication.</p>
                                         </template>
                                     </div>
+
+                                    {{-- Classer dans un pool de publication --}}
+                                    <template x-if="selected.is_image">
+                                        <div class="pt-2 border-t border-gray-100">
+                                            <h4 class="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">Classer dans un pool</h4>
+                                            <div class="grid grid-cols-2 gap-1.5">
+                                                <button @click="classifySingle('pdc_vantour')"
+                                                        class="px-2.5 py-1.5 text-xs font-medium rounded transition-colors"
+                                                        :class="selected.allow_pdc_vantour ? 'bg-emerald-600 text-white ring-2 ring-emerald-300' : 'bg-emerald-50 text-emerald-700 hover:bg-emerald-100'">
+                                                    PdC / Vantour
+                                                </button>
+                                                <button @click="classifySingle('wildycaro')"
+                                                        class="px-2.5 py-1.5 text-xs font-medium rounded transition-colors"
+                                                        :class="selected.allow_wildycaro ? 'bg-rose-600 text-white ring-2 ring-rose-300' : 'bg-rose-50 text-rose-700 hover:bg-rose-100'">
+                                                    Wildycaro
+                                                </button>
+                                                <button @click="classifySingle('mamawette')"
+                                                        class="col-span-2 px-2.5 py-1.5 text-xs font-medium rounded transition-colors"
+                                                        :class="selected.allow_mamawette ? 'bg-purple-800 text-white ring-2 ring-purple-300' : 'bg-purple-50 text-purple-800 hover:bg-purple-100'">
+                                                    🔒 Mamawette (compte privé)
+                                                </button>
+                                                <button @click="classifySingle('never_publish')"
+                                                        class="col-span-2 px-2.5 py-1.5 text-xs font-medium rounded transition-colors"
+                                                        :class="selected.intimacy_level === 'never_publish' ? 'bg-gray-800 text-white ring-2 ring-gray-300' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'">
+                                                    Jamais publier
+                                                </button>
+                                            </div>
+                                        </div>
+                                    </template>
 
                                     {{-- Actions --}}
                                     <div class="flex items-center gap-2 pt-2 border-t border-gray-100">

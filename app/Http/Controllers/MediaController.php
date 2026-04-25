@@ -39,6 +39,12 @@ class MediaController extends Controller
             $query->where('mime_type', 'like', 'image/%');
         } elseif ($filter === 'videos') {
             $query->where('mime_type', 'like', 'video/%');
+        } elseif ($filter === 'unclassified') {
+            $query->where('mime_type', 'like', 'image/%')
+                ->where('allow_wildycaro', false)
+                ->where('allow_pdc_vantour', false)
+                ->where('allow_mamawette', false)
+                ->where('intimacy_level', '!=', 'never_publish');
         }
 
         $mediaFiles = $query->get();
@@ -267,45 +273,6 @@ class MediaController extends Controller
      * Liste les photos non classées (allow_wildycaro=false ET allow_pdc_vantour=false).
      * Utilisée par Caroline (uploads sans pool) et pour rattraper les photos legacy.
      */
-    public function unclassified(Request $request): View
-    {
-        $perPage = (int) $request->input('per_page', 48);
-        $perPage = max(12, min($perPage, 200));
-
-        $query = MediaFile::query()
-            ->where('mime_type', 'like', 'image/%')
-            ->where('allow_wildycaro', false)
-            ->where('allow_pdc_vantour', false)
-            ->where('allow_mamawette', false)
-            ->where('intimacy_level', '!=', 'never_publish')
-            ->latest('id');
-
-        $items = $query->paginate($perPage)->through(fn (MediaFile $m) => [
-            'id' => $m->id,
-            'filename' => $m->filename,
-            'url' => "/media/{$m->filename}",
-            'original_name' => $m->original_name,
-            'description_fr' => $m->description_fr,
-            'thematic_tags' => $m->thematic_tags ?? [],
-            'people_ids' => $m->people_ids ?? [],
-            'pool_suggested' => $m->pool_suggested,
-            'pending_analysis' => (bool) $m->pending_analysis,
-            'source' => $m->source,
-        ]);
-
-        $totalUnclassified = MediaFile::where('mime_type', 'like', 'image/%')
-            ->where('allow_wildycaro', false)
-            ->where('allow_pdc_vantour', false)
-            ->where('allow_mamawette', false)
-            ->where('intimacy_level', '!=', 'never_publish')
-            ->count();
-
-        return view('media.unclassified', [
-            'items' => $items,
-            'totalUnclassified' => $totalUnclassified,
-        ]);
-    }
-
     /**
      * Classe une photo dans un pool depuis la vue "Photos à classer".
      */
