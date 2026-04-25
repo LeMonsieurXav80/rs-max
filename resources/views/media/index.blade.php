@@ -59,8 +59,10 @@
         items: @js($itemsJson),
         folders: @js($foldersJson),
         currentFolder: @js($currentFolder),
+        currentPool: @js($currentPool),
         totalCount: {{ $totalCount }},
         uncategorizedCount: {{ $uncategorizedCount }},
+        bulkDeleteConfirm: false,
         selected: null,
         multiSelect: false,
         multiSelected: [],
@@ -220,6 +222,38 @@
             }
             params.delete('filter');
             window.location.href = '{{ route('media.index') }}' + (params.toString() ? '?' + params.toString() : '');
+        },
+        navigatePool(pool) {
+            const params = new URLSearchParams(window.location.search);
+            if (pool === null) {
+                params.delete('pool');
+            } else {
+                params.set('pool', pool);
+            }
+            // L'alias rétro-compat filter=unclassified n'est plus utile dès qu'on pose pool=
+            if (params.get('filter') === 'unclassified') params.delete('filter');
+            window.location.href = '{{ route('media.index') }}' + (params.toString() ? '?' + params.toString() : '');
+        },
+        async bulkDelete() {
+            if (this.multiSelected.length === 0) return;
+            const ids = [...this.multiSelected];
+            try {
+                const res = await fetch('{{ route('media.deleteBatch') }}', {
+                    method: 'POST',
+                    headers: {
+                        'X-CSRF-TOKEN': document.querySelector('meta[name=csrf-token]').getAttribute('content'),
+                        'Content-Type': 'application/json',
+                        'Accept': 'application/json',
+                    },
+                    body: JSON.stringify({ ids }),
+                });
+                if (!res.ok) throw new Error('HTTP ' + res.status);
+                this.items = this.items.filter(i => !ids.includes(i.id));
+                this.bulkDeleteConfirm = false;
+                this.exitMultiSelect();
+            } catch(e) {
+                alert('Erreur suppression batch : ' + e.message);
+            }
         },
         handleDrop(e) {
             e.preventDefault();
@@ -582,32 +616,78 @@
             </template>
         </div>
 
+        {{-- Pool card (publication targeting) --}}
+        <div class="bg-white rounded-2xl border border-gray-100 shadow-sm p-4 mb-6">
+            <div class="flex items-center gap-2 flex-wrap">
+                <span class="text-[11px] font-semibold text-gray-400 uppercase tracking-wider mr-1">Pool</span>
+
+                {{-- Tous (no pool filter) --}}
+                <button @click="navigatePool(null)"
+                        class="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium rounded-lg transition-colors"
+                        :class="!currentPool ? 'bg-indigo-600 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'">
+                    Tous
+                </button>
+
+                {{-- À classer (no pool, awaiting human decision) --}}
+                <button @click="navigatePool('unclassified')"
+                        class="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium rounded-lg transition-colors"
+                        :class="currentPool === 'unclassified' ? 'bg-amber-500 text-white' : 'bg-amber-50 text-amber-700 border border-amber-200 hover:bg-amber-100'">
+                    À classer
+                    <span class="text-xs opacity-70">({{ $poolCounts['unclassified'] }})</span>
+                </button>
+
+                {{-- PdC / Vantour --}}
+                <button @click="navigatePool('pdc_vantour')"
+                        class="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium rounded-lg transition-colors"
+                        :class="currentPool === 'pdc_vantour' ? 'bg-emerald-600 text-white' : 'bg-emerald-50 text-emerald-700 border border-emerald-200 hover:bg-emerald-100'">
+                    <span class="w-2.5 h-2.5 rounded-sm bg-emerald-500 flex-shrink-0"></span>
+                    PdC / Vantour
+                    <span class="text-xs opacity-70">({{ $poolCounts['pdc_vantour'] }})</span>
+                </button>
+
+                {{-- Wildycaro --}}
+                <button @click="navigatePool('wildycaro')"
+                        class="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium rounded-lg transition-colors"
+                        :class="currentPool === 'wildycaro' ? 'bg-rose-600 text-white' : 'bg-rose-50 text-rose-700 border border-rose-200 hover:bg-rose-100'">
+                    <span class="w-2.5 h-2.5 rounded-sm bg-rose-500 flex-shrink-0"></span>
+                    Wildycaro
+                    <span class="text-xs opacity-70">({{ $poolCounts['wildycaro'] }})</span>
+                </button>
+
+                {{-- Mamawette (privé) --}}
+                <button @click="navigatePool('mamawette')"
+                        class="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium rounded-lg transition-colors"
+                        :class="currentPool === 'mamawette' ? 'bg-purple-700 text-white' : 'bg-purple-50 text-purple-800 border border-purple-200 hover:bg-purple-100'">
+                    <span class="w-2.5 h-2.5 rounded-sm bg-purple-700 flex-shrink-0"></span>
+                    🔒 Mamawette
+                    <span class="text-xs opacity-70">({{ $poolCounts['mamawette'] }})</span>
+                </button>
+
+                {{-- Jamais publier --}}
+                <button @click="navigatePool('never_publish')"
+                        class="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium rounded-lg transition-colors"
+                        :class="currentPool === 'never_publish' ? 'bg-gray-800 text-white' : 'bg-gray-100 text-gray-700 border border-gray-200 hover:bg-gray-200'">
+                    Jamais publier
+                    <span class="text-xs opacity-70">({{ $poolCounts['never_publish'] }})</span>
+                </button>
+            </div>
+        </div>
+
         {{-- Filters + multi-select --}}
         <div class="flex flex-wrap items-center justify-between gap-4 mb-6">
             <div class="flex items-center gap-2">
-                <a href="{{ route('media.index', array_filter(['folder' => $currentFolder])) }}"
+                <a href="{{ route('media.index', array_filter(['folder' => $currentFolder, 'pool' => $currentPool])) }}"
                    class="px-3 py-1.5 text-sm font-medium rounded-lg transition-colors {{ $filter === 'all' ? 'bg-indigo-600 text-white' : 'bg-white text-gray-600 border border-gray-200 hover:bg-gray-50' }}">
                     Tous
                 </a>
-                <a href="{{ route('media.index', array_filter(['filter' => 'images', 'folder' => $currentFolder])) }}"
+                <a href="{{ route('media.index', array_filter(['filter' => 'images', 'folder' => $currentFolder, 'pool' => $currentPool])) }}"
                    class="px-3 py-1.5 text-sm font-medium rounded-lg transition-colors {{ $filter === 'images' ? 'bg-indigo-600 text-white' : 'bg-white text-gray-600 border border-gray-200 hover:bg-gray-50' }}">
                     Images
                 </a>
-                <a href="{{ route('media.index', array_filter(['filter' => 'videos', 'folder' => $currentFolder])) }}"
+                <a href="{{ route('media.index', array_filter(['filter' => 'videos', 'folder' => $currentFolder, 'pool' => $currentPool])) }}"
                    class="px-3 py-1.5 text-sm font-medium rounded-lg transition-colors {{ $filter === 'videos' ? 'bg-indigo-600 text-white' : 'bg-white text-gray-600 border border-gray-200 hover:bg-gray-50' }}">
                     Videos
                 </a>
-                @if (($unclassifiedCount ?? 0) > 0 || $filter === 'unclassified')
-                    <a href="{{ route('media.index', array_filter(['filter' => 'unclassified', 'folder' => $currentFolder])) }}"
-                       class="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium rounded-lg transition-colors {{ $filter === 'unclassified' ? 'bg-amber-500 text-white' : 'bg-white text-amber-700 border border-amber-300 hover:bg-amber-50' }}">
-                        À classer
-                        @if (($unclassifiedCount ?? 0) > 0)
-                            <span class="inline-flex items-center justify-center min-w-[20px] h-5 px-1.5 text-[10px] font-semibold rounded-full {{ $filter === 'unclassified' ? 'bg-white/20 text-white' : 'bg-amber-100 text-amber-700' }}">
-                                {{ $unclassifiedCount }}
-                            </span>
-                        @endif
-                    </a>
-                @endif
             </div>
             <div class="flex items-center gap-2">
                 {{-- Toggle multi-select --}}
@@ -676,6 +756,15 @@
                         Jamais publier
                     </button>
                 </div>
+
+                {{-- Action : suppression définitive --}}
+                <button @click="bulkDeleteConfirm = true"
+                        class="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium bg-red-50 text-red-700 border border-red-200 hover:bg-red-100 rounded-lg transition-colors">
+                    <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1.5">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="m14.74 9-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 0 1-2.244 2.077H8.084a2.25 2.25 0 0 1-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 0 0-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 0 1 3.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 0 0-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 0 0-7.5 0" />
+                    </svg>
+                    Supprimer
+                </button>
             </div>
         </div>
 
@@ -1022,6 +1111,33 @@
                         Annuler
                     </button>
                     <button type="button" @click="deleteFile()"
+                        class="px-4 py-2 text-sm font-medium text-white bg-red-600 rounded-xl hover:bg-red-700 transition-colors">
+                        Supprimer
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        {{-- Bulk delete confirmation modal --}}
+        <div x-show="bulkDeleteConfirm" x-cloak class="fixed inset-0 z-50 flex items-center justify-center bg-black/50" @click.self="bulkDeleteConfirm = false">
+            <div class="bg-white rounded-2xl shadow-xl w-full max-w-sm mx-4 p-6">
+                <div class="flex items-center gap-3 mb-4">
+                    <div class="w-10 h-10 bg-red-100 rounded-full flex items-center justify-center flex-shrink-0">
+                        <svg class="w-5 h-5 text-red-600" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1.5">
+                            <path stroke-linecap="round" stroke-linejoin="round" d="m14.74 9-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 0 1-2.244 2.077H8.084a2.25 2.25 0 0 1-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 0 0-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 0 1 3.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 0 0-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 0 0-7.5 0" />
+                        </svg>
+                    </div>
+                    <div>
+                        <h3 class="text-base font-semibold text-gray-900">Supprimer <span x-text="multiSelected.length"></span> fichier(s) ?</h3>
+                        <p class="text-sm text-gray-500 mt-0.5">Cette action est irréversible.</p>
+                    </div>
+                </div>
+                <div class="flex justify-end gap-3">
+                    <button type="button" @click="bulkDeleteConfirm = false"
+                        class="px-4 py-2 text-sm font-medium text-gray-700 bg-gray-100 rounded-xl hover:bg-gray-200 transition-colors">
+                        Annuler
+                    </button>
+                    <button type="button" @click="bulkDelete()"
                         class="px-4 py-2 text-sm font-medium text-white bg-red-600 rounded-xl hover:bg-red-700 transition-colors">
                         Supprimer
                     </button>

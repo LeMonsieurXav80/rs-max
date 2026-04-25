@@ -25,6 +25,7 @@ class MediaController extends Controller
     {
         $filter = $request->input('filter', 'all');
         $folderId = $request->input('folder');
+        $pool = $request->input('pool');
 
         // Query from database
         $query = MediaFile::with('folder')->latest();
@@ -40,6 +41,19 @@ class MediaController extends Controller
         } elseif ($filter === 'videos') {
             $query->where('mime_type', 'like', 'video/%');
         } elseif ($filter === 'unclassified') {
+            // Alias rétro-compatible : équivaut à pool=unclassified.
+            $pool = 'unclassified';
+        }
+
+        if ($pool === 'pdc_vantour') {
+            $query->where('mime_type', 'like', 'image/%')->where('allow_pdc_vantour', true);
+        } elseif ($pool === 'wildycaro') {
+            $query->where('mime_type', 'like', 'image/%')->where('allow_wildycaro', true);
+        } elseif ($pool === 'mamawette') {
+            $query->where('mime_type', 'like', 'image/%')->where('allow_mamawette', true);
+        } elseif ($pool === 'never_publish') {
+            $query->where('mime_type', 'like', 'image/%')->where('intimacy_level', 'never_publish');
+        } elseif ($pool === 'unclassified') {
             $query->where('mime_type', 'like', 'image/%')
                 ->where('allow_wildycaro', false)
                 ->where('allow_pdc_vantour', false)
@@ -138,11 +152,22 @@ class MediaController extends Controller
             ->where('allow_mamawette', false)
             ->where('intimacy_level', '!=', 'never_publish')
             ->count();
+
+        $poolCounts = [
+            'pdc_vantour'   => MediaFile::where('mime_type', 'like', 'image/%')->where('allow_pdc_vantour', true)->count(),
+            'wildycaro'     => MediaFile::where('mime_type', 'like', 'image/%')->where('allow_wildycaro', true)->count(),
+            'mamawette'     => MediaFile::where('mime_type', 'like', 'image/%')->where('allow_mamawette', true)->count(),
+            'never_publish' => MediaFile::where('mime_type', 'like', 'image/%')->where('intimacy_level', 'never_publish')->count(),
+            'unclassified'  => $unclassifiedCount,
+        ];
+
         $currentFolder = $folderId;
+        $currentPool = $pool;
 
         return view('media.index', compact(
             'items', 'mediaPostMap', 'filter', 'imageCount', 'videoCount',
-            'folders', 'totalCount', 'uncategorizedCount', 'unclassifiedCount', 'currentFolder'
+            'folders', 'totalCount', 'uncategorizedCount', 'unclassifiedCount',
+            'currentFolder', 'currentPool', 'poolCounts'
         ));
     }
 
@@ -349,6 +374,38 @@ class MediaController extends Controller
             'count' => $count,
             'ids' => $data['ids'],
             'action' => $data['action'],
+        ]);
+    }
+
+    /**
+     * Supprime plusieurs médias d'un coup (DB + fichiers physiques).
+     */
+    public function deleteBatch(Request $request): JsonResponse
+    {
+        $data = $request->validate([
+            'ids' => 'required|array|min:1|max:500',
+            'ids.*' => 'integer',
+        ]);
+
+        $files = MediaFile::whereIn('id', $data['ids'])->get();
+        $deletedIds = [];
+        $missing = 0;
+
+        foreach ($files as $mf) {
+            $path = "media/{$mf->filename}";
+            if (Storage::disk('local')->exists($path)) {
+                Storage::disk('local')->delete($path);
+            } else {
+                $missing++;
+            }
+            $mf->delete();
+            $deletedIds[] = $mf->id;
+        }
+
+        return response()->json([
+            'count' => count($deletedIds),
+            'ids' => $deletedIds,
+            'missing_files' => $missing,
         ]);
     }
 
