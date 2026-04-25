@@ -3,6 +3,7 @@
 namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class MediaFolder extends Model
@@ -10,6 +11,7 @@ class MediaFolder extends Model
     protected $fillable = [
         'name',
         'slug',
+        'parent_id',
         'color',
         'is_system',
         'sort_order',
@@ -18,6 +20,7 @@ class MediaFolder extends Model
     protected $casts = [
         'is_system' => 'boolean',
         'sort_order' => 'integer',
+        'parent_id' => 'integer',
     ];
 
     public function files(): HasMany
@@ -25,9 +28,54 @@ class MediaFolder extends Model
         return $this->hasMany(MediaFile::class, 'folder_id');
     }
 
+    public function parent(): BelongsTo
+    {
+        return $this->belongsTo(self::class, 'parent_id');
+    }
+
+    public function children(): HasMany
+    {
+        return $this->hasMany(self::class, 'parent_id');
+    }
+
     public function scopeOrdered($query)
     {
         return $query->orderBy('sort_order')->orderBy('name');
+    }
+
+    /**
+     * Retourne les ids du dossier + tous ses descendants (récursif).
+     * Utilisé pour filtrer la médiathèque sur un dossier ET ses sous-dossiers.
+     */
+    public function descendantIds(): array
+    {
+        $ids = [$this->id];
+        $stack = [$this->id];
+
+        while ($stack) {
+            $children = self::whereIn('parent_id', $stack)->pluck('id')->all();
+            if (! $children) break;
+            $ids = array_merge($ids, $children);
+            $stack = $children;
+        }
+
+        return $ids;
+    }
+
+    /**
+     * Construit le chemin lisible du dossier (`Parent / Sous / Petit-fils`).
+     */
+    public function pathLabel(string $separator = ' / '): string
+    {
+        $names = [$this->name];
+        $cursor = $this->parent;
+        $depth = 0;
+        while ($cursor && $depth < 10) {
+            array_unshift($names, $cursor->name);
+            $cursor = $cursor->parent;
+            $depth++;
+        }
+        return implode($separator, $names);
     }
 
     public static function ensureDefaultFolder(): self

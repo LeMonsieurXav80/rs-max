@@ -33,7 +33,13 @@ class MediaController extends Controller
         if ($folderId === 'uncategorized') {
             $query->whereNull('folder_id');
         } elseif ($folderId) {
-            $query->where('folder_id', $folderId);
+            // Filtrage récursif : inclut le dossier ET tous ses descendants.
+            $rootFolder = MediaFolder::find($folderId);
+            if ($rootFolder) {
+                $query->whereIn('folder_id', $rootFolder->descendantIds());
+            } else {
+                $query->where('folder_id', $folderId);
+            }
         }
 
         if ($filter === 'images') {

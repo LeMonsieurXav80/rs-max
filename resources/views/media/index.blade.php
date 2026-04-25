@@ -43,16 +43,41 @@
             return $item;
         })->values()->toArray();
 
-        $foldersJson = $folders->map(function ($f) {
+        // Map id => folder pour reconstituer le chemin hiérarchique sans N+1.
+        $foldersById = $folders->keyBy('id');
+        $folderPath = function ($f) use ($foldersById) {
+            $names = [$f->name];
+            $cursor = $f->parent_id ? $foldersById->get($f->parent_id) : null;
+            $depth = 0;
+            while ($cursor && $depth < 10) {
+                array_unshift($names, $cursor->name);
+                $cursor = $cursor->parent_id ? $foldersById->get($cursor->parent_id) : null;
+                $depth++;
+            }
+            return implode(' / ', $names);
+        };
+        $folderDepth = function ($f) use ($foldersById) {
+            $depth = 0;
+            $cursor = $f->parent_id ? $foldersById->get($f->parent_id) : null;
+            while ($cursor && $depth < 10) {
+                $depth++;
+                $cursor = $cursor->parent_id ? $foldersById->get($cursor->parent_id) : null;
+            }
+            return $depth;
+        };
+        $foldersJson = $folders->map(function ($f) use ($folderPath, $folderDepth) {
             return [
                 'id' => $f->id,
                 'name' => $f->name,
                 'slug' => $f->slug,
+                'parent_id' => $f->parent_id,
+                'path' => $folderPath($f),
+                'depth' => $folderDepth($f),
                 'color' => $f->color,
                 'is_system' => $f->is_system,
                 'files_count' => $f->files_count,
             ];
-        })->values()->toArray();
+        })->sortBy('path')->values()->toArray();
     @endphp
 
     <div x-data="{
@@ -74,6 +99,7 @@
         deleteConfirm: false,
         dragOver: false,
         newFolderName: '',
+        newFolderParentId: null,
         creatingFolder: false,
         editingFolder: null,
         editFolderName: '',
@@ -356,7 +382,10 @@
                         'Content-Type': 'application/json',
                         'Accept': 'application/json',
                     },
-                    body: JSON.stringify({ name: this.newFolderName.trim() }),
+                    body: JSON.stringify({
+                        name: this.newFolderName.trim(),
+                        parent_id: this.newFolderParentId,
+                    }),
                 });
                 if (response.ok) {
                     window.location.reload();
@@ -522,13 +551,15 @@
                     <span class="text-xs opacity-70" x-text="'(' + totalCount + ')'"></span>
                 </button>
 
-                {{-- Dynamic folder pills --}}
+                {{-- Dynamic folder pills (avec indent par niveau hiérarchique) --}}
                 <template x-for="folder in folders" :key="folder.id">
-                    <div class="relative inline-flex">
+                    <div class="relative inline-flex" :style="folder.depth > 0 ? ('margin-left: ' + (folder.depth * 16) + 'px') : ''">
                         <div class="inline-flex items-center rounded-lg transition-colors"
                              :class="currentFolder == folder.id ? 'bg-indigo-600 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'">
                             <button @click="navigateFolder(folder.id)"
-                                    class="inline-flex items-center gap-1.5 pl-3 py-1.5 text-sm font-medium">
+                                    class="inline-flex items-center gap-1.5 pl-3 py-1.5 text-sm font-medium"
+                                    :title="folder.path">
+                                <span x-show="folder.depth > 0" class="text-gray-400">↳</span>
                                 <span class="w-2.5 h-2.5 rounded-sm flex-shrink-0" :style="'background-color: ' + folder.color"></span>
                                 <span x-text="folder.name"></span>
                                 <span class="text-xs opacity-70" x-text="'(' + folder.files_count + ')'"></span>
@@ -549,6 +580,11 @@
                                     class="w-full flex items-center gap-2.5 px-3 py-2 text-sm text-gray-700 hover:bg-gray-50 transition-colors">
                                 <svg class="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1.5"><path stroke-linecap="round" stroke-linejoin="round" d="m16.862 4.487 1.687-1.688a1.875 1.875 0 1 1 2.652 2.652L10.582 16.07a4.5 4.5 0 0 1-1.897 1.13L6 18l.8-2.685a4.5 4.5 0 0 1 1.13-1.897l8.932-8.931Z" /></svg>
                                 Renommer
+                            </button>
+                            <button @click="newFolderParentId = folder.id; creatingFolder = true; folderMenuOpen = null; $nextTick(() => $refs.newFolderInput && $refs.newFolderInput.focus())"
+                                    class="w-full flex items-center gap-2.5 px-3 py-2 text-sm text-gray-700 hover:bg-gray-50 transition-colors">
+                                <svg class="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1.5"><path stroke-linecap="round" stroke-linejoin="round" d="M12 10.5v6m3-3H9m4.06-7.19-2.12-2.12a1.5 1.5 0 0 0-1.061-.44H4.5A2.25 2.25 0 0 0 2.25 6v12a2.25 2.25 0 0 0 2.25 2.25h15A2.25 2.25 0 0 0 21.75 18V9a2.25 2.25 0 0 0-2.25-2.25h-5.379a1.5 1.5 0 0 1-1.06-.44Z" /></svg>
+                                Nouveau sous-dossier
                             </button>
                             {{-- Color picker --}}
                             <div class="px-3 py-2 flex items-center gap-2.5">
@@ -588,7 +624,7 @@
 
                 {{-- New folder inline --}}
                 <template x-if="!creatingFolder">
-                    <button @click="creatingFolder = true; $nextTick(() => $refs.newFolderInput.focus())"
+                    <button @click="newFolderParentId = null; creatingFolder = true; $nextTick(() => $refs.newFolderInput.focus())"
                             class="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium rounded-lg text-indigo-600 bg-indigo-50 hover:bg-indigo-100 transition-colors">
                         <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2">
                             <path stroke-linecap="round" stroke-linejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
@@ -598,16 +634,17 @@
                 </template>
                 <template x-if="creatingFolder">
                     <div class="inline-flex items-center gap-1.5">
+                        <span x-show="newFolderParentId" class="text-xs text-gray-500" x-text="'Sous-dossier de ' + (folders.find(f => f.id === newFolderParentId)?.name || '') + ' :'"></span>
                         <input type="text" x-ref="newFolderInput" x-model="newFolderName" placeholder="Nom du dossier..."
                                class="text-sm border border-gray-200 rounded-lg px-2.5 py-1.5 w-40 focus:border-indigo-400 focus:ring-1 focus:ring-indigo-400"
-                               @keydown.enter="createFolder()" @keydown.escape="creatingFolder = false; newFolderName = ''">
+                               @keydown.enter="createFolder()" @keydown.escape="creatingFolder = false; newFolderName = ''; newFolderParentId = null">
                         <button @click="createFolder()" :disabled="!newFolderName.trim()"
                                 class="p-1.5 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 disabled:opacity-50 transition-colors">
                             <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2">
                                 <path stroke-linecap="round" stroke-linejoin="round" d="m4.5 12.75 6 6 9-13.5" />
                             </svg>
                         </button>
-                        <button @click="creatingFolder = false; newFolderName = ''" class="p-1.5 text-gray-400 hover:text-gray-600">
+                        <button @click="creatingFolder = false; newFolderName = ''; newFolderParentId = null" class="p-1.5 text-gray-400 hover:text-gray-600">
                             <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2">
                                 <path stroke-linecap="round" stroke-linejoin="round" d="M6 18 18 6M6 6l12 12" />
                             </svg>
@@ -741,7 +778,7 @@
                         <option value="">— Choisir —</option>
                         <option value="uncategorized">Non classé</option>
                         <template x-for="folder in folders" :key="folder.id">
-                            <option :value="folder.id" x-text="folder.name"></option>
+                            <option :value="folder.id" x-text="folder.path || folder.name"></option>
                         </template>
                     </select>
                     <button @click="bulkMove()" :disabled="bulkMoveFolder === ''"
@@ -924,7 +961,7 @@
                                                     class="w-full text-sm border border-gray-200 rounded-lg px-2.5 py-1.5 focus:border-indigo-400 focus:ring-1 focus:ring-indigo-400">
                                                 <option value="" :selected="!selected.folder_id">Non classé</option>
                                                 <template x-for="folder in folders" :key="folder.id">
-                                                    <option :value="folder.id" :selected="selected.folder_id == folder.id" x-text="folder.name"></option>
+                                                    <option :value="folder.id" :selected="selected.folder_id == folder.id" x-text="folder.path || folder.name"></option>
                                                 </template>
                                             </select>
                                         </div>

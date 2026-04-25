@@ -28,12 +28,12 @@ class MediaFolderController extends Controller
         $request->validate([
             'name' => 'required|string|max:100',
             'color' => 'nullable|string|max:7',
+            'parent_id' => 'nullable|exists:media_folders,id',
         ]);
 
         $name = $request->input('name');
         $slug = Str::slug($name);
 
-        // Ensure unique slug.
         $baseSlug = $slug;
         $counter = 1;
         while (MediaFolder::where('slug', $slug)->exists()) {
@@ -45,6 +45,7 @@ class MediaFolderController extends Controller
         $folder = MediaFolder::create([
             'name' => $name,
             'slug' => $slug,
+            'parent_id' => $request->input('parent_id'),
             'color' => $request->input('color', '#6366f1'),
             'sort_order' => $maxOrder + 1,
         ]);
@@ -53,13 +54,14 @@ class MediaFolderController extends Controller
     }
 
     /**
-     * Update a folder (name, color).
+     * Update a folder (name, color, parent).
      */
     public function update(Request $request, MediaFolder $folder): JsonResponse
     {
         $request->validate([
             'name' => 'sometimes|required|string|max:100',
             'color' => 'sometimes|string|max:7',
+            'parent_id' => 'sometimes|nullable|exists:media_folders,id',
         ]);
 
         if ($request->has('name')) {
@@ -71,13 +73,25 @@ class MediaFolderController extends Controller
             $folder->color = $request->input('color');
         }
 
+        if ($request->has('parent_id')) {
+            $newParentId = $request->input('parent_id');
+            if ($newParentId == $folder->id) {
+                return response()->json(['error' => 'Un dossier ne peut pas être son propre parent.'], 422);
+            }
+            if ($newParentId && in_array($newParentId, $folder->descendantIds(), true)) {
+                return response()->json(['error' => 'Le nouveau parent serait un descendant du dossier.'], 422);
+            }
+            $folder->parent_id = $newParentId;
+        }
+
         $folder->save();
 
         return response()->json($folder->loadCount('files'));
     }
 
     /**
-     * Delete a folder (system folders are protected).
+     * Delete a folder. Les sous-dossiers remontent au parent du dossier supprimé,
+     * les fichiers passent en "Non classé" (folder_id = null via nullOnDelete).
      */
     public function destroy(MediaFolder $folder): JsonResponse
     {
@@ -85,7 +99,8 @@ class MediaFolderController extends Controller
             return response()->json(['error' => 'Impossible de supprimer un dossier systeme.'], 422);
         }
 
-        // Files in this folder will have folder_id set to null (via nullOnDelete).
+        MediaFolder::where('parent_id', $folder->id)->update(['parent_id' => $folder->parent_id]);
+
         $folder->delete();
 
         return response()->json(['success' => true]);
