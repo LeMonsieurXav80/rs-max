@@ -514,22 +514,30 @@ class MediaController extends Controller
     }
 
     /**
-     * Delete a media file.
+     * Delete a media file. On supprime toujours l'entrée DB, même si le fichier
+     * physique a déjà disparu (entrée orpheline résultant d'un upload échoué,
+     * d'un nettoyage manuel ou d'une session bulk interrompue).
      */
     public function destroy(Request $request, string $filename): JsonResponse
     {
         $path = "media/{$filename}";
+        $physicalDeleted = false;
 
-        if (! Storage::disk('local')->exists($path)) {
-            return response()->json(['error' => 'Fichier introuvable.'], 404);
+        if (Storage::disk('local')->exists($path)) {
+            Storage::disk('local')->delete($path);
+            $physicalDeleted = true;
         }
 
-        Storage::disk('local')->delete($path);
+        $rowsDeleted = MediaFile::where('filename', $filename)->delete();
 
-        // Remove from database
-        MediaFile::where('filename', $filename)->delete();
+        if (! $physicalDeleted && $rowsDeleted === 0) {
+            return response()->json(['error' => 'Fichier introuvable (ni sur disque, ni en base).'], 404);
+        }
 
-        return response()->json(['success' => true, 'message' => 'Fichier supprimé.']);
+        return response()->json([
+            'success' => true,
+            'message' => $physicalDeleted ? 'Fichier supprimé.' : 'Entrée DB supprimée (fichier absent du disque).',
+        ]);
     }
 
     /**
