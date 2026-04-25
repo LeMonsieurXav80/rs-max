@@ -179,8 +179,8 @@
                     allow_mamawette: !!result.allow_mamawette,
                     intimacy_level: result.intimacy_level,
                 });
-                // Sur la vue "À classer", retirer la photo de la grille si elle vient d'être classée.
-                // Si elle vient au contraire d'être marquée comme "à classer", elle n'a pas à être retirée.
+                // En vue A classer, on retire la photo de la grille si elle vient d etre classee ;
+                // si on vient au contraire de la marquer comme A classer, on la laisse visible.
                 const params = new URLSearchParams(window.location.search);
                 const isUnclassifiedView = params.get('filter') === 'unclassified' || params.get('pool') === 'unclassified';
                 if (isUnclassifiedView && action !== 'unclassify') {
