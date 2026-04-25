@@ -308,7 +308,7 @@ class MediaController extends Controller
     public function classify(Request $request, MediaFile $media): JsonResponse
     {
         $data = $request->validate([
-            'action' => 'required|in:wildycaro,pdc_vantour,mamawette,never_publish',
+            'action' => 'required|in:wildycaro,pdc_vantour,mamawette,never_publish,unclassify',
             'intimacy_level' => 'nullable|in:public,prive,never_publish',
         ]);
 
@@ -328,6 +328,10 @@ class MediaController extends Controller
                 'intimacy_level' => 'prive',
             ],
             'never_publish' => ['intimacy_level' => 'never_publish'],
+            'unclassify' => [
+                'allow_wildycaro' => false, 'allow_pdc_vantour' => false, 'allow_mamawette' => false,
+                'intimacy_level' => null,
+            ],
         };
 
         if (! empty($data['intimacy_level']) && $data['action'] !== 'never_publish') {
@@ -353,7 +357,7 @@ class MediaController extends Controller
         $data = $request->validate([
             'ids' => 'required|array|min:1|max:500',
             'ids.*' => 'integer',
-            'action' => 'required|in:wildycaro,pdc_vantour,mamawette,never_publish',
+            'action' => 'required|in:wildycaro,pdc_vantour,mamawette,never_publish,unclassify',
         ]);
 
         $update = match ($data['action']) {
@@ -370,6 +374,10 @@ class MediaController extends Controller
                 'intimacy_level' => 'prive',
             ],
             'never_publish' => ['intimacy_level' => 'never_publish'],
+            'unclassify' => [
+                'allow_wildycaro' => false, 'allow_pdc_vantour' => false, 'allow_mamawette' => false,
+                'intimacy_level' => null,
+            ],
         };
 
         $count = MediaFile::whereIn('id', $data['ids'])->update($update);

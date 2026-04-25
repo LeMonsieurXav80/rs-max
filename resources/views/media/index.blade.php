@@ -152,7 +152,7 @@
                 : { intimacy_level: 'never_publish' };
         },
         async classifySingle(action) {
-            if (!this.selected || !this.selected.id) return;
+            if (!this.selected || !this.selected.id || !action) return;
             const id = this.selected.id;
             try {
                 const res = await fetch(`/media/${id}/classify`, {
@@ -179,7 +179,11 @@
                     allow_mamawette: !!result.allow_mamawette,
                     intimacy_level: result.intimacy_level,
                 });
-                if (new URLSearchParams(window.location.search).get('filter') === 'unclassified') {
+                // Sur la vue "À classer", retirer la photo de la grille si elle vient d'être classée.
+                // Si elle vient au contraire d'être marquée comme "à classer", elle n'a pas à être retirée.
+                const params = new URLSearchParams(window.location.search);
+                const isUnclassifiedView = params.get('filter') === 'unclassified' || params.get('pool') === 'unclassified';
+                if (isUnclassifiedView && action !== 'unclassify') {
                     this.items = this.items.filter(i => i.id !== id);
                     this.selected = null;
                 }
@@ -874,9 +878,9 @@
                 </div>
             </div>
 
-            {{-- Right: detail panel (sticky) --}}
+            {{-- Right: detail panel (sticky, scroll indépendant de la grille) --}}
             <div class="hidden lg:block w-[440px] flex-shrink-0">
-                <div class="sticky top-20">
+                <div class="sticky top-20 max-h-[calc(100vh-6rem)] overflow-y-auto">
                     <div class="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
                         {{-- No selection --}}
                         <template x-if="!selected">
@@ -912,16 +916,31 @@
                                     {{-- Filename --}}
                                     <h3 class="text-sm font-semibold text-gray-900 break-all" x-text="selected.filename"></h3>
 
-                                    {{-- Folder selector --}}
-                                    <div>
-                                        <label class="text-xs text-gray-400 block mb-1">Dossier</label>
-                                        <select @change="moveToFolder($event.target.value || null)"
-                                                class="w-full text-sm border border-gray-200 rounded-lg px-2.5 py-1.5 focus:border-indigo-400 focus:ring-1 focus:ring-indigo-400">
-                                            <option value="" :selected="!selected.folder_id">Non classe</option>
-                                            <template x-for="folder in folders" :key="folder.id">
-                                                <option :value="folder.id" :selected="selected.folder_id == folder.id" x-text="folder.name"></option>
-                                            </template>
-                                        </select>
+                                    {{-- Folder + Pool selectors (côte à côte) --}}
+                                    <div class="grid grid-cols-2 gap-2">
+                                        <div>
+                                            <label class="text-xs text-gray-400 block mb-1">Dossier</label>
+                                            <select @change="moveToFolder($event.target.value || null)"
+                                                    class="w-full text-sm border border-gray-200 rounded-lg px-2.5 py-1.5 focus:border-indigo-400 focus:ring-1 focus:ring-indigo-400">
+                                                <option value="" :selected="!selected.folder_id">Non classé</option>
+                                                <template x-for="folder in folders" :key="folder.id">
+                                                    <option :value="folder.id" :selected="selected.folder_id == folder.id" x-text="folder.name"></option>
+                                                </template>
+                                            </select>
+                                        </div>
+                                        <template x-if="selected.is_image">
+                                            <div>
+                                                <label class="text-xs text-gray-400 block mb-1">Pool</label>
+                                                <select @change="classifySingle($event.target.value)"
+                                                        class="w-full text-sm border border-gray-200 rounded-lg px-2.5 py-1.5 focus:border-indigo-400 focus:ring-1 focus:ring-indigo-400">
+                                                    <option value="unclassify" :selected="!selected.allow_pdc_vantour && !selected.allow_wildycaro && !selected.allow_mamawette && selected.intimacy_level !== 'never_publish'">— À classer —</option>
+                                                    <option value="pdc_vantour" :selected="selected.allow_pdc_vantour">PdC / Vantour</option>
+                                                    <option value="wildycaro" :selected="selected.allow_wildycaro">Wildycaro</option>
+                                                    <option value="mamawette" :selected="selected.allow_mamawette">🔒 Mamawette</option>
+                                                    <option value="never_publish" :selected="selected.intimacy_level === 'never_publish'">Jamais publier</option>
+                                                </select>
+                                            </div>
+                                        </template>
                                     </div>
 
                                     {{-- File details --}}
@@ -1057,35 +1076,6 @@
                                             <p class="text-xs text-gray-400 italic">Ce media n'est lie a aucune publication.</p>
                                         </template>
                                     </div>
-
-                                    {{-- Classer dans un pool de publication --}}
-                                    <template x-if="selected.is_image">
-                                        <div class="pt-2 border-t border-gray-100">
-                                            <h4 class="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">Classer dans un pool</h4>
-                                            <div class="grid grid-cols-2 gap-1.5">
-                                                <button @click="classifySingle('pdc_vantour')"
-                                                        class="px-2.5 py-1.5 text-xs font-medium rounded transition-colors"
-                                                        :class="selected.allow_pdc_vantour ? 'bg-emerald-600 text-white ring-2 ring-emerald-300' : 'bg-emerald-50 text-emerald-700 hover:bg-emerald-100'">
-                                                    PdC / Vantour
-                                                </button>
-                                                <button @click="classifySingle('wildycaro')"
-                                                        class="px-2.5 py-1.5 text-xs font-medium rounded transition-colors"
-                                                        :class="selected.allow_wildycaro ? 'bg-rose-600 text-white ring-2 ring-rose-300' : 'bg-rose-50 text-rose-700 hover:bg-rose-100'">
-                                                    Wildycaro
-                                                </button>
-                                                <button @click="classifySingle('mamawette')"
-                                                        class="col-span-2 px-2.5 py-1.5 text-xs font-medium rounded transition-colors"
-                                                        :class="selected.allow_mamawette ? 'bg-purple-800 text-white ring-2 ring-purple-300' : 'bg-purple-50 text-purple-800 hover:bg-purple-100'">
-                                                    🔒 Mamawette (compte privé)
-                                                </button>
-                                                <button @click="classifySingle('never_publish')"
-                                                        class="col-span-2 px-2.5 py-1.5 text-xs font-medium rounded transition-colors"
-                                                        :class="selected.intimacy_level === 'never_publish' ? 'bg-gray-800 text-white ring-2 ring-gray-300' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'">
-                                                    Jamais publier
-                                                </button>
-                                            </div>
-                                        </div>
-                                    </template>
 
                                     {{-- Actions --}}
                                     <div class="flex items-center gap-2 pt-2 border-t border-gray-100">
