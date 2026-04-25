@@ -646,11 +646,14 @@ class MediaController extends Controller
     }
 
     /**
-     * Serve a private media file.
+     * Serve a private media file. Accepte session web, Bearer Sanctum
+     * (utilisé par le script Mac d'analyse) ou URL signée.
      */
     public function show(Request $request, string $filename): BinaryFileResponse
     {
-        if (! $request->user() && ! $request->hasValidSignature()) {
+        $user = $request->user() ?? \Illuminate\Support\Facades\Auth::guard('sanctum')->user();
+
+        if (! $user && ! $request->hasValidSignature()) {
             abort(403);
         }
 
