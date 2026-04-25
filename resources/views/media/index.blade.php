@@ -101,6 +101,7 @@
         newFolderName: '',
         newFolderParentId: null,
         creatingFolder: false,
+        newTagInput: '',
         editingFolder: null,
         editFolderName: '',
         editFolderColor: '',
@@ -284,6 +285,38 @@
             } catch(e) {
                 alert('Erreur suppression batch : ' + e.message);
             }
+        },
+        async patchTags(payload) {
+            if (!this.selected || !this.selected.id) return;
+            const id = this.selected.id;
+            try {
+                const res = await fetch(`/media/${id}/tags`, {
+                    method: 'PATCH',
+                    headers: {
+                        'X-CSRF-TOKEN': document.querySelector('meta[name=csrf-token]').getAttribute('content'),
+                        'Content-Type': 'application/json',
+                        'Accept': 'application/json',
+                    },
+                    body: JSON.stringify(payload),
+                });
+                if (!res.ok) throw new Error('HTTP ' + res.status);
+                const result = await res.json();
+                this.selected.thematic_tags = result.thematic_tags;
+                const idx = this.items.findIndex(i => i.id === id);
+                if (idx !== -1) this.items[idx].thematic_tags = result.thematic_tags;
+            } catch(e) {
+                alert('Erreur tags : ' + e.message);
+            }
+        },
+        async addTag() {
+            const value = (this.newTagInput || '').trim().toLowerCase();
+            if (!value) return;
+            this.newTagInput = '';
+            await this.patchTags({ add: [value] });
+        },
+        async removeTag(tag) {
+            if (!tag) return;
+            await this.patchTags({ remove: [tag] });
         },
         copyMacCommand() {
             if (this.multiSelected.length === 0) return;
@@ -1001,21 +1034,31 @@
                                     </div>
 
                                     {{-- IA / Catalogue (tags, personnes, pool) --}}
-                                    <template x-if="(selected.thematic_tags && selected.thematic_tags.length) || selected.allow_pdc_vantour || selected.allow_wildycaro || selected.allow_mamawette || selected.intimacy_level">
-                                        <div class="space-y-3 pt-3 border-t border-gray-100">
+                                    <div class="space-y-3 pt-3 border-t border-gray-100">
                                             <h4 class="text-xs font-semibold text-gray-500 uppercase tracking-wider">Catalogue & IA</h4>
 
-                                            {{-- Tags --}}
-                                            <template x-if="selected.thematic_tags && selected.thematic_tags.length > 0">
-                                                <div>
-                                                    <span class="text-[10px] text-gray-400 block mb-1">Tags</span>
-                                                    <div class="flex flex-wrap gap-1">
-                                                        <template x-for="tag in selected.thematic_tags" :key="tag">
-                                                            <span class="bg-gray-100 text-gray-700 text-[10px] px-2 py-0.5 rounded" x-text="tag"></span>
-                                                        </template>
-                                                    </div>
+                                            {{-- Tags (éditables) --}}
+                                            <div>
+                                                <span class="text-[10px] text-gray-400 block mb-1">Tags</span>
+                                                <div class="flex flex-wrap gap-1 mb-1.5">
+                                                    <template x-for="tag in (selected.thematic_tags || [])" :key="tag">
+                                                        <span class="inline-flex items-center gap-1 bg-gray-100 text-gray-700 text-[10px] pl-2 pr-1 py-0.5 rounded">
+                                                            <span x-text="tag"></span>
+                                                            <button @click="removeTag(tag)" class="text-gray-400 hover:text-red-600 leading-none" type="button" title="Retirer ce tag">×</button>
+                                                        </span>
+                                                    </template>
+                                                    <template x-if="!selected.thematic_tags || selected.thematic_tags.length === 0">
+                                                        <span class="text-[10px] text-gray-400 italic">Aucun tag.</span>
+                                                    </template>
                                                 </div>
-                                            </template>
+                                                <div class="flex items-center gap-1">
+                                                    <input type="text" x-model="newTagInput" placeholder="ajouter un tag…"
+                                                           class="flex-1 text-xs border border-gray-200 rounded px-2 py-1 focus:border-indigo-400 focus:ring-1 focus:ring-indigo-400"
+                                                           @keydown.enter.prevent="addTag()">
+                                                    <button @click="addTag()" :disabled="!newTagInput.trim()"
+                                                            class="px-2 py-1 text-xs bg-indigo-600 text-white rounded hover:bg-indigo-700 disabled:opacity-50">+</button>
+                                                </div>
+                                            </div>
 
                                             {{-- Personnes --}}
                                             <template x-if="selected.people_ids && selected.people_ids.length > 0">
@@ -1067,11 +1110,10 @@
                                             <template x-if="selected.pending_analysis">
                                                 <div class="flex items-center gap-1.5 text-[10px] text-amber-600">
                                                     <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M12 6v6h4.5m4.5 0a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z" /></svg>
-                                                    <span>En attente d'analyse IA</span>
+                                                    <span>En attente d analyse IA</span>
                                                 </div>
                                             </template>
-                                        </div>
-                                    </template>
+                                    </div>
 
                                     {{-- Linked posts --}}
                                     <div>

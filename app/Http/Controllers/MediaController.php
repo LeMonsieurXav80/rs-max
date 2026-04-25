@@ -396,6 +396,92 @@ class MediaController extends Controller
     }
 
     /**
+     * PATCH /media/{id}/tags — ajoute/retire des tags sur une photo.
+     */
+    public function updateTags(Request $request, MediaFile $media): JsonResponse
+    {
+        $data = $request->validate([
+            'add' => 'nullable|array',
+            'add.*' => 'string|max:60',
+            'remove' => 'nullable|array',
+            'remove.*' => 'string|max:60',
+        ]);
+
+        $current = collect($media->thematic_tags ?? [])
+            ->map(fn ($t) => mb_strtolower(trim((string) $t)))
+            ->filter();
+
+        if (! empty($data['add'])) {
+            foreach ($data['add'] as $t) {
+                $clean = mb_strtolower(trim($t));
+                if ($clean !== '' && mb_strlen($clean) <= 60) {
+                    $current->push($clean);
+                }
+            }
+        }
+
+        if (! empty($data['remove'])) {
+            $toRemove = collect($data['remove'])->map(fn ($t) => mb_strtolower(trim($t)))->all();
+            $current = $current->reject(fn ($t) => in_array($t, $toRemove, true));
+        }
+
+        $tags = $current->unique()->values()->all();
+        $media->update(['thematic_tags' => $tags]);
+
+        return response()->json([
+            'id' => $media->id,
+            'thematic_tags' => $tags,
+        ]);
+    }
+
+    /**
+     * POST /media/tags-batch — ajoute/retire des tags sur plusieurs photos.
+     */
+    public function tagsBatch(Request $request): JsonResponse
+    {
+        $data = $request->validate([
+            'ids' => 'required|array|min:1|max:500',
+            'ids.*' => 'integer',
+            'add' => 'nullable|array',
+            'add.*' => 'string|max:60',
+            'remove' => 'nullable|array',
+            'remove.*' => 'string|max:60',
+        ]);
+
+        $addClean = collect($data['add'] ?? [])
+            ->map(fn ($t) => mb_strtolower(trim((string) $t)))
+            ->filter(fn ($t) => $t !== '' && mb_strlen($t) <= 60)
+            ->unique()
+            ->values()
+            ->all();
+
+        $removeClean = collect($data['remove'] ?? [])
+            ->map(fn ($t) => mb_strtolower(trim((string) $t)))
+            ->filter()
+            ->all();
+
+        $files = MediaFile::whereIn('id', $data['ids'])->get();
+        foreach ($files as $mf) {
+            $tags = collect($mf->thematic_tags ?? [])
+                ->map(fn ($t) => mb_strtolower(trim((string) $t)))
+                ->filter();
+            foreach ($addClean as $t) {
+                $tags->push($t);
+            }
+            if ($removeClean) {
+                $tags = $tags->reject(fn ($t) => in_array($t, $removeClean, true));
+            }
+            $mf->update(['thematic_tags' => $tags->unique()->values()->all()]);
+        }
+
+        return response()->json([
+            'count' => $files->count(),
+            'added' => $addClean,
+            'removed' => $removeClean,
+        ]);
+    }
+
+    /**
      * Supprime plusieurs médias d'un coup (DB + fichiers physiques).
      */
     public function deleteBatch(Request $request): JsonResponse
