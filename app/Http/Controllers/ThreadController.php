@@ -8,11 +8,11 @@ use App\Models\Platform;
 use App\Models\RedditSource;
 use App\Models\RssFeed;
 use App\Models\SocialAccount;
-use App\Models\WpSource;
-use App\Models\YtSource;
 use App\Models\Thread;
 use App\Models\ThreadSegment;
 use App\Models\ThreadSegmentPlatform;
+use App\Models\WpSource;
+use App\Models\YtSource;
 use App\Services\ThreadContentGenerationService;
 use App\Services\ThreadPublishingService;
 use Illuminate\Http\JsonResponse;
@@ -363,6 +363,7 @@ class ThreadController extends Controller
             'hook_category_id' => 'nullable|integer|exists:hook_categories,id',
             'accounts' => 'required|array|min:1',
             'accounts.*' => 'integer|exists:social_accounts,id',
+            'pool' => 'nullable|in:wildycaro,pdc_vantour',
         ]);
 
         // Determine platform slugs from selected accounts.
@@ -379,7 +380,8 @@ class ThreadController extends Controller
 
         $hookCategoryId = $validated['hook_category_id'] ?? null;
         $contextInstructions = $validated['context_instructions'] ?? null;
-        $result = $service->generate($validated['source_url'], $persona, $platformSlugs, $hookCategoryId, $contextInstructions);
+        $pool = $validated['pool'] ?? 'pdc_vantour';
+        $result = $service->generate($validated['source_url'], $persona, $platformSlugs, $hookCategoryId, $contextInstructions, $pool);
 
         if (! $result) {
             return response()->json([

@@ -5,16 +5,17 @@ namespace App\Jobs;
 use App\Models\Post;
 use App\Models\PostLog;
 use App\Models\PostPlatform;
+use App\Services\Adapters\BlueskyAdapter;
 use App\Services\Adapters\FacebookAdapter;
 use App\Services\Adapters\InstagramAdapter;
+use App\Services\Adapters\LinkedInAdapter;
 use App\Services\Adapters\PlatformAdapterInterface;
+use App\Services\Adapters\RedditAdapter;
 use App\Services\Adapters\TelegramAdapter;
 use App\Services\Adapters\ThreadsAdapter;
 use App\Services\Adapters\TwitterAdapter;
-use App\Services\Adapters\BlueskyAdapter;
-use App\Services\Adapters\LinkedInAdapter;
-use App\Services\Adapters\RedditAdapter;
 use App\Services\Adapters\YouTubeAdapter;
+use App\Services\MediaPublicationTracker;
 use App\Services\PublishingService;
 use App\Services\TelegramNotificationService;
 use Illuminate\Bus\Queueable;
@@ -30,6 +31,7 @@ class PublishToPlatformJob implements ShouldQueue
     use Dispatchable, InteractsWithQueue, Queueable, SerializesModels;
 
     public int $tries = 1;
+
     public int $timeout = 900;
 
     public function __construct(
@@ -49,15 +51,17 @@ class PublishToPlatformJob implements ShouldQueue
         $post = $postPlatform->post;
         $platform = $account->platform;
 
-        if (!$account || !$post || !$platform) {
+        if (! $account || ! $post || ! $platform) {
             $this->markFailed('Missing account, post, or platform data');
+
             return;
         }
 
         // Get the right adapter
         $adapter = $this->getAdapter($platform->slug);
-        if (!$adapter) {
+        if (! $adapter) {
             $this->markFailed("No adapter for platform: {$platform->slug}");
+
             return;
         }
 
@@ -94,6 +98,14 @@ class PublishToPlatformJob implements ShouldQueue
                 ],
             ]);
 
+            app(MediaPublicationTracker::class)->track(
+                media: $post->media,
+                postId: $post->id,
+                postPlatformId: $postPlatform->id,
+                externalUrl: $result['permalink'] ?? null,
+                context: $platform->slug,
+            );
+
             // Check if all platforms are done -> update post status
             $this->updatePostStatus($post);
         } else {
@@ -104,15 +116,15 @@ class PublishToPlatformJob implements ShouldQueue
     private function getAdapter(string $slug): ?PlatformAdapterInterface
     {
         return match ($slug) {
-            'telegram' => new TelegramAdapter(),
-            'facebook' => new FacebookAdapter(),
-            'instagram' => new InstagramAdapter(),
-            'threads' => new ThreadsAdapter(),
-            'twitter' => new TwitterAdapter(),
-            'youtube' => new YouTubeAdapter(),
-            'bluesky' => new BlueskyAdapter(),
-            'reddit' => new RedditAdapter(),
-            'linkedin' => new LinkedInAdapter(),
+            'telegram' => new TelegramAdapter,
+            'facebook' => new FacebookAdapter,
+            'instagram' => new InstagramAdapter,
+            'threads' => new ThreadsAdapter,
+            'twitter' => new TwitterAdapter,
+            'youtube' => new YouTubeAdapter,
+            'bluesky' => new BlueskyAdapter,
+            'reddit' => new RedditAdapter,
+            'linkedin' => new LinkedInAdapter,
             default => null,
         };
     }
@@ -192,9 +204,9 @@ class PublishToPlatformJob implements ShouldQueue
         $post->refresh();
         $statuses = $post->postPlatforms->pluck('status');
 
-        if ($statuses->every(fn($s) => $s === 'published')) {
+        if ($statuses->every(fn ($s) => $s === 'published')) {
             $post->update(['status' => 'published', 'published_at' => now()]);
-        } elseif ($statuses->every(fn($s) => in_array($s, ['published', 'failed']))) {
+        } elseif ($statuses->every(fn ($s) => in_array($s, ['published', 'failed']))) {
             // All done, but some failed
             $hasPublished = $statuses->contains('published');
             $post->update([
@@ -207,6 +219,6 @@ class PublishToPlatformJob implements ShouldQueue
 
     public function failed(\Throwable $exception): void
     {
-        $this->markFailed('Job exception: ' . $exception->getMessage());
+        $this->markFailed('Job exception: '.$exception->getMessage());
     }
 }

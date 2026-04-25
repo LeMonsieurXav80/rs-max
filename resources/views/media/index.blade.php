@@ -3,6 +3,17 @@
 @section('title', 'Medias')
 
 @section('content')
+    @if (($unclassifiedCount ?? 0) > 0)
+        <div class="bg-amber-50 border-b border-amber-200 px-6 py-3 flex items-center justify-between">
+            <div class="flex items-center gap-3">
+                <svg class="w-5 h-5 text-amber-600" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126ZM12 15.75h.007v.008H12v-.008Z" /></svg>
+                <span class="text-sm text-amber-900">
+                    <strong>{{ $unclassifiedCount }}</strong> photo(s) à classer (pool non défini).
+                </span>
+            </div>
+            <a href="{{ route('media.unclassified') }}" class="text-sm font-medium text-amber-900 hover:underline">Classer maintenant →</a>
+        </div>
+    @endif
     @php
         $itemsJson = $items->map(function ($item) use ($mediaPostMap) {
             $item['posts'] = $mediaPostMap[$item['filename']] ?? [];
@@ -721,6 +732,76 @@
                                             <span class="text-gray-700 font-medium" x-text="selected.is_image ? 'Image' : 'Video'"></span>
                                         </div>
                                     </div>
+
+                                    {{-- IA / Catalogue (tags, personnes, pool) --}}
+                                    <template x-if="(selected.thematic_tags && selected.thematic_tags.length) || selected.allow_pdc_vantour || selected.allow_wildycaro || selected.allow_mamawette || selected.intimacy_level">
+                                        <div class="space-y-3 pt-3 border-t border-gray-100">
+                                            <h4 class="text-xs font-semibold text-gray-500 uppercase tracking-wider">Catalogue & IA</h4>
+
+                                            {{-- Tags --}}
+                                            <template x-if="selected.thematic_tags && selected.thematic_tags.length > 0">
+                                                <div>
+                                                    <span class="text-[10px] text-gray-400 block mb-1">Tags</span>
+                                                    <div class="flex flex-wrap gap-1">
+                                                        <template x-for="tag in selected.thematic_tags" :key="tag">
+                                                            <span class="bg-gray-100 text-gray-700 text-[10px] px-2 py-0.5 rounded" x-text="tag"></span>
+                                                        </template>
+                                                    </div>
+                                                </div>
+                                            </template>
+
+                                            {{-- Personnes --}}
+                                            <template x-if="selected.people_ids && selected.people_ids.length > 0">
+                                                <div>
+                                                    <span class="text-[10px] text-gray-400 block mb-1">Personnes</span>
+                                                    <div class="flex flex-wrap gap-1">
+                                                        <template x-for="p in selected.people_ids" :key="p">
+                                                            <span class="bg-pink-100 text-pink-800 text-[10px] px-2 py-0.5 rounded capitalize" x-text="p"></span>
+                                                        </template>
+                                                    </div>
+                                                </div>
+                                            </template>
+
+                                            {{-- Pool / Intimacy --}}
+                                            <div class="grid grid-cols-2 gap-2 text-xs">
+                                                <div>
+                                                    <span class="text-[10px] text-gray-400 block mb-1">Pool</span>
+                                                    <div class="flex flex-wrap gap-1">
+                                                        <template x-if="selected.allow_pdc_vantour">
+                                                            <span class="bg-emerald-100 text-emerald-800 text-[10px] px-2 py-0.5 rounded font-medium">PdC / Vantour</span>
+                                                        </template>
+                                                        <template x-if="selected.allow_wildycaro">
+                                                            <span class="bg-rose-100 text-rose-800 text-[10px] px-2 py-0.5 rounded font-medium">Wildycaro</span>
+                                                        </template>
+                                                        <template x-if="selected.allow_mamawette">
+                                                            <span class="bg-purple-100 text-purple-900 text-[10px] px-2 py-0.5 rounded font-medium">🔒 Mamawette</span>
+                                                        </template>
+                                                        <template x-if="!selected.allow_pdc_vantour && !selected.allow_wildycaro && !selected.allow_mamawette">
+                                                            <span class="bg-amber-100 text-amber-800 text-[10px] px-2 py-0.5 rounded font-medium">À classer</span>
+                                                        </template>
+                                                    </div>
+                                                </div>
+                                                <div>
+                                                    <span class="text-[10px] text-gray-400 block mb-1">Intimacy</span>
+                                                    <span class="text-gray-700 font-medium text-[11px]" x-text="selected.intimacy_level || '—'"></span>
+                                                </div>
+                                            </div>
+
+                                            {{-- Source pipeline --}}
+                                            <template x-if="selected.source === 'mac_pipeline'">
+                                                <div class="flex items-center gap-1.5 text-[10px] text-indigo-600">
+                                                    <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M9.813 15.904 9 18.75l-.813-2.846a4.5 4.5 0 0 0-3.09-3.09L2.25 12l2.846-.813a4.5 4.5 0 0 0 3.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 0 0 3.09 3.09L15.75 12l-2.846.813a4.5 4.5 0 0 0-3.09 3.09Z" /></svg>
+                                                    <span>Analysée par le pipeline Mac</span>
+                                                </div>
+                                            </template>
+                                            <template x-if="selected.pending_analysis">
+                                                <div class="flex items-center gap-1.5 text-[10px] text-amber-600">
+                                                    <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M12 6v6h4.5m4.5 0a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z" /></svg>
+                                                    <span>En attente d'analyse IA</span>
+                                                </div>
+                                            </template>
+                                        </div>
+                                    </template>
 
                                     {{-- Linked posts --}}
                                     <div>

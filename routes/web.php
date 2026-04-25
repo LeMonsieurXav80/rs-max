@@ -169,9 +169,12 @@ Route::middleware(['auth', 'verified', 'throttle:60,1'])->group(function () {
 
     // Media library
     Route::get('media', [MediaController::class, 'index'])->name('media.index');
+    Route::get('media/unclassified', [MediaController::class, 'unclassified'])->name('media.unclassified');
     Route::post('media/upload', [MediaController::class, 'upload'])->name('media.upload');
     Route::get('media/list', [MediaController::class, 'list'])->name('media.list');
+    Route::get('media/stock-search', [MediaController::class, 'searchStockPhotos'])->name('media.stockSearch');
     Route::get('media/thumbnail/{filename}', [MediaController::class, 'thumbnail'])->name('media.thumbnail');
+    Route::post('media/{media}/classify', [MediaController::class, 'classify'])->name('media.classify');
     Route::delete('media/{filename}', [MediaController::class, 'destroy'])->name('media.destroy');
 
     // OAuth flows (reconnecting accounts the user already has linked)

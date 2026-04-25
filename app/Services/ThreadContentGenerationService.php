@@ -3,9 +3,11 @@
 namespace App\Services;
 
 use App\Models\Hook;
+use App\Models\MediaFile;
 use App\Models\Persona;
 use App\Models\Setting;
 use App\Services\Rss\ArticleFetchService;
+use Illuminate\Support\Facades\App;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 
@@ -26,7 +28,7 @@ class ThreadContentGenerationService
      *   - 'compiled' => ['facebook' => '...', 'telegram' => '...']
      *   - 'title' => '...'
      */
-    public function generate(string $sourceUrl, Persona $persona, array $platformSlugs, ?int $hookCategoryId = null, ?string $contextInstructions = null): ?array
+    public function generate(string $sourceUrl, Persona $persona, array $platformSlugs, ?int $hookCategoryId = null, ?string $contextInstructions = null, ?string $pool = null): ?array
     {
         $apiKey = Setting::getEncrypted('openai_api_key');
         if (! $apiKey) {
@@ -78,7 +80,10 @@ class ThreadContentGenerationService
         $userPrompt .= "- N'utilise PAS de liens en format markdown [texte](url). Écris les URLs en clair.\n";
         $userPrompt .= "- N'inclus AUCUNE URL (ni l'URL source, ni aucun lien) dans les segments.\n";
         $userPrompt .= "- Le dernier segment doit être un appel à l'action : invite les gens à partager le premier post de ce fil (RT, repost) et à suivre le compte. Sois naturel et engageant, pas robotique.\n";
-        $userPrompt .= "- N'utilise PAS de numérotation (1/, 2/, etc.) ni d'indicateurs comme [Thread] ou [Fil].\n\n";
+        $userPrompt .= "- N'utilise PAS de numérotation (1/, 2/, etc.) ni d'indicateurs comme [Thread] ou [Fil].\n";
+        $userPrompt .= '- Pour chaque segment, propose 2 à 4 photo_keywords : mots-clés courts en minuscules '.
+            "(en français) qui décrivent ce qu'une photo accompagnant ce segment devrait MONTRER ".
+            "(objets, lieux, ambiance). Ex: pour un segment sur le bacalhau → [\"bacalhau\", \"morue\", \"plat portugais\"].\n\n";
 
         // Inject hook example if a category was selected.
         if ($hookCategoryId) {
@@ -127,6 +132,11 @@ class ThreadContentGenerationService
                 }
             }
         }
+
+        // Mots-clés pour matcher une photo dans la médiathèque RS-Max.
+        // Le LLM choisit 2 à 4 mots-clés courts, en minuscules, qui décrivent visuellement
+        // ce que devrait montrer une photo accompagnant ce segment.
+        $userPrompt .= ",\n      \"photo_keywords\": [\"mot-cle-1\", \"mot-cle-2\"]";
 
         $userPrompt .= "\n    }\n  ]";
 
@@ -195,6 +205,9 @@ class ThreadContentGenerationService
                 }
             }
 
+            // Auto-attache une photo par segment selon photo_keywords (si pool fourni).
+            $this->attachPhotosByKeywords($normalized['segments'], $pool);
+
             return $normalized;
 
         } catch (\Exception $e) {
@@ -208,7 +221,7 @@ class ThreadContentGenerationService
      * Generate a thread from free-form instructions (no source URL).
      * Used by the API for bulk thread scheduling.
      */
-    public function generateFromInstructions(string $instructions, Persona $persona, array $platformSlugs, int $threadNumber = 1, int $totalThreads = 1): ?array
+    public function generateFromInstructions(string $instructions, Persona $persona, array $platformSlugs, int $threadNumber = 1, int $totalThreads = 1, ?string $pool = null): ?array
     {
         $apiKey = Setting::getEncrypted('openai_api_key');
         if (! $apiKey) {
@@ -240,7 +253,10 @@ class ThreadContentGenerationService
         $userPrompt .= "- N'utilise PAS de hashtags (#).\n";
         $userPrompt .= "- N'utilise PAS de liens en format markdown [texte](url).\n";
         $userPrompt .= "- Le dernier segment doit être un appel à l'action engageant et naturel.\n";
-        $userPrompt .= "- N'utilise PAS de numérotation (1/, 2/, etc.) ni d'indicateurs comme [Thread] ou [Fil].\n\n";
+        $userPrompt .= "- N'utilise PAS de numérotation (1/, 2/, etc.) ni d'indicateurs comme [Thread] ou [Fil].\n";
+        $userPrompt .= '- Pour chaque segment, propose 2 à 4 photo_keywords : mots-clés courts en minuscules '.
+            "(en français) qui décrivent ce qu'une photo accompagnant ce segment devrait MONTRER ".
+            "(objets, lieux, ambiance). Ex: pour un segment sur le bacalhau → [\"bacalhau\", \"morue\", \"plat portugais\"].\n\n";
 
         $userPrompt .= "=== LIMITES DE CARACTÈRES PAR SEGMENT ===\n";
         foreach ($charLimits as $slug => $limit) {
@@ -278,6 +294,11 @@ class ThreadContentGenerationService
                 }
             }
         }
+
+        // Mots-clés pour matcher une photo dans la médiathèque RS-Max.
+        // Le LLM choisit 2 à 4 mots-clés courts, en minuscules, qui décrivent visuellement
+        // ce que devrait montrer une photo accompagnant ce segment.
+        $userPrompt .= ",\n      \"photo_keywords\": [\"mot-cle-1\", \"mot-cle-2\"]";
 
         $userPrompt .= "\n    }\n  ]";
 
@@ -331,7 +352,10 @@ class ThreadContentGenerationService
                 return null;
             }
 
-            return $this->normalizeResponse($parsed, $platformSlugs);
+            $normalized = $this->normalizeResponse($parsed, $platformSlugs);
+            $this->attachPhotosByKeywords($normalized['segments'], $pool);
+
+            return $normalized;
 
         } catch (\Exception $e) {
             Log::error('ThreadContentGenerationService: Exception (fromInstructions)', ['error' => $e->getMessage()]);
@@ -405,6 +429,155 @@ class ThreadContentGenerationService
         }
     }
 
+    /**
+     * Pour chaque segment qui n'a pas encore de média et qui propose photo_keywords,
+     * cherche une photo dans la médiathèque RS-Max et l'attache.
+     *
+     * Stratégie :
+     *  1) Tente un match strict (TOUS les keywords) — si trouvé, parfait.
+     *  2) Sinon match large (au moins UN keyword).
+     *  3) Évite de réutiliser une photo déjà attachée à un autre segment du même thread.
+     *  4) Évite les photos publiées dans les 30 derniers jours (cohérent avec le défaut /search).
+     *  5) Mamawette est exclu de cet auto-attach (cloisonnement).
+     */
+    private function attachPhotosByKeywords(array &$segments, ?string $pool): void
+    {
+        Log::info('attachPhotosByKeywords called', [
+            'pool' => $pool,
+            'segment_count' => count($segments),
+            'segments_summary' => array_map(fn ($s) => [
+                'pos' => $s['position'] ?? null,
+                'has_media' => ! empty($s['media']),
+                'photo_keywords' => $s['photo_keywords'] ?? null,
+            ], $segments),
+        ]);
+
+        if (! $pool || ! in_array($pool, ['wildycaro', 'pdc_vantour'], true)) {
+            Log::info('attachPhotosByKeywords: skipped (no valid pool)');
+
+            return;
+        }
+
+        $allowColumn = "allow_{$pool}";
+        $alreadyAttached = [];
+
+        foreach ($segments as &$segment) {
+            if (! empty($segment['media'])) {
+                continue;
+            }
+            $kw = $segment['photo_keywords'] ?? [];
+            if (empty($kw)) {
+                continue;
+            }
+
+            $base = MediaFile::query()
+                ->where($allowColumn, true)
+                ->where('intimacy_level', 'public')
+                ->where('mime_type', 'like', 'image/%')
+                ->whereDoesntHave('publications', function ($q) {
+                    $q->where('published_at', '>=', now()->subDays(30));
+                });
+
+            if (! empty($alreadyAttached)) {
+                $base->whereNotIn('id', $alreadyAttached);
+            }
+
+            // 1) Match strict : toutes les keywords doivent être trouvées dans les tags.
+            $strict = (clone $base);
+            foreach ($kw as $tag) {
+                $strict->whereRaw(
+                    "JSON_SEARCH(LOWER(thematic_tags), 'one', ?, NULL, '$[*]') IS NOT NULL",
+                    ['%'.strtolower($tag).'%']
+                );
+            }
+            $photo = $strict->inRandomOrder()->first();
+
+            // 2) Fallback large : au moins UNE keyword matche.
+            if (! $photo) {
+                $loose = (clone $base);
+                $loose->where(function ($q) use ($kw) {
+                    foreach ($kw as $tag) {
+                        $q->orWhereRaw(
+                            "JSON_SEARCH(LOWER(thematic_tags), 'one', ?, NULL, '$[*]') IS NOT NULL",
+                            ['%'.strtolower($tag).'%']
+                        );
+                    }
+                });
+                $photo = $loose->inRandomOrder()->first();
+            }
+
+            if ($photo) {
+                $segment['media'] = [
+                    ['type' => 'image', 'url' => $photo->url, 'auto_attached' => true],
+                ];
+                $alreadyAttached[] = $photo->id;
+                Log::info('attachPhotosByKeywords: matched', [
+                    'segment_pos' => $segment['position'] ?? null,
+                    'kw' => $kw,
+                    'photo_id' => $photo->id,
+                ]);
+
+                continue;
+            }
+
+            // 3) Fallback sur les banques d'images si activé et qu'on n'a rien trouvé localement.
+            if (Setting::get('stock_photos_auto_fallback') === '1') {
+                $stockPhoto = $this->fetchStockPhotoFallback($kw);
+                if ($stockPhoto) {
+                    $segment['media'] = [[
+                        'type' => 'image',
+                        'url' => $stockPhoto['url_full'],
+                        'thumbnail_url' => $stockPhoto['url_thumb'],
+                        'source' => $stockPhoto['source'],
+                        'attribution' => $stockPhoto['attribution'],
+                        'external' => true,
+                        'auto_attached' => true,
+                    ]];
+                    Log::info('attachPhotosByKeywords: stock fallback', [
+                        'segment_pos' => $segment['position'] ?? null,
+                        'kw' => $kw,
+                        'source' => $stockPhoto['source'],
+                    ]);
+
+                    continue;
+                }
+            }
+
+            Log::info('attachPhotosByKeywords: no match', [
+                'segment_pos' => $segment['position'] ?? null,
+                'kw' => $kw,
+            ]);
+        }
+    }
+
+    /**
+     * Cherche une image dans les banques de stock pour les keywords donnés.
+     * Renvoie null si aucun provider configuré ou aucun résultat.
+     */
+    private function fetchStockPhotoFallback(array $keywords): ?array
+    {
+        if (empty($keywords)) {
+            return null;
+        }
+
+        $stock = App::make(\App\Services\StockPhotoService::class);
+
+        // Tente d'abord les 2 premiers keywords combinés (plus précis), puis le 1er seul (plus large).
+        $tries = [
+            implode(' ', array_slice($keywords, 0, 2)),
+            $keywords[0],
+        ];
+
+        foreach (array_unique($tries) as $query) {
+            $results = $stock->searchAll($query, 3);
+            if (! empty($results)) {
+                return $results[0];
+            }
+        }
+
+        return null;
+    }
+
     private function normalizeResponse(array $parsed, array $platformSlugs): array
     {
         $segments = [];
@@ -414,6 +587,10 @@ class ThreadContentGenerationService
                 'position' => $segment['position'] ?? ($i + 1),
                 'content_fr' => $segment['content_fr'] ?? '',
                 'platform_contents' => [],
+                'photo_keywords' => array_values(array_filter(
+                    array_map('strtolower', $segment['photo_keywords'] ?? []),
+                    fn ($k) => is_string($k) && trim($k) !== ''
+                )),
             ];
 
             foreach (['twitter', 'threads', 'bluesky'] as $slug) {

@@ -189,16 +189,25 @@
                                 <input type="hidden" :name="'segments[' + index + '][media_json]'"
                                        :value="segment.media ? JSON.stringify(segment.media) : ''">
                                 <div class="flex items-center justify-between mt-1">
-                                    <button type="button" @click="openMediaLibrary(index)"
-                                            class="inline-flex items-center gap-1 px-2 py-1 text-xs font-medium rounded-lg text-indigo-600 hover:bg-indigo-50 transition-colors">
-                                        <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1.5">
-                                            <path stroke-linecap="round" stroke-linejoin="round" d="m2.25 15.75 5.159-5.159a2.25 2.25 0 0 1 3.182 0l5.159 5.159m-1.5-1.5 1.409-1.409a2.25 2.25 0 0 1 3.182 0l2.909 2.909M3.75 21h16.5A2.25 2.25 0 0 0 22.5 18.75V5.25A2.25 2.25 0 0 0 20.25 3H3.75A2.25 2.25 0 0 0 1.5 5.25v13.5A2.25 2.25 0 0 0 3.75 21Z" />
-                                        </svg>
-                                        Image
-                                        <span x-show="segment.media && segment.media.length > 0"
-                                              class="px-1.5 py-0.5 text-[10px] bg-indigo-100 text-indigo-700 rounded-full"
-                                              x-text="segment.media.length"></span>
-                                    </button>
+                                    <div class="flex items-center gap-1">
+                                        <button type="button" @click="openMediaLibrary(index)"
+                                                class="inline-flex items-center gap-1 px-2 py-1 text-xs font-medium rounded-lg text-indigo-600 hover:bg-indigo-50 transition-colors">
+                                            <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1.5">
+                                                <path stroke-linecap="round" stroke-linejoin="round" d="m2.25 15.75 5.159-5.159a2.25 2.25 0 0 1 3.182 0l5.159 5.159m-1.5-1.5 1.409-1.409a2.25 2.25 0 0 1 3.182 0l2.909 2.909M3.75 21h16.5A2.25 2.25 0 0 0 22.5 18.75V5.25A2.25 2.25 0 0 0 20.25 3H3.75A2.25 2.25 0 0 0 1.5 5.25v13.5A2.25 2.25 0 0 0 3.75 21Z" />
+                                            </svg>
+                                            Image
+                                            <span x-show="(segment.media || []).length > 0"
+                                                  class="px-1.5 py-0.5 text-[10px] bg-indigo-100 text-indigo-700 rounded-full"
+                                                  x-text="(segment.media || []).length"></span>
+                                        </button>
+                                        <button type="button" @click="openStockLibrary(index)"
+                                                class="inline-flex items-center gap-1 px-2 py-1 text-xs font-medium rounded-lg text-purple-600 hover:bg-purple-50 transition-colors">
+                                            <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1.5">
+                                                <path stroke-linecap="round" stroke-linejoin="round" d="M21 21l-5.197-5.197m0 0A7.5 7.5 0 105.196 5.196a7.5 7.5 0 0010.607 10.607z" />
+                                            </svg>
+                                            Stock
+                                        </button>
+                                    </div>
                                     <span class="text-xs" :class="(segment.content_fr || '').length > 500 ? 'text-red-500' : 'text-gray-400'"
                                           x-text="(segment.content_fr || '').length + ' car.'"></span>
                                 </div>
@@ -416,6 +425,87 @@
                 </div>
             </div>
         </template>
+
+        {{-- Stock photos modal (Pexels / Pixabay / Unsplash) --}}
+        <template x-if="showStockLibrary">
+            <div class="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
+                 @click.self="showStockLibrary = false"
+                 @keydown.escape.window="showStockLibrary = false">
+                <div class="bg-white rounded-2xl shadow-2xl max-w-5xl w-full max-h-[85vh] flex flex-col overflow-hidden">
+                    <div class="flex-shrink-0 flex items-center justify-between px-6 py-4 border-b border-gray-200">
+                        <h3 class="text-base font-semibold text-gray-900">
+                            🔍 Banques d'images
+                            <span class="text-sm font-normal text-gray-500" x-text="'— Segment ' + (activeMediaSegmentIndex + 1)"></span>
+                        </h3>
+                        <button type="button" @click="showStockLibrary = false"
+                                class="p-2 -m-2 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg transition-colors"
+                                title="Fermer (Échap)">
+                            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18 18 6M6 6l12 12" /></svg>
+                        </button>
+                    </div>
+
+                    <div class="flex-shrink-0 px-6 py-4 border-b border-gray-200">
+                        <div class="flex items-center gap-2">
+                            <input type="text" x-model="stockQuery" @input="onStockQueryChange()" @keydown.enter.prevent="searchStock()"
+                                   placeholder="Recherche : bacalhau, plage, pasteis de nata..."
+                                   class="flex-1 rounded-xl border-gray-300 shadow-sm focus:border-purple-500 focus:ring-purple-500 text-sm">
+                            <button type="button" @click="searchStock()"
+                                    class="px-4 py-2 bg-purple-600 text-white text-sm font-medium rounded-xl hover:bg-purple-700 transition-colors">
+                                Rechercher
+                            </button>
+                        </div>
+                        <template x-if="stockSearched">
+                            <div class="flex items-center gap-3 mt-2 text-[11px] text-gray-500">
+                                <span>Providers actifs :</span>
+                                <span :class="stockProviders.pexels ? 'text-green-600' : 'text-gray-400 line-through'">Pexels</span>
+                                <span :class="stockProviders.pixabay ? 'text-green-600' : 'text-gray-400 line-through'">Pixabay</span>
+                                <span :class="stockProviders.unsplash ? 'text-green-600' : 'text-gray-400 line-through'">Unsplash</span>
+                                <a href="{{ route('settings.index') }}?tab=external" target="_blank" class="ml-auto text-indigo-600 hover:underline">Configurer →</a>
+                            </div>
+                        </template>
+                    </div>
+
+                    <div class="flex-1 overflow-y-auto p-6 min-h-0">
+                        <template x-if="!stockLoading && stockResults.length === 0 && stockSearched && anyStockProvider()">
+                            <p class="text-sm text-gray-400 text-center py-8">Aucune image trouvée pour "<span x-text="stockQuery"></span>".</p>
+                        </template>
+                        <template x-if="!anyStockProvider() && !stockLoading && stockSearched">
+                            <p class="text-sm text-amber-700 bg-amber-50 border border-amber-200 rounded-xl p-4">
+                                Aucune clé API configurée pour les banques d'images.
+                                <a href="{{ route('settings.index') }}?tab=external" target="_blank" class="font-semibold underline">Configure au moins une clé</a> pour activer la recherche.
+                            </p>
+                        </template>
+                        <template x-if="!stockSearched && !stockLoading">
+                            <p class="text-sm text-gray-400 text-center py-12">Tape un mot-clé puis appuie sur Entrée pour rechercher.</p>
+                        </template>
+                        <div x-show="stockLoading" class="text-center py-12">
+                            <svg class="w-8 h-8 text-gray-400 mx-auto animate-spin" fill="none" viewBox="0 0 24 24">
+                                <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                                <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path>
+                            </svg>
+                        </div>
+                        <div x-show="!stockLoading && stockResults.length > 0" class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
+                            <template x-for="item in stockResults" :key="item.id">
+                                <div @click="selectStockPhoto(item)"
+                                     class="relative rounded-xl overflow-hidden border-2 border-gray-200 hover:border-purple-500 hover:ring-2 hover:ring-purple-200 transition-all aspect-[4/3] cursor-pointer group">
+                                    <img :src="item.url_thumb" :alt="item.attribution" class="w-full h-full object-cover" loading="lazy">
+                                    <div class="absolute top-1.5 left-1.5 px-1.5 py-0.5 bg-black/60 text-white text-[10px] rounded uppercase tracking-wide font-semibold" x-text="item.source"></div>
+                                    <div class="absolute bottom-0 left-0 right-0 px-2 py-1.5 bg-gradient-to-t from-black/70 to-transparent text-white text-[10px] truncate" x-text="item.photographer"></div>
+                                </div>
+                            </template>
+                        </div>
+                    </div>
+
+                    <div class="flex-shrink-0 px-6 py-3 border-t border-gray-200 flex justify-between items-center">
+                        <p class="text-[11px] text-gray-500 hidden sm:block">Les images sont référencées par URL — jamais stockées sur le serveur.</p>
+                        <button type="button" @click="showStockLibrary = false"
+                                class="px-4 py-2 bg-gray-100 text-gray-700 text-sm font-medium rounded-xl hover:bg-gray-200 transition-colors ml-auto">
+                            Fermer
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </template>
     </form>
 
     @php
@@ -447,6 +537,14 @@
                 mediaUploading: false,
                 mediaUploadProgress: 0,
                 mediaUploadPhase: '',
+
+                // Stock photos picker (Pexels / Pixabay / Unsplash)
+                showStockLibrary: false,
+                stockQuery: '',
+                stockResults: [],
+                stockLoading: false,
+                stockSearched: false,
+                stockProviders: { pexels: false, pixabay: false, unsplash: false },
 
                 addSegment() {
                     this.segments.push({
@@ -517,6 +615,65 @@
                     const seg = this.segments[this.activeMediaSegmentIndex];
                     if (!seg || !seg.media) return false;
                     return seg.media.some(m => m.url === item.url);
+                },
+
+                // --- Stock photos (Pexels / Pixabay / Unsplash) ---
+
+                openStockLibrary(index) {
+                    this.activeMediaSegmentIndex = index;
+                    const seg = this.segments[index];
+                    if (seg && seg.photo_keywords && seg.photo_keywords.length) {
+                        this.stockQuery = seg.photo_keywords.join(' ');
+                    } else if (!this.stockQuery) {
+                        this.stockQuery = '';
+                    }
+                    this.showStockLibrary = true;
+                    if (this.stockQuery.trim()) {
+                        this.searchStock();
+                    } else {
+                        this.stockResults = [];
+                    }
+                },
+
+                async searchStock() {
+                    const q = (this.stockQuery || '').trim();
+                    if (!q) { this.stockResults = []; return; }
+                    this.stockLoading = true;
+                    this.stockSearched = true;
+                    try {
+                        const url = '{{ route("media.stockSearch") }}?q=' + encodeURIComponent(q) + '&limit=12';
+                        const resp = await fetch(url, { headers: { 'Accept': 'application/json' } });
+                        const data = await resp.json();
+                        this.stockResults = data.results || [];
+                        this.stockProviders = data.available_providers || {};
+                    } catch (e) {
+                        console.error(e);
+                        this.stockResults = [];
+                    }
+                    this.stockLoading = false;
+                },
+
+                onStockQueryChange() {
+                    clearTimeout(this._stockSearchTimeout);
+                    this._stockSearchTimeout = setTimeout(() => this.searchStock(), 400);
+                },
+
+                selectStockPhoto(item) {
+                    const seg = this.segments[this.activeMediaSegmentIndex];
+                    if (!seg.media) seg.media = [];
+                    seg.media = [{
+                        type: 'image',
+                        url: item.url_full,
+                        thumbnail_url: item.url_thumb,
+                        source: item.source,
+                        attribution: item.attribution,
+                        external: true,
+                    }];
+                    this.showStockLibrary = false;
+                },
+
+                anyStockProvider() {
+                    return this.stockProviders.pexels || this.stockProviders.pixabay || this.stockProviders.unsplash;
                 },
 
                 uploadMediaForSegment(event) {

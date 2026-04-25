@@ -131,6 +131,7 @@ class GenerateApiController extends Controller
             'persona_id' => 'nullable|integer|exists:personas,id',
             'platforms' => 'nullable|array',
             'platforms.*' => 'string|in:facebook,instagram,threads,twitter,telegram,youtube,bluesky',
+            'pool' => 'nullable|in:wildycaro,pdc_vantour',
         ]);
 
         if (empty($validated['source_url']) && empty($validated['instructions'])) {
@@ -157,6 +158,7 @@ class GenerateApiController extends Controller
         }
 
         $platformSlugs = $validated['platforms'] ?? ['twitter', 'threads'];
+        $pool = $validated['pool'] ?? 'pdc_vantour';
         $threadService = app(ThreadContentGenerationService::class);
 
         if (! empty($validated['source_url'])) {
@@ -165,13 +167,17 @@ class GenerateApiController extends Controller
                 $persona,
                 $platformSlugs,
                 null,
-                $validated['instructions'] ?? null
+                $validated['instructions'] ?? null,
+                $pool
             );
         } else {
             $result = $threadService->generateFromInstructions(
                 $validated['instructions'],
                 $persona,
-                $platformSlugs
+                $platformSlugs,
+                1,
+                1,
+                $pool
             );
         }
 

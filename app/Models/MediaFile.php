@@ -4,6 +4,7 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class MediaFile extends Model
 {
@@ -17,17 +18,47 @@ class MediaFile extends Model
         'height',
         'source',
         'source_url',
+        'description_fr',
+        'thematic_tags',
+        'embedding',
+        'embedding_model',
+        'pool_suggested',
+        'allow_wildycaro',
+        'allow_pdc_vantour',
+        'allow_mamawette',
+        'intimacy_level',
+        'people_ids',
+        'ai_metadata',
+        'source_context',
+        'source_path',
+        'phash',
+        'pending_analysis',
+        'ingested_at',
     ];
 
     protected $casts = [
         'size' => 'integer',
         'width' => 'integer',
         'height' => 'integer',
+        'thematic_tags' => 'array',
+        'embedding' => 'array',
+        'people_ids' => 'array',
+        'ai_metadata' => 'array',
+        'allow_wildycaro' => 'boolean',
+        'allow_pdc_vantour' => 'boolean',
+        'allow_mamawette' => 'boolean',
+        'pending_analysis' => 'boolean',
+        'ingested_at' => 'datetime',
     ];
 
     public function folder(): BelongsTo
     {
         return $this->belongsTo(MediaFolder::class, 'folder_id');
+    }
+
+    public function publications(): HasMany
+    {
+        return $this->hasMany(MediaPublication::class);
     }
 
     public function getUrlAttribute(): string
@@ -50,13 +81,13 @@ class MediaFile extends Model
         $bytes = $this->size;
 
         if ($bytes >= 1048576) {
-            return round($bytes / 1048576, 1) . ' MB';
+            return round($bytes / 1048576, 1).' MB';
         }
         if ($bytes >= 1024) {
-            return round($bytes / 1024, 0) . ' KB';
+            return round($bytes / 1024, 0).' KB';
         }
 
-        return $bytes . ' B';
+        return $bytes.' B';
     }
 
     public static function findBySourceUrl(string $url): ?self

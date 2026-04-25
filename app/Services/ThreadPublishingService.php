@@ -34,6 +34,7 @@ class ThreadPublishingService
     public function __construct(
         private TranslationService $translationService,
     ) {}
+
     /**
      * Publish a thread as a multi-post sequence (Twitter, Threads).
      * Each segment is published as a reply to the previous one.
@@ -72,6 +73,7 @@ class ThreadPublishingService
                     $firstExternalId = $segmentPlatform->external_id;
                 }
                 $results[] = ['success' => true, 'external_id' => $previousExternalId, 'skipped' => true];
+
                 continue;
             }
 
@@ -89,7 +91,7 @@ class ThreadPublishingService
                 $firstPostUrl = $firstPostPermalink
                     ?? $this->buildPostUrl($account, $firstExternalId);
                 if ($firstPostUrl) {
-                    $content .= "\n\n" . $firstPostUrl;
+                    $content .= "\n\n".$firstPostUrl;
                 }
             }
 
@@ -115,6 +117,12 @@ class ThreadPublishingService
                         $firstExternalId = $result['external_id'];
                         $firstPostPermalink = $result['permalink'] ?? null;
                     }
+                    app(MediaPublicationTracker::class)->track(
+                        media: $segment->media,
+                        threadSegmentId: $segment->id,
+                        externalUrl: $result['permalink'] ?? null,
+                        context: $account->platform->slug.':thread',
+                    );
                     $results[] = $result;
                 } else {
                     $segmentPlatform->update([
@@ -205,6 +213,15 @@ class ThreadPublishingService
                 $segment->segmentPlatforms()
                     ->where('social_account_id', $account->id)
                     ->update(['status' => $result['success'] ? 'skipped' : 'failed']);
+            }
+
+            if ($result['success']) {
+                app(MediaPublicationTracker::class)->track(
+                    media: $allMedia ?: null,
+                    threadSegmentId: $firstSegment->id,
+                    externalUrl: $result['permalink'] ?? null,
+                    context: $account->platform->slug.':compiled',
+                );
             }
         }
 
@@ -454,13 +471,13 @@ class ThreadPublishingService
     private function getAdapter(string $slug): ?PlatformAdapterInterface
     {
         return match ($slug) {
-            'telegram' => new TelegramAdapter(),
-            'facebook' => new FacebookAdapter(),
-            'instagram' => new InstagramAdapter(),
-            'threads' => new ThreadsAdapter(),
-            'twitter' => new TwitterAdapter(),
-            'youtube' => new YouTubeAdapter(),
-            'bluesky' => new BlueskyAdapter(),
+            'telegram' => new TelegramAdapter,
+            'facebook' => new FacebookAdapter,
+            'instagram' => new InstagramAdapter,
+            'threads' => new ThreadsAdapter,
+            'twitter' => new TwitterAdapter,
+            'youtube' => new YouTubeAdapter,
+            'bluesky' => new BlueskyAdapter,
             default => null,
         };
     }

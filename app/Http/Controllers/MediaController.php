@@ -61,6 +61,19 @@ class MediaController extends Controller
                 'folder_id' => $mf->folder_id,
                 'folder_name' => $mf->folder?->name,
                 'folder_color' => $mf->folder?->color,
+                'width' => $mf->width,
+                'height' => $mf->height,
+                'source' => $mf->source,
+                'description_fr' => $mf->description_fr,
+                'thematic_tags' => $mf->thematic_tags ?? [],
+                'people_ids' => $mf->people_ids ?? [],
+                'pool_suggested' => $mf->pool_suggested,
+                'allow_wildycaro' => (bool) $mf->allow_wildycaro,
+                'allow_pdc_vantour' => (bool) $mf->allow_pdc_vantour,
+                'allow_mamawette' => (bool) $mf->allow_mamawette,
+                'intimacy_level' => $mf->intimacy_level,
+                'pending_analysis' => (bool) $mf->pending_analysis,
+                'source_context' => $mf->source_context,
             ];
 
             if ($isVideo) {
@@ -113,11 +126,17 @@ class MediaController extends Controller
         $videoCount = MediaFile::where('mime_type', 'like', 'video/%')->count();
         $totalCount = MediaFile::count();
         $uncategorizedCount = MediaFile::whereNull('folder_id')->count();
+        $unclassifiedCount = MediaFile::where('mime_type', 'like', 'image/%')
+            ->where('allow_wildycaro', false)
+            ->where('allow_pdc_vantour', false)
+            ->where('allow_mamawette', false)
+            ->where('intimacy_level', '!=', 'never_publish')
+            ->count();
         $currentFolder = $folderId;
 
         return view('media.index', compact(
             'items', 'mediaPostMap', 'filter', 'imageCount', 'videoCount',
-            'folders', 'totalCount', 'uncategorizedCount', 'currentFolder'
+            'folders', 'totalCount', 'uncategorizedCount', 'unclassifiedCount', 'currentFolder'
         ));
     }
 
@@ -209,6 +228,128 @@ class MediaController extends Controller
             'size' => $storedSize,
             'title' => $originalName,
             'thumbnail_url' => route('media.thumbnail', $filename),
+        ]);
+    }
+
+    /**
+     * Recherche dans les banques d'images externes (Pexels, Pixabay, Unsplash).
+     * Web route — session auth, accessible depuis l'éditeur de threads.
+     * Les images ne sont jamais stockées localement, on retourne les URLs et l'attribution.
+     */
+    public function searchStockPhotos(Request $request, \App\Services\StockPhotoService $stock): JsonResponse
+    {
+        $params = $request->validate([
+            'q' => 'required|string|min:1|max:100',
+            'limit' => 'nullable|integer|min:1|max:30',
+            'source' => 'nullable|in:pexels,pixabay,unsplash,all',
+        ]);
+
+        $query = trim($params['q']);
+        $limit = $params['limit'] ?? 8;
+        $source = $params['source'] ?? 'all';
+
+        $results = match ($source) {
+            'pexels' => $stock->searchPexels($query, $limit),
+            'pixabay' => $stock->searchPixabay($query, $limit),
+            'unsplash' => $stock->searchUnsplash($query, $limit),
+            default => $stock->searchAll($query, $limit),
+        };
+
+        return response()->json([
+            'query' => $query,
+            'count' => count($results),
+            'available_providers' => $stock->availableProviders(),
+            'results' => $results,
+        ]);
+    }
+
+    /**
+     * Liste les photos non classées (allow_wildycaro=false ET allow_pdc_vantour=false).
+     * Utilisée par Caroline (uploads sans pool) et pour rattraper les photos legacy.
+     */
+    public function unclassified(Request $request): View
+    {
+        $perPage = (int) $request->input('per_page', 48);
+        $perPage = max(12, min($perPage, 200));
+
+        $query = MediaFile::query()
+            ->where('mime_type', 'like', 'image/%')
+            ->where('allow_wildycaro', false)
+            ->where('allow_pdc_vantour', false)
+            ->where('allow_mamawette', false)
+            ->where('intimacy_level', '!=', 'never_publish')
+            ->latest('id');
+
+        $items = $query->paginate($perPage)->through(fn (MediaFile $m) => [
+            'id' => $m->id,
+            'filename' => $m->filename,
+            'url' => "/media/{$m->filename}",
+            'original_name' => $m->original_name,
+            'description_fr' => $m->description_fr,
+            'thematic_tags' => $m->thematic_tags ?? [],
+            'people_ids' => $m->people_ids ?? [],
+            'pool_suggested' => $m->pool_suggested,
+            'pending_analysis' => (bool) $m->pending_analysis,
+            'source' => $m->source,
+        ]);
+
+        $totalUnclassified = MediaFile::where('mime_type', 'like', 'image/%')
+            ->where('allow_wildycaro', false)
+            ->where('allow_pdc_vantour', false)
+            ->where('allow_mamawette', false)
+            ->where('intimacy_level', '!=', 'never_publish')
+            ->count();
+
+        return view('media.unclassified', [
+            'items' => $items,
+            'totalUnclassified' => $totalUnclassified,
+        ]);
+    }
+
+    /**
+     * Classe une photo dans un pool depuis la vue "Photos à classer".
+     */
+    public function classify(Request $request, MediaFile $media): JsonResponse
+    {
+        $data = $request->validate([
+            'action' => 'required|in:wildycaro,pdc_vantour,mamawette,both_public,never_publish',
+            'intimacy_level' => 'nullable|in:public,prive,never_publish',
+        ]);
+
+        // Chaque pool a son intimacy par défaut. mamawette est privé par construction
+        // (compte privé), les autres sont publics.
+        $update = match ($data['action']) {
+            'wildycaro' => [
+                'allow_wildycaro' => true, 'allow_pdc_vantour' => false, 'allow_mamawette' => false,
+                'intimacy_level' => 'public',
+            ],
+            'pdc_vantour' => [
+                'allow_wildycaro' => false, 'allow_pdc_vantour' => true, 'allow_mamawette' => false,
+                'intimacy_level' => 'public',
+            ],
+            'mamawette' => [
+                'allow_wildycaro' => false, 'allow_pdc_vantour' => false, 'allow_mamawette' => true,
+                'intimacy_level' => 'prive',
+            ],
+            'both_public' => [
+                'allow_wildycaro' => true, 'allow_pdc_vantour' => true, 'allow_mamawette' => false,
+                'intimacy_level' => 'public',
+            ],
+            'never_publish' => ['intimacy_level' => 'never_publish'],
+        };
+
+        if (! empty($data['intimacy_level']) && $data['action'] !== 'never_publish') {
+            $update['intimacy_level'] = $data['intimacy_level'];
+        }
+
+        $media->update($update);
+
+        return response()->json([
+            'id' => $media->id,
+            'allow_wildycaro' => $media->allow_wildycaro,
+            'allow_pdc_vantour' => $media->allow_pdc_vantour,
+            'allow_mamawette' => $media->allow_mamawette,
+            'intimacy_level' => $media->intimacy_level,
         ]);
     }
 

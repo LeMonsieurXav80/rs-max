@@ -59,6 +59,11 @@
                             class="px-4 py-3 text-sm font-medium border-b-2 transition-colors whitespace-nowrap">
                         Notifications
                     </button>
+                    <button type="button" @click="activeTab = 'external'"
+                            :class="activeTab === 'external' ? 'border-indigo-500 text-indigo-600' : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'"
+                            class="px-4 py-3 text-sm font-medium border-b-2 transition-colors whitespace-nowrap">
+                        Services externes
+                    </button>
                 </nav>
             </div>
 
@@ -730,6 +735,56 @@
                             }
                         </script>
                     @endif
+                </div>
+            </div>
+
+            {{-- ═══════════════════════════════════════ --}}
+            {{-- TAB: Services externes                 --}}
+            {{-- ═══════════════════════════════════════ --}}
+            <div x-show="activeTab === 'external'" x-cloak class="space-y-6">
+                <div class="bg-white rounded-2xl border border-gray-100 shadow-sm p-6">
+                    <h2 class="text-lg font-semibold text-gray-900 mb-1">Banques d'images</h2>
+                    <p class="text-sm text-gray-500 mb-5">Clés API pour rechercher des images de stock libres de droits depuis l'éditeur de threads. Les images ne sont jamais stockées sur le serveur — elles sont référencées par URL.</p>
+
+                    <div class="space-y-5">
+                        @php
+                            $stockKeys = [
+                                ['key' => 'pexels_api_key', 'label' => 'Pexels — API key', 'url' => 'https://www.pexels.com/api/', 'help' => 'Demande la clé sur pexels.com/api (gratuit, illimité).'],
+                                ['key' => 'pixabay_api_key', 'label' => 'Pixabay — API key', 'url' => 'https://pixabay.com/api/docs/', 'help' => 'Inscription sur pixabay.com puis clé immédiate (gratuit, ~5000 requêtes/jour).'],
+                                ['key' => 'unsplash_access_key', 'label' => 'Unsplash — Access key', 'url' => 'https://unsplash.com/developers', 'help' => 'Crée une "Application" sur unsplash.com/developers (50 requêtes/h en démo, jusqu\'à 5000/h en production).'],
+                            ];
+                        @endphp
+
+                        @foreach ($stockKeys as $sk)
+                            @php
+                                $hasKey = (bool) \App\Models\Setting::getEncrypted($sk['key']);
+                            @endphp
+                            <div>
+                                <label for="{{ $sk['key'] }}" class="block text-sm font-medium text-gray-700 mb-1">{{ $sk['label'] }}</label>
+                                <input type="password" id="{{ $sk['key'] }}" name="{{ $sk['key'] }}"
+                                       class="w-full sm:w-2/3 rounded-xl border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 text-sm"
+                                       placeholder="{{ $hasKey ? '••••••••••••••••' : '' }}">
+                                @if ($hasKey)
+                                    <p class="text-xs text-green-600 mt-1">Clé configurée. Laissez vide pour conserver la clé actuelle.</p>
+                                @else
+                                    <p class="text-xs text-gray-400 mt-1">{{ $sk['help'] }} <a href="{{ $sk['url'] }}" target="_blank" class="text-indigo-600 hover:underline">Documentation →</a></p>
+                                @endif
+                                @error($sk['key'])
+                                    <p class="text-sm text-red-600 mt-1">{{ $message }}</p>
+                                @enderror
+                            </div>
+                        @endforeach
+                    </div>
+
+                    <div class="mt-6 pt-5 border-t border-gray-100">
+                        <label class="inline-flex items-center gap-2">
+                            <input type="checkbox" name="stock_photos_auto_fallback" value="1"
+                                   {{ \App\Models\Setting::get('stock_photos_auto_fallback') ? 'checked' : '' }}
+                                   class="rounded border-gray-300 text-indigo-600 focus:ring-indigo-500">
+                            <span class="text-sm text-gray-700">Fallback automatique sur le stock</span>
+                        </label>
+                        <p class="text-xs text-gray-400 mt-1 ml-6">Si activé, quand l'auto-attachement de photos ne trouve rien dans ta médiathèque, une image de stock pertinente sera proposée automatiquement.</p>
+                    </div>
                 </div>
             </div>
 

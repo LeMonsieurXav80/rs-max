@@ -270,6 +270,11 @@ class SettingsController extends Controller
             'notify_publish_error' => 'nullable',
             'notify_telegram_bot_token' => 'nullable|string|max:100',
             'notify_telegram_chat_id' => 'nullable|string|max:50',
+            // Services externes (banques d'images)
+            'pexels_api_key' => 'nullable|string|min:10|max:100',
+            'pixabay_api_key' => 'nullable|string|min:10|max:100',
+            'unsplash_access_key' => 'nullable|string|min:10|max:100',
+            'stock_photos_auto_fallback' => 'nullable',
         ]);
 
         // Handle encrypted keys separately
@@ -282,6 +287,18 @@ class SettingsController extends Controller
             Setting::setEncrypted('notify_telegram_bot_token', $validated['notify_telegram_bot_token']);
         }
         unset($validated['notify_telegram_bot_token']);
+
+        // Stock photo API keys (chiffrés)
+        foreach (['pexels_api_key', 'pixabay_api_key', 'unsplash_access_key'] as $stockKey) {
+            if ($request->filled($stockKey)) {
+                Setting::setEncrypted($stockKey, $validated[$stockKey]);
+            }
+            unset($validated[$stockKey]);
+        }
+
+        // Checkbox stock auto-fallback (absent = false)
+        Setting::set('stock_photos_auto_fallback', $request->boolean('stock_photos_auto_fallback') ? '1' : '0');
+        unset($validated['stock_photos_auto_fallback']);
 
         // Handle inbox platform toggles (checkboxes: absent = false)
         $inboxPlatforms = ['facebook', 'instagram', 'threads', 'youtube', 'bluesky', 'telegram', 'reddit', 'twitter'];
