@@ -180,8 +180,26 @@
                                         </div>
                                     </template>
                                 </div>
-                                {{-- Tags preview --}}
-                                <div class="px-2 py-1.5">
+                                {{-- Description editable + tags preview --}}
+                                <div class="px-2 py-1.5 space-y-1">
+                                    {{-- Description : click to edit --}}
+                                    <div @click.stop="editingDescriptionId === item.id ? null : startEditDescription(item.id)"
+                                         x-show="editingDescriptionId !== item.id"
+                                         class="text-[11px] text-gray-700 leading-tight line-clamp-2 cursor-text hover:bg-gray-50 rounded px-1 -mx-1 min-h-[2em]"
+                                         :class="!item.description_fr && 'text-gray-400 italic'"
+                                         x-text="item.description_fr || 'Cliquer pour ajouter une description'">
+                                    </div>
+                                    <textarea x-show="editingDescriptionId === item.id"
+                                              :ref="`desc-${item.id}`"
+                                              x-model="item.description_fr"
+                                              @click.stop
+                                              @blur="saveDescription(item.id)"
+                                              @keydown.escape.stop="editingDescriptionId = null"
+                                              @keydown.enter.meta.stop.prevent="$event.target.blur()"
+                                              rows="3"
+                                              class="w-full text-[11px] text-gray-700 rounded border-indigo-300 focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 px-1 py-0.5 resize-none"
+                                              placeholder="Description de la photo"></textarea>
+                                    {{-- Tags --}}
                                     <p class="text-[10px] text-gray-400 truncate" x-text="(item.thematic_tags || []).join(', ') || '—'"></p>
                                 </div>
                             </div>
@@ -295,6 +313,22 @@
                             </template>
                         </div>
 
+                        {{-- Description (per-photo : 1 selectionnee = pre-rempli, plusieurs = applique a toutes) --}}
+                        <div class="bg-white rounded-xl border border-gray-100 shadow-sm p-3">
+                            <div class="flex items-center justify-between mb-1.5">
+                                <h3 class="text-[11px] font-semibold text-gray-700 uppercase tracking-wider">Description</h3>
+                                <span class="text-[10px] text-gray-400" x-show="selectedIds.length === 1" x-text="'1 photo'"></span>
+                                <span class="text-[10px] text-gray-400" x-show="selectedIds.length > 1" x-text="`appliquer a ${selectedIds.length} photos`"></span>
+                            </div>
+                            <textarea x-model="descriptionInput" rows="3"
+                                      :placeholder="selectedIds.length === 1 ? 'Description de la photo (texte qui sert de contexte aux IA de redaction)' : `Description commune pour les ${selectedIds.length} photos selectionnees`"
+                                      class="w-full text-xs rounded-lg border-gray-200 focus:border-indigo-400 focus:ring-1 focus:ring-indigo-400 px-2 py-1.5 resize-none"></textarea>
+                            <div class="flex gap-1.5 mt-1.5">
+                                <button @click="saveDescription()" :disabled="busy" class="flex-1 px-3 py-1.5 text-xs bg-indigo-600 text-white rounded-lg disabled:opacity-40 hover:bg-indigo-700">Sauvegarder</button>
+                                <button @click="descriptionInput = ''; saveDescription()" :disabled="busy" class="px-3 py-1.5 text-xs bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200" title="Vider la description">Vider</button>
+                            </div>
+                        </div>
+
                         {{-- Sections collapsibles : Lieu + Classification --}}
                         <div class="bg-white rounded-xl border border-gray-100 shadow-sm overflow-hidden" x-data="{ open: true }">
                             <button @click="open = !open" class="w-full flex items-center justify-between px-3 py-2 hover:bg-gray-50">
@@ -399,6 +433,8 @@
             tagAddInput: '',
             brandAddInput: '',
             peopleAddInput: '',
+            descriptionInput: '',
+            lastSelectedSnapshot: '', // pour detecter quand selection a 1 photo change → pre-remplir description
             details: { city: '', region: '', country: '', event: '' },
             classification: { allow_pdc_vantour: null, allow_wildycaro: null, allow_mamawette: null, intimacy_level: '' },
 
@@ -410,7 +446,19 @@
             aiErrors: 0,
             aiCurrentName: '',
 
-            init() {},
+            init() {
+                // Pre-remplit la description quand on a EXACTEMENT 1 photo selectionnee.
+                // Multi-select → on laisse vide (l'utilisateur ecrit une description commune).
+                this.$watch('selectedIds', (ids) => {
+                    if (ids.length === 1) {
+                        const item = this.items.find(i => i.id === ids[0]);
+                        this.descriptionInput = item?.description_fr || '';
+                    } else if (ids.length === 0) {
+                        this.descriptionInput = '';
+                    }
+                    // Si plus d'une → on ne touche pas, l'utilisateur peut ecrire une description commune.
+                });
+            },
 
             isSelected(id) { return this.selectedIds.includes(id); },
             toggle(id, $event) {
@@ -559,6 +607,44 @@
                 }
             },
 
+            // ───── Description (per-photo, applique a toutes les selectionnees) ─────
+            async saveDescription() {
+                if (this.selectedIds.length === 0) return;
+                this.busy = true;
+                this.lastMessage = '';
+                this.lastError = '';
+                const value = this.descriptionInput.trim();
+                let okCount = 0;
+                let errCount = 0;
+                for (const id of this.selectedIds) {
+                    try {
+                        const res = await fetch(`/media/${id}/details`, {
+                            method: 'PATCH',
+                            headers: {
+                                'Content-Type': 'application/json',
+                                'Accept': 'application/json',
+                                'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').content,
+                            },
+                            body: JSON.stringify({ description_fr: value === '' ? null : value }),
+                        });
+                        if (res.ok) {
+                            const data = await res.json();
+                            const item = this.items.find(i => i.id === id);
+                            if (item) item.description_fr = data.description_fr;
+                            okCount++;
+                        } else {
+                            errCount++;
+                        }
+                    } catch (e) {
+                        errCount++;
+                    }
+                }
+                this.busy = false;
+                this.lastMessage = errCount === 0
+                    ? `Description ${value === '' ? 'effacee' : 'sauvegardee'} sur ${okCount} photo(s).`
+                    : `${okCount} OK · ${errCount} erreur(s).`;
+            },
+
             // ───── Details / Classification ─────
             async bulkDetails(emptyMode) {
                 if (this.selectedIds.length === 0) return;
@@ -640,6 +726,7 @@
                             const data = await res.json();
                             // Mise à jour locale
                             if (item) {
+                                if ('description_fr' in data) item.description_fr = data.description_fr;
                                 if ('thematic_tags' in data) item.thematic_tags = data.thematic_tags || [];
                                 if ('people_ids' in data) item.people_ids = data.people_ids || [];
                                 if ('brands' in data) item.brands = data.brands || [];
@@ -647,6 +734,10 @@
                                 if ('region' in data) item.region = data.region;
                                 if ('country' in data) item.country = data.country;
                                 if ('event' in data) item.event = data.event;
+                            }
+                            // Si c'est l'unique photo selectionnee, refresh le textarea description
+                            if (this.selectedIds.length === 1 && this.selectedIds[0] === id) {
+                                this.descriptionInput = item?.description_fr || '';
                             }
                         } else {
                             this.aiErrors++;

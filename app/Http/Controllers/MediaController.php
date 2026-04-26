@@ -239,6 +239,7 @@ class MediaController extends Controller
             'folder_id' => $mf->folder_id,
             'folder_name' => $mf->folder?->name,
             'folder_color' => $mf->folder?->color,
+            'description_fr' => $mf->description_fr,
             'thematic_tags' => $mf->thematic_tags ?? [],
             'people_ids' => $mf->people_ids ?? [],
             'brands' => $mf->brands ?? [],
@@ -825,6 +826,7 @@ class MediaController extends Controller
     public function updateDetails(Request $request, MediaFile $media): JsonResponse
     {
         $data = $request->validate([
+            'description_fr' => 'nullable|string|max:2000',
             'city' => 'nullable|string|max:120',
             'region' => 'nullable|string|max:120',
             'country' => 'nullable|string|max:120',
@@ -840,6 +842,10 @@ class MediaController extends Controller
                 $val = $data[$field];
                 $update[$field] = is_string($val) && trim($val) !== '' ? trim($val) : null;
             }
+        }
+        if (array_key_exists('description_fr', $data)) {
+            $val = $data['description_fr'];
+            $update['description_fr'] = is_string($val) && trim($val) !== '' ? trim($val) : null;
         }
         if (array_key_exists('brands', $data)) {
             $seen = [];
@@ -866,6 +872,7 @@ class MediaController extends Controller
 
         return response()->json([
             'id' => $media->id,
+            'description_fr' => $media->description_fr,
             'city' => $media->city,
             'region' => $media->region,
             'country' => $media->country,
