@@ -56,6 +56,8 @@ class MediaPublicationTracker
                     'published_at' => now(),
                     'context' => $context,
                 ]);
+                // Incrémente le compteur dénormalisé (cache pour tri/affichage).
+                $mediaFile->increment('publication_count');
                 $count++;
             } catch (\Throwable $e) {
                 Log::warning('MediaPublicationTracker: failed to record publication', [

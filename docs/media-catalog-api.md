@@ -54,7 +54,15 @@ Push une photo + métadonnées pré-calculées localement (description, tags, em
   "allow_mamawette": false,
   "ai_metadata": { "person_count": 2, "..." : "..." },
   "source_path": "/Volumes/T5/Photos/...",
-  "folder_path": "PdC/Espagne_2025"
+  "folder_path": "PdC/Espagne_2025",
+
+  // Champs structurés (Avr 2026)
+  "city": "Albufeira",
+  "region": "Algarve",
+  "country": "Portugal",
+  "brands": ["Decathlon", "Quechua"],      // tableau, dédup case-insensitive côté serveur
+  "event": "Voyage Portugal 2004",         // string libre, facultatif
+  "taken_at": "2004-07-15 14:30:00"        // EXIF DateTimeOriginal, formats ISO acceptés
 }
 ```
 
@@ -103,7 +111,7 @@ Liste les photos qui attendent un enrichissement IA — uploads web sans tags, i
 
 Pose les méta IA sur une photo existante (rattrapage legacy). Met `pending_analysis = false`.
 
-**Body JSON** : mêmes champs que `/ingest` sans `file`. `phash` optionnel.
+**Body JSON** : mêmes champs que `/ingest` sans `file`. `phash` optionnel. Accepte aussi les champs structurés (`city`, `region`, `country`, `brands[]`, `event`, `taken_at`).
 
 ```json
 { "id": 87, "status": "enriched", "pending_analysis": false }
@@ -111,7 +119,7 @@ Pose les méta IA sur une photo existante (rattrapage legacy). Met `pending_anal
 
 ### `POST /api/media/{id}/validate`
 
-Corrige les flags / tags / personnes d'une photo après coup.
+Corrige les flags / tags / personnes / champs structurés d'une photo après coup.
 
 **Body JSON** :
 ```json
@@ -121,11 +129,17 @@ Corrige les flags / tags / personnes d'une photo après coup.
   "allow_mamawette": false,
   "intimacy_level": "public",
   "thematic_tags_override": ["vanlife", "espagne"],
-  "people_ids_override": ["caroline"]
+  "people_ids_override": ["caroline"],
+  "city": "Albufeira",
+  "region": "Algarve",
+  "country": "Portugal",
+  "brands": ["Decathlon"],
+  "event": "Voyage Portugal 2004",
+  "taken_at": "2004-07-15"
 }
 ```
 
-Tous les champs sont optionnels.
+Tous les champs sont optionnels. Les champs structurés (city/region/country/event/brands/taken_at) sont remplaçables individuellement et acceptent `null` pour effacer.
 
 ---
 
@@ -170,6 +184,8 @@ Recherche dans la médiathèque locale.
 ```
 
 `similarity` n'est présent que si `query_embedding` était fourni.
+
+**Tri par moins-publiées d'abord** (depuis Avr 2026) : en mode mots-clés (sans embedding), les résultats sont triés par `publication_count` croissant puis aléatoirement à publication_count égal. Évite de servir toujours les mêmes photos en auto-attach. En mode embedding, le tri reste par similarité cosine.
 
 ---
 
@@ -301,7 +317,65 @@ Trace une publication manuelle. **Pas nécessaire** côté pipeline Mac : RS-Max
 }
 ```
 
-À utiliser uniquement si tu publies une photo **hors RS-Max** et veux la marquer comme déjà utilisée pour le filtre `exclude_recently_published_days`.
+**Réponse 201** :
+```json
+{
+  "id": 17,
+  "media_file_id": 142,
+  "published_at": "2026-04-25T14:30:00+00:00",
+  "publication_count": 3
+}
+```
+
+L'appel incrémente `media_files.publication_count` (cache dénormalisé alimentant le tri auto-attach et l'affichage UI). À utiliser uniquement si tu publies une photo **hors RS-Max** et veux la marquer comme déjà utilisée pour le filtre `exclude_recently_published_days`.
+
+---
+
+## Endpoints web (session-auth, pas Sanctum)
+
+### `PATCH /media/{id}/details`
+
+Édite les champs structurés d'une photo depuis l'UI. Chaque clé présente est appliquée ; clé absente = pas de changement.
+
+**Body** :
+```json
+{
+  "city": "Albufeira",
+  "region": "Algarve",
+  "country": "Portugal",
+  "brands": ["Decathlon", "Quechua"],
+  "event": "Voyage Portugal 2004",
+  "taken_at": "2004-07-15"
+}
+```
+
+**Réponse** :
+```json
+{
+  "id": 142,
+  "city": "Albufeira",
+  "region": "Algarve",
+  "country": "Portugal",
+  "brands": ["Decathlon", "Quechua"],
+  "event": "Voyage Portugal 2004",
+  "taken_at": "2004-07-15",
+  "taken_at_label": "juillet 2004"
+}
+```
+
+### `GET /media/autocomplete`
+
+Valeurs distinctes existantes pour les champs structurés (alimente les `<datalist>` de l'UI).
+
+**Réponse** :
+```json
+{
+  "cities": ["Albufeira", "Lisbonne", "Madrid"],
+  "regions": ["Algarve", "Andalousie"],
+  "countries": ["Portugal", "Espagne"],
+  "brands": ["Decathlon", "Quechua"]
+}
+```
 
 ---
 

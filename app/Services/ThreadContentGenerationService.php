@@ -483,6 +483,8 @@ class ThreadContentGenerationService
             }
 
             // 1) Match strict : toutes les keywords doivent être trouvées dans les tags.
+            // Tri : photos peu publiées d'abord, random au sein du même publication_count
+            // pour varier sans favoriser systématiquement la même photo "neuve".
             $strict = (clone $base);
             foreach ($kw as $tag) {
                 $strict->whereRaw(
@@ -490,7 +492,7 @@ class ThreadContentGenerationService
                     ['%'.strtolower($tag).'%']
                 );
             }
-            $photo = $strict->inRandomOrder()->first();
+            $photo = $strict->orderBy('publication_count')->inRandomOrder()->first();
 
             // 2) Fallback large : au moins UNE keyword matche.
             if (! $photo) {
@@ -503,7 +505,7 @@ class ThreadContentGenerationService
                         );
                     }
                 });
-                $photo = $loose->inRandomOrder()->first();
+                $photo = $loose->orderBy('publication_count')->inRandomOrder()->first();
             }
 
             if ($photo) {

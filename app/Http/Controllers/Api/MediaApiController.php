@@ -67,6 +67,13 @@ class MediaApiController extends Controller
             'source_path' => 'nullable|string|max:512',
             'phash' => 'required|string|max:64',
             'folder_path' => 'nullable|string|max:255',
+            'city' => 'nullable|string|max:120',
+            'region' => 'nullable|string|max:120',
+            'country' => 'nullable|string|max:120',
+            'brands' => 'nullable|array',
+            'brands.*' => 'string|max:80',
+            'event' => 'nullable|string|max:200',
+            'taken_at' => 'nullable|date',
         ]);
 
         if ($metaValidator->fails()) {
@@ -133,6 +140,12 @@ class MediaApiController extends Controller
             'source_context' => $meta['source_context'] ?? null,
             'source_path' => $meta['source_path'] ?? null,
             'phash' => $meta['phash'],
+            'city' => $this->cleanString($meta['city'] ?? null, 120),
+            'region' => $this->cleanString($meta['region'] ?? null, 120),
+            'country' => $this->cleanString($meta['country'] ?? null, 120),
+            'brands' => $this->normalizeBrands($meta['brands'] ?? null),
+            'event' => $this->cleanString($meta['event'] ?? null, 200),
+            'taken_at' => ! empty($meta['taken_at']) ? $meta['taken_at'] : null,
             'pending_analysis' => false,
             'ingested_at' => now(),
         ]);
@@ -160,6 +173,13 @@ class MediaApiController extends Controller
             'thematic_tags_override.*' => 'string',
             'people_ids_override' => 'nullable|array',
             'people_ids_override.*' => 'string',
+            'city' => 'nullable|string|max:120',
+            'region' => 'nullable|string|max:120',
+            'country' => 'nullable|string|max:120',
+            'brands' => 'nullable|array',
+            'brands.*' => 'string|max:80',
+            'event' => 'nullable|string|max:200',
+            'taken_at' => 'nullable|date',
         ]);
 
         $update = array_filter([
@@ -174,6 +194,18 @@ class MediaApiController extends Controller
         }
         if (array_key_exists('people_ids_override', $data)) {
             $update['people_ids'] = $data['people_ids_override'];
+        }
+        // Champs structurés : on accepte la mise à null explicite via clé présente avec valeur nulle.
+        foreach (['city', 'region', 'country', 'event'] as $field) {
+            if (array_key_exists($field, $data)) {
+                $update[$field] = $this->cleanString($data[$field], $field === 'event' ? 200 : 120);
+            }
+        }
+        if (array_key_exists('brands', $data)) {
+            $update['brands'] = $this->normalizeBrands($data['brands']);
+        }
+        if (array_key_exists('taken_at', $data)) {
+            $update['taken_at'] = $data['taken_at'] ?: null;
         }
 
         if (empty($update)) {
@@ -274,10 +306,9 @@ class MediaApiController extends Controller
             }
             usort($results, fn ($a, $b) => $b['similarity'] <=> $a['similarity']);
         } else {
-            // Mode mots-clés : ordre random parmi les photos qui matchent les filtres.
-            // Idéal pour "donne-moi une photo de bacalhau pour ce tweet" — variété assurée
-            // entre plusieurs appels successifs sans avoir à passer un embedding.
-            $candidates = $query->inRandomOrder()
+            // Mode mots-clés : photos peu publiées d'abord, random au sein du même publication_count.
+            // Évite de toujours servir les mêmes photos quand l'auto-attach tape souvent la même requête.
+            $candidates = $query->orderBy('publication_count')->inRandomOrder()
                 ->limit($limit)
                 ->get(['id', 'filename', 'mime_type', 'description_fr', 'thematic_tags', 'people_ids']);
             foreach ($candidates as $row) {
@@ -338,11 +369,13 @@ class MediaApiController extends Controller
             'published_at' => $data['published_at'] ?? now(),
             'context' => $data['context'] ?? null,
         ]);
+        $media->increment('publication_count');
 
         return response()->json([
             'id' => $publication->id,
             'media_file_id' => $media->id,
             'published_at' => $publication->published_at->toIso8601String(),
+            'publication_count' => $media->publication_count,
         ], 201);
     }
 
@@ -398,6 +431,13 @@ class MediaApiController extends Controller
             'allow_mamawette' => 'nullable|boolean',
             'ai_metadata' => 'nullable|array',
             'phash' => 'nullable|string|max:64',
+            'city' => 'nullable|string|max:120',
+            'region' => 'nullable|string|max:120',
+            'country' => 'nullable|string|max:120',
+            'brands' => 'nullable|array',
+            'brands.*' => 'string|max:80',
+            'event' => 'nullable|string|max:200',
+            'taken_at' => 'nullable|date',
         ]);
 
         $media->update([
@@ -415,6 +455,12 @@ class MediaApiController extends Controller
             'allow_mamawette' => $data['allow_mamawette'] ?? $media->allow_mamawette,
             'ai_metadata' => $data['ai_metadata'] ?? $media->ai_metadata,
             'phash' => $data['phash'] ?? $media->phash,
+            'city' => array_key_exists('city', $data) ? $this->cleanString($data['city'], 120) : $media->city,
+            'region' => array_key_exists('region', $data) ? $this->cleanString($data['region'], 120) : $media->region,
+            'country' => array_key_exists('country', $data) ? $this->cleanString($data['country'], 120) : $media->country,
+            'brands' => array_key_exists('brands', $data) ? $this->normalizeBrands($data['brands']) : $media->brands,
+            'event' => array_key_exists('event', $data) ? $this->cleanString($data['event'], 200) : $media->event,
+            'taken_at' => array_key_exists('taken_at', $data) ? ($data['taken_at'] ?: null) : $media->taken_at,
             'pending_analysis' => false,
             'ingested_at' => $media->ingested_at ?? now(),
         ]);
@@ -501,6 +547,52 @@ class MediaApiController extends Controller
         }
 
         return $out;
+    }
+
+    /**
+     * Normalise une liste de marques : trim, dédup case-insensitive, casse d'origine préservée
+     * sur la première occurrence (ex: "Nike", "nike" → ["Nike"]).
+     */
+    private function normalizeBrands(?array $brands): ?array
+    {
+        if ($brands === null) {
+            return null;
+        }
+        $seen = [];
+        $out = [];
+        foreach ($brands as $b) {
+            if (! is_string($b)) {
+                continue;
+            }
+            $clean = trim($b);
+            if ($clean === '' || mb_strlen($clean) > 80) {
+                continue;
+            }
+            $key = mb_strtolower($clean);
+            if (isset($seen[$key])) {
+                continue;
+            }
+            $seen[$key] = true;
+            $out[] = $clean;
+        }
+
+        return $out;
+    }
+
+    /**
+     * Trim + cap longueur + null si vide. Pour city/region/country/event.
+     */
+    private function cleanString(?string $s, int $max): ?string
+    {
+        if ($s === null) {
+            return null;
+        }
+        $clean = trim($s);
+        if ($clean === '') {
+            return null;
+        }
+
+        return mb_substr($clean, 0, $max);
     }
 
     private function cosineSimilarity(array $a, array $b): float

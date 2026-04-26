@@ -177,8 +177,10 @@ Route::middleware(['auth', 'verified', 'throttle:600,1'])->group(function () {
     Route::post('media/classify-batch', [MediaController::class, 'classifyBatch'])->name('media.classifyBatch');
     Route::post('media/delete-batch', [MediaController::class, 'deleteBatch'])->name('media.deleteBatch');
     Route::post('media/tags-batch', [MediaController::class, 'tagsBatch'])->name('media.tagsBatch');
+    Route::get('media/autocomplete', [MediaController::class, 'autocomplete'])->name('media.autocomplete');
     Route::post('media/{media}/classify', [MediaController::class, 'classify'])->name('media.classify');
     Route::patch('media/{media}/tags', [MediaController::class, 'updateTags'])->name('media.updateTags');
+    Route::patch('media/{media}/details', [MediaController::class, 'updateDetails'])->name('media.updateDetails');
     Route::delete('media/{filename}', [MediaController::class, 'destroy'])->name('media.destroy');
 
     // OAuth flows (reconnecting accounts the user already has linked)

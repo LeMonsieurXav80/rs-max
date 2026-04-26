@@ -349,3 +349,32 @@ Les 6 questions de la section précédente sont tranchées :
 4. Vue Blade "Photos à classer" (section 6 + décision 6 ci-dessus).
 5. Hook `mark-published` auto dans `PublishingService`.
 
+---
+
+## 14. Itération métadonnées structurées (session 2026-04-25 fin de journée)
+
+Au-delà des `thematic_tags` (free-text), 6 champs structurés ajoutés à `media_files` pour permettre filtrage exact, autocomplete UI et tri historique. Plus une dénormalisation du compteur de publications.
+
+### Champs ajoutés
+- `city`, `region`, `country` : 3 colonnes string nullable séparées (au lieu d'un seul champ "lieu")
+- `brands` : JSON array, dédup case-insensitive, casse d'origine préservée
+- `event` : string nullable, libre, facultatif
+- `taken_at` : datetime nullable, lu depuis EXIF DateTimeOriginal côté Mac
+- `publication_count` : int default 0, cache dénormalisé incrémenté par `MediaPublicationTracker` et `markPublished`
+
+### Décisions
+- **Refusé** : note/rating sur les photos. Préférence pour le compteur d'utilisation comme proxy de qualité indirecte (les bonnes photos sont republiées spontanément).
+- **Refusé** : champ "campagne / projet". Trop spécialisé pour le périmètre actuel.
+- **Lieu décomposé** plutôt que champ unique : facilite filtrage géographique multi-niveau et autocomplete par hiérarchie.
+- **Événement facultatif** : pas tous les batches en ont (ex: photos quotidiennes du van). On ne force pas.
+- **Date de prise = EXIF auto, pas modification manuelle obligatoire** : si l'EXIF est absent, la photo reste sans `taken_at` plutôt que d'imposer une saisie au pipeline.
+- **Compteur de pub plutôt qu'une note** : objectif = éviter la répétition, pas évaluer la qualité. Le tri "moins publiées d'abord" varie naturellement les photos sans intervention humaine.
+- **Backfill obligatoire dans la migration** : sans ça, toutes les photos déjà publiées seraient à `publication_count=0` et seraient suralimentées par l'auto-attach. Sub-query corrélée sur `media_publications` au moment du déploiement.
+- **Champs envoyés par le script Python** : seulement si non-vides (pas écraser un override serveur avec des null venus du pipeline).
+- **UI : auto-save debouncé 400 ms** plutôt qu'un bouton "Sauver" : moins de friction pour un workflow où Caroline retouche souvent les méta après coup.
+
+### Ce que ça change côté usage
+- Auto-attach threads varie davantage : photos jamais publiées en priorité, puis aléatoire au sein d'un même compteur. Le filtre "30 jours" pré-existant reste actif (ces deux mécaniques se cumulent).
+- Le pipeline Mac pose 7 questions par dossier au lieu de 4 (3 nouvelles : lieu structuré 3 inputs, marques, événement). Les tags free-text restent en plus.
+- L'UI médiathèque permet d'éditer ces champs photo par photo, avec autocomplete sur les valeurs déjà saisies en base.
+

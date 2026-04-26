@@ -65,7 +65,8 @@
             }
             return $depth;
         };
-        $foldersJson = $folders->map(function ($f) use ($folderPath, $folderDepth) {
+        $childrenCountById = $folders->groupBy('parent_id')->map->count();
+        $foldersJson = $folders->map(function ($f) use ($folderPath, $folderDepth, $childrenCountById) {
             return [
                 'id' => $f->id,
                 'name' => $f->name,
@@ -76,6 +77,7 @@
                 'color' => $f->color,
                 'is_system' => $f->is_system,
                 'files_count' => $f->files_count,
+                'children_count' => $childrenCountById->get($f->id, 0),
             ];
         })->sortBy('path')->values()->toArray();
     @endphp
@@ -102,12 +104,38 @@
         newFolderParentId: null,
         creatingFolder: false,
         newTagInput: '',
+        newBrandInput: '',
+        autocomplete: { cities: [], regions: [], countries: [], brands: [] },
         editingFolder: null,
         editFolderName: '',
         editFolderColor: '',
         deleteFolderConfirm: null,
         folderMenuOpen: null,
         movingToFolder: false,
+        get currentFolderId() {
+            if (!this.currentFolder || this.currentFolder === 'uncategorized') return null;
+            const n = parseInt(this.currentFolder);
+            return isNaN(n) ? null : n;
+        },
+        get currentFolderObj() {
+            const id = this.currentFolderId;
+            return id ? (this.folders.find(f => f.id === id) || null) : null;
+        },
+        get visibleFolders() {
+            const parentId = this.currentFolderId;
+            return this.folders.filter(f => (f.parent_id || null) === parentId);
+        },
+        get breadcrumb() {
+            const cur = this.currentFolderObj;
+            if (!cur) return [];
+            const trail = [cur];
+            let p = cur.parent_id ? this.folders.find(f => f.id === cur.parent_id) : null;
+            while (p) {
+                trail.unshift(p);
+                p = p.parent_id ? this.folders.find(f => f.id === p.parent_id) : null;
+            }
+            return trail;
+        },
         selectItem(item, event) {
             if (this.multiSelect) {
                 const currentIndex = this.items.findIndex(i => i.id === item.id);
@@ -318,6 +346,94 @@
             if (!tag) return;
             await this.patchTags({ remove: [tag] });
         },
+        async fetchAutocomplete() {
+            try {
+                const res = await fetch('{{ route('media.autocomplete') }}', { headers: { 'Accept': 'application/json' }});
+                if (!res.ok) return;
+                this.autocomplete = await res.json();
+            } catch(e) { /* silencieux : autocomplete = bonus */ }
+        },
+        _detailsTimer: null,
+        async saveDetails() {
+            if (!this.selected || !this.selected.id) return;
+            const id = this.selected.id;
+            // Debounce 400ms pour ne pas spammer pendant la frappe.
+            clearTimeout(this._detailsTimer);
+            this._detailsTimer = setTimeout(async () => {
+                const payload = {
+                    city: this.selected.city || null,
+                    region: this.selected.region || null,
+                    country: this.selected.country || null,
+                    event: this.selected.event || null,
+                    taken_at: this.selected.taken_at || null,
+                };
+                try {
+                    const res = await fetch(`/media/${id}/details`, {
+                        method: 'PATCH',
+                        headers: {
+                            'X-CSRF-TOKEN': document.querySelector('meta[name=csrf-token]').getAttribute('content'),
+                            'Content-Type': 'application/json',
+                            'Accept': 'application/json',
+                        },
+                        body: JSON.stringify(payload),
+                    });
+                    if (!res.ok) throw new Error('HTTP ' + res.status);
+                    const result = await res.json();
+                    this.selected.taken_at_label = result.taken_at_label;
+                    const idx = this.items.findIndex(i => i.id === id);
+                    if (idx !== -1) {
+                        Object.assign(this.items[idx], {
+                            city: result.city, region: result.region, country: result.country,
+                            event: result.event, taken_at: result.taken_at, taken_at_label: result.taken_at_label,
+                        });
+                    }
+                } catch(e) {
+                    alert('Erreur sauvegarde : ' + e.message);
+                }
+            }, 400);
+        },
+        async patchBrands(brands) {
+            if (!this.selected || !this.selected.id) return;
+            const id = this.selected.id;
+            try {
+                const res = await fetch(`/media/${id}/details`, {
+                    method: 'PATCH',
+                    headers: {
+                        'X-CSRF-TOKEN': document.querySelector('meta[name=csrf-token]').getAttribute('content'),
+                        'Content-Type': 'application/json',
+                        'Accept': 'application/json',
+                    },
+                    body: JSON.stringify({ brands }),
+                });
+                if (!res.ok) throw new Error('HTTP ' + res.status);
+                const result = await res.json();
+                this.selected.brands = result.brands || [];
+                const idx = this.items.findIndex(i => i.id === id);
+                if (idx !== -1) this.items[idx].brands = result.brands || [];
+                // Met à jour la liste autocomplete locale (les nouvelles marques deviennent disponibles).
+                for (const b of (result.brands || [])) {
+                    if (!this.autocomplete.brands.some(x => x.toLowerCase() === b.toLowerCase())) {
+                        this.autocomplete.brands.push(b);
+                    }
+                }
+            } catch(e) {
+                alert('Erreur marques : ' + e.message);
+            }
+        },
+        async addBrand() {
+            const value = (this.newBrandInput || '').trim();
+            if (!value) return;
+            this.newBrandInput = '';
+            const current = this.selected.brands || [];
+            if (current.some(b => b.toLowerCase() === value.toLowerCase())) return;
+            await this.patchBrands([...current, value]);
+        },
+        async removeBrand(brand) {
+            if (!brand) return;
+            const current = this.selected.brands || [];
+            const next = current.filter(b => b.toLowerCase() !== brand.toLowerCase());
+            await this.patchBrands(next);
+        },
         copyMacCommand() {
             if (this.multiSelected.length === 0) return;
             const ids = this.multiSelected.join(',');
@@ -407,6 +523,7 @@
         },
         async createFolder() {
             if (!this.newFolderName.trim()) return;
+            const parentId = this.newFolderParentId;
             try {
                 const response = await fetch('{{ route('media.folders.store') }}', {
                     method: 'POST',
@@ -417,11 +534,17 @@
                     },
                     body: JSON.stringify({
                         name: this.newFolderName.trim(),
-                        parent_id: this.newFolderParentId,
+                        parent_id: parentId,
                     }),
                 });
                 if (response.ok) {
-                    window.location.reload();
+                    // Si on a créé un sous-dossier d'un parent où on n'est pas, naviguer vers ce parent
+                    // pour que l'utilisateur voie son nouveau dossier après reload.
+                    if (parentId && parentId !== this.currentFolderId) {
+                        this.navigateFolder(parentId);
+                    } else {
+                        window.location.reload();
+                    }
                 } else {
                     const data = await response.json();
                     alert(data.message || 'Erreur.');
@@ -513,7 +636,21 @@
             if (statuses.length > 0) return 'bg-gray-100 text-gray-600';
             return 'bg-gray-100 text-gray-500';
         }
-    }">
+    }" x-init="fetchAutocomplete()">
+        {{-- Datalists pour autocomplete des champs structurés --}}
+        <datalist id="cities-autocomplete-list">
+            <template x-for="v in autocomplete.cities" :key="v"><option :value="v"></option></template>
+        </datalist>
+        <datalist id="regions-autocomplete-list">
+            <template x-for="v in autocomplete.regions" :key="v"><option :value="v"></option></template>
+        </datalist>
+        <datalist id="countries-autocomplete-list">
+            <template x-for="v in autocomplete.countries" :key="v"><option :value="v"></option></template>
+        </datalist>
+        <datalist id="brands-autocomplete-list">
+            <template x-for="v in autocomplete.brands" :key="v"><option :value="v"></option></template>
+        </datalist>
+
         {{-- Stats cards --}}
         <div class="grid grid-cols-3 gap-4 mb-6">
             <div class="bg-white rounded-2xl border border-gray-100 shadow-sm p-5">
@@ -572,6 +709,31 @@
 
         {{-- Folder pills --}}
         <div class="bg-white rounded-2xl border border-gray-100 shadow-sm p-4 mb-6">
+            {{-- Breadcrumb (visible quand on est dans un sous-dossier) --}}
+            <template x-if="breadcrumb.length > 0">
+                <div class="flex items-center gap-1.5 text-sm mb-3 pb-3 border-b border-gray-100 flex-wrap">
+                    <button @click="navigateFolder(currentFolderObj?.parent_id || null)"
+                            class="inline-flex items-center gap-1 px-2 py-1 rounded-lg text-gray-600 hover:bg-gray-100 transition-colors"
+                            title="Retour au dossier parent">
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M15.75 19.5 8.25 12l7.5-7.5" /></svg>
+                        Retour
+                    </button>
+                    <span class="text-gray-300">|</span>
+                    <button @click="navigateFolder(null)" class="text-gray-500 hover:text-indigo-600 transition-colors">Tous</button>
+                    <template x-for="(crumb, idx) in breadcrumb" :key="crumb.id">
+                        <span class="inline-flex items-center gap-1.5">
+                            <svg class="w-3.5 h-3.5 text-gray-300" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="m8.25 4.5 7.5 7.5-7.5 7.5" /></svg>
+                            <button @click="navigateFolder(crumb.id)"
+                                    class="inline-flex items-center gap-1.5"
+                                    :class="idx === breadcrumb.length - 1 ? 'font-semibold text-indigo-600' : 'text-gray-500 hover:text-indigo-600'">
+                                <span class="w-2 h-2 rounded-sm flex-shrink-0" :style="'background-color: ' + crumb.color"></span>
+                                <span x-text="crumb.name"></span>
+                            </button>
+                        </span>
+                    </template>
+                </div>
+            </template>
+
             <div class="flex items-center gap-2 flex-wrap">
                 {{-- All files pill --}}
                 <button @click="navigateFolder(null)"
@@ -584,18 +746,24 @@
                     <span class="text-xs opacity-70" x-text="'(' + totalCount + ')'"></span>
                 </button>
 
-                {{-- Dynamic folder pills (avec indent par niveau hiérarchique) --}}
-                <template x-for="folder in folders" :key="folder.id">
-                    <div class="relative inline-flex" :style="folder.depth > 0 ? ('margin-left: ' + (folder.depth * 16) + 'px') : ''">
+                {{-- Dossiers du niveau courant uniquement (drill-down) --}}
+                <template x-for="folder in visibleFolders" :key="folder.id">
+                    <div class="relative inline-flex">
                         <div class="inline-flex items-center rounded-lg transition-colors"
                              :class="currentFolder == folder.id ? 'bg-indigo-600 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'">
                             <button @click="navigateFolder(folder.id)"
                                     class="inline-flex items-center gap-1.5 pl-3 py-1.5 text-sm font-medium"
                                     :title="folder.path">
-                                <span x-show="folder.depth > 0" class="text-gray-400">↳</span>
                                 <span class="w-2.5 h-2.5 rounded-sm flex-shrink-0" :style="'background-color: ' + folder.color"></span>
                                 <span x-text="folder.name"></span>
                                 <span class="text-xs opacity-70" x-text="'(' + folder.files_count + ')'"></span>
+                                <span x-show="folder.children_count > 0"
+                                      class="inline-flex items-center gap-0.5 text-xs opacity-70"
+                                      :title="folder.children_count + ' sous-dossier(s)'">
+                                    <span>·</span>
+                                    <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="m8.25 4.5 7.5 7.5-7.5 7.5" /></svg>
+                                    <span x-text="folder.children_count"></span>
+                                </span>
                             </button>
                             {{-- Three-dot menu inside the pill --}}
                             <button @click.stop="folderMenuOpen = (folderMenuOpen === folder.id ? null : folder.id)"
@@ -655,14 +823,14 @@
                 {{-- Separator --}}
                 <div class="w-px h-6 bg-gray-200 mx-1"></div>
 
-                {{-- New folder inline --}}
+                {{-- New folder inline (par défaut au niveau courant si on est dans un dossier) --}}
                 <template x-if="!creatingFolder">
-                    <button @click="newFolderParentId = null; creatingFolder = true; $nextTick(() => $refs.newFolderInput.focus())"
+                    <button @click="newFolderParentId = currentFolderId; creatingFolder = true; $nextTick(() => $refs.newFolderInput.focus())"
                             class="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium rounded-lg text-indigo-600 bg-indigo-50 hover:bg-indigo-100 transition-colors">
                         <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2">
                             <path stroke-linecap="round" stroke-linejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
                         </svg>
-                        Nouveau dossier
+                        <span x-text="currentFolderId ? 'Nouveau sous-dossier' : 'Nouveau dossier'"></span>
                     </button>
                 </template>
                 <template x-if="creatingFolder">
@@ -1057,6 +1225,74 @@
                                                            @keydown.enter.prevent="addTag()">
                                                     <button @click="addTag()" :disabled="!newTagInput.trim()"
                                                             class="px-2 py-1 text-xs bg-indigo-600 text-white rounded hover:bg-indigo-700 disabled:opacity-50">+</button>
+                                                </div>
+                                            </div>
+
+                                            {{-- Marques / partenaires (éditables) --}}
+                                            <div>
+                                                <span class="text-[10px] text-gray-400 block mb-1">Marques / partenaires</span>
+                                                <div class="flex flex-wrap gap-1 mb-1.5">
+                                                    <template x-for="b in (selected.brands || [])" :key="b">
+                                                        <span class="inline-flex items-center gap-1 bg-amber-50 text-amber-800 text-[10px] pl-2 pr-1 py-0.5 rounded">
+                                                            <span x-text="b"></span>
+                                                            <button @click="removeBrand(b)" class="text-amber-400 hover:text-red-600 leading-none" type="button" title="Retirer cette marque">×</button>
+                                                        </span>
+                                                    </template>
+                                                    <template x-if="!selected.brands || selected.brands.length === 0">
+                                                        <span class="text-[10px] text-gray-400 italic">Aucune marque.</span>
+                                                    </template>
+                                                </div>
+                                                <div class="flex items-center gap-1">
+                                                    <input type="text" x-model="newBrandInput" placeholder="ajouter une marque…" list="brands-autocomplete-list"
+                                                           class="flex-1 text-xs border border-gray-200 rounded px-2 py-1 focus:border-indigo-400 focus:ring-1 focus:ring-indigo-400"
+                                                           @keydown.enter.prevent="addBrand()">
+                                                    <button @click="addBrand()" :disabled="!newBrandInput.trim()"
+                                                            class="px-2 py-1 text-xs bg-amber-600 text-white rounded hover:bg-amber-700 disabled:opacity-50">+</button>
+                                                </div>
+                                            </div>
+
+                                            {{-- Lieu (ville / région / pays) --}}
+                                            <div>
+                                                <span class="text-[10px] text-gray-400 block mb-1">Lieu</span>
+                                                <div class="grid grid-cols-3 gap-1">
+                                                    <input type="text" x-model="selected.city" placeholder="Ville" list="cities-autocomplete-list"
+                                                           class="text-xs border border-gray-200 rounded px-2 py-1 focus:border-indigo-400 focus:ring-1 focus:ring-indigo-400"
+                                                           @change="saveDetails()">
+                                                    <input type="text" x-model="selected.region" placeholder="Région" list="regions-autocomplete-list"
+                                                           class="text-xs border border-gray-200 rounded px-2 py-1 focus:border-indigo-400 focus:ring-1 focus:ring-indigo-400"
+                                                           @change="saveDetails()">
+                                                    <input type="text" x-model="selected.country" placeholder="Pays" list="countries-autocomplete-list"
+                                                           class="text-xs border border-gray-200 rounded px-2 py-1 focus:border-indigo-400 focus:ring-1 focus:ring-indigo-400"
+                                                           @change="saveDetails()">
+                                                </div>
+                                            </div>
+
+                                            {{-- Événement (facultatif) --}}
+                                            <div>
+                                                <span class="text-[10px] text-gray-400 block mb-1">Événement</span>
+                                                <input type="text" x-model="selected.event" placeholder="ex: Voyage Portugal 2024"
+                                                       class="w-full text-xs border border-gray-200 rounded px-2 py-1 focus:border-indigo-400 focus:ring-1 focus:ring-indigo-400"
+                                                       @change="saveDetails()">
+                                            </div>
+
+                                            {{-- Date de prise + compteur de publications --}}
+                                            <div class="grid grid-cols-2 gap-2 text-xs">
+                                                <div>
+                                                    <span class="text-[10px] text-gray-400 block mb-1">Date de prise</span>
+                                                    <input type="date" x-model="selected.taken_at"
+                                                           class="w-full text-xs border border-gray-200 rounded px-2 py-1 focus:border-indigo-400 focus:ring-1 focus:ring-indigo-400"
+                                                           @change="saveDetails()">
+                                                    <template x-if="selected.taken_at_label">
+                                                        <span class="text-[10px] text-gray-400 block mt-0.5" x-text="selected.taken_at_label"></span>
+                                                    </template>
+                                                </div>
+                                                <div>
+                                                    <span class="text-[10px] text-gray-400 block mb-1">Publications</span>
+                                                    <span class="inline-flex items-center gap-1 text-[11px] font-medium"
+                                                          :class="(selected.publication_count || 0) === 0 ? 'text-gray-400' : 'text-indigo-600'">
+                                                        <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M16 12a4 4 0 1 0-8 0 4 4 0 0 0 8 0Zm0 0v1.5a2.5 2.5 0 0 0 5 0V12a9 9 0 1 0-9 9m4.5-1.206a8.959 8.959 0 0 1-4.5 1.207" /></svg>
+                                                        <span x-text="(selected.publication_count || 0) + (selected.publication_count === 1 ? ' fois' : ' fois')"></span>
+                                                    </span>
                                                 </div>
                                             </div>
 

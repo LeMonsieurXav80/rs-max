@@ -102,6 +102,14 @@ class MediaController extends Controller
                 'intimacy_level' => $mf->intimacy_level,
                 'pending_analysis' => (bool) $mf->pending_analysis,
                 'source_context' => $mf->source_context,
+                'city' => $mf->city,
+                'region' => $mf->region,
+                'country' => $mf->country,
+                'brands' => $mf->brands ?? [],
+                'event' => $mf->event,
+                'taken_at' => $mf->taken_at?->format('Y-m-d'),
+                'taken_at_label' => $mf->taken_at?->locale('fr')->isoFormat('MMMM YYYY'),
+                'publication_count' => (int) $mf->publication_count,
             ];
 
             if ($isVideo) {
@@ -164,11 +172,11 @@ class MediaController extends Controller
             ->count();
 
         $poolCounts = [
-            'pdc_vantour'   => MediaFile::where('mime_type', 'like', 'image/%')->where('allow_pdc_vantour', true)->count(),
-            'wildycaro'     => MediaFile::where('mime_type', 'like', 'image/%')->where('allow_wildycaro', true)->count(),
-            'mamawette'     => MediaFile::where('mime_type', 'like', 'image/%')->where('allow_mamawette', true)->count(),
+            'pdc_vantour' => MediaFile::where('mime_type', 'like', 'image/%')->where('allow_pdc_vantour', true)->count(),
+            'wildycaro' => MediaFile::where('mime_type', 'like', 'image/%')->where('allow_wildycaro', true)->count(),
+            'mamawette' => MediaFile::where('mime_type', 'like', 'image/%')->where('allow_mamawette', true)->count(),
             'never_publish' => MediaFile::where('mime_type', 'like', 'image/%')->where('intimacy_level', 'never_publish')->count(),
-            'unclassified'  => $unclassifiedCount,
+            'unclassified' => $unclassifiedCount,
         ];
 
         $currentFolder = $folderId;
@@ -431,6 +439,103 @@ class MediaController extends Controller
         return response()->json([
             'id' => $media->id,
             'thematic_tags' => $tags,
+        ]);
+    }
+
+    /**
+     * PATCH /media/{id}/details — édite les champs structurés (lieu, marques, événement, taken_at).
+     */
+    public function updateDetails(Request $request, MediaFile $media): JsonResponse
+    {
+        $data = $request->validate([
+            'city' => 'nullable|string|max:120',
+            'region' => 'nullable|string|max:120',
+            'country' => 'nullable|string|max:120',
+            'brands' => 'nullable|array',
+            'brands.*' => 'string|max:80',
+            'event' => 'nullable|string|max:200',
+            'taken_at' => 'nullable|date',
+        ]);
+
+        $update = [];
+        foreach (['city', 'region', 'country', 'event'] as $field) {
+            if (array_key_exists($field, $data)) {
+                $val = $data[$field];
+                $update[$field] = is_string($val) && trim($val) !== '' ? trim($val) : null;
+            }
+        }
+        if (array_key_exists('brands', $data)) {
+            $seen = [];
+            $brands = [];
+            foreach ($data['brands'] ?? [] as $b) {
+                $clean = trim((string) $b);
+                if ($clean === '') {
+                    continue;
+                }
+                $key = mb_strtolower($clean);
+                if (isset($seen[$key])) {
+                    continue;
+                }
+                $seen[$key] = true;
+                $brands[] = $clean;
+            }
+            $update['brands'] = $brands;
+        }
+        if (array_key_exists('taken_at', $data)) {
+            $update['taken_at'] = $data['taken_at'] ?: null;
+        }
+
+        $media->update($update);
+
+        return response()->json([
+            'id' => $media->id,
+            'city' => $media->city,
+            'region' => $media->region,
+            'country' => $media->country,
+            'brands' => $media->brands ?? [],
+            'event' => $media->event,
+            'taken_at' => $media->taken_at?->format('Y-m-d'),
+            'taken_at_label' => $media->taken_at?->locale('fr')->isoFormat('MMMM YYYY'),
+        ]);
+    }
+
+    /**
+     * GET /media/autocomplete — valeurs distinctes existantes pour autocomplete UI.
+     * Retourne villes, régions, pays, marques.
+     */
+    public function autocomplete(): JsonResponse
+    {
+        $cities = MediaFile::whereNotNull('city')->where('city', '!=', '')
+            ->distinct()->orderBy('city')->limit(500)->pluck('city');
+        $regions = MediaFile::whereNotNull('region')->where('region', '!=', '')
+            ->distinct()->orderBy('region')->limit(500)->pluck('region');
+        $countries = MediaFile::whereNotNull('country')->where('country', '!=', '')
+            ->distinct()->orderBy('country')->limit(500)->pluck('country');
+
+        // Marques : agréger les valeurs JSON distinctes (case-insensitive) sans dépendre du SQL JSON.
+        $brandSet = [];
+        MediaFile::whereNotNull('brands')->select('brands')->chunk(500, function ($rows) use (&$brandSet) {
+            foreach ($rows as $row) {
+                foreach ($row->brands ?? [] as $b) {
+                    $clean = trim((string) $b);
+                    if ($clean === '') {
+                        continue;
+                    }
+                    $key = mb_strtolower($clean);
+                    if (! isset($brandSet[$key])) {
+                        $brandSet[$key] = $clean;
+                    }
+                }
+            }
+        });
+        $brands = array_values($brandSet);
+        sort($brands, SORT_NATURAL | SORT_FLAG_CASE);
+
+        return response()->json([
+            'cities' => $cities,
+            'regions' => $regions,
+            'countries' => $countries,
+            'brands' => $brands,
         ]);
     }
 

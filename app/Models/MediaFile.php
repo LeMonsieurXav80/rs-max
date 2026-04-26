@@ -34,6 +34,13 @@ class MediaFile extends Model
         'phash',
         'pending_analysis',
         'ingested_at',
+        'city',
+        'region',
+        'country',
+        'brands',
+        'event',
+        'taken_at',
+        'publication_count',
     ];
 
     protected $casts = [
@@ -44,11 +51,14 @@ class MediaFile extends Model
         'embedding' => 'array',
         'people_ids' => 'array',
         'ai_metadata' => 'array',
+        'brands' => 'array',
         'allow_wildycaro' => 'boolean',
         'allow_pdc_vantour' => 'boolean',
         'allow_mamawette' => 'boolean',
         'pending_analysis' => 'boolean',
         'ingested_at' => 'datetime',
+        'taken_at' => 'datetime',
+        'publication_count' => 'integer',
     ];
 
     public function folder(): BelongsTo

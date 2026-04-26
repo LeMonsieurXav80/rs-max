@@ -46,17 +46,34 @@ Localisation du script : `/Volumes/Samsung_T5/DEV/Scripts/analyse-images.py`. Ru
 2. **`python analyse-images.py --legacy`** — rattrape les photos `pending_analysis=true` côté serveur (download + analyse + `/enrich`)
 3. **`python analyse-images.py --init`** — config interactive (URLs API, tokens)
 
-### 5 questions par dossier (mode interactif)
+### Questions par dossier (mode interactif)
 Posées au lancement, **une seule fois pour tout le dossier** :
 1. Contexte / lieu (ex: `Albufeira - Algarve - Portugal - 2004`)
    - Sert à enrichir le prompt Ollama, **non envoyé au serveur** (redondant avec les tags)
-2. Pool (1=PdC/Vantour, 2=Wildycaro, 3=Les deux, 4=Mamawette, 5=Aucun)
+2. Pool (1=PdC/Vantour, 2=Wildycaro, 3=Mamawette, 4=Aucun)
    - Détermine `allow_wildycaro` / `allow_pdc_vantour` / `allow_mamawette`
    - L'`intimacy_level` est dérivé : `prive` pour Mamawette, `public` ailleurs
 3. Personnes attendues dans les photos (csv : `caroline, xavier`)
    - Aide Ollama à compter les personnes (le modèle 7B ne sait pas reconnaître des visages, on lui donne le contexte)
-4. Tags du dossier (csv : `albufeira, algarve, portugal, juillet, 2004`)
+4. **Lieu structuré** (3 questions séparées) : ville / région / pays
+   - Stockés dans les colonnes dédiées `city`, `region`, `country` (depuis Avr 2026)
+   - Permettent filtrage et autocomplete UI sans dépendre du free-text des tags
+5. **Marques / partenaires** (csv : `Decathlon, Quechua`)
+   - Stockées dans la colonne JSON `brands` (depuis Avr 2026)
+   - Dédup case-insensitive côté serveur, casse d'origine préservée
+6. **Événement** (facultatif, ex: `Voyage Portugal 2004`)
+   - Stocké dans la colonne `event`
+7. Tags additionnels du dossier (csv libre)
    - Appliqués à toutes les photos du batch en plus des tags générés par l'IA
+
+### Date de prise de vue (taken_at)
+Lue automatiquement depuis l'EXIF de chaque photo via `read_exif_taken_at()` :
+- Tag prioritaire : `36867` (DateTimeOriginal)
+- Fallbacks : `36868` (DateTimeDigitized), `306` (DateTime)
+- Format EXIF `YYYY:MM:DD HH:MM:SS` converti en `YYYY-MM-DD HH:MM:SS` ISO
+- Si EXIF absent ou corrompu : `taken_at` reste `null`, pas d'erreur
+
+L'UI web affiche la date sous forme « mois année » (ex: `juillet 2004`) pour la lisibilité.
 
 ### Prompt Ollama (extrait)
 
@@ -97,6 +114,9 @@ photos_analyse (
   people_ids, pool_suggested, intimacy_level,
   allow_wildycaro, allow_pdc_vantour, allow_mamawette,
   source_context, folder_name, analyzed_at,
+
+  -- Métadonnées structurées (Avr 2026)
+  city, region, country, brands JSON, event, taken_at,
 
   -- Tracking par environnement
   pushed_to_dev, vps_id_dev, vps_filename_dev, vps_url_full_dev, pushed_at_dev,
@@ -302,6 +322,50 @@ Le fichier stocké sur le VPS est la version compressée. Le **phash et l'embedd
 
 ---
 
+## Métadonnées structurées (Avr 2026)
+
+En plus des `thematic_tags` (free-text), chaque photo a 6 champs structurés permettant filtrage exact et autocomplete UI :
+
+| Champ | Type | Source primaire | Usage |
+|-------|------|-----------------|-------|
+| `city` | string nullable | Question dossier (script Mac) ou édition manuelle UI | Autocomplete, filtre |
+| `region` | string nullable | Idem | Autocomplete, filtre |
+| `country` | string nullable | Idem | Autocomplete, filtre |
+| `brands` | JSON array | Question dossier (csv) ou édition chip-style UI | Identifier les photos d'une campagne / partenariat. Dédup case-insensitive |
+| `event` | string nullable | Question dossier (facultatif) ou UI | Regrouper une série narrative (ex: "Voyage Portugal 2004") |
+| `taken_at` | datetime nullable | EXIF DateTimeOriginal (auto) ou UI | Chronologie réelle, alimente la phrase "il y a X mois" en génération |
+
+Tous éditables depuis le panneau de détail photo dans `/media` via `PATCH /media/{id}/details` (auto-save debouncé 400 ms côté UI). Datalists d'autocomplete alimentés par `GET /media/autocomplete` (valeurs distinctes en base).
+
+---
+
+## Compteur de publications (publication_count)
+
+Colonne `publication_count` (int, défaut 0) sur `media_files`, dénormalisée par souci de performance (tri/affichage rapides sans JOIN).
+
+### Alimentation
+
+Trois points d'incrément, tous via `MediaFile::increment('publication_count')` :
+
+1. **`MediaPublicationTracker::track()`** : appelé après chaque post / thread segment publié. C'est le chemin par défaut de toute publication interne RS-Max.
+2. **`MediaApiController::markPublished()`** : pour publications hors RS-Max marquées via API.
+3. **Backfill migration** : la migration `add_location_brands_to_media_files` initialise `publication_count = COUNT(*) FROM media_publications WHERE media_file_id = ?` au moment du déploiement, donc les photos déjà publiées avant l'ajout de la colonne ont leur compteur à jour.
+
+### Utilisation
+
+- **Auto-attach threads** (`ThreadContentGenerationService::attachPhotosByKeywords`) : les requêtes de match strict ET large utilisent `orderBy('publication_count')->inRandomOrder()`. Les photos jamais publiées sortent en priorité, puis celles avec 1 pub, etc. Au sein d'un même `publication_count`, ordre aléatoire pour varier.
+- **`/api/media/search` mode mots-clés** (sans embedding) : même tri.
+- **`/api/media/search` mode embedding** : tri par similarité cosine inchangé (publication_count ignoré).
+- **UI médiathèque** : compteur affiché sur la photo sélectionnée pour visibilité humaine.
+
+### Garde-fous existants conservés
+
+Le filtre `exclude_recently_published_days` (par défaut 30 jours pour `pdc_vantour`) reste actif. Il opère via `whereDoesntHave('publications', ...)` et ne dépend pas de `publication_count`. Les deux mécanismes sont complémentaires :
+- **`exclude_recently_published_days`** = "n'utilise PAS cette photo si elle a été publiée récemment"
+- **`publication_count` ASC** = "à choix égal, préfère celle qu'on a moins utilisée historiquement"
+
+---
+
 ## Migrations Laravel
 
 | Migration | Effet |
@@ -309,6 +373,8 @@ Le fichier stocké sur le VPS est la version compressée. Le **phash et l'embedd
 | `2026_04_25_100000_enrich_media_files_for_catalog` | Ajoute 15 colonnes IA + flags pool sur `media_files` (description_fr, thematic_tags, embedding, allow_*, intimacy_level, phash, pending_analysis, etc.) + 3 index. |
 | `2026_04_25_100001_create_media_publications_table` | Crée `media_publications` (FK vers `media_files`, `posts`, `thread_segments`, `post_platform`). |
 | `2026_04_25_110000_add_mamawette_pool_and_simplify_intimacy` | Ajoute `allow_mamawette`. Supprime `semi_prive` de l'enum (les photos `semi_prive` migrent vers `public`). Refait l'index pool avec mamawette. |
+| `2026_04_25_144421_add_parent_id_to_media_folders_table` | Ajoute `parent_id` (FK self) sur `media_folders` pour la hiérarchie de dossiers. |
+| `2026_04_25_160000_add_location_brands_to_media_files` | Ajoute `city`, `region`, `country`, `brands` (JSON), `event`, `taken_at`, `publication_count` sur `media_files`. 4 index. Backfill `publication_count` depuis `media_publications`. |
 
 Toutes les migrations gèrent SQLite + MySQL (les `MODIFY COLUMN` MySQL-specific sont gardés derrière un `if (DB::connection()->getDriverName() === 'mysql')` pour ne pas casser les tests in-memory).
 
