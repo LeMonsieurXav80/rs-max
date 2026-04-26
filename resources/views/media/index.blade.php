@@ -126,6 +126,8 @@
         newFolderName: '',
         newFolderParentId: null,
         creatingFolder: false,
+        // Etat de l'arbre de dossiers (sidebar gauche)
+        openFolders: @js($autoOpenIds),
         newTagInput: '',
         newBrandInput: '',
         newPersonInput: '',
@@ -798,6 +800,40 @@
             }
             this.deleteConfirm = false;
         },
+        // ───── Arbre de dossiers (sidebar gauche) ─────
+        isFolderOpen(id) { return this.openFolders.includes(id); },
+        toggleFolderOpen(id) {
+            const idx = this.openFolders.indexOf(id);
+            if (idx >= 0) {
+                // Ferme aussi tous les descendants
+                const descendants = new Set([id]);
+                let added;
+                do {
+                    added = false;
+                    for (const f of this.folders) {
+                        if (descendants.has(f.parent_id) && !descendants.has(f.id)) {
+                            descendants.add(f.id);
+                            added = true;
+                        }
+                    }
+                } while (added);
+                this.openFolders = this.openFolders.filter(o => !descendants.has(o));
+            } else {
+                this.openFolders.push(id);
+            }
+        },
+        isFolderVisible(f) {
+            return (f.parent_chain || []).every(p => this.openFolders.includes(p));
+        },
+        // Ouvre le prompt de creation d'un (sous-)dossier. parentId = null pour racine.
+        promptCreateFolder(parentId) {
+            const name = window.prompt(parentId ? 'Nom du sous-dossier :' : 'Nom du nouveau dossier :');
+            if (!name || !name.trim()) return;
+            this.newFolderName = name.trim();
+            this.newFolderParentId = parentId;
+            this.createFolder();
+        },
+
         async createFolder() {
             if (!this.newFolderName.trim()) return;
             const parentId = this.newFolderParentId;
@@ -1102,10 +1138,15 @@
                         </div>
                     </div>
 
-                    {{-- Dossiers (arbre cliquable) --}}
-                    <div class="bg-white rounded-2xl border border-gray-100 shadow-sm p-3"
-                         x-data="folderTree({{ json_encode($foldersJson) }}, {{ json_encode($autoOpenIds) }})">
-                        <h3 class="text-[10px] font-semibold uppercase tracking-widest text-gray-400 px-2 pb-2">Dossiers</h3>
+                    {{-- Dossiers (arbre cliquable + actions create/delete) --}}
+                    <div class="bg-white rounded-2xl border border-gray-100 shadow-sm p-3">
+                        <div class="flex items-center justify-between px-2 pb-2">
+                            <h3 class="text-[10px] font-semibold uppercase tracking-widest text-gray-400">Dossiers</h3>
+                            <button type="button" @click="promptCreateFolder(null)" title="Creer un dossier racine"
+                                    class="w-5 h-5 flex items-center justify-center rounded text-gray-400 hover:bg-indigo-50 hover:text-indigo-600">
+                                <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M12 4.5v15m7.5-7.5h-15" /></svg>
+                            </button>
+                        </div>
                         <a href="{{ route('media.index', array_filter(['pool' => $currentPool, 'filter' => $filter !== 'all' ? $filter : null])) }}"
                            class="flex items-center justify-between px-2 py-1.5 rounded-lg text-sm transition-colors {{ ! $currentFolder ? 'bg-indigo-50 text-indigo-700 font-medium' : 'text-gray-600 hover:bg-gray-50' }}">
                             <span>Tous les dossiers</span>
@@ -1117,10 +1158,10 @@
                             <span class="text-xs text-gray-400">{{ $uncategorizedCount }}</span>
                         </a>
                         <template x-for="f in folders" :key="f.id">
-                            <div x-show="isVisible(f)" class="flex items-center group" :style="`padding-left: ${f.depth * 12}px`">
-                                <button x-show="f.has_children" @click.stop="toggle(f.id)" type="button"
+                            <div x-show="isFolderVisible(f)" class="flex items-center group rounded-lg hover:bg-gray-50" :style="`padding-left: ${f.depth * 12}px`">
+                                <button x-show="f.has_children" @click.stop="toggleFolderOpen(f.id)" type="button"
                                         class="w-4 h-4 flex items-center justify-center text-gray-400 hover:text-gray-700 flex-shrink-0">
-                                    <svg class="w-3 h-3 transition-transform" :class="isOpen(f.id) && 'rotate-90'" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="m8.25 4.5 7.5 7.5-7.5 7.5" /></svg>
+                                    <svg class="w-3 h-3 transition-transform" :class="isFolderOpen(f.id) && 'rotate-90'" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="m8.25 4.5 7.5 7.5-7.5 7.5" /></svg>
                                 </button>
                                 <span x-show="!f.has_children" class="w-4 h-4 flex-shrink-0"></span>
                                 <a :href="`{{ route('media.index') }}?folder=${f.id}{{ $currentPool ? '&pool='.urlencode($currentPool) : '' }}{{ $filter !== 'all' ? '&filter='.$filter : '' }}`"
@@ -1132,6 +1173,17 @@
                                     </span>
                                     <span class="text-xs text-gray-400 flex-shrink-0" x-text="f.files_count"></span>
                                 </a>
+                                {{-- Actions au survol : creer sous-dossier + supprimer --}}
+                                <div class="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0 pr-1">
+                                    <button type="button" @click.stop="promptCreateFolder(f.id)" :title="'Creer sous-dossier dans ' + f.name"
+                                            class="w-5 h-5 flex items-center justify-center rounded text-gray-400 hover:bg-indigo-50 hover:text-indigo-600">
+                                        <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M12 4.5v15m7.5-7.5h-15" /></svg>
+                                    </button>
+                                    <button type="button" @click.stop="deleteFolderConfirm = f" :title="'Supprimer ' + f.name"
+                                            class="w-5 h-5 flex items-center justify-center rounded text-gray-400 hover:bg-rose-50 hover:text-rose-600">
+                                        <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="m14.74 9-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 0 1-2.244 2.077H8.084a2.25 2.25 0 0 1-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 0 0-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 0 1 3.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 0 0-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 0 0-7.5 0" /></svg>
+                                    </button>
+                                </div>
                             </div>
                         </template>
                     </div>
@@ -1794,37 +1846,5 @@
         </div>
     </div>
 
-    <script>
-    // Composant Alpine pour l'arbre de dossiers de la sidebar gauche.
-    function folderTree(folders, autoOpenIds) {
-        return {
-            folders,
-            openFolders: [...autoOpenIds],
-            isOpen(id) { return this.openFolders.includes(id); },
-            toggle(id) {
-                const idx = this.openFolders.indexOf(id);
-                if (idx >= 0) {
-                    // Ferme aussi tous les descendants pour eviter qu'ils restent visibles si on rouvre.
-                    const descendants = new Set([id]);
-                    let added;
-                    do {
-                        added = false;
-                        for (const f of this.folders) {
-                            if (descendants.has(f.parent_id) && !descendants.has(f.id)) {
-                                descendants.add(f.id);
-                                added = true;
-                            }
-                        }
-                    } while (added);
-                    this.openFolders = this.openFolders.filter(o => !descendants.has(o));
-                } else {
-                    this.openFolders.push(id);
-                }
-            },
-            isVisible(f) {
-                return f.parent_chain.every(p => this.openFolders.includes(p));
-            },
-        };
-    }
-    </script>
+    {{-- folderTree() est maintenant inline dans la x-data parente (isFolderOpen, toggleFolderOpen, isFolderVisible) --}}
 @endsection
