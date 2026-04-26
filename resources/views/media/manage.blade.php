@@ -154,8 +154,8 @@
             </main>
 
             {{-- ═══════════ Sidebar droite : toolbar bulk-edit ═══════════ --}}
-            <aside class="w-[360px] flex-shrink-0">
-                <div class="sticky top-20 space-y-3 max-h-[calc(100vh-6rem)] overflow-y-auto">
+            <aside class="w-[360px] flex-shrink-0 self-start">
+                <div class="sticky top-20 space-y-3">
                     {{-- Pas de selection --}}
                     <div x-show="selectedIds.length === 0" class="bg-white rounded-2xl border border-gray-100 shadow-sm p-6 text-center">
                         <svg class="w-10 h-10 text-gray-200 mx-auto mb-2" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1.5"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12l2 2 4-4m6 2a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z" /></svg>
@@ -201,7 +201,7 @@
                             <template x-if="tagChips.length > 0">
                                 <div class="mt-3">
                                     <p class="text-[10px] text-gray-400 uppercase tracking-wider mb-1.5">Presents dans la selection (clic × pour retirer)</p>
-                                    <div class="flex flex-wrap gap-1.5">
+                                    <div class="flex flex-wrap gap-1.5 max-h-28 overflow-y-auto">
                                         <template x-for="chip in tagChips" :key="chip.value">
                                             <span class="inline-flex items-center gap-1 px-2 py-0.5 text-xs bg-gray-100 hover:bg-rose-50 hover:text-rose-700 rounded group cursor-pointer" @click="removeOne('tags', chip.value)">
                                                 <span x-text="chip.value"></span>
@@ -224,7 +224,7 @@
                             <template x-if="brandChips.length > 0">
                                 <div class="mt-3">
                                     <p class="text-[10px] text-gray-400 uppercase tracking-wider mb-1.5">Presentes dans la selection</p>
-                                    <div class="flex flex-wrap gap-1.5">
+                                    <div class="flex flex-wrap gap-1.5 max-h-28 overflow-y-auto">
                                         <template x-for="chip in brandChips" :key="chip.value">
                                             <span class="inline-flex items-center gap-1 px-2 py-0.5 text-xs bg-gray-100 hover:bg-rose-50 hover:text-rose-700 rounded group cursor-pointer" @click="removeOne('brands', chip.value)">
                                                 <span x-text="chip.value"></span>
@@ -248,7 +248,7 @@
                             <template x-if="peopleChips.length > 0">
                                 <div class="mt-3">
                                     <p class="text-[10px] text-gray-400 uppercase tracking-wider mb-1.5">Presentes dans la selection</p>
-                                    <div class="flex flex-wrap gap-1.5">
+                                    <div class="flex flex-wrap gap-1.5 max-h-28 overflow-y-auto">
                                         <template x-for="chip in peopleChips" :key="chip.value">
                                             <span class="inline-flex items-center gap-1 px-2 py-0.5 text-xs bg-gray-100 hover:bg-rose-50 hover:text-rose-700 rounded group cursor-pointer" @click="removeOne('people', chip.value)">
                                                 <span x-text="chip.value"></span>
@@ -324,6 +324,7 @@
         return {
             items: @json($items),
             selectedIds: [],
+            lastClickedIdx: null, // pour la selection en plage avec Shift
             busy: false,
             lastMessage: '',
             lastError: '',
@@ -343,10 +344,28 @@
             init() {},
 
             isSelected(id) { return this.selectedIds.includes(id); },
-            toggle(id) {
-                const idx = this.selectedIds.indexOf(id);
-                if (idx >= 0) this.selectedIds.splice(idx, 1);
-                else this.selectedIds.push(id);
+            toggle(id, $event) {
+                const currentIdx = this.items.findIndex(i => i.id === id);
+                if ($event && $event.shiftKey && this.lastClickedIdx !== null && this.lastClickedIdx !== currentIdx) {
+                    // Selection par plage : ajoute (ou retire si deja selectionnees) toutes les photos entre les deux clics.
+                    const start = Math.min(this.lastClickedIdx, currentIdx);
+                    const end = Math.max(this.lastClickedIdx, currentIdx);
+                    const rangeIds = this.items.slice(start, end + 1).map(i => i.id);
+                    const allSelected = rangeIds.every(rid => this.selectedIds.includes(rid));
+                    if (allSelected) {
+                        // Tout est deja selectionne dans la plage → on les retire toutes.
+                        this.selectedIds = this.selectedIds.filter(sid => !rangeIds.includes(sid));
+                    } else {
+                        for (const rid of rangeIds) {
+                            if (!this.selectedIds.includes(rid)) this.selectedIds.push(rid);
+                        }
+                    }
+                } else {
+                    const idx = this.selectedIds.indexOf(id);
+                    if (idx >= 0) this.selectedIds.splice(idx, 1);
+                    else this.selectedIds.push(id);
+                }
+                this.lastClickedIdx = currentIdx;
             },
             toggleAll() {
                 if (this.selectedIds.length === this.items.length) this.selectedIds = [];
