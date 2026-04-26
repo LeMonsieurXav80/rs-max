@@ -254,7 +254,7 @@
                         </div>
 
                         {{-- Sections collapsibles : Lieu + Classification --}}
-                        <div class="bg-white rounded-xl border border-gray-100 shadow-sm overflow-hidden" x-data="{ open: false }">
+                        <div class="bg-white rounded-xl border border-gray-100 shadow-sm overflow-hidden" x-data="{ open: true }">
                             <button @click="open = !open" class="w-full flex items-center justify-between px-3 py-2 hover:bg-gray-50">
                                 <span class="text-[11px] font-semibold text-gray-700 uppercase tracking-wider">Lieu &amp; evenement</span>
                                 <svg class="w-3.5 h-3.5 text-gray-400 transition-transform" :class="open && 'rotate-180'" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="m19.5 8.25-7.5 7.5-7.5-7.5" /></svg>
@@ -273,7 +273,7 @@
                             </div>
                         </div>
 
-                        <div class="bg-white rounded-xl border border-gray-100 shadow-sm overflow-hidden" x-data="{ open: false }">
+                        <div class="bg-white rounded-xl border border-gray-100 shadow-sm overflow-hidden" x-data="{ open: true }">
                             <button @click="open = !open" class="w-full flex items-center justify-between px-3 py-2 hover:bg-gray-50">
                                 <span class="text-[11px] font-semibold text-gray-700 uppercase tracking-wider">Classification</span>
                                 <svg class="w-3.5 h-3.5 text-gray-400 transition-transform" :class="open && 'rotate-180'" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="m19.5 8.25-7.5 7.5-7.5-7.5" /></svg>
