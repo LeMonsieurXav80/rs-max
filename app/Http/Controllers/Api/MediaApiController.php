@@ -7,10 +7,12 @@ use App\Http\Controllers\Controller;
 use App\Models\MediaFile;
 use App\Models\MediaFolder;
 use App\Models\MediaPublication;
+use App\Services\AiAssistService;
 use App\Services\StockPhotoService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
 
@@ -552,6 +554,165 @@ class MediaApiController extends Controller
             'status' => 'enriched',
             'pending_analysis' => false,
         ]);
+    }
+
+    /**
+     * POST /api/media/{id}/analyze-vision — analyse la photo via Vision API serveur
+     * et remplit les champs structurés (description_fr, thematic_tags, people_ids,
+     * city, region, country, brands, event). Pas de file en input : on lit depuis le storage.
+     *
+     * Optionnels : `pool` (oriente le prompt), `expected_people[]`, `context`,
+     * `apply` (true = écrit en base, false = retourne juste le résultat sans persister).
+     *
+     * Coexiste avec le pipeline Mac (analyse-images.py + /ingest) — ce endpoint est
+     * un complément, pas un remplacement. Utile depuis l'UI ou pour ré-analyser.
+     */
+    public function analyzeVision(Request $request, MediaFile $media, AiAssistService $ai): JsonResponse
+    {
+        $data = $request->validate([
+            'pool' => ['nullable', Rule::in([...self::ALL_POOLS, 'none'])],
+            'expected_people' => 'nullable|array',
+            'expected_people.*' => 'string|max:50',
+            'context' => 'nullable|string|max:500',
+            'apply' => 'nullable|boolean',
+        ]);
+
+        if (! $media->is_image) {
+            return response()->json(['error' => 'analyze-vision ne supporte que les images'], 422);
+        }
+
+        // Le disk 'local' pointe sur storage/app/private/ en Laravel 12.
+        // Anciens fichiers : possible présence dans storage/app/media/ ou storage/app/public/media/.
+        $candidates = [
+            Storage::disk('local')->path("media/{$media->filename}"),
+            storage_path("app/media/{$media->filename}"),
+            Storage::disk('public')->path("media/{$media->filename}"),
+        ];
+        $absolutePath = null;
+        foreach ($candidates as $path) {
+            if (is_file($path)) {
+                $absolutePath = $path;
+                break;
+            }
+        }
+        if ($absolutePath === null) {
+            return response()->json(['error' => 'fichier image introuvable sur le storage'], 404);
+        }
+
+        $dataUrl = $this->resizeImageForVision($absolutePath);
+        if ($dataUrl === null) {
+            return response()->json(['error' => 'impossible de charger l\'image'], 500);
+        }
+
+        // Si pas de contexte fourni, on prend le nom du dossier rattaché.
+        $context = $data['context'] ?? null;
+        if ($context === null && $media->folder) {
+            $context = $media->folder->pathLabel();
+        }
+
+        $result = $ai->extractMetadataFromImage(
+            imageDataUrl: $dataUrl,
+            context: $context,
+            expectedPeople: $data['expected_people'] ?? [],
+            pool: $data['pool'] ?? null,
+        );
+
+        if ($result === null) {
+            return response()->json(['error' => 'analyse Vision a échoué (voir logs)'], 502);
+        }
+        if ($result === 'refused') {
+            return response()->json(['error' => 'tous les modèles Vision ont refusé l\'analyse'], 422);
+        }
+
+        $apply = $data['apply'] ?? false;
+        if ($apply) {
+            $update = [];
+            if ($result['description_fr'] !== null) {
+                $update['description_fr'] = $result['description_fr'];
+            }
+            if (! empty($result['thematic_tags'])) {
+                $update['thematic_tags'] = $this->normalizeTags($result['thematic_tags']);
+            }
+            if (! empty($result['people_ids'])) {
+                $update['people_ids'] = $result['people_ids'];
+            }
+            if ($result['city'] !== null) {
+                $update['city'] = $this->cleanString($result['city'], 120);
+            }
+            if ($result['region'] !== null) {
+                $update['region'] = $this->cleanString($result['region'], 120);
+            }
+            if ($result['country'] !== null) {
+                $update['country'] = $this->cleanString($result['country'], 120);
+            }
+            if (! empty($result['brands'])) {
+                $update['brands'] = $this->normalizeBrands($result['brands']);
+            }
+            if ($result['event'] !== null) {
+                $update['event'] = $this->cleanString($result['event'], 200);
+            }
+            // ai_metadata : on stocke le résultat brut pour traçabilité (source = vision)
+            $aiMeta = is_array($media->ai_metadata) ? $media->ai_metadata : [];
+            $aiMeta['vision_analysis'] = [
+                'analyzed_at' => now()->toIso8601String(),
+                'pool_hint' => $data['pool'] ?? null,
+                'person_count' => $result['person_count'],
+            ];
+            $update['ai_metadata'] = $aiMeta;
+            $update['pending_analysis'] = false;
+
+            if (! empty($update)) {
+                $media->update($update);
+            }
+        }
+
+        return response()->json([
+            'id' => $media->id,
+            'applied' => (bool) $apply,
+            'result' => $result,
+        ]);
+    }
+
+    /**
+     * Redimensionne une image à 1024px max et retourne une data URL JPEG base64
+     * pour l'envoi à l'API Vision. Évite d'envoyer des images trop lourdes.
+     */
+    private function resizeImageForVision(string $filePath): ?string
+    {
+        $mimeType = mime_content_type($filePath);
+        $image = match ($mimeType) {
+            'image/png' => @imagecreatefrompng($filePath),
+            'image/gif' => @imagecreatefromgif($filePath),
+            'image/webp' => function_exists('imagecreatefromwebp') ? @imagecreatefromwebp($filePath) : null,
+            default => @imagecreatefromjpeg($filePath),
+        };
+        if (! $image) {
+            return null;
+        }
+
+        $w = imagesx($image);
+        $h = imagesy($image);
+        $maxDim = 1024;
+        if ($w > $maxDim || $h > $maxDim) {
+            if ($w >= $h) {
+                $newW = $maxDim;
+                $newH = (int) round($h * ($maxDim / $w));
+            } else {
+                $newH = $maxDim;
+                $newW = (int) round($w * ($maxDim / $h));
+            }
+            $resized = imagecreatetruecolor($newW, $newH);
+            imagecopyresampled($resized, $image, 0, 0, 0, 0, $newW, $newH, $w, $h);
+            imagedestroy($image);
+            $image = $resized;
+        }
+
+        ob_start();
+        imagejpeg($image, null, 80);
+        $data = ob_get_clean();
+        imagedestroy($image);
+
+        return 'data:image/jpeg;base64,'.base64_encode($data);
     }
 
     /**

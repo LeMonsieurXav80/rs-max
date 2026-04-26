@@ -59,6 +59,7 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::post('/media/{media}/validate', [MediaApiController::class, 'validateMedia']);
     Route::post('/media/{media}/enrich', [MediaApiController::class, 'enrich']);
     Route::post('/media/{media}/mark-published', [MediaApiController::class, 'markPublished']);
+    Route::post('/media/{media}/analyze-vision', [MediaApiController::class, 'analyzeVision']);
 
     // ── Banques d'images externes (Pexels, Pixabay, Unsplash) ──
     Route::get('/stock-photos/search', [MediaApiController::class, 'stockPhotosSearch']);
