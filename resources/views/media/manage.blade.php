@@ -154,165 +154,158 @@
             </main>
 
             {{-- ═══════════ Sidebar droite : toolbar bulk-edit ═══════════ --}}
-            <aside class="w-[360px] flex-shrink-0 self-start">
-                <div class="sticky top-20 space-y-3">
+            <aside class="w-[340px] flex-shrink-0 self-start">
+                <div class="sticky top-20 space-y-2">
                     {{-- Pas de selection --}}
-                    <div x-show="selectedIds.length === 0" class="bg-white rounded-2xl border border-gray-100 shadow-sm p-6 text-center">
-                        <svg class="w-10 h-10 text-gray-200 mx-auto mb-2" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1.5"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12l2 2 4-4m6 2a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z" /></svg>
-                        <p class="text-xs text-gray-400">Selectionne des photos pour activer l'edition en masse.</p>
+                    <div x-show="selectedIds.length === 0" class="bg-white rounded-xl border border-gray-100 shadow-sm p-4 text-center">
+                        <p class="text-xs text-gray-400">Selectionne des photos pour activer l'edition en masse.<br><span class="text-[10px]">Astuce : <kbd class="px-1 py-0.5 bg-gray-100 rounded">Shift</kbd> + clic = selection par plage.</span></p>
                     </div>
 
                     {{-- Toolbar --}}
-                    <div x-show="selectedIds.length > 0" x-cloak class="space-y-3">
+                    <div x-show="selectedIds.length > 0" x-cloak class="space-y-2">
                         {{-- IA — Génération automatique des métadonnées --}}
-                        <div class="bg-gradient-to-br from-violet-50 to-indigo-50 rounded-2xl border border-violet-200 shadow-sm p-4">
-                            <h3 class="text-xs font-semibold text-violet-900 uppercase tracking-wider mb-2 flex items-center gap-1.5">
-                                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M9.813 15.904 9 18.75l-.813-2.846a4.5 4.5 0 0 0-3.09-3.09L2.25 12l2.846-.813a4.5 4.5 0 0 0 3.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 0 0 3.09 3.09L15.75 12l-2.846.813a4.5 4.5 0 0 0-3.09 3.09ZM18.259 8.715 18 9.75l-.259-1.035a3.375 3.375 0 0 0-2.455-2.456L14.25 6l1.036-.259a3.375 3.375 0 0 0 2.455-2.456L18 2.25l.259 1.035a3.375 3.375 0 0 0 2.456 2.456L21.75 6l-1.035.259a3.375 3.375 0 0 0-2.456 2.456ZM16.894 20.567 16.5 21.75l-.394-1.183a2.25 2.25 0 0 0-1.423-1.423L13.5 18.75l1.183-.394a2.25 2.25 0 0 0 1.423-1.423l.394-1.183.394 1.183a2.25 2.25 0 0 0 1.423 1.423l1.183.394-1.183.394a2.25 2.25 0 0 0-1.423 1.423Z" /></svg>
-                                Generer avec IA
-                            </h3>
-                            <p class="text-[11px] text-violet-700 mb-3">Analyse les photos selectionnees via Vision API et remplit description, tags, personnes, lieu et marques. Les valeurs existantes sont remplacees. ~$0.005 par photo.</p>
-                            <button @click="runAiAnalysis()" :disabled="busy || aiInProgress" class="w-full px-3 py-2 text-xs bg-violet-600 text-white rounded-lg disabled:opacity-50 hover:bg-violet-700 font-medium flex items-center justify-center gap-1.5">
-                                <span x-show="!aiInProgress">Analyser <span x-text="selectedIds.length"></span> photo(s) avec l'IA</span>
+                        <div class="bg-gradient-to-br from-violet-50 to-indigo-50 rounded-xl border border-violet-200 shadow-sm p-3">
+                            <button @click="runAiAnalysis()" :disabled="busy || aiInProgress" class="w-full px-3 py-2 text-xs bg-violet-600 text-white rounded-lg disabled:opacity-50 hover:bg-violet-700 font-medium flex items-center justify-center gap-1.5" :title="`Analyse Vision API. Remplit description, tags, personnes, lieu, marques. ~$${(selectedIds.length * 0.005).toFixed(3)}.`">
+                                <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M9.813 15.904 9 18.75l-.813-2.846a4.5 4.5 0 0 0-3.09-3.09L2.25 12l2.846-.813a4.5 4.5 0 0 0 3.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 0 0 3.09 3.09L15.75 12l-2.846.813a4.5 4.5 0 0 0-3.09 3.09Z" /></svg>
+                                <span x-show="!aiInProgress">Generer avec IA · <span x-text="selectedIds.length"></span> photo(s)</span>
                                 <span x-show="aiInProgress">Analyse en cours...</span>
                             </button>
-                            {{-- Progress bar --}}
-                            <div x-show="aiInProgress || aiTotal > 0" x-cloak class="mt-2">
-                                <div class="flex items-center justify-between text-[11px] text-violet-700 mb-1">
+                            <div x-show="aiInProgress || aiTotal > 0" x-cloak class="mt-1.5">
+                                <div class="flex items-center justify-between text-[10px] text-violet-700 mb-0.5">
                                     <span>
                                         <span x-text="aiDone"></span> / <span x-text="aiTotal"></span>
-                                        <span x-show="aiErrors > 0" class="text-rose-600">· <span x-text="aiErrors"></span> erreur(s)</span>
+                                        <span x-show="aiErrors > 0" class="text-rose-600">· <span x-text="aiErrors"></span> err</span>
                                     </span>
-                                    <span x-show="aiCurrentName" class="truncate ml-2 max-w-[160px]" x-text="aiCurrentName"></span>
+                                    <span x-show="aiCurrentName" class="truncate ml-2 max-w-[180px]" x-text="aiCurrentName"></span>
                                 </div>
-                                <div class="w-full h-1.5 bg-violet-100 rounded-full overflow-hidden">
+                                <div class="w-full h-1 bg-violet-100 rounded-full overflow-hidden">
                                     <div class="h-full bg-violet-500 transition-all" :style="`width: ${aiTotal ? (aiDone / aiTotal * 100) : 0}%`"></div>
                                 </div>
                             </div>
                         </div>
 
                         {{-- Tags --}}
-                        <div class="bg-white rounded-2xl border border-gray-100 shadow-sm p-4">
-                            <h3 class="text-xs font-semibold text-gray-700 uppercase tracking-wider mb-2">Tags</h3>
+                        <div class="bg-white rounded-xl border border-gray-100 shadow-sm p-3">
+                            <div class="flex items-center justify-between mb-1.5">
+                                <h3 class="text-[11px] font-semibold text-gray-700 uppercase tracking-wider">Tags</h3>
+                                <span x-show="tagChips.length > 0" class="text-[10px] text-gray-400" x-text="`${tagChips.length} dans la selection`"></span>
+                            </div>
                             <div class="flex gap-1.5">
                                 <input type="text" x-model="tagAddInput" @keyup.enter="bulkTags('add')" placeholder="Ajouter (plage, mer, ...)" class="flex-1 text-xs rounded-lg border-gray-200 focus:border-indigo-400 focus:ring-1 focus:ring-indigo-400 px-2 py-1.5">
-                                <button @click="bulkTags('add')" :disabled="busy || !tagAddInput.trim()" class="px-3 py-1.5 text-xs bg-indigo-600 text-white rounded-lg disabled:opacity-50 hover:bg-indigo-700">Ajouter</button>
+                                <button @click="bulkTags('add')" :disabled="busy || !tagAddInput.trim()" class="px-3 py-1.5 text-xs bg-indigo-600 text-white rounded-lg disabled:opacity-50 hover:bg-indigo-700">+</button>
                             </div>
-                            {{-- Chips des tags presents dans la selection --}}
                             <template x-if="tagChips.length > 0">
-                                <div class="mt-3">
-                                    <p class="text-[10px] text-gray-400 uppercase tracking-wider mb-1.5">Presents dans la selection (clic × pour retirer)</p>
-                                    <div class="flex flex-wrap gap-1.5 max-h-28 overflow-y-auto">
-                                        <template x-for="chip in tagChips" :key="chip.value">
-                                            <span class="inline-flex items-center gap-1 px-2 py-0.5 text-xs bg-gray-100 hover:bg-rose-50 hover:text-rose-700 rounded group cursor-pointer" @click="removeOne('tags', chip.value)">
-                                                <span x-text="chip.value"></span>
-                                                <span class="text-gray-400 text-[10px]" x-show="chip.count < selectedIds.length" x-text="`(${chip.count})`"></span>
-                                                <span class="text-gray-400 group-hover:text-rose-600">×</span>
-                                            </span>
-                                        </template>
-                                    </div>
+                                <div class="flex flex-wrap gap-1 mt-2 max-h-24 overflow-y-auto">
+                                    <template x-for="chip in tagChips" :key="chip.value">
+                                        <span class="inline-flex items-center gap-1 px-1.5 py-0.5 text-[11px] bg-gray-100 hover:bg-rose-50 hover:text-rose-700 rounded group cursor-pointer" @click="removeOne('tags', chip.value)" :title="`Cliquer pour retirer de ${chip.count} photo(s)`">
+                                            <span x-text="chip.value"></span>
+                                            <span class="text-gray-400 text-[9px]" x-show="chip.count < selectedIds.length" x-text="chip.count"></span>
+                                            <span class="text-gray-400 group-hover:text-rose-600">×</span>
+                                        </span>
+                                    </template>
                                 </div>
                             </template>
                         </div>
 
                         {{-- Brands --}}
-                        <div class="bg-white rounded-2xl border border-gray-100 shadow-sm p-4">
-                            <h3 class="text-xs font-semibold text-gray-700 uppercase tracking-wider mb-2">Marques</h3>
+                        <div class="bg-white rounded-xl border border-gray-100 shadow-sm p-3">
+                            <div class="flex items-center justify-between mb-1.5">
+                                <h3 class="text-[11px] font-semibold text-gray-700 uppercase tracking-wider">Marques</h3>
+                                <span x-show="brandChips.length > 0" class="text-[10px] text-gray-400" x-text="`${brandChips.length} dans la selection`"></span>
+                            </div>
                             <div class="flex gap-1.5">
-                                <input type="text" x-model="brandAddInput" @keyup.enter="bulkBrands('add')" placeholder="Ajouter (Decathlon, ...)" class="flex-1 text-xs rounded-lg border-gray-200 focus:border-indigo-400 focus:ring-1 focus:ring-indigo-400 px-2 py-1.5">
-                                <button @click="bulkBrands('add')" :disabled="busy || !brandAddInput.trim()" class="px-3 py-1.5 text-xs bg-indigo-600 text-white rounded-lg disabled:opacity-50 hover:bg-indigo-700">Ajouter</button>
+                                <input type="text" x-model="brandAddInput" @keyup.enter="bulkBrands()" placeholder="Ajouter (Decathlon, ...)" class="flex-1 text-xs rounded-lg border-gray-200 focus:border-indigo-400 focus:ring-1 focus:ring-indigo-400 px-2 py-1.5">
+                                <button @click="bulkBrands()" :disabled="busy || !brandAddInput.trim()" class="px-3 py-1.5 text-xs bg-indigo-600 text-white rounded-lg disabled:opacity-50 hover:bg-indigo-700">+</button>
                             </div>
                             <template x-if="brandChips.length > 0">
-                                <div class="mt-3">
-                                    <p class="text-[10px] text-gray-400 uppercase tracking-wider mb-1.5">Presentes dans la selection</p>
-                                    <div class="flex flex-wrap gap-1.5 max-h-28 overflow-y-auto">
-                                        <template x-for="chip in brandChips" :key="chip.value">
-                                            <span class="inline-flex items-center gap-1 px-2 py-0.5 text-xs bg-gray-100 hover:bg-rose-50 hover:text-rose-700 rounded group cursor-pointer" @click="removeOne('brands', chip.value)">
-                                                <span x-text="chip.value"></span>
-                                                <span class="text-gray-400 text-[10px]" x-show="chip.count < selectedIds.length" x-text="`(${chip.count})`"></span>
-                                                <span class="text-gray-400 group-hover:text-rose-600">×</span>
-                                            </span>
-                                        </template>
-                                    </div>
+                                <div class="flex flex-wrap gap-1 mt-2 max-h-24 overflow-y-auto">
+                                    <template x-for="chip in brandChips" :key="chip.value">
+                                        <span class="inline-flex items-center gap-1 px-1.5 py-0.5 text-[11px] bg-gray-100 hover:bg-rose-50 hover:text-rose-700 rounded group cursor-pointer" @click="removeOne('brands', chip.value)" :title="`Cliquer pour retirer de ${chip.count} photo(s)`">
+                                            <span x-text="chip.value"></span>
+                                            <span class="text-gray-400 text-[9px]" x-show="chip.count < selectedIds.length" x-text="chip.count"></span>
+                                            <span class="text-gray-400 group-hover:text-rose-600">×</span>
+                                        </span>
+                                    </template>
                                 </div>
                             </template>
                         </div>
 
                         {{-- People --}}
-                        <div class="bg-white rounded-2xl border border-gray-100 shadow-sm p-4">
-                            <h3 class="text-xs font-semibold text-gray-700 uppercase tracking-wider mb-2">Personnes</h3>
-                            <p class="text-[11px] text-gray-400 mb-2">Ids normalises (ex: caroline, xavier).</p>
+                        <div class="bg-white rounded-xl border border-gray-100 shadow-sm p-3">
+                            <div class="flex items-center justify-between mb-1.5">
+                                <h3 class="text-[11px] font-semibold text-gray-700 uppercase tracking-wider">Personnes</h3>
+                                <span x-show="peopleChips.length > 0" class="text-[10px] text-gray-400" x-text="`${peopleChips.length} dans la selection`"></span>
+                            </div>
                             <div class="flex gap-1.5">
-                                <input type="text" x-model="peopleAddInput" @keyup.enter="bulkPeople('add')" placeholder="Ajouter (caroline, ...)" class="flex-1 text-xs rounded-lg border-gray-200 focus:border-indigo-400 focus:ring-1 focus:ring-indigo-400 px-2 py-1.5">
-                                <button @click="bulkPeople('add')" :disabled="busy || !peopleAddInput.trim()" class="px-3 py-1.5 text-xs bg-indigo-600 text-white rounded-lg disabled:opacity-50 hover:bg-indigo-700">Ajouter</button>
+                                <input type="text" x-model="peopleAddInput" @keyup.enter="bulkPeople()" placeholder="caroline, xavier, ..." class="flex-1 text-xs rounded-lg border-gray-200 focus:border-indigo-400 focus:ring-1 focus:ring-indigo-400 px-2 py-1.5">
+                                <button @click="bulkPeople()" :disabled="busy || !peopleAddInput.trim()" class="px-3 py-1.5 text-xs bg-indigo-600 text-white rounded-lg disabled:opacity-50 hover:bg-indigo-700">+</button>
                             </div>
                             <template x-if="peopleChips.length > 0">
-                                <div class="mt-3">
-                                    <p class="text-[10px] text-gray-400 uppercase tracking-wider mb-1.5">Presentes dans la selection</p>
-                                    <div class="flex flex-wrap gap-1.5 max-h-28 overflow-y-auto">
-                                        <template x-for="chip in peopleChips" :key="chip.value">
-                                            <span class="inline-flex items-center gap-1 px-2 py-0.5 text-xs bg-gray-100 hover:bg-rose-50 hover:text-rose-700 rounded group cursor-pointer" @click="removeOne('people', chip.value)">
-                                                <span x-text="chip.value"></span>
-                                                <span class="text-gray-400 text-[10px]" x-show="chip.count < selectedIds.length" x-text="`(${chip.count})`"></span>
-                                                <span class="text-gray-400 group-hover:text-rose-600">×</span>
-                                            </span>
-                                        </template>
-                                    </div>
+                                <div class="flex flex-wrap gap-1 mt-2 max-h-24 overflow-y-auto">
+                                    <template x-for="chip in peopleChips" :key="chip.value">
+                                        <span class="inline-flex items-center gap-1 px-1.5 py-0.5 text-[11px] bg-gray-100 hover:bg-rose-50 hover:text-rose-700 rounded group cursor-pointer" @click="removeOne('people', chip.value)" :title="`Cliquer pour retirer de ${chip.count} photo(s)`">
+                                            <span x-text="chip.value"></span>
+                                            <span class="text-gray-400 text-[9px]" x-show="chip.count < selectedIds.length" x-text="chip.count"></span>
+                                            <span class="text-gray-400 group-hover:text-rose-600">×</span>
+                                        </span>
+                                    </template>
                                 </div>
                             </template>
                         </div>
 
-                        {{-- Lieu / Evenement --}}
-                        <div class="bg-white rounded-2xl border border-gray-100 shadow-sm p-4">
-                            <h3 class="text-xs font-semibold text-gray-700 uppercase tracking-wider mb-2">Lieu &amp; evenement</h3>
-                            <p class="text-[11px] text-gray-400 mb-2">Vide = ne pas modifier. Bouton "Vider" = effacer le champ.</p>
-                            <div class="space-y-2">
-                                @foreach (['city' => 'Ville', 'region' => 'Region', 'country' => 'Pays', 'event' => 'Evenement'] as $key => $label)
-                                    <div>
-                                        <label class="text-[10px] text-gray-400 uppercase tracking-wider">{{ $label }}</label>
-                                        <div class="flex gap-1.5">
-                                            <input type="text" x-model="details.{{ $key }}" placeholder="{{ $label }}" class="flex-1 text-xs rounded-lg border-gray-200 focus:border-indigo-400 focus:ring-1 focus:ring-indigo-400 px-2 py-1.5">
-                                        </div>
-                                    </div>
-                                @endforeach
-                                <div class="flex gap-1.5 pt-2">
+                        {{-- Sections collapsibles : Lieu + Classification --}}
+                        <div class="bg-white rounded-xl border border-gray-100 shadow-sm overflow-hidden" x-data="{ open: false }">
+                            <button @click="open = !open" class="w-full flex items-center justify-between px-3 py-2 hover:bg-gray-50">
+                                <span class="text-[11px] font-semibold text-gray-700 uppercase tracking-wider">Lieu &amp; evenement</span>
+                                <svg class="w-3.5 h-3.5 text-gray-400 transition-transform" :class="open && 'rotate-180'" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="m19.5 8.25-7.5 7.5-7.5-7.5" /></svg>
+                            </button>
+                            <div x-show="open" x-collapse class="px-3 pb-3 space-y-2 border-t border-gray-100">
+                                <div class="grid grid-cols-2 gap-1.5 pt-2">
+                                    <input type="text" x-model="details.city" placeholder="Ville" class="text-xs rounded-lg border-gray-200 focus:border-indigo-400 focus:ring-1 focus:ring-indigo-400 px-2 py-1.5">
+                                    <input type="text" x-model="details.region" placeholder="Region" class="text-xs rounded-lg border-gray-200 focus:border-indigo-400 focus:ring-1 focus:ring-indigo-400 px-2 py-1.5">
+                                    <input type="text" x-model="details.country" placeholder="Pays" class="text-xs rounded-lg border-gray-200 focus:border-indigo-400 focus:ring-1 focus:ring-indigo-400 px-2 py-1.5">
+                                    <input type="text" x-model="details.event" placeholder="Evenement" class="text-xs rounded-lg border-gray-200 focus:border-indigo-400 focus:ring-1 focus:ring-indigo-400 px-2 py-1.5">
+                                </div>
+                                <div class="flex gap-1.5">
                                     <button @click="bulkDetails(false)" :disabled="busy || !hasDetailValues()" class="flex-1 px-3 py-1.5 text-xs bg-indigo-600 text-white rounded-lg disabled:opacity-40 hover:bg-indigo-700">Appliquer</button>
-                                    <button @click="bulkDetails(true)" :disabled="busy" class="px-3 py-1.5 text-xs bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200">Vider les champs ci-dessus</button>
+                                    <button @click="bulkDetails(true)" :disabled="busy" class="px-3 py-1.5 text-xs bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200" title="Vider ces 4 champs sur les photos selectionnees">Vider</button>
                                 </div>
                             </div>
                         </div>
 
-                        {{-- Pool / Intimacy --}}
-                        <div class="bg-white rounded-2xl border border-gray-100 shadow-sm p-4">
-                            <h3 class="text-xs font-semibold text-gray-700 uppercase tracking-wider mb-2">Classification</h3>
-                            <div class="space-y-2 text-xs">
-                                <label class="flex items-center gap-2 cursor-pointer">
-                                    <input type="checkbox" x-model="classification.allow_pdc_vantour" :indeterminate="classification.allow_pdc_vantour === null" class="rounded border-gray-300">
-                                    <span>PdC / Vantour</span>
-                                </label>
-                                <label class="flex items-center gap-2 cursor-pointer">
-                                    <input type="checkbox" x-model="classification.allow_wildycaro" :indeterminate="classification.allow_wildycaro === null" class="rounded border-gray-300">
-                                    <span>Wildycaro</span>
-                                </label>
-                                <label class="flex items-center gap-2 cursor-pointer">
-                                    <input type="checkbox" x-model="classification.allow_mamawette" :indeterminate="classification.allow_mamawette === null" class="rounded border-gray-300">
-                                    <span>🔒 Mamawette</span>
-                                </label>
-                                <div class="pt-1">
-                                    <label class="text-[10px] text-gray-400 uppercase tracking-wider">Niveau d'intimite</label>
-                                    <select x-model="classification.intimacy_level" class="w-full text-xs rounded-lg border-gray-200 px-2 py-1.5 mt-0.5">
-                                        <option value="">— Ne pas modifier —</option>
-                                        <option value="public">Public</option>
-                                        <option value="prive">Prive</option>
-                                        <option value="never_publish">Jamais publier</option>
-                                    </select>
+                        <div class="bg-white rounded-xl border border-gray-100 shadow-sm overflow-hidden" x-data="{ open: false }">
+                            <button @click="open = !open" class="w-full flex items-center justify-between px-3 py-2 hover:bg-gray-50">
+                                <span class="text-[11px] font-semibold text-gray-700 uppercase tracking-wider">Classification</span>
+                                <svg class="w-3.5 h-3.5 text-gray-400 transition-transform" :class="open && 'rotate-180'" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="m19.5 8.25-7.5 7.5-7.5-7.5" /></svg>
+                            </button>
+                            <div x-show="open" x-collapse class="px-3 pb-3 space-y-2 border-t border-gray-100 text-xs">
+                                <div class="pt-2 grid grid-cols-3 gap-1">
+                                    <label class="flex items-center gap-1 cursor-pointer p-1 rounded hover:bg-gray-50">
+                                        <input type="checkbox" x-model="classification.allow_pdc_vantour" class="rounded border-gray-300">
+                                        <span class="text-[10px]">PdC</span>
+                                    </label>
+                                    <label class="flex items-center gap-1 cursor-pointer p-1 rounded hover:bg-gray-50">
+                                        <input type="checkbox" x-model="classification.allow_wildycaro" class="rounded border-gray-300">
+                                        <span class="text-[10px]">Wildy</span>
+                                    </label>
+                                    <label class="flex items-center gap-1 cursor-pointer p-1 rounded hover:bg-gray-50">
+                                        <input type="checkbox" x-model="classification.allow_mamawette" class="rounded border-gray-300">
+                                        <span class="text-[10px]">🔒 Mama</span>
+                                    </label>
                                 </div>
-                                <button @click="bulkClassification()" :disabled="busy" class="w-full mt-2 px-3 py-1.5 text-xs bg-indigo-600 text-white rounded-lg disabled:opacity-40 hover:bg-indigo-700">Appliquer la classification</button>
+                                <select x-model="classification.intimacy_level" class="w-full text-xs rounded-lg border-gray-200 px-2 py-1.5">
+                                    <option value="">Intimite : ne pas modifier</option>
+                                    <option value="public">Public</option>
+                                    <option value="prive">Prive</option>
+                                    <option value="never_publish">Jamais publier</option>
+                                </select>
+                                <button @click="bulkClassification()" :disabled="busy" class="w-full px-3 py-1.5 text-xs bg-indigo-600 text-white rounded-lg disabled:opacity-40 hover:bg-indigo-700">Appliquer</button>
                             </div>
                         </div>
 
                         {{-- Status / Feedback --}}
-                        <div x-show="lastMessage" x-cloak class="bg-emerald-50 border border-emerald-200 text-emerald-700 text-xs px-3 py-2 rounded-lg" x-text="lastMessage"></div>
-                        <div x-show="lastError" x-cloak class="bg-red-50 border border-red-200 text-red-700 text-xs px-3 py-2 rounded-lg" x-text="lastError"></div>
+                        <div x-show="lastMessage" x-cloak class="bg-emerald-50 border border-emerald-200 text-emerald-700 text-[11px] px-3 py-1.5 rounded-lg" x-text="lastMessage"></div>
+                        <div x-show="lastError" x-cloak class="bg-red-50 border border-red-200 text-red-700 text-[11px] px-3 py-1.5 rounded-lg" x-text="lastError"></div>
                     </div>
                 </div>
             </aside>
