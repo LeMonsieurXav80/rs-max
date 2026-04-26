@@ -1075,8 +1075,33 @@
         {{-- Main layout: sidebar + grid + detail panel --}}
         <div class="flex gap-5">
             {{-- Left sidebar : Dossiers (arbre) + Pools --}}
-            <aside class="w-60 flex-shrink-0 self-start hidden md:block">
+            <aside class="w-60 flex-shrink-0 hidden md:block">
                 <div class="sticky top-20 max-h-[calc(100vh-6rem)] overflow-y-auto space-y-4 pr-1">
+                    {{-- IA Vision (contexte + bouton). Cible : la photo selectionnee (mono) ou la selection multi. --}}
+                    <div class="bg-gradient-to-br from-violet-50 to-indigo-50 rounded-2xl border border-violet-200 shadow-sm p-3 space-y-2">
+                        <h3 class="text-[10px] font-semibold uppercase tracking-widest text-violet-900 px-1">IA Vision</h3>
+                        <textarea x-model="aiContext" rows="2" placeholder="Contexte (ex: voyage Portugal 2024)"
+                                  class="w-full text-xs rounded-lg border-violet-200 focus:border-violet-400 focus:ring-1 focus:ring-violet-400 px-2 py-1 bg-white resize-none"></textarea>
+                        <button @click="runAiAnalysis()"
+                                :disabled="aiInProgress || (!selected && multiSelected.length === 0)"
+                                class="w-full px-2 py-1.5 text-xs bg-violet-600 text-white rounded-lg disabled:opacity-40 hover:bg-violet-700 font-medium flex items-center justify-center gap-1">
+                            <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M9.813 15.904 9 18.75l-.813-2.846a4.5 4.5 0 0 0-3.09-3.09L2.25 12l2.846-.813a4.5 4.5 0 0 0 3.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 0 0 3.09 3.09L15.75 12l-2.846.813a4.5 4.5 0 0 0-3.09 3.09Z" /></svg>
+                            <span x-show="!aiInProgress && multiSelect && multiSelected.length > 0">Analyser <span x-text="multiSelected.length"></span> photo(s)</span>
+                            <span x-show="!aiInProgress && (!multiSelect || multiSelected.length === 0) && selected">Analyser cette photo</span>
+                            <span x-show="!aiInProgress && (!multiSelect || multiSelected.length === 0) && !selected" class="text-violet-200">Aucune photo</span>
+                            <span x-show="aiInProgress">Analyse en cours...</span>
+                        </button>
+                        <div x-show="aiInProgress || aiTotal > 0" x-cloak class="text-[10px] text-violet-700">
+                            <div class="flex items-center justify-between mb-0.5">
+                                <span><span x-text="aiDone"></span> / <span x-text="aiTotal"></span><span x-show="aiErrors > 0" class="text-rose-600"> · <span x-text="aiErrors"></span> err</span></span>
+                            </div>
+                            <div x-show="aiCurrentName" class="truncate" x-text="aiCurrentName"></div>
+                            <div class="w-full h-1 bg-violet-100 rounded-full overflow-hidden mt-0.5">
+                                <div class="h-full bg-violet-500 transition-all" :style="`width: ${aiTotal ? (aiDone / aiTotal * 100) : 0}%`"></div>
+                            </div>
+                        </div>
+                    </div>
+
                     {{-- Dossiers (arbre cliquable) --}}
                     <div class="bg-white rounded-2xl border border-gray-100 shadow-sm p-3"
                          x-data="folderTree({{ json_encode($foldersJson) }}, {{ json_encode($autoOpenIds) }})">
@@ -1237,29 +1262,7 @@
                                     <span class="text-xs text-amber-600 font-medium" x-text="multiSelected.length + ' photo(s)'"></span>
                                 </div>
 
-                                {{-- IA Vision bulk --}}
-                                <div class="bg-gradient-to-br from-violet-50 to-indigo-50 rounded-xl border border-violet-200 p-2.5 space-y-2">
-                                    <div>
-                                        <label class="text-[10px] font-semibold text-violet-900 uppercase tracking-wider block mb-1">Contexte IA</label>
-                                        <textarea x-model="aiContext" rows="2" placeholder="ex: voyage Portugal 2024, shooting nature..."
-                                                  class="w-full text-xs rounded-lg border-violet-200 focus:border-violet-400 focus:ring-1 focus:ring-violet-400 px-2 py-1 bg-white resize-none"></textarea>
-                                    </div>
-                                    <button @click="runAiAnalysis(multiSelected)" :disabled="aiInProgress"
-                                            class="w-full px-3 py-1.5 text-xs bg-violet-600 text-white rounded-lg disabled:opacity-50 hover:bg-violet-700 font-medium flex items-center justify-center gap-1.5">
-                                        <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M9.813 15.904 9 18.75l-.813-2.846a4.5 4.5 0 0 0-3.09-3.09L2.25 12l2.846-.813a4.5 4.5 0 0 0 3.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 0 0 3.09 3.09L15.75 12l-2.846.813a4.5 4.5 0 0 0-3.09 3.09Z" /></svg>
-                                        <span x-show="!aiInProgress">Generer avec IA · <span x-text="multiSelected.length"></span> photo(s)</span>
-                                        <span x-show="aiInProgress">Analyse en cours...</span>
-                                    </button>
-                                    <div x-show="aiInProgress || aiTotal > 0" x-cloak>
-                                        <div class="flex items-center justify-between text-[10px] text-violet-700 mb-0.5">
-                                            <span><span x-text="aiDone"></span> / <span x-text="aiTotal"></span></span>
-                                            <span x-show="aiCurrentName" class="truncate ml-2 max-w-[180px]" x-text="aiCurrentName"></span>
-                                        </div>
-                                        <div class="w-full h-1 bg-violet-100 rounded-full overflow-hidden">
-                                            <div class="h-full bg-violet-500 transition-all" :style="`width: ${aiTotal ? (aiDone / aiTotal * 100) : 0}%`"></div>
-                                        </div>
-                                    </div>
-                                </div>
+                                {{-- IA Vision : deplacee dans la sidebar gauche --}}
 
                                 {{-- Tags --}}
                                 <div class="bg-white rounded-xl border border-gray-100 p-2.5">
@@ -1533,32 +1536,7 @@
                                                           class="w-full text-xs border border-gray-200 rounded px-2 py-1.5 focus:border-indigo-400 focus:ring-1 focus:ring-indigo-400 resize-none"></textarea>
                                             </div>
 
-                                            {{-- IA Vision : analyser cette photo --}}
-                                            <div class="bg-gradient-to-br from-violet-50 to-indigo-50 rounded-xl border border-violet-200 p-2.5 space-y-2">
-                                                <div>
-                                                    <label class="text-[10px] font-semibold text-violet-900 uppercase tracking-wider block mb-1">Contexte IA (optionnel)</label>
-                                                    <textarea x-model="aiContext" rows="2" placeholder="ex: voyage Portugal 2024, shooting nature..."
-                                                              class="w-full text-xs rounded-lg border-violet-200 focus:border-violet-400 focus:ring-1 focus:ring-violet-400 px-2 py-1 bg-white resize-none"></textarea>
-                                                </div>
-                                                <button @click="runAiAnalysis()" :disabled="aiInProgress"
-                                                        class="w-full px-3 py-1.5 text-xs bg-violet-600 text-white rounded-lg disabled:opacity-50 hover:bg-violet-700 font-medium flex items-center justify-center gap-1.5">
-                                                    <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M9.813 15.904 9 18.75l-.813-2.846a4.5 4.5 0 0 0-3.09-3.09L2.25 12l2.846-.813a4.5 4.5 0 0 0 3.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 0 0 3.09 3.09L15.75 12l-2.846.813a4.5 4.5 0 0 0-3.09 3.09Z" /></svg>
-                                                    <span x-show="!aiInProgress">Generer description + tags + personnes avec IA</span>
-                                                    <span x-show="aiInProgress">Analyse en cours...</span>
-                                                </button>
-                                                <div x-show="aiInProgress || aiTotal > 0" x-cloak>
-                                                    <div class="flex items-center justify-between text-[10px] text-violet-700 mb-0.5">
-                                                        <span>
-                                                            <span x-text="aiDone"></span> / <span x-text="aiTotal"></span>
-                                                            <span x-show="aiErrors > 0" class="text-rose-600">· <span x-text="aiErrors"></span> err</span>
-                                                        </span>
-                                                        <span x-show="aiCurrentName" class="truncate ml-2 max-w-[180px]" x-text="aiCurrentName"></span>
-                                                    </div>
-                                                    <div class="w-full h-1 bg-violet-100 rounded-full overflow-hidden">
-                                                        <div class="h-full bg-violet-500 transition-all" :style="`width: ${aiTotal ? (aiDone / aiTotal * 100) : 0}%`"></div>
-                                                    </div>
-                                                </div>
-                                            </div>
+                                            {{-- IA Vision : deplacee dans la sidebar gauche --}}
 
                                             {{-- Pool / Intimacy --}}
                                             <div class="grid grid-cols-2 gap-2 text-xs">
