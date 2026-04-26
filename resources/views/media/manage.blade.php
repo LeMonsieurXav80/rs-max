@@ -164,7 +164,12 @@
                     {{-- Toolbar --}}
                     <div x-show="selectedIds.length > 0" x-cloak class="space-y-2">
                         {{-- IA — Génération automatique des métadonnées --}}
-                        <div class="bg-gradient-to-br from-violet-50 to-indigo-50 rounded-xl border border-violet-200 shadow-sm p-3">
+                        <div class="bg-gradient-to-br from-violet-50 to-indigo-50 rounded-xl border border-violet-200 shadow-sm p-3 space-y-2">
+                            <div>
+                                <label class="text-[10px] font-semibold text-violet-900 uppercase tracking-wider block mb-1">Contexte (optionnel)</label>
+                                <textarea x-model="aiContext" rows="2" placeholder="Ex: voyage Portugal 2024, shooting nature, session lingerie..." class="w-full text-xs rounded-lg border-violet-200 focus:border-violet-400 focus:ring-1 focus:ring-violet-400 px-2 py-1.5 bg-white resize-none"></textarea>
+                                <p class="text-[10px] text-violet-700 mt-0.5">Aide l'IA a mieux choisir les tags (lieu, theme, ambiance). Si vide, le nom du dossier est utilise.</p>
+                            </div>
                             <button @click="runAiAnalysis()" :disabled="busy || aiInProgress" class="w-full px-3 py-2 text-xs bg-violet-600 text-white rounded-lg disabled:opacity-50 hover:bg-violet-700 font-medium flex items-center justify-center gap-1.5" :title="`Analyse Vision API. Remplit description, tags, personnes, lieu, marques. ~$${(selectedIds.length * 0.005).toFixed(3)}.`">
                                 <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M9.813 15.904 9 18.75l-.813-2.846a4.5 4.5 0 0 0-3.09-3.09L2.25 12l2.846-.813a4.5 4.5 0 0 0 3.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 0 0 3.09 3.09L15.75 12l-2.846.813a4.5 4.5 0 0 0-3.09 3.09Z" /></svg>
                                 <span x-show="!aiInProgress">Generer avec IA · <span x-text="selectedIds.length"></span> photo(s)</span>
@@ -328,6 +333,7 @@
             classification: { allow_pdc_vantour: null, allow_wildycaro: null, allow_mamawette: null, intimacy_level: '' },
 
             // IA analysis state
+            aiContext: '',
             aiInProgress: false,
             aiTotal: 0,
             aiDone: 0,
@@ -558,7 +564,7 @@
                                 'Accept': 'application/json',
                                 'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').content,
                             },
-                            body: JSON.stringify({}),
+                            body: JSON.stringify(this.aiContext.trim() ? { context: this.aiContext.trim() } : {}),
                         });
                         if (res.ok) {
                             const data = await res.json();
