@@ -62,13 +62,13 @@ Réponds UNIQUEMENT en JSON valide :
 }
 
 RÈGLES :
-- thematic_tags : MAXIMUM 10, en français minuscules sans accents sur concepts simples, pas de doublons singulier/pluriel, pas de générique ("photo", "image"). Privilégie ce qui rend la photo unique.
-- people_ids : ids normalisés ("caroline", "xavier") parmi les personnes attendues, ne rien inventer.
+- description_fr : 1-2 phrases factuelles décrivant la scène, pas de copywriting. **Sert de contexte à une IA pour la rédaction de publications, doit être informative.**
+- thematic_tags : MAXIMUM 10, en français minuscules sans accents sur concepts simples, pas de doublons singulier/pluriel, pas de générique ("photo", "image"). Privilégie ce qui rend la photo unique. **Sert aussi de contexte pour la génération de contenu.**
+- people_ids : ids normalisés. **Heuristique automatique** : si un homme adulte est visible → ajoute "xavier". Si une femme adulte est visible → ajoute "caroline". Si plusieurs personnes du même genre, garde "xavier" (resp. "caroline") une seule fois. Si la photo ne montre clairement personne ou seulement des inconnus, laisse le tableau vide.
 - city/region/country : null si non identifiable visuellement (pas deviner).
 - brands : tableau de marques visibles (logos, packaging). Vide si aucune.
 - event : null si pas d'évènement contextuel évident.
 - taken_at : null (l'EXIF est traité ailleurs).
-- description_fr : 1-2 phrases factuelles, pas de copywriting.
 
 Réponds en JSON pur, sans ```json``` ni explications.
 TXT;
@@ -566,11 +566,10 @@ TXT;
         $peopleIds = is_array($raw['people_ids'] ?? null)
             ? array_values(array_filter(array_map(fn ($p) => is_string($p) ? mb_strtolower(trim($p)) : null, $raw['people_ids']), fn ($p) => $p !== null && $p !== ''))
             : [];
-        // Whitelist : ne garde que les ids présents dans expectedPeople (anti-hallucination).
-        if (! empty($expectedPeople)) {
-            $allowed = array_map('mb_strtolower', $expectedPeople);
-            $peopleIds = array_values(array_intersect($peopleIds, $allowed));
-        }
+        // Whitelist anti-hallucination. Si le caller n'a pas précisé une liste explicite,
+        // on tombe sur la heuristique par défaut (xavier/caroline) cohérente avec le prompt.
+        $allowed = array_map('mb_strtolower', ! empty($expectedPeople) ? $expectedPeople : ['xavier', 'caroline']);
+        $peopleIds = array_values(array_unique(array_intersect($peopleIds, $allowed)));
 
         $brands = is_array($raw['brands'] ?? null)
             ? array_values(array_filter(array_map(fn ($b) => is_string($b) ? trim($b) : null, $raw['brands']), fn ($b) => $b !== null && $b !== ''))

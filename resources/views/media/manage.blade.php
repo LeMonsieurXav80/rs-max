@@ -170,17 +170,9 @@
                                 <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M9.813 15.904 9 18.75l-.813-2.846a4.5 4.5 0 0 0-3.09-3.09L2.25 12l2.846-.813a4.5 4.5 0 0 0 3.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 0 0 3.09 3.09L15.75 12l-2.846.813a4.5 4.5 0 0 0-3.09 3.09ZM18.259 8.715 18 9.75l-.259-1.035a3.375 3.375 0 0 0-2.455-2.456L14.25 6l1.036-.259a3.375 3.375 0 0 0 2.455-2.456L18 2.25l.259 1.035a3.375 3.375 0 0 0 2.456 2.456L21.75 6l-1.035.259a3.375 3.375 0 0 0-2.456 2.456ZM16.894 20.567 16.5 21.75l-.394-1.183a2.25 2.25 0 0 0-1.423-1.423L13.5 18.75l1.183-.394a2.25 2.25 0 0 0 1.423-1.423l.394-1.183.394 1.183a2.25 2.25 0 0 0 1.423 1.423l1.183.394-1.183.394a2.25 2.25 0 0 0-1.423 1.423Z" /></svg>
                                 Generer avec IA
                             </h3>
-                            <p class="text-[11px] text-violet-700 mb-2">Analyse les photos selectionnees via Vision API et remplit (ou remplace) tags + personnes + lieu + marques. ~$0.005 par photo.</p>
-                            <div class="flex gap-1.5 items-center">
-                                <select x-model="aiPool" class="flex-1 text-xs rounded-lg border-violet-200 focus:border-violet-400 focus:ring-1 focus:ring-violet-400 px-2 py-1.5 bg-white">
-                                    <option value="none">Pool : aucun (general)</option>
-                                    <option value="pdc_vantour">Pool : PdC / Vantour</option>
-                                    <option value="wildycaro">Pool : Wildycaro</option>
-                                    <option value="mamawette">Pool : Mamawette</option>
-                                </select>
-                            </div>
-                            <button @click="runAiAnalysis()" :disabled="busy || aiInProgress" class="w-full mt-2 px-3 py-2 text-xs bg-violet-600 text-white rounded-lg disabled:opacity-50 hover:bg-violet-700 font-medium flex items-center justify-center gap-1.5">
-                                <span x-show="!aiInProgress">Analyser <span x-text="selectedIds.length"></span> photo(s)</span>
+                            <p class="text-[11px] text-violet-700 mb-3">Analyse les photos selectionnees via Vision API et remplit description, tags, personnes, lieu et marques. Les valeurs existantes sont remplacees. ~$0.005 par photo.</p>
+                            <button @click="runAiAnalysis()" :disabled="busy || aiInProgress" class="w-full px-3 py-2 text-xs bg-violet-600 text-white rounded-lg disabled:opacity-50 hover:bg-violet-700 font-medium flex items-center justify-center gap-1.5">
+                                <span x-show="!aiInProgress">Analyser <span x-text="selectedIds.length"></span> photo(s) avec l'IA</span>
                                 <span x-show="aiInProgress">Analyse en cours...</span>
                             </button>
                             {{-- Progress bar --}}
@@ -342,7 +334,6 @@
             classification: { allow_pdc_vantour: null, allow_wildycaro: null, allow_mamawette: null, intimacy_level: '' },
 
             // IA analysis state
-            aiPool: 'none',
             aiInProgress: false,
             aiTotal: 0,
             aiDone: 0,
@@ -555,7 +546,7 @@
                                 'Accept': 'application/json',
                                 'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').content,
                             },
-                            body: JSON.stringify({ pool: this.aiPool || 'none' }),
+                            body: JSON.stringify({}),
                         });
                         if (res.ok) {
                             const data = await res.json();
