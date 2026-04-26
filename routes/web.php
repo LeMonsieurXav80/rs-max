@@ -41,6 +41,7 @@ use App\Http\Controllers\WordPressSiteController;
 use App\Http\Controllers\YouTubeChannelController;
 use App\Http\Controllers\YouTubeOAuthController;
 use App\Http\Controllers\YouTubeTranslatorController;
+use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
 
 Route::get('/', function () {
@@ -180,7 +181,9 @@ Route::middleware(['auth', 'verified', 'throttle:600,1'])->group(function () {
     Route::post('media/brands-batch', [MediaController::class, 'brandsBatch'])->name('media.brandsBatch');
     Route::post('media/people-batch', [MediaController::class, 'peopleBatch'])->name('media.peopleBatch');
     Route::post('media/details-batch', [MediaController::class, 'detailsBatch'])->name('media.detailsBatch');
-    Route::get('media/manage', [MediaController::class, 'manage'])->name('media.manage');
+    // Ancienne sous-page bulk-edit, fusionnee dans /media (mode multi-select).
+    // Conservee comme alias pour les bookmarks ; redirige vers /media en preservant les filtres.
+    Route::get('media/manage', fn (Request $request) => redirect()->route('media.index', $request->only(['folder', 'pool', 'filter'])))->name('media.manage');
     Route::get('media/autocomplete', [MediaController::class, 'autocomplete'])->name('media.autocomplete');
     Route::post('media/{media}/classify', [MediaController::class, 'classify'])->name('media.classify');
     Route::patch('media/{media}/tags', [MediaController::class, 'updateTags'])->name('media.updateTags');
