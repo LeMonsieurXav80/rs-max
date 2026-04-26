@@ -70,22 +70,6 @@
             {{-- ═══════════ Sidebar gauche : dossiers + pools ═══════════ --}}
             <aside class="w-64 flex-shrink-0">
                 <div class="sticky top-20 space-y-4">
-                    {{-- Pools --}}
-                    <div class="bg-white rounded-2xl border border-gray-100 shadow-sm p-3">
-                        <h3 class="text-[10px] font-semibold uppercase tracking-widest text-gray-400 px-2 pb-2">Pools</h3>
-                        <a href="{{ route('media.manage') }}" class="flex items-center justify-between px-2 py-1.5 rounded-lg text-sm transition-colors {{ ! $currentPool ? 'bg-indigo-50 text-indigo-700 font-medium' : 'text-gray-600 hover:bg-gray-50' }}">
-                            <span>Tous</span>
-                            <span class="text-xs text-gray-400">{{ $totalCount }}</span>
-                        </a>
-                        @foreach (['pdc_vantour' => 'PdC / Vantour', 'wildycaro' => 'Wildycaro', 'mamawette' => 'Mamawette', 'unclassified' => 'A classer', 'never_publish' => 'Jamais publier'] as $slug => $label)
-                            <a href="{{ route('media.manage', array_merge(request()->only('folder'), ['pool' => $slug])) }}"
-                               class="flex items-center justify-between px-2 py-1.5 rounded-lg text-sm transition-colors {{ $currentPool === $slug ? 'bg-indigo-50 text-indigo-700 font-medium' : 'text-gray-600 hover:bg-gray-50' }}">
-                                <span>{{ $label }}</span>
-                                <span class="text-xs text-gray-400">{{ $poolCounts[$slug] ?? 0 }}</span>
-                            </a>
-                        @endforeach
-                    </div>
-
                     {{-- Dossiers (arbre cliquable) --}}
                     <div class="bg-white rounded-2xl border border-gray-100 shadow-sm p-3 max-h-[60vh] overflow-y-auto"
                          x-data="folderTree({{ json_encode($foldersJson) }}, {{ json_encode($autoOpenIds) }})">
@@ -118,6 +102,22 @@
                                 </a>
                             </div>
                         </template>
+                    </div>
+
+                    {{-- Pools --}}
+                    <div class="bg-white rounded-2xl border border-gray-100 shadow-sm p-3">
+                        <h3 class="text-[10px] font-semibold uppercase tracking-widest text-gray-400 px-2 pb-2">Pools</h3>
+                        <a href="{{ route('media.manage') }}" class="flex items-center justify-between px-2 py-1.5 rounded-lg text-sm transition-colors {{ ! $currentPool ? 'bg-indigo-50 text-indigo-700 font-medium' : 'text-gray-600 hover:bg-gray-50' }}">
+                            <span>Tous</span>
+                            <span class="text-xs text-gray-400">{{ $totalCount }}</span>
+                        </a>
+                        @foreach (['pdc_vantour' => 'PdC / Vantour', 'wildycaro' => 'Wildycaro', 'mamawette' => 'Mamawette', 'unclassified' => 'A classer', 'never_publish' => 'Jamais publier'] as $slug => $label)
+                            <a href="{{ route('media.manage', array_merge(request()->only('folder'), ['pool' => $slug])) }}"
+                               class="flex items-center justify-between px-2 py-1.5 rounded-lg text-sm transition-colors {{ $currentPool === $slug ? 'bg-indigo-50 text-indigo-700 font-medium' : 'text-gray-600 hover:bg-gray-50' }}">
+                                <span>{{ $label }}</span>
+                                <span class="text-xs text-gray-400">{{ $poolCounts[$slug] ?? 0 }}</span>
+                            </a>
+                        @endforeach
                     </div>
                 </div>
             </aside>

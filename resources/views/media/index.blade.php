@@ -66,7 +66,18 @@
             return $depth;
         };
         $childrenCountById = $folders->groupBy('parent_id')->map->count();
-        $foldersJson = $folders->map(function ($f) use ($folderPath, $folderDepth, $childrenCountById) {
+        $childrenByParent = $folders->groupBy('parent_id');
+        $parentChainOf = function ($f) use ($foldersById) {
+            $chain = [];
+            $cursor = $f->parent_id;
+            while ($cursor && count($chain) < 10) {
+                $chain[] = $cursor;
+                $cursor = $foldersById->get($cursor)?->parent_id;
+            }
+            return $chain;
+        };
+        $foldersJson = $folders->map(function ($f) use ($folderPath, $folderDepth, $childrenCountById, $childrenByParent, $parentChainOf) {
+            $hasChildren = $childrenByParent->has($f->id) && $childrenByParent->get($f->id)->isNotEmpty();
             return [
                 'id' => $f->id,
                 'name' => $f->name,
@@ -74,12 +85,24 @@
                 'parent_id' => $f->parent_id,
                 'path' => $folderPath($f),
                 'depth' => $folderDepth($f),
+                'parent_chain' => $parentChainOf($f),
+                'has_children' => $hasChildren,
                 'color' => $f->color,
                 'is_system' => $f->is_system,
                 'files_count' => $f->files_count,
                 'children_count' => $childrenCountById->get($f->id, 0),
             ];
         })->sortBy('path')->values()->toArray();
+
+        // Auto-ouvre les ancêtres du dossier sélectionné pour qu'il soit visible au chargement.
+        $autoOpenIds = [];
+        if ($currentFolder && is_numeric($currentFolder)) {
+            $cursor = $foldersById->get((int) $currentFolder)?->parent_id;
+            while ($cursor && count($autoOpenIds) < 10) {
+                $autoOpenIds[] = $cursor;
+                $cursor = $foldersById->get($cursor)?->parent_id;
+            }
+        }
     @endphp
 
     <div x-data="{
@@ -651,22 +674,6 @@
             <template x-for="v in autocomplete.brands" :key="v"><option :value="v"></option></template>
         </datalist>
 
-        {{-- Stats cards --}}
-        <div class="grid grid-cols-3 gap-4 mb-6">
-            <div class="bg-white rounded-2xl border border-gray-100 shadow-sm p-5">
-                <div class="text-2xl font-bold text-gray-900">{{ $totalCount }}</div>
-                <div class="text-sm text-gray-500 mt-1">Total des fichiers</div>
-            </div>
-            <div class="bg-white rounded-2xl border border-gray-100 shadow-sm p-5">
-                <div class="text-2xl font-bold text-gray-900">{{ $imageCount }}</div>
-                <div class="text-sm text-gray-500 mt-1">Images</div>
-            </div>
-            <div class="bg-white rounded-2xl border border-gray-100 shadow-sm p-5">
-                <div class="text-2xl font-bold text-gray-900">{{ $videoCount }}</div>
-                <div class="text-sm text-gray-500 mt-1">Videos</div>
-            </div>
-        </div>
-
         {{-- Upload zone (drag & drop) --}}
         <div class="mb-6 bg-white rounded-2xl border border-gray-100 shadow-sm p-4">
             <div class="border-2 border-dashed rounded-xl p-8 text-center transition-colors"
@@ -707,7 +714,8 @@
             </div>
         </div>
 
-        {{-- Folder pills --}}
+        {{-- Folder pills + breadcrumb : remplacés par la sidebar gauche (arbre cliquable) --}}
+        @if(false)
         <div class="bg-white rounded-2xl border border-gray-100 shadow-sm p-4 mb-6">
             {{-- Breadcrumb (visible quand on est dans un sous-dossier) --}}
             <template x-if="breadcrumb.length > 0">
@@ -924,6 +932,7 @@
                 </button>
             </div>
         </div>
+        @endif
 
         {{-- Filters + multi-select --}}
         <div class="flex flex-wrap items-center justify-between gap-4 mb-6">
@@ -1029,8 +1038,64 @@
             </div>
         </div>
 
-        {{-- Main layout: grid + detail panel --}}
-        <div class="flex gap-6">
+        {{-- Main layout: sidebar + grid + detail panel --}}
+        <div class="flex gap-5">
+            {{-- Left sidebar : Dossiers (arbre) + Pools --}}
+            <aside class="w-60 flex-shrink-0 self-start hidden md:block">
+                <div class="sticky top-20 space-y-4">
+                    {{-- Dossiers (arbre cliquable) --}}
+                    <div class="bg-white rounded-2xl border border-gray-100 shadow-sm p-3 max-h-[55vh] overflow-y-auto"
+                         x-data="folderTree({{ json_encode($foldersJson) }}, {{ json_encode($autoOpenIds) }})">
+                        <h3 class="text-[10px] font-semibold uppercase tracking-widest text-gray-400 px-2 pb-2">Dossiers</h3>
+                        <a href="{{ route('media.index', array_filter(['pool' => $currentPool, 'filter' => $filter !== 'all' ? $filter : null])) }}"
+                           class="flex items-center justify-between px-2 py-1.5 rounded-lg text-sm transition-colors {{ ! $currentFolder ? 'bg-indigo-50 text-indigo-700 font-medium' : 'text-gray-600 hover:bg-gray-50' }}">
+                            <span>Tous les dossiers</span>
+                            <span class="text-xs text-gray-400">{{ $totalCount }}</span>
+                        </a>
+                        <a href="{{ route('media.index', array_filter(['pool' => $currentPool, 'filter' => $filter !== 'all' ? $filter : null, 'folder' => 'uncategorized'])) }}"
+                           class="flex items-center justify-between px-2 py-1.5 rounded-lg text-sm transition-colors {{ $currentFolder === 'uncategorized' ? 'bg-indigo-50 text-indigo-700 font-medium' : 'text-gray-600 hover:bg-gray-50' }}">
+                            <span class="text-gray-500 italic">Sans dossier</span>
+                            <span class="text-xs text-gray-400">{{ $uncategorizedCount }}</span>
+                        </a>
+                        <template x-for="f in folders" :key="f.id">
+                            <div x-show="isVisible(f)" class="flex items-center group" :style="`padding-left: ${f.depth * 12}px`">
+                                <button x-show="f.has_children" @click.stop="toggle(f.id)" type="button"
+                                        class="w-4 h-4 flex items-center justify-center text-gray-400 hover:text-gray-700 flex-shrink-0">
+                                    <svg class="w-3 h-3 transition-transform" :class="isOpen(f.id) && 'rotate-90'" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="m8.25 4.5 7.5 7.5-7.5 7.5" /></svg>
+                                </button>
+                                <span x-show="!f.has_children" class="w-4 h-4 flex-shrink-0"></span>
+                                <a :href="`{{ route('media.index') }}?folder=${f.id}{{ $currentPool ? '&pool='.urlencode($currentPool) : '' }}{{ $filter !== 'all' ? '&filter='.$filter : '' }}`"
+                                   class="flex-1 flex items-center justify-between px-2 py-1.5 rounded-lg text-sm transition-colors min-w-0"
+                                   :class="String({{ json_encode($currentFolder) }}) === String(f.id) ? 'bg-indigo-50 text-indigo-700 font-medium' : 'text-gray-600 hover:bg-gray-50'">
+                                    <span class="flex items-center gap-2 min-w-0 truncate">
+                                        <span class="w-2 h-2 rounded-sm flex-shrink-0" :style="`background-color: ${f.color || '#9ca3af'}`"></span>
+                                        <span class="truncate" x-text="f.name"></span>
+                                    </span>
+                                    <span class="text-xs text-gray-400 flex-shrink-0" x-text="f.files_count"></span>
+                                </a>
+                            </div>
+                        </template>
+                    </div>
+
+                    {{-- Pools --}}
+                    <div class="bg-white rounded-2xl border border-gray-100 shadow-sm p-3">
+                        <h3 class="text-[10px] font-semibold uppercase tracking-widest text-gray-400 px-2 pb-2">Pools</h3>
+                        <a href="{{ route('media.index', array_filter(['folder' => $currentFolder, 'filter' => $filter !== 'all' ? $filter : null])) }}"
+                           class="flex items-center justify-between px-2 py-1.5 rounded-lg text-sm transition-colors {{ ! $currentPool ? 'bg-indigo-50 text-indigo-700 font-medium' : 'text-gray-600 hover:bg-gray-50' }}">
+                            <span>Tous</span>
+                            <span class="text-xs text-gray-400">{{ $totalCount }}</span>
+                        </a>
+                        @foreach (['pdc_vantour' => ['PdC / Vantour', 'emerald'], 'wildycaro' => ['Wildycaro', 'rose'], 'mamawette' => ['🔒 Mamawette', 'purple'], 'unclassified' => ['A classer', 'amber'], 'never_publish' => ['Jamais publier', 'gray']] as $slug => $cfg)
+                            <a href="{{ route('media.index', array_filter(['folder' => $currentFolder, 'filter' => $filter !== 'all' ? $filter : null, 'pool' => $slug])) }}"
+                               class="flex items-center justify-between px-2 py-1.5 rounded-lg text-sm transition-colors {{ $currentPool === $slug ? 'bg-indigo-50 text-indigo-700 font-medium' : 'text-gray-600 hover:bg-gray-50' }}">
+                                <span>{{ $cfg[0] }}</span>
+                                <span class="text-xs text-gray-400">{{ $poolCounts[$slug] ?? 0 }}</span>
+                            </a>
+                        @endforeach
+                    </div>
+                </div>
+            </aside>
+
             {{-- Center: media grid --}}
             <div class="min-w-0 flex-1">
                 <template x-if="items.length === 0">
@@ -1043,7 +1108,7 @@
                     </div>
                 </template>
 
-                <div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-4">
+                <div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5 gap-3">
                     <template x-for="item in items" :key="item.filename">
                         <div @click="selectItem(item, $event)"
                              class="bg-white rounded-xl border-2 overflow-hidden cursor-pointer transition-all shadow-sm hover:shadow-md"
@@ -1563,4 +1628,38 @@
             </div>
         </div>
     </div>
+
+    <script>
+    // Composant Alpine pour l'arbre de dossiers de la sidebar gauche.
+    function folderTree(folders, autoOpenIds) {
+        return {
+            folders,
+            openFolders: [...autoOpenIds],
+            isOpen(id) { return this.openFolders.includes(id); },
+            toggle(id) {
+                const idx = this.openFolders.indexOf(id);
+                if (idx >= 0) {
+                    // Ferme aussi tous les descendants pour eviter qu'ils restent visibles si on rouvre.
+                    const descendants = new Set([id]);
+                    let added;
+                    do {
+                        added = false;
+                        for (const f of this.folders) {
+                            if (descendants.has(f.parent_id) && !descendants.has(f.id)) {
+                                descendants.add(f.id);
+                                added = true;
+                            }
+                        }
+                    } while (added);
+                    this.openFolders = this.openFolders.filter(o => !descendants.has(o));
+                } else {
+                    this.openFolders.push(id);
+                }
+            },
+            isVisible(f) {
+                return f.parent_chain.every(p => this.openFolders.includes(p));
+            },
+        };
+    }
+    </script>
 @endsection
