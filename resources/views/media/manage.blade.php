@@ -4,27 +4,53 @@
 
 @section('content')
     @php
-        // Construit le chemin hiérarchique des dossiers (parent / enfant) pour l'affichage.
+        // Construit un arbre dossiers : depth-first walk pour avoir parent → enfants juste après,
+        // avec parent_chain pour pouvoir masquer/afficher selon l'état d'ouverture des ancêtres.
         $foldersById = $folders->keyBy('id');
-        $folderPath = function ($f) use ($foldersById) {
-            $names = [$f->name];
-            $cursor = $f->parent_id ? $foldersById->get($f->parent_id) : null;
-            $depth = 0;
-            while ($cursor && $depth < 10) {
-                array_unshift($names, $cursor->name);
-                $cursor = $cursor->parent_id ? $foldersById->get($cursor->parent_id) : null;
-                $depth++;
+        $childrenByParent = $folders->groupBy('parent_id');
+
+        $parentChain = function ($f) use ($foldersById) {
+            $chain = [];
+            $cursor = $f->parent_id;
+            while ($cursor && count($chain) < 10) {
+                $chain[] = $cursor;
+                $cursor = $foldersById->get($cursor)?->parent_id;
             }
-            return implode(' / ', $names);
+            return $chain;
         };
-        $foldersJson = $folders->map(fn ($f) => [
-            'id' => $f->id,
-            'name' => $f->name,
-            'parent_id' => $f->parent_id,
-            'path' => $folderPath($f),
-            'color' => $f->color,
-            'files_count' => $f->files_count,
-        ])->sortBy('path')->values()->toArray();
+
+        $flatTree = collect();
+        $walk = function ($parentId, $depth) use (&$walk, $childrenByParent, $parentChain, &$flatTree) {
+            $children = $childrenByParent->get($parentId, collect())->sortBy('name')->values();
+            foreach ($children as $f) {
+                $hasChildren = $childrenByParent->has($f->id) && $childrenByParent->get($f->id)->isNotEmpty();
+                $flatTree->push([
+                    'id' => $f->id,
+                    'name' => $f->name,
+                    'parent_id' => $f->parent_id,
+                    'parent_chain' => $parentChain($f),
+                    'depth' => $depth,
+                    'has_children' => $hasChildren,
+                    'color' => $f->color,
+                    'files_count' => $f->files_count,
+                ]);
+                if ($hasChildren) {
+                    $walk($f->id, $depth + 1);
+                }
+            }
+        };
+        $walk(null, 0);
+        $foldersJson = $flatTree->values()->toArray();
+
+        // Auto-ouvre les ancêtres du dossier sélectionné pour qu'il soit visible au chargement.
+        $autoOpenIds = [];
+        if ($currentFolder && is_numeric($currentFolder)) {
+            $cursor = $foldersById->get((int) $currentFolder)?->parent_id;
+            while ($cursor && count($autoOpenIds) < 10) {
+                $autoOpenIds[] = $cursor;
+                $cursor = $foldersById->get($cursor)?->parent_id;
+            }
+        }
     @endphp
 
     <div x-data="bulkManage()" x-init="init()" class="px-6 py-4">
@@ -60,8 +86,9 @@
                         @endforeach
                     </div>
 
-                    {{-- Dossiers --}}
-                    <div class="bg-white rounded-2xl border border-gray-100 shadow-sm p-3 max-h-[60vh] overflow-y-auto">
+                    {{-- Dossiers (arbre cliquable) --}}
+                    <div class="bg-white rounded-2xl border border-gray-100 shadow-sm p-3 max-h-[60vh] overflow-y-auto"
+                         x-data="folderTree({{ json_encode($foldersJson) }}, {{ json_encode($autoOpenIds) }})">
                         <h3 class="text-[10px] font-semibold uppercase tracking-widest text-gray-400 px-2 pb-2">Dossiers</h3>
                         <a href="{{ route('media.manage', request()->only('pool')) }}" class="flex items-center justify-between px-2 py-1.5 rounded-lg text-sm transition-colors {{ ! $currentFolder ? 'bg-indigo-50 text-indigo-700 font-medium' : 'text-gray-600 hover:bg-gray-50' }}">
                             <span>Tous les dossiers</span>
@@ -71,16 +98,26 @@
                             <span class="text-gray-500 italic">Sans dossier</span>
                             <span class="text-xs text-gray-400">{{ $uncategorizedCount }}</span>
                         </a>
-                        @foreach ($foldersJson as $f)
-                            <a href="{{ route('media.manage', array_merge(request()->only('pool'), ['folder' => $f['id']])) }}"
-                               class="flex items-center justify-between px-2 py-1.5 rounded-lg text-sm transition-colors {{ (string) $currentFolder === (string) $f['id'] ? 'bg-indigo-50 text-indigo-700 font-medium' : 'text-gray-600 hover:bg-gray-50' }}">
-                                <span class="flex items-center gap-2 min-w-0 truncate" title="{{ $f['path'] }}">
-                                    <span class="w-2 h-2 rounded-sm flex-shrink-0" style="background-color: {{ $f['color'] ?? '#9ca3af' }}"></span>
-                                    <span class="truncate">{{ $f['path'] }}</span>
-                                </span>
-                                <span class="text-xs text-gray-400 flex-shrink-0">{{ $f['files_count'] }}</span>
-                            </a>
-                        @endforeach
+                        <template x-for="f in folders" :key="f.id">
+                            <div x-show="isVisible(f)" class="flex items-center group" :style="`padding-left: ${f.depth * 12}px`">
+                                {{-- Chevron : toggle expand si has_children, sinon spacer --}}
+                                <button x-show="f.has_children" @click.stop="toggle(f.id)" type="button"
+                                        class="w-4 h-4 flex items-center justify-center text-gray-400 hover:text-gray-700 flex-shrink-0">
+                                    <svg class="w-3 h-3 transition-transform" :class="isOpen(f.id) && 'rotate-90'" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="m8.25 4.5 7.5 7.5-7.5 7.5" /></svg>
+                                </button>
+                                <span x-show="!f.has_children" class="w-4 h-4 flex-shrink-0"></span>
+                                {{-- Lien navigation --}}
+                                <a :href="`{{ route('media.manage') }}?folder=${f.id}{{ $currentPool ? '&pool='.urlencode($currentPool) : '' }}`"
+                                   class="flex-1 flex items-center justify-between px-2 py-1.5 rounded-lg text-sm transition-colors min-w-0"
+                                   :class="String({{ json_encode($currentFolder) }}) === String(f.id) ? 'bg-indigo-50 text-indigo-700 font-medium' : 'text-gray-600 hover:bg-gray-50'">
+                                    <span class="flex items-center gap-2 min-w-0 truncate">
+                                        <span class="w-2 h-2 rounded-sm flex-shrink-0" :style="`background-color: ${f.color || '#9ca3af'}`"></span>
+                                        <span class="truncate" x-text="f.name"></span>
+                                    </span>
+                                    <span class="text-xs text-gray-400 flex-shrink-0" x-text="f.files_count"></span>
+                                </a>
+                            </div>
+                        </template>
                     </div>
                 </div>
             </aside>
@@ -113,7 +150,7 @@
                             <div @click="toggle(item.id, $event)"
                                  class="bg-white rounded-xl border-2 overflow-hidden cursor-pointer transition-all shadow-sm hover:shadow-md relative"
                                  :class="isSelected(item.id) ? 'border-amber-400 ring-2 ring-amber-200' : 'border-gray-100 hover:border-gray-300'">
-                                <div class="aspect-square bg-gray-100 relative overflow-hidden">
+                                <div class="aspect-[4/5] bg-gray-100 relative overflow-hidden">
                                     {{-- Checkbox --}}
                                     <div class="absolute top-1.5 right-1.5 z-10">
                                         <div class="w-5 h-5 rounded-full border-2 flex items-center justify-center transition-colors"
@@ -318,6 +355,39 @@
     </div>
 
     <script>
+    function folderTree(folders, autoOpenIds) {
+        return {
+            folders,
+            openFolders: [...autoOpenIds],
+            isOpen(id) { return this.openFolders.includes(id); },
+            toggle(id) {
+                const idx = this.openFolders.indexOf(id);
+                if (idx >= 0) {
+                    // Ferme aussi tous les descendants : sinon ils restent dans openFolders
+                    // et reapparaitront si on rouvre le parent.
+                    const descendants = new Set([id]);
+                    let added;
+                    do {
+                        added = false;
+                        for (const f of this.folders) {
+                            if (descendants.has(f.parent_id) && !descendants.has(f.id)) {
+                                descendants.add(f.id);
+                                added = true;
+                            }
+                        }
+                    } while (added);
+                    this.openFolders = this.openFolders.filter(o => !descendants.has(o));
+                } else {
+                    this.openFolders.push(id);
+                }
+            },
+            // Visible si tous les ancetres sont ouverts (ou si root).
+            isVisible(f) {
+                return f.parent_chain.every(p => this.openFolders.includes(p));
+            },
+        };
+    }
+
     function bulkManage() {
         return {
             items: @json($items),
