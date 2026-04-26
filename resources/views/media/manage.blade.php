@@ -69,9 +69,9 @@
         <div class="flex gap-5">
             {{-- ═══════════ Sidebar gauche : dossiers + pools ═══════════ --}}
             <aside class="w-64 flex-shrink-0">
-                <div class="sticky top-20 space-y-4">
+                <div class="sticky top-20 max-h-[calc(100vh-6rem)] overflow-y-auto space-y-4 pr-1">
                     {{-- Dossiers (arbre cliquable) --}}
-                    <div class="bg-white rounded-2xl border border-gray-100 shadow-sm p-3 max-h-[60vh] overflow-y-auto"
+                    <div class="bg-white rounded-2xl border border-gray-100 shadow-sm p-3"
                          x-data="folderTree({{ json_encode($foldersJson) }}, {{ json_encode($autoOpenIds) }})">
                         <h3 class="text-[10px] font-semibold uppercase tracking-widest text-gray-400 px-2 pb-2">Dossiers</h3>
                         <a href="{{ route('media.manage', request()->only('pool')) }}" class="flex items-center justify-between px-2 py-1.5 rounded-lg text-sm transition-colors {{ ! $currentFolder ? 'bg-indigo-50 text-indigo-700 font-medium' : 'text-gray-600 hover:bg-gray-50' }}">
@@ -210,7 +210,7 @@
 
             {{-- ═══════════ Sidebar droite : toolbar bulk-edit ═══════════ --}}
             <aside class="w-[340px] flex-shrink-0 self-start">
-                <div class="sticky top-20 space-y-2">
+                <div class="sticky top-20 max-h-[calc(100vh-6rem)] overflow-y-auto space-y-2 pr-1">
                     {{-- Pas de selection --}}
                     <div x-show="selectedIds.length === 0" class="bg-white rounded-xl border border-gray-100 shadow-sm p-4 text-center">
                         <p class="text-xs text-gray-400">Selectionne des photos pour activer l'edition en masse.<br><span class="text-[10px]">Astuce : <kbd class="px-1 py-0.5 bg-gray-100 rounded">Shift</kbd> + clic = selection par plage.</span></p>

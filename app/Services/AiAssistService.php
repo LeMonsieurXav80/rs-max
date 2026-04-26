@@ -25,6 +25,13 @@ Pour écrire un texte pertinent, décris mentalement ce que tu vois :
 - La pose, l'attitude, l'énergie qui se dégage
 - L'atmosphère et le mood de l'ensemble
 
+CONVENTION DE NOMMAGE DES PERSONNES :
+- Si une femme adulte est visible sur la photo, désigne-la par "Caroline".
+- Si un homme adulte est visible, désigne-le par "Xavier".
+- Évite les formulations génériques type "une femme", "un homme", "une personne", "elle", "il" en début de phrase. Utilise leur prénom.
+- Si plusieurs personnes du même genre, utilise "Caroline" (resp. "Xavier") une seule fois et reste cohérent.
+- Si la photo ne montre clairement personne ou seulement des inconnus de fond, ignore cette règle (parle du décor, de l'objet ou de l'action).
+
 {contexte_utilisateur}
 
 En t'appuyant sur ces éléments visuels concrets, génère un texte engageant en {langue} adapté à chaque plateforme : {liste_plateformes}.
@@ -61,13 +68,21 @@ Réponds UNIQUEMENT en JSON valide :
   "taken_at": null
 }
 
+UTILISATION DU CONTEXTE :
+Le "Contexte de la session" ci-dessus n'est PAS décoratif. Tu DOIS l'exploiter activement :
+- Pour orienter le choix des **thematic_tags** : si le contexte est "voyage Portugal 2024", privilégie des tags géographiques/thématiques (algarve, plage portugaise, ocean atlantique) plutôt que génériques (mer, sable). Si le contexte mentionne un événement, une activité ou un lieu, intègre-le dans les tags quand c'est visuellement cohérent.
+- Pour enrichir la **description_fr** : injecte les éléments du contexte qui correspondent à ce que tu vois (lieu, période, ambiance). Exemple : contexte "Voyage Portugal 2004" + plage visible → "Caroline sur une plage de l'Algarve, parasols en paille au coucher de soleil." plutôt que "Une plage avec des parasols."
+- Si le contexte mentionne un lieu identifiable (ville, région, pays) ET que la photo est cohérente avec, **renseigne aussi** les champs city/region/country en conséquence.
+- Ne recopie jamais le contexte mot pour mot ; il sert d'amorce, pas de copier-coller. Si la photo contredit visiblement le contexte (ex: contexte "Portugal" mais photo de neige en montagne), ignore le contexte.
+
 RÈGLES :
 - description_fr : 1-2 phrases factuelles décrivant la scène, pas de copywriting. **Sert de contexte à une IA pour la rédaction de publications, doit être informative.**
+  Convention de nommage : si une femme adulte est visible, désigne-la par "Caroline" ; si un homme adulte est visible, désigne-le par "Xavier". Évite "une femme", "un homme", "une personne", "elle", "il" en début de phrase. Si la photo ne montre clairement personne ou seulement des inconnus de fond, ignore cette règle.
 - thematic_tags : MAXIMUM 10, en français minuscules sans accents sur concepts simples, pas de doublons singulier/pluriel, pas de générique ("photo", "image"). Privilégie ce qui rend la photo unique. **Sert aussi de contexte pour la génération de contenu.**
 - people_ids : ids normalisés. **Heuristique automatique** : si un homme adulte est visible → ajoute "xavier". Si une femme adulte est visible → ajoute "caroline". Si plusieurs personnes du même genre, garde "xavier" (resp. "caroline") une seule fois. Si la photo ne montre clairement personne ou seulement des inconnus, laisse le tableau vide.
-- city/region/country : null si non identifiable visuellement (pas deviner).
+- city/region/country : null si non identifiable visuellement (pas deviner). Cf. règle d'utilisation du contexte ci-dessus si le contexte aide à confirmer.
 - brands : tableau de marques visibles (logos, packaging). Vide si aucune.
-- event : null si pas d'évènement contextuel évident.
+- event : null si pas d'évènement contextuel évident. Si le contexte mentionne explicitement un événement ("Voyage Portugal 2024", "Mariage Léa", "Festival X"), utilise cette valeur.
 - taken_at : null (l'EXIF est traité ailleurs).
 
 Réponds en JSON pur, sans ```json``` ni explications.

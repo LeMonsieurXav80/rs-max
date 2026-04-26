@@ -128,6 +128,19 @@
         creatingFolder: false,
         newTagInput: '',
         newBrandInput: '',
+        newPersonInput: '',
+        // Bulk-edit (mode multi-select)
+        bulkTagInput: '',
+        bulkBrandInput: '',
+        bulkPersonInput: '',
+        bulkDescriptionInput: '',
+        // IA Vision (mono-photo et bulk)
+        aiContext: '',
+        aiInProgress: false,
+        aiTotal: 0,
+        aiDone: 0,
+        aiErrors: 0,
+        aiCurrentName: '',
         autocomplete: { cities: [], regions: [], countries: [], brands: [] },
         editingFolder: null,
         editFolderName: '',
@@ -457,6 +470,247 @@
             const next = current.filter(b => b.toLowerCase() !== brand.toLowerCase());
             await this.patchBrands(next);
         },
+        // ───── People (chips + add/remove) ─────
+        async patchPeople(addList, removeList) {
+            if (!this.selected || !this.selected.id) return;
+            const id = this.selected.id;
+            try {
+                const res = await fetch('/media/people-batch', {
+                    method: 'POST',
+                    headers: {
+                        'X-CSRF-TOKEN': document.querySelector('meta[name=csrf-token]').getAttribute('content'),
+                        'Content-Type': 'application/json',
+                        'Accept': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        ids: [id],
+                        add: addList || [],
+                        remove: removeList || [],
+                    }),
+                });
+                if (!res.ok) throw new Error('HTTP ' + res.status);
+                // Reconstitue la liste localement (le batch endpoint ne renvoie pas la liste finale).
+                let next = (this.selected.people_ids || []).map(p => p.toLowerCase());
+                if (removeList && removeList.length) next = next.filter(p => !removeList.includes(p));
+                if (addList && addList.length) {
+                    for (const a of addList) if (!next.includes(a)) next.push(a);
+                }
+                this.selected.people_ids = next;
+                const idx = this.items.findIndex(i => i.id === id);
+                if (idx !== -1) this.items[idx].people_ids = [...next];
+            } catch(e) {
+                alert('Erreur personnes : ' + e.message);
+            }
+        },
+        async addPerson() {
+            const value = (this.newPersonInput || '').trim().toLowerCase();
+            if (!value) return;
+            this.newPersonInput = '';
+            await this.patchPeople([value], []);
+        },
+        async removePerson(p) {
+            if (!p) return;
+            await this.patchPeople([], [p.toLowerCase()]);
+        },
+        // ───── Description (textarea avec save sur blur) ─────
+        async saveDescription() {
+            if (!this.selected || !this.selected.id) return;
+            const id = this.selected.id;
+            const value = (this.selected.description_fr || '').trim();
+            try {
+                const res = await fetch(`/media/${id}/details`, {
+                    method: 'PATCH',
+                    headers: {
+                        'X-CSRF-TOKEN': document.querySelector('meta[name=csrf-token]').getAttribute('content'),
+                        'Content-Type': 'application/json',
+                        'Accept': 'application/json',
+                    },
+                    body: JSON.stringify({ description_fr: value === '' ? null : value }),
+                });
+                if (!res.ok) throw new Error('HTTP ' + res.status);
+                const result = await res.json();
+                this.selected.description_fr = result.description_fr;
+                const idx = this.items.findIndex(i => i.id === id);
+                if (idx !== -1) this.items[idx].description_fr = result.description_fr;
+            } catch(e) {
+                alert('Erreur description : ' + e.message);
+            }
+        },
+        // ───── IA Vision : analyse mono ou bulk ─────
+        async runAiAnalysis(targetIds) {
+            const ids = targetIds || (this.multiSelect && this.multiSelected.length > 0 ? [...this.multiSelected] : (this.selected ? [this.selected.id] : []));
+            if (ids.length === 0 || this.aiInProgress) return;
+            if (!confirm(`Analyser ${ids.length} photo(s) avec l'IA ?\n\nLes tags, personnes, lieu et marques seront REMPLACES par ce que l'IA propose.\nCout estime : ~$${(ids.length * 0.005).toFixed(3)}.`)) return;
+
+            this.aiInProgress = true;
+            this.aiTotal = ids.length;
+            this.aiDone = 0;
+            this.aiErrors = 0;
+            this.aiCurrentName = '';
+            const ctxBody = this.aiContext.trim() ? { context: this.aiContext.trim() } : {};
+
+            for (const id of ids) {
+                const item = this.items.find(i => i.id === id);
+                this.aiCurrentName = item?.filename || `#${id}`;
+                try {
+                    const res = await fetch(`/media/${id}/analyze-vision`, {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                            'Accept': 'application/json',
+                            'X-CSRF-TOKEN': document.querySelector('meta[name=csrf-token]').getAttribute('content'),
+                        },
+                        body: JSON.stringify(ctxBody),
+                    });
+                    if (res.ok) {
+                        const data = await res.json();
+                        if (item) {
+                            if ('description_fr' in data) item.description_fr = data.description_fr;
+                            if ('thematic_tags' in data) item.thematic_tags = data.thematic_tags || [];
+                            if ('people_ids' in data) item.people_ids = data.people_ids || [];
+                            if ('brands' in data) item.brands = data.brands || [];
+                            if ('city' in data) item.city = data.city;
+                            if ('region' in data) item.region = data.region;
+                            if ('country' in data) item.country = data.country;
+                            if ('event' in data) item.event = data.event;
+                        }
+                        if (this.selected && this.selected.id === id && item) {
+                            // Refresh le panneau de detail si c'est la photo actuellement selectionnee.
+                            Object.assign(this.selected, item);
+                        }
+                    } else {
+                        this.aiErrors++;
+                    }
+                } catch (e) {
+                    this.aiErrors++;
+                }
+                this.aiDone++;
+            }
+
+            this.aiInProgress = false;
+            this.aiCurrentName = '';
+        },
+        // ───── Chips bulk : agrégation des valeurs présentes dans la sélection ─────
+        bulkChips(field) {
+            const counts = new Map();
+            for (const item of this.items) {
+                if (!this.multiSelected.includes(item.id)) continue;
+                const arr = item[field] || [];
+                for (const v of arr) {
+                    if (!v) continue;
+                    counts.set(v, (counts.get(v) || 0) + 1);
+                }
+            }
+            return [...counts.entries()]
+                .map(([value, count]) => ({ value, count }))
+                .sort((a, b) => b.count - a.count || a.value.localeCompare(b.value));
+        },
+        get bulkTagChips() { return this.bulkChips('thematic_tags'); },
+        get bulkBrandChips() { return this.bulkChips('brands'); },
+        get bulkPeopleChips() { return this.bulkChips('people_ids'); },
+
+        // Mutation locale après un appel batch (mirror du backend pour eviter un reload).
+        applyToMultiSelected(field, mutator) {
+            this.items.forEach(item => {
+                if (this.multiSelected.includes(item.id)) {
+                    item[field] = mutator(item[field] || []);
+                }
+            });
+        },
+
+        async bulkAddTags() {
+            const tags = this.bulkTagInput.split(',').map(s => s.trim().toLowerCase()).filter(Boolean);
+            if (tags.length === 0 || this.multiSelected.length === 0) return;
+            try {
+                const res = await fetch('/media/tags-batch', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'X-CSRF-TOKEN': document.querySelector('meta[name=csrf-token]').getAttribute('content'),
+                    },
+                    body: JSON.stringify({ ids: this.multiSelected, add: tags }),
+                });
+                if (!res.ok) throw new Error('HTTP ' + res.status);
+                this.applyToMultiSelected('thematic_tags', existing => [...new Set([...existing, ...tags])]);
+                this.bulkTagInput = '';
+            } catch(e) { alert('Erreur : ' + e.message); }
+        },
+        async bulkAddBrands() {
+            const brands = this.bulkBrandInput.split(',').map(s => s.trim()).filter(Boolean);
+            if (brands.length === 0 || this.multiSelected.length === 0) return;
+            try {
+                const res = await fetch('/media/brands-batch', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'X-CSRF-TOKEN': document.querySelector('meta[name=csrf-token]').getAttribute('content'),
+                    },
+                    body: JSON.stringify({ ids: this.multiSelected, add: brands }),
+                });
+                if (!res.ok) throw new Error('HTTP ' + res.status);
+                this.applyToMultiSelected('brands', existing => {
+                    const seen = new Map(existing.map(b => [b.toLowerCase(), b]));
+                    for (const b of brands) if (!seen.has(b.toLowerCase())) seen.set(b.toLowerCase(), b);
+                    return [...seen.values()];
+                });
+                this.bulkBrandInput = '';
+            } catch(e) { alert('Erreur : ' + e.message); }
+        },
+        async bulkAddPeople() {
+            const people = this.bulkPersonInput.split(',').map(s => s.trim().toLowerCase()).filter(Boolean);
+            if (people.length === 0 || this.multiSelected.length === 0) return;
+            try {
+                const res = await fetch('/media/people-batch', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'X-CSRF-TOKEN': document.querySelector('meta[name=csrf-token]').getAttribute('content'),
+                    },
+                    body: JSON.stringify({ ids: this.multiSelected, add: people }),
+                });
+                if (!res.ok) throw new Error('HTTP ' + res.status);
+                this.applyToMultiSelected('people_ids', existing => [...new Set([...existing, ...people])]);
+                this.bulkPersonInput = '';
+            } catch(e) { alert('Erreur : ' + e.message); }
+        },
+        async bulkRemoveOne(kind, value) {
+            if (this.multiSelected.length === 0) return;
+            const routes = { tags: '/media/tags-batch', brands: '/media/brands-batch', people: '/media/people-batch' };
+            const fields = { tags: 'thematic_tags', brands: 'brands', people: 'people_ids' };
+            try {
+                const res = await fetch(routes[kind], {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'X-CSRF-TOKEN': document.querySelector('meta[name=csrf-token]').getAttribute('content'),
+                    },
+                    body: JSON.stringify({ ids: this.multiSelected, remove: [value] }),
+                });
+                if (!res.ok) throw new Error('HTTP ' + res.status);
+                const cmp = kind === 'brands' ? (a, b) => a.toLowerCase() === b.toLowerCase() : (a, b) => a === b;
+                this.applyToMultiSelected(fields[kind], existing => existing.filter(v => !cmp(v, value)));
+            } catch(e) { alert('Erreur : ' + e.message); }
+        },
+        async bulkSaveDescription() {
+            if (this.multiSelected.length === 0) return;
+            const value = this.bulkDescriptionInput.trim();
+            const csrf = document.querySelector('meta[name=csrf-token]').getAttribute('content');
+            for (const id of this.multiSelected) {
+                try {
+                    const res = await fetch(`/media/${id}/details`, {
+                        method: 'PATCH',
+                        headers: { 'Content-Type': 'application/json', 'X-CSRF-TOKEN': csrf },
+                        body: JSON.stringify({ description_fr: value === '' ? null : value }),
+                    });
+                    if (res.ok) {
+                        const data = await res.json();
+                        const item = this.items.find(i => i.id === id);
+                        if (item) item.description_fr = data.description_fr;
+                    }
+                } catch(e) { /* skip */ }
+            }
+            this.bulkDescriptionInput = '';
+        },
         copyMacCommand() {
             if (this.multiSelected.length === 0) return;
             const ids = this.multiSelected.join(',');
@@ -714,226 +968,6 @@
             </div>
         </div>
 
-        {{-- Folder pills + breadcrumb : remplacés par la sidebar gauche (arbre cliquable) --}}
-        @if(false)
-        <div class="bg-white rounded-2xl border border-gray-100 shadow-sm p-4 mb-6">
-            {{-- Breadcrumb (visible quand on est dans un sous-dossier) --}}
-            <template x-if="breadcrumb.length > 0">
-                <div class="flex items-center gap-1.5 text-sm mb-3 pb-3 border-b border-gray-100 flex-wrap">
-                    <button @click="navigateFolder(currentFolderObj?.parent_id || null)"
-                            class="inline-flex items-center gap-1 px-2 py-1 rounded-lg text-gray-600 hover:bg-gray-100 transition-colors"
-                            title="Retour au dossier parent">
-                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M15.75 19.5 8.25 12l7.5-7.5" /></svg>
-                        Retour
-                    </button>
-                    <span class="text-gray-300">|</span>
-                    <button @click="navigateFolder(null)" class="text-gray-500 hover:text-indigo-600 transition-colors">Tous</button>
-                    <template x-for="(crumb, idx) in breadcrumb" :key="crumb.id">
-                        <span class="inline-flex items-center gap-1.5">
-                            <svg class="w-3.5 h-3.5 text-gray-300" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="m8.25 4.5 7.5 7.5-7.5 7.5" /></svg>
-                            <button @click="navigateFolder(crumb.id)"
-                                    class="inline-flex items-center gap-1.5"
-                                    :class="idx === breadcrumb.length - 1 ? 'font-semibold text-indigo-600' : 'text-gray-500 hover:text-indigo-600'">
-                                <span class="w-2 h-2 rounded-sm flex-shrink-0" :style="'background-color: ' + crumb.color"></span>
-                                <span x-text="crumb.name"></span>
-                            </button>
-                        </span>
-                    </template>
-                </div>
-            </template>
-
-            <div class="flex items-center gap-2 flex-wrap">
-                {{-- All files pill --}}
-                <button @click="navigateFolder(null)"
-                        class="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium rounded-lg transition-colors"
-                        :class="!currentFolder ? 'bg-indigo-600 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'">
-                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1.5">
-                        <path stroke-linecap="round" stroke-linejoin="round" d="m2.25 15.75 5.159-5.159a2.25 2.25 0 0 1 3.182 0l5.159 5.159m-1.5-1.5 1.409-1.409a2.25 2.25 0 0 1 3.182 0l2.909 2.909M3.75 21h16.5A2.25 2.25 0 0 0 22.5 18.75V5.25A2.25 2.25 0 0 0 20.25 3H3.75A2.25 2.25 0 0 0 1.5 5.25v13.5A2.25 2.25 0 0 0 3.75 21Z" />
-                    </svg>
-                    Tous
-                    <span class="text-xs opacity-70" x-text="'(' + totalCount + ')'"></span>
-                </button>
-
-                {{-- Dossiers du niveau courant uniquement (drill-down) --}}
-                <template x-for="folder in visibleFolders" :key="folder.id">
-                    <div class="relative inline-flex">
-                        <div class="inline-flex items-center rounded-lg transition-colors"
-                             :class="currentFolder == folder.id ? 'bg-indigo-600 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'">
-                            <button @click="navigateFolder(folder.id)"
-                                    class="inline-flex items-center gap-1.5 pl-3 py-1.5 text-sm font-medium"
-                                    :title="folder.path">
-                                <span class="w-2.5 h-2.5 rounded-sm flex-shrink-0" :style="'background-color: ' + folder.color"></span>
-                                <span x-text="folder.name"></span>
-                                <span class="text-xs opacity-70" x-text="'(' + folder.files_count + ')'"></span>
-                                <span x-show="folder.children_count > 0"
-                                      class="inline-flex items-center gap-0.5 text-xs opacity-70"
-                                      :title="folder.children_count + ' sous-dossier(s)'">
-                                    <span>·</span>
-                                    <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="m8.25 4.5 7.5 7.5-7.5 7.5" /></svg>
-                                    <span x-text="folder.children_count"></span>
-                                </span>
-                            </button>
-                            {{-- Three-dot menu inside the pill --}}
-                            <button @click.stop="folderMenuOpen = (folderMenuOpen === folder.id ? null : folder.id)"
-                                    class="inline-flex items-center px-1.5 py-1.5 opacity-60 hover:opacity-100 transition-opacity">
-                                <svg class="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
-                                    <path d="M10 6a2 2 0 110-4 2 2 0 010 4zM10 12a2 2 0 110-4 2 2 0 010 4zM10 18a2 2 0 110-4 2 2 0 010 4z" />
-                                </svg>
-                            </button>
-                        </div>
-                        {{-- Dropdown menu --}}
-                        <div x-show="folderMenuOpen === folder.id" x-cloak
-                             @click.outside="folderMenuOpen = null"
-                             class="absolute top-full left-0 mt-1 w-52 bg-white rounded-xl shadow-lg border border-gray-200 py-1.5 z-50">
-                            <button @click="startEditFolder(folder); folderMenuOpen = null"
-                                    class="w-full flex items-center gap-2.5 px-3 py-2 text-sm text-gray-700 hover:bg-gray-50 transition-colors">
-                                <svg class="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1.5"><path stroke-linecap="round" stroke-linejoin="round" d="m16.862 4.487 1.687-1.688a1.875 1.875 0 1 1 2.652 2.652L10.582 16.07a4.5 4.5 0 0 1-1.897 1.13L6 18l.8-2.685a4.5 4.5 0 0 1 1.13-1.897l8.932-8.931Z" /></svg>
-                                Renommer
-                            </button>
-                            <button @click="newFolderParentId = folder.id; creatingFolder = true; folderMenuOpen = null; $nextTick(() => $refs.newFolderInput && $refs.newFolderInput.focus())"
-                                    class="w-full flex items-center gap-2.5 px-3 py-2 text-sm text-gray-700 hover:bg-gray-50 transition-colors">
-                                <svg class="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1.5"><path stroke-linecap="round" stroke-linejoin="round" d="M12 10.5v6m3-3H9m4.06-7.19-2.12-2.12a1.5 1.5 0 0 0-1.061-.44H4.5A2.25 2.25 0 0 0 2.25 6v12a2.25 2.25 0 0 0 2.25 2.25h15A2.25 2.25 0 0 0 21.75 18V9a2.25 2.25 0 0 0-2.25-2.25h-5.379a1.5 1.5 0 0 1-1.06-.44Z" /></svg>
-                                Nouveau sous-dossier
-                            </button>
-                            {{-- Color picker --}}
-                            <div class="px-3 py-2 flex items-center gap-2.5">
-                                <svg class="w-4 h-4 text-gray-400 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1.5"><path stroke-linecap="round" stroke-linejoin="round" d="M4.098 19.902a3.75 3.75 0 0 0 5.304 0l6.401-6.402M6.75 21A3.75 3.75 0 0 1 3 17.25V4.125C3 3.504 3.504 3 4.125 3h5.25c.621 0 1.125.504 1.125 1.125v4.072M6.75 21a3.75 3.75 0 0 0 3.75-3.75V8.197M6.75 21h13.125c.621 0 1.125-.504 1.125-1.125v-5.25c0-.621-.504-1.125-1.125-1.125h-4.072M10.5 8.197l2.88-2.88c.438-.439 1.15-.439 1.59 0l3.712 3.713c.44.44.44 1.152 0 1.59l-2.879 2.88M6.75 17.25h.008v.008H6.75v-.008Z" /></svg>
-                                <span class="text-sm text-gray-700">Couleur</span>
-                                <input type="color" :value="folder.color"
-                                       @change="editFolderColor = $event.target.value; editFolderName = folder.name; saveFolder(folder)"
-                                       class="w-6 h-6 rounded cursor-pointer border-0 p-0 ml-auto">
-                            </div>
-                            <template x-if="!folder.is_system">
-                                <div>
-                                    <div class="border-t border-gray-100 my-1"></div>
-                                    <button @click="deleteFolderConfirm = folder; folderMenuOpen = null"
-                                            class="w-full flex items-center gap-2.5 px-3 py-2 text-sm text-red-600 hover:bg-red-50 transition-colors">
-                                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1.5"><path stroke-linecap="round" stroke-linejoin="round" d="m14.74 9-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 0 1-2.244 2.077H8.084a2.25 2.25 0 0 1-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 0 0-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 0 1 3.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 0 0-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 0 0-7.5 0" /></svg>
-                                        Supprimer
-                                    </button>
-                                </div>
-                            </template>
-                        </div>
-                    </div>
-                </template>
-
-                {{-- Uncategorized pill --}}
-                <button @click="navigateFolder('uncategorized')"
-                        class="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium rounded-lg transition-colors"
-                        :class="currentFolder === 'uncategorized' ? 'bg-indigo-600 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'">
-                    <svg class="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1.5">
-                        <path stroke-linecap="round" stroke-linejoin="round" d="M3.75 9.776c.112-.017.227-.026.344-.026h15.812c.117 0 .232.009.344.026m-16.5 0a2.25 2.25 0 0 0-1.883 2.542l.857 6a2.25 2.25 0 0 0 2.227 1.932H19.05a2.25 2.25 0 0 0 2.227-1.932l.857-6a2.25 2.25 0 0 0-1.883-2.542m-16.5 0V6A2.25 2.25 0 0 1 6 3.75h3.879a1.5 1.5 0 0 1 1.06.44l2.122 2.12a1.5 1.5 0 0 0 1.06.44H18A2.25 2.25 0 0 1 20.25 9v.776" />
-                    </svg>
-                    Non classe
-                    <span class="text-xs opacity-70" x-text="'(' + uncategorizedCount + ')'"></span>
-                </button>
-
-                {{-- Separator --}}
-                <div class="w-px h-6 bg-gray-200 mx-1"></div>
-
-                {{-- New folder inline (par défaut au niveau courant si on est dans un dossier) --}}
-                <template x-if="!creatingFolder">
-                    <button @click="newFolderParentId = currentFolderId; creatingFolder = true; $nextTick(() => $refs.newFolderInput.focus())"
-                            class="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium rounded-lg text-indigo-600 bg-indigo-50 hover:bg-indigo-100 transition-colors">
-                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2">
-                            <path stroke-linecap="round" stroke-linejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
-                        </svg>
-                        <span x-text="currentFolderId ? 'Nouveau sous-dossier' : 'Nouveau dossier'"></span>
-                    </button>
-                </template>
-                <template x-if="creatingFolder">
-                    <div class="inline-flex items-center gap-1.5">
-                        <span x-show="newFolderParentId" class="text-xs text-gray-500" x-text="'Sous-dossier de ' + (folders.find(f => f.id === newFolderParentId)?.name || '') + ' :'"></span>
-                        <input type="text" x-ref="newFolderInput" x-model="newFolderName" placeholder="Nom du dossier..."
-                               class="text-sm border border-gray-200 rounded-lg px-2.5 py-1.5 w-40 focus:border-indigo-400 focus:ring-1 focus:ring-indigo-400"
-                               @keydown.enter="createFolder()" @keydown.escape="creatingFolder = false; newFolderName = ''; newFolderParentId = null">
-                        <button @click="createFolder()" :disabled="!newFolderName.trim()"
-                                class="p-1.5 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 disabled:opacity-50 transition-colors">
-                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2">
-                                <path stroke-linecap="round" stroke-linejoin="round" d="m4.5 12.75 6 6 9-13.5" />
-                            </svg>
-                        </button>
-                        <button @click="creatingFolder = false; newFolderName = ''; newFolderParentId = null" class="p-1.5 text-gray-400 hover:text-gray-600">
-                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2">
-                                <path stroke-linecap="round" stroke-linejoin="round" d="M6 18 18 6M6 6l12 12" />
-                            </svg>
-                        </button>
-                    </div>
-                </template>
-            </div>
-
-            {{-- Edit folder inline form --}}
-            <template x-if="editingFolder">
-                <div class="mt-3 pt-3 border-t border-gray-100 flex items-center gap-2">
-                    <span class="text-xs text-gray-400">Modifier :</span>
-                    <input type="text" x-model="editFolderName"
-                           class="text-sm border border-gray-200 rounded-lg px-2.5 py-1.5 w-40 focus:border-indigo-400 focus:ring-1 focus:ring-indigo-400"
-                           @keydown.enter="saveFolder({id: editingFolder})" @keydown.escape="editingFolder = null">
-                    <input type="color" x-model="editFolderColor" class="w-8 h-8 rounded cursor-pointer border-0 p-0">
-                    <button @click="saveFolder({id: editingFolder})" class="px-2.5 py-1.5 text-xs font-medium bg-indigo-600 text-white rounded-lg hover:bg-indigo-700">Sauver</button>
-                    <button @click="editingFolder = null" class="px-2.5 py-1.5 text-xs text-gray-400 hover:text-gray-600">Annuler</button>
-                </div>
-            </template>
-        </div>
-
-        {{-- Pool card (publication targeting) --}}
-        <div class="bg-white rounded-2xl border border-gray-100 shadow-sm p-4 mb-6">
-            <div class="flex items-center gap-2 flex-wrap">
-                <span class="text-[11px] font-semibold text-gray-400 uppercase tracking-wider mr-1">Pool</span>
-
-                {{-- Tous (no pool filter) --}}
-                <button @click="navigatePool(null)"
-                        class="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium rounded-lg transition-colors"
-                        :class="!currentPool ? 'bg-indigo-600 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'">
-                    Tous
-                </button>
-
-                {{-- À classer (no pool, awaiting human decision) --}}
-                <button @click="navigatePool('unclassified')"
-                        class="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium rounded-lg transition-colors"
-                        :class="currentPool === 'unclassified' ? 'bg-amber-500 text-white' : 'bg-amber-50 text-amber-700 border border-amber-200 hover:bg-amber-100'">
-                    À classer
-                    <span class="text-xs opacity-70">({{ $poolCounts['unclassified'] }})</span>
-                </button>
-
-                {{-- PdC / Vantour --}}
-                <button @click="navigatePool('pdc_vantour')"
-                        class="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium rounded-lg transition-colors"
-                        :class="currentPool === 'pdc_vantour' ? 'bg-emerald-600 text-white' : 'bg-emerald-50 text-emerald-700 border border-emerald-200 hover:bg-emerald-100'">
-                    <span class="w-2.5 h-2.5 rounded-sm bg-emerald-500 flex-shrink-0"></span>
-                    PdC / Vantour
-                    <span class="text-xs opacity-70">({{ $poolCounts['pdc_vantour'] }})</span>
-                </button>
-
-                {{-- Wildycaro --}}
-                <button @click="navigatePool('wildycaro')"
-                        class="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium rounded-lg transition-colors"
-                        :class="currentPool === 'wildycaro' ? 'bg-rose-600 text-white' : 'bg-rose-50 text-rose-700 border border-rose-200 hover:bg-rose-100'">
-                    <span class="w-2.5 h-2.5 rounded-sm bg-rose-500 flex-shrink-0"></span>
-                    Wildycaro
-                    <span class="text-xs opacity-70">({{ $poolCounts['wildycaro'] }})</span>
-                </button>
-
-                {{-- Mamawette (privé) --}}
-                <button @click="navigatePool('mamawette')"
-                        class="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium rounded-lg transition-colors"
-                        :class="currentPool === 'mamawette' ? 'bg-purple-700 text-white' : 'bg-purple-50 text-purple-800 border border-purple-200 hover:bg-purple-100'">
-                    <span class="w-2.5 h-2.5 rounded-sm bg-purple-700 flex-shrink-0"></span>
-                    🔒 Mamawette
-                    <span class="text-xs opacity-70">({{ $poolCounts['mamawette'] }})</span>
-                </button>
-
-                {{-- Jamais publier --}}
-                <button @click="navigatePool('never_publish')"
-                        class="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium rounded-lg transition-colors"
-                        :class="currentPool === 'never_publish' ? 'bg-gray-800 text-white' : 'bg-gray-100 text-gray-700 border border-gray-200 hover:bg-gray-200'">
-                    Jamais publier
-                    <span class="text-xs opacity-70">({{ $poolCounts['never_publish'] }})</span>
-                </button>
-            </div>
-        </div>
-        @endif
-
         {{-- Filters + multi-select --}}
         <div class="flex flex-wrap items-center justify-between gap-4 mb-6">
             <div class="flex items-center gap-2">
@@ -1041,10 +1075,35 @@
         {{-- Main layout: sidebar + grid + detail panel --}}
         <div class="flex gap-5">
             {{-- Left sidebar : Dossiers (arbre) + Pools --}}
-            <aside class="w-60 flex-shrink-0 self-start hidden md:block">
-                <div class="sticky top-20 space-y-4">
+            <aside class="w-60 flex-shrink-0 hidden md:block">
+                <div class="sticky top-20 max-h-[calc(100vh-6rem)] overflow-y-auto space-y-4 pr-1">
+                    {{-- IA Vision (contexte + bouton). Cible : la photo selectionnee (mono) ou la selection multi. --}}
+                    <div class="bg-gradient-to-br from-violet-50 to-indigo-50 rounded-2xl border border-violet-200 shadow-sm p-3 space-y-2">
+                        <h3 class="text-[10px] font-semibold uppercase tracking-widest text-violet-900 px-1">IA Vision</h3>
+                        <textarea x-model="aiContext" rows="2" placeholder="Contexte (ex: voyage Portugal 2024)"
+                                  class="w-full text-xs rounded-lg border-violet-200 focus:border-violet-400 focus:ring-1 focus:ring-violet-400 px-2 py-1 bg-white resize-none"></textarea>
+                        <button @click="runAiAnalysis()"
+                                :disabled="aiInProgress || (!selected && multiSelected.length === 0)"
+                                class="w-full px-2 py-1.5 text-xs bg-violet-600 text-white rounded-lg disabled:opacity-40 hover:bg-violet-700 font-medium flex items-center justify-center gap-1">
+                            <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M9.813 15.904 9 18.75l-.813-2.846a4.5 4.5 0 0 0-3.09-3.09L2.25 12l2.846-.813a4.5 4.5 0 0 0 3.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 0 0 3.09 3.09L15.75 12l-2.846.813a4.5 4.5 0 0 0-3.09 3.09Z" /></svg>
+                            <span x-show="!aiInProgress && multiSelect && multiSelected.length > 0">Analyser <span x-text="multiSelected.length"></span> photo(s)</span>
+                            <span x-show="!aiInProgress && (!multiSelect || multiSelected.length === 0) && selected">Analyser cette photo</span>
+                            <span x-show="!aiInProgress && (!multiSelect || multiSelected.length === 0) && !selected" class="text-violet-200">Aucune photo</span>
+                            <span x-show="aiInProgress">Analyse en cours...</span>
+                        </button>
+                        <div x-show="aiInProgress || aiTotal > 0" x-cloak class="text-[10px] text-violet-700">
+                            <div class="flex items-center justify-between mb-0.5">
+                                <span><span x-text="aiDone"></span> / <span x-text="aiTotal"></span><span x-show="aiErrors > 0" class="text-rose-600"> · <span x-text="aiErrors"></span> err</span></span>
+                            </div>
+                            <div x-show="aiCurrentName" class="truncate" x-text="aiCurrentName"></div>
+                            <div class="w-full h-1 bg-violet-100 rounded-full overflow-hidden mt-0.5">
+                                <div class="h-full bg-violet-500 transition-all" :style="`width: ${aiTotal ? (aiDone / aiTotal * 100) : 0}%`"></div>
+                            </div>
+                        </div>
+                    </div>
+
                     {{-- Dossiers (arbre cliquable) --}}
-                    <div class="bg-white rounded-2xl border border-gray-100 shadow-sm p-3 max-h-[55vh] overflow-y-auto"
+                    <div class="bg-white rounded-2xl border border-gray-100 shadow-sm p-3"
                          x-data="folderTree({{ json_encode($foldersJson) }}, {{ json_encode($autoOpenIds) }})">
                         <h3 class="text-[10px] font-semibold uppercase tracking-widest text-gray-400 px-2 pb-2">Dossiers</h3>
                         <a href="{{ route('media.index', array_filter(['pool' => $currentPool, 'filter' => $filter !== 'all' ? $filter : null])) }}"
@@ -1185,13 +1244,98 @@
             <div class="hidden lg:block w-[440px] flex-shrink-0">
                 <div class="sticky top-20 max-h-[calc(100vh-6rem)] overflow-y-auto">
                     <div class="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
-                        {{-- No selection --}}
-                        <template x-if="!selected">
+                        {{-- No selection (et pas de multi-select actif) --}}
+                        <template x-if="!selected && (!multiSelect || multiSelected.length === 0)">
                             <div class="p-8 text-center py-20">
                                 <svg class="w-16 h-16 text-gray-200 mx-auto mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="0.75">
                                     <path stroke-linecap="round" stroke-linejoin="round" d="m2.25 15.75 5.159-5.159a2.25 2.25 0 0 1 3.182 0l5.159 5.159m-1.5-1.5 1.409-1.409a2.25 2.25 0 0 1 3.182 0l2.909 2.909M3.75 21h16.5A2.25 2.25 0 0 0 22.5 18.75V5.25A2.25 2.25 0 0 0 20.25 3H3.75A2.25 2.25 0 0 0 1.5 5.25v13.5A2.25 2.25 0 0 0 3.75 21Z" />
                                 </svg>
-                                <p class="text-sm text-gray-400">Selectionnez un media pour voir ses details</p>
+                                <p class="text-sm text-gray-400">Selectionnez un media pour voir ses details<br><span class="text-[10px] text-gray-300">ou bascule en multi-select pour editer plusieurs photos a la fois</span></p>
+                            </div>
+                        </template>
+
+                        {{-- Multi-select bulk-edit --}}
+                        <template x-if="multiSelect && multiSelected.length > 0 && !selected">
+                            <div class="p-3 space-y-2.5">
+                                <div class="flex items-center justify-between">
+                                    <h3 class="text-sm font-semibold text-gray-900">Edition en masse</h3>
+                                    <span class="text-xs text-amber-600 font-medium" x-text="multiSelected.length + ' photo(s)'"></span>
+                                </div>
+
+                                {{-- IA Vision : deplacee dans la sidebar gauche --}}
+
+                                {{-- Tags --}}
+                                <div class="bg-white rounded-xl border border-gray-100 p-2.5">
+                                    <h4 class="text-[11px] font-semibold text-gray-700 uppercase tracking-wider mb-1.5">Tags</h4>
+                                    <div class="flex gap-1.5">
+                                        <input type="text" x-model="bulkTagInput" @keyup.enter="bulkAddTags()" placeholder="Ajouter (plage, mer...)" class="flex-1 text-xs rounded-lg border-gray-200 focus:border-indigo-400 focus:ring-1 focus:ring-indigo-400 px-2 py-1.5">
+                                        <button @click="bulkAddTags()" :disabled="!bulkTagInput.trim()" class="px-3 py-1.5 text-xs bg-indigo-600 text-white rounded-lg disabled:opacity-50">+</button>
+                                    </div>
+                                    <template x-if="bulkTagChips.length > 0">
+                                        <div class="flex flex-wrap gap-1 mt-2 max-h-24 overflow-y-auto">
+                                            <template x-for="chip in bulkTagChips" :key="chip.value">
+                                                <span class="inline-flex items-center gap-1 px-1.5 py-0.5 text-[11px] bg-gray-100 hover:bg-rose-50 hover:text-rose-700 rounded group cursor-pointer" @click="bulkRemoveOne('tags', chip.value)">
+                                                    <span x-text="chip.value"></span>
+                                                    <span class="text-gray-400 text-[9px]" x-show="chip.count < multiSelected.length" x-text="chip.count"></span>
+                                                    <span class="text-gray-400 group-hover:text-rose-600">×</span>
+                                                </span>
+                                            </template>
+                                        </div>
+                                    </template>
+                                </div>
+
+                                {{-- Marques --}}
+                                <div class="bg-white rounded-xl border border-gray-100 p-2.5">
+                                    <h4 class="text-[11px] font-semibold text-gray-700 uppercase tracking-wider mb-1.5">Marques</h4>
+                                    <div class="flex gap-1.5">
+                                        <input type="text" x-model="bulkBrandInput" @keyup.enter="bulkAddBrands()" placeholder="Ajouter (Decathlon...)" class="flex-1 text-xs rounded-lg border-gray-200 focus:border-indigo-400 focus:ring-1 focus:ring-indigo-400 px-2 py-1.5">
+                                        <button @click="bulkAddBrands()" :disabled="!bulkBrandInput.trim()" class="px-3 py-1.5 text-xs bg-indigo-600 text-white rounded-lg disabled:opacity-50">+</button>
+                                    </div>
+                                    <template x-if="bulkBrandChips.length > 0">
+                                        <div class="flex flex-wrap gap-1 mt-2 max-h-24 overflow-y-auto">
+                                            <template x-for="chip in bulkBrandChips" :key="chip.value">
+                                                <span class="inline-flex items-center gap-1 px-1.5 py-0.5 text-[11px] bg-gray-100 hover:bg-rose-50 hover:text-rose-700 rounded group cursor-pointer" @click="bulkRemoveOne('brands', chip.value)">
+                                                    <span x-text="chip.value"></span>
+                                                    <span class="text-gray-400 text-[9px]" x-show="chip.count < multiSelected.length" x-text="chip.count"></span>
+                                                    <span class="text-gray-400 group-hover:text-rose-600">×</span>
+                                                </span>
+                                            </template>
+                                        </div>
+                                    </template>
+                                </div>
+
+                                {{-- Personnes --}}
+                                <div class="bg-white rounded-xl border border-gray-100 p-2.5">
+                                    <h4 class="text-[11px] font-semibold text-gray-700 uppercase tracking-wider mb-1.5">Personnes</h4>
+                                    <div class="flex gap-1.5">
+                                        <input type="text" x-model="bulkPersonInput" @keyup.enter="bulkAddPeople()" placeholder="caroline, xavier..." class="flex-1 text-xs rounded-lg border-gray-200 focus:border-indigo-400 focus:ring-1 focus:ring-indigo-400 px-2 py-1.5">
+                                        <button @click="bulkAddPeople()" :disabled="!bulkPersonInput.trim()" class="px-3 py-1.5 text-xs bg-indigo-600 text-white rounded-lg disabled:opacity-50">+</button>
+                                    </div>
+                                    <template x-if="bulkPeopleChips.length > 0">
+                                        <div class="flex flex-wrap gap-1 mt-2 max-h-24 overflow-y-auto">
+                                            <template x-for="chip in bulkPeopleChips" :key="chip.value">
+                                                <span class="inline-flex items-center gap-1 px-1.5 py-0.5 text-[11px] bg-gray-100 hover:bg-rose-50 hover:text-rose-700 rounded group cursor-pointer" @click="bulkRemoveOne('people', chip.value)">
+                                                    <span x-text="chip.value"></span>
+                                                    <span class="text-gray-400 text-[9px]" x-show="chip.count < multiSelected.length" x-text="chip.count"></span>
+                                                    <span class="text-gray-400 group-hover:text-rose-600">×</span>
+                                                </span>
+                                            </template>
+                                        </div>
+                                    </template>
+                                </div>
+
+                                {{-- Description bulk --}}
+                                <div class="bg-white rounded-xl border border-gray-100 p-2.5">
+                                    <h4 class="text-[11px] font-semibold text-gray-700 uppercase tracking-wider mb-1.5">Description (commune)</h4>
+                                    <textarea x-model="bulkDescriptionInput" rows="3" placeholder="Description applique a toutes les photos selectionnees"
+                                              class="w-full text-xs rounded-lg border-gray-200 focus:border-indigo-400 focus:ring-1 focus:ring-indigo-400 px-2 py-1.5 resize-none"></textarea>
+                                    <div class="flex gap-1.5 mt-1.5">
+                                        <button @click="bulkSaveDescription()" class="flex-1 px-3 py-1.5 text-xs bg-indigo-600 text-white rounded-lg hover:bg-indigo-700">Sauvegarder</button>
+                                        <button @click="bulkDescriptionInput = ''; bulkSaveDescription()" class="px-3 py-1.5 text-xs bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200">Vider</button>
+                                    </div>
+                                </div>
+
+                                <p class="text-[10px] text-gray-400 italic px-1">Pour deplacer / classifier / supprimer en masse, utilise la barre amber au-dessus de la grille.</p>
                             </div>
                         </template>
 
@@ -1361,17 +1505,38 @@
                                                 </div>
                                             </div>
 
-                                            {{-- Personnes --}}
-                                            <template x-if="selected.people_ids && selected.people_ids.length > 0">
-                                                <div>
-                                                    <span class="text-[10px] text-gray-400 block mb-1">Personnes</span>
-                                                    <div class="flex flex-wrap gap-1">
-                                                        <template x-for="p in selected.people_ids" :key="p">
-                                                            <span class="bg-pink-100 text-pink-800 text-[10px] px-2 py-0.5 rounded capitalize" x-text="p"></span>
-                                                        </template>
-                                                    </div>
+                                            {{-- Personnes (éditables) --}}
+                                            <div>
+                                                <span class="text-[10px] text-gray-400 block mb-1">Personnes</span>
+                                                <div class="flex flex-wrap gap-1 mb-1.5">
+                                                    <template x-for="p in (selected.people_ids || [])" :key="p">
+                                                        <span class="inline-flex items-center gap-1 bg-pink-100 text-pink-800 text-[10px] pl-2 pr-1 py-0.5 rounded">
+                                                            <span class="capitalize" x-text="p"></span>
+                                                            <button @click="removePerson(p)" class="text-pink-400 hover:text-red-600 leading-none" type="button" title="Retirer cette personne">×</button>
+                                                        </span>
+                                                    </template>
+                                                    <template x-if="!selected.people_ids || selected.people_ids.length === 0">
+                                                        <span class="text-[10px] text-gray-400 italic">Aucune personne.</span>
+                                                    </template>
                                                 </div>
-                                            </template>
+                                                <div class="flex items-center gap-1">
+                                                    <input type="text" x-model="newPersonInput" placeholder="caroline, xavier..."
+                                                           class="flex-1 text-xs border border-gray-200 rounded px-2 py-1 focus:border-indigo-400 focus:ring-1 focus:ring-indigo-400"
+                                                           @keydown.enter.prevent="addPerson()">
+                                                    <button @click="addPerson()" :disabled="!newPersonInput.trim()"
+                                                            class="px-2 py-1 text-xs bg-pink-600 text-white rounded hover:bg-pink-700 disabled:opacity-50">+</button>
+                                                </div>
+                                            </div>
+
+                                            {{-- Description (éditable, save on blur) --}}
+                                            <div>
+                                                <span class="text-[10px] text-gray-400 block mb-1">Description</span>
+                                                <textarea x-model="selected.description_fr" @blur="saveDescription()" rows="3"
+                                                          placeholder="Description de la photo (sert de contexte aux IA de redaction)"
+                                                          class="w-full text-xs border border-gray-200 rounded px-2 py-1.5 focus:border-indigo-400 focus:ring-1 focus:ring-indigo-400 resize-none"></textarea>
+                                            </div>
+
+                                            {{-- IA Vision : deplacee dans la sidebar gauche --}}
 
                                             {{-- Pool / Intimacy --}}
                                             <div class="grid grid-cols-2 gap-2 text-xs">
