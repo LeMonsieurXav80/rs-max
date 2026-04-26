@@ -7,6 +7,7 @@ use App\Models\MediaFile;
 use App\Models\MediaFolder;
 use App\Models\Post;
 use App\Models\Setting;
+use App\Services\AiAssistService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Storage;
@@ -361,6 +362,159 @@ class MediaController extends Controller
             'added' => $addClean,
             'removed' => $removeClean,
         ]);
+    }
+
+    /**
+     * POST /media/{media}/analyze-vision — wrapper session-auth pour l'analyse Vision.
+     * Réplique le comportement de MediaApiController::analyzeVision pour le frontend web.
+     * Persiste tags/people/champs structurés extraits par l'IA sur la photo.
+     */
+    public function analyzeVision(Request $request, MediaFile $media, AiAssistService $ai): JsonResponse
+    {
+        $data = $request->validate([
+            'pool' => 'nullable|in:wildycaro,pdc_vantour,mamawette,none',
+            'expected_people' => 'nullable|array',
+            'expected_people.*' => 'string|max:50',
+            'context' => 'nullable|string|max:500',
+        ]);
+
+        if (! $media->is_image) {
+            return response()->json(['error' => 'analyze-vision ne supporte que les images'], 422);
+        }
+
+        $candidates = [
+            Storage::disk('local')->path("media/{$media->filename}"),
+            storage_path("app/media/{$media->filename}"),
+            Storage::disk('public')->path("media/{$media->filename}"),
+        ];
+        $absolutePath = null;
+        foreach ($candidates as $path) {
+            if (is_file($path)) {
+                $absolutePath = $path;
+                break;
+            }
+        }
+        if ($absolutePath === null) {
+            return response()->json(['error' => 'fichier image introuvable sur le storage'], 404);
+        }
+
+        $dataUrl = $this->resizeImageForVision($absolutePath);
+        if ($dataUrl === null) {
+            return response()->json(['error' => 'impossible de charger l\'image'], 500);
+        }
+
+        $context = $data['context'] ?? ($media->folder ? $media->folder->pathLabel() : null);
+
+        $result = $ai->extractMetadataFromImage(
+            imageDataUrl: $dataUrl,
+            context: $context,
+            expectedPeople: $data['expected_people'] ?? [],
+            pool: $data['pool'] ?? null,
+        );
+
+        if ($result === null) {
+            return response()->json(['error' => 'analyse Vision a échoué (voir logs)'], 502);
+        }
+        if ($result === 'refused') {
+            return response()->json(['error' => 'tous les modèles Vision ont refusé l\'analyse'], 422);
+        }
+
+        $update = [];
+        if ($result['description_fr'] !== null) {
+            $update['description_fr'] = $result['description_fr'];
+        }
+        if (! empty($result['thematic_tags'])) {
+            // Overwrite : l'IA propose une liste fraîche, on remplace l'existant.
+            $update['thematic_tags'] = collect($result['thematic_tags'])
+                ->map(fn ($t) => mb_strtolower(trim((string) $t)))
+                ->filter()
+                ->unique()
+                ->values()
+                ->all();
+        }
+        if (! empty($result['people_ids'])) {
+            $update['people_ids'] = $result['people_ids'];
+        }
+        if ($result['city'] !== null) {
+            $update['city'] = $result['city'];
+        }
+        if ($result['region'] !== null) {
+            $update['region'] = $result['region'];
+        }
+        if ($result['country'] !== null) {
+            $update['country'] = $result['country'];
+        }
+        if (! empty($result['brands'])) {
+            $update['brands'] = $result['brands'];
+        }
+        if ($result['event'] !== null) {
+            $update['event'] = $result['event'];
+        }
+        $aiMeta = is_array($media->ai_metadata) ? $media->ai_metadata : [];
+        $aiMeta['vision_analysis'] = [
+            'analyzed_at' => now()->toIso8601String(),
+            'pool_hint' => $data['pool'] ?? null,
+            'person_count' => $result['person_count'],
+        ];
+        $update['ai_metadata'] = $aiMeta;
+        $update['pending_analysis'] = false;
+
+        $media->update($update);
+        $media->refresh();
+
+        // Renvoie la photo mise à jour pour que le frontend puisse refresh sans reload.
+        return response()->json([
+            'id' => $media->id,
+            'thematic_tags' => $media->thematic_tags ?? [],
+            'people_ids' => $media->people_ids ?? [],
+            'brands' => $media->brands ?? [],
+            'city' => $media->city,
+            'region' => $media->region,
+            'country' => $media->country,
+            'event' => $media->event,
+            'description_fr' => $media->description_fr,
+        ]);
+    }
+
+    /**
+     * Helper privé : redimensionne à 1024px max et renvoie une data URL JPEG base64.
+     * Dupliqué de MediaApiController et AiAssistController. À extraire en trait
+     * si on l'utilise une 4ème fois.
+     */
+    private function resizeImageForVision(string $filePath): ?string
+    {
+        $mimeType = mime_content_type($filePath);
+        $image = match ($mimeType) {
+            'image/png' => @imagecreatefrompng($filePath),
+            'image/gif' => @imagecreatefromgif($filePath),
+            'image/webp' => function_exists('imagecreatefromwebp') ? @imagecreatefromwebp($filePath) : null,
+            default => @imagecreatefromjpeg($filePath),
+        };
+        if (! $image) {
+            return null;
+        }
+        $w = imagesx($image);
+        $h = imagesy($image);
+        $maxDim = 1024;
+        if ($w > $maxDim || $h > $maxDim) {
+            if ($w >= $h) {
+                $newW = $maxDim;
+                $newH = (int) round($h * ($maxDim / $w));
+            } else {
+                $newH = $maxDim;
+                $newW = (int) round($w * ($maxDim / $h));
+            }
+            $resized = imagecreatetruecolor($newW, $newH);
+            imagecopyresampled($resized, $image, 0, 0, 0, 0, $newW, $newH, $w, $h);
+            imagedestroy($image);
+            $image = $resized;
+        }
+        ob_start();
+        imagejpeg($image, null, 80);
+        $data = ob_get_clean();
+        imagedestroy($image);
+
+        return 'data:image/jpeg;base64,'.base64_encode($data);
     }
 
     /**

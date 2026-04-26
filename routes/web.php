@@ -185,6 +185,7 @@ Route::middleware(['auth', 'verified', 'throttle:600,1'])->group(function () {
     Route::post('media/{media}/classify', [MediaController::class, 'classify'])->name('media.classify');
     Route::patch('media/{media}/tags', [MediaController::class, 'updateTags'])->name('media.updateTags');
     Route::patch('media/{media}/details', [MediaController::class, 'updateDetails'])->name('media.updateDetails');
+    Route::post('media/{media}/analyze-vision', [MediaController::class, 'analyzeVision'])->name('media.analyzeVision');
     Route::delete('media/{filename}', [MediaController::class, 'destroy'])->name('media.destroy');
 
     // OAuth flows (reconnecting accounts the user already has linked)

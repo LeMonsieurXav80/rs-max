@@ -164,51 +164,109 @@
 
                     {{-- Toolbar --}}
                     <div x-show="selectedIds.length > 0" x-cloak class="space-y-3">
+                        {{-- IA — Génération automatique des métadonnées --}}
+                        <div class="bg-gradient-to-br from-violet-50 to-indigo-50 rounded-2xl border border-violet-200 shadow-sm p-4">
+                            <h3 class="text-xs font-semibold text-violet-900 uppercase tracking-wider mb-2 flex items-center gap-1.5">
+                                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M9.813 15.904 9 18.75l-.813-2.846a4.5 4.5 0 0 0-3.09-3.09L2.25 12l2.846-.813a4.5 4.5 0 0 0 3.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 0 0 3.09 3.09L15.75 12l-2.846.813a4.5 4.5 0 0 0-3.09 3.09ZM18.259 8.715 18 9.75l-.259-1.035a3.375 3.375 0 0 0-2.455-2.456L14.25 6l1.036-.259a3.375 3.375 0 0 0 2.455-2.456L18 2.25l.259 1.035a3.375 3.375 0 0 0 2.456 2.456L21.75 6l-1.035.259a3.375 3.375 0 0 0-2.456 2.456ZM16.894 20.567 16.5 21.75l-.394-1.183a2.25 2.25 0 0 0-1.423-1.423L13.5 18.75l1.183-.394a2.25 2.25 0 0 0 1.423-1.423l.394-1.183.394 1.183a2.25 2.25 0 0 0 1.423 1.423l1.183.394-1.183.394a2.25 2.25 0 0 0-1.423 1.423Z" /></svg>
+                                Generer avec IA
+                            </h3>
+                            <p class="text-[11px] text-violet-700 mb-2">Analyse les photos selectionnees via Vision API et remplit (ou remplace) tags + personnes + lieu + marques. ~$0.005 par photo.</p>
+                            <div class="flex gap-1.5 items-center">
+                                <select x-model="aiPool" class="flex-1 text-xs rounded-lg border-violet-200 focus:border-violet-400 focus:ring-1 focus:ring-violet-400 px-2 py-1.5 bg-white">
+                                    <option value="none">Pool : aucun (general)</option>
+                                    <option value="pdc_vantour">Pool : PdC / Vantour</option>
+                                    <option value="wildycaro">Pool : Wildycaro</option>
+                                    <option value="mamawette">Pool : Mamawette</option>
+                                </select>
+                            </div>
+                            <button @click="runAiAnalysis()" :disabled="busy || aiInProgress" class="w-full mt-2 px-3 py-2 text-xs bg-violet-600 text-white rounded-lg disabled:opacity-50 hover:bg-violet-700 font-medium flex items-center justify-center gap-1.5">
+                                <span x-show="!aiInProgress">Analyser <span x-text="selectedIds.length"></span> photo(s)</span>
+                                <span x-show="aiInProgress">Analyse en cours...</span>
+                            </button>
+                            {{-- Progress bar --}}
+                            <div x-show="aiInProgress || aiTotal > 0" x-cloak class="mt-2">
+                                <div class="flex items-center justify-between text-[11px] text-violet-700 mb-1">
+                                    <span>
+                                        <span x-text="aiDone"></span> / <span x-text="aiTotal"></span>
+                                        <span x-show="aiErrors > 0" class="text-rose-600">· <span x-text="aiErrors"></span> erreur(s)</span>
+                                    </span>
+                                    <span x-show="aiCurrentName" class="truncate ml-2 max-w-[160px]" x-text="aiCurrentName"></span>
+                                </div>
+                                <div class="w-full h-1.5 bg-violet-100 rounded-full overflow-hidden">
+                                    <div class="h-full bg-violet-500 transition-all" :style="`width: ${aiTotal ? (aiDone / aiTotal * 100) : 0}%`"></div>
+                                </div>
+                            </div>
+                        </div>
+
                         {{-- Tags --}}
                         <div class="bg-white rounded-2xl border border-gray-100 shadow-sm p-4">
                             <h3 class="text-xs font-semibold text-gray-700 uppercase tracking-wider mb-2">Tags</h3>
-                            <p class="text-[11px] text-gray-400 mb-2">Ajoute ou retire. Une virgule pour plusieurs. Si "Retirer", valide pour appliquer.</p>
-                            <div class="space-y-2">
-                                <div class="flex gap-1.5">
-                                    <input type="text" x-model="tagAddInput" @keyup.enter="bulkTags('add')" placeholder="Ajouter (plage, mer, ...)" class="flex-1 text-xs rounded-lg border-gray-200 focus:border-indigo-400 focus:ring-1 focus:ring-indigo-400 px-2 py-1.5">
-                                    <button @click="bulkTags('add')" :disabled="busy || !tagAddInput.trim()" class="px-3 py-1.5 text-xs bg-indigo-600 text-white rounded-lg disabled:opacity-50 hover:bg-indigo-700">Ajouter</button>
-                                </div>
-                                <div class="flex gap-1.5">
-                                    <input type="text" x-model="tagRemoveInput" @keyup.enter="bulkTags('remove')" placeholder="Retirer (vague, ...)" class="flex-1 text-xs rounded-lg border-gray-200 focus:border-rose-400 focus:ring-1 focus:ring-rose-400 px-2 py-1.5">
-                                    <button @click="bulkTags('remove')" :disabled="busy || !tagRemoveInput.trim()" class="px-3 py-1.5 text-xs bg-rose-600 text-white rounded-lg disabled:opacity-50 hover:bg-rose-700">Retirer</button>
-                                </div>
+                            <div class="flex gap-1.5">
+                                <input type="text" x-model="tagAddInput" @keyup.enter="bulkTags('add')" placeholder="Ajouter (plage, mer, ...)" class="flex-1 text-xs rounded-lg border-gray-200 focus:border-indigo-400 focus:ring-1 focus:ring-indigo-400 px-2 py-1.5">
+                                <button @click="bulkTags('add')" :disabled="busy || !tagAddInput.trim()" class="px-3 py-1.5 text-xs bg-indigo-600 text-white rounded-lg disabled:opacity-50 hover:bg-indigo-700">Ajouter</button>
                             </div>
+                            {{-- Chips des tags presents dans la selection --}}
+                            <template x-if="tagChips.length > 0">
+                                <div class="mt-3">
+                                    <p class="text-[10px] text-gray-400 uppercase tracking-wider mb-1.5">Presents dans la selection (clic × pour retirer)</p>
+                                    <div class="flex flex-wrap gap-1.5">
+                                        <template x-for="chip in tagChips" :key="chip.value">
+                                            <span class="inline-flex items-center gap-1 px-2 py-0.5 text-xs bg-gray-100 hover:bg-rose-50 hover:text-rose-700 rounded group cursor-pointer" @click="removeOne('tags', chip.value)">
+                                                <span x-text="chip.value"></span>
+                                                <span class="text-gray-400 text-[10px]" x-show="chip.count < selectedIds.length" x-text="`(${chip.count})`"></span>
+                                                <span class="text-gray-400 group-hover:text-rose-600">×</span>
+                                            </span>
+                                        </template>
+                                    </div>
+                                </div>
+                            </template>
                         </div>
 
                         {{-- Brands --}}
                         <div class="bg-white rounded-2xl border border-gray-100 shadow-sm p-4">
                             <h3 class="text-xs font-semibold text-gray-700 uppercase tracking-wider mb-2">Marques</h3>
-                            <div class="space-y-2">
-                                <div class="flex gap-1.5">
-                                    <input type="text" x-model="brandAddInput" @keyup.enter="bulkBrands('add')" placeholder="Ajouter (Decathlon, ...)" class="flex-1 text-xs rounded-lg border-gray-200 focus:border-indigo-400 focus:ring-1 focus:ring-indigo-400 px-2 py-1.5">
-                                    <button @click="bulkBrands('add')" :disabled="busy || !brandAddInput.trim()" class="px-3 py-1.5 text-xs bg-indigo-600 text-white rounded-lg disabled:opacity-50 hover:bg-indigo-700">Ajouter</button>
-                                </div>
-                                <div class="flex gap-1.5">
-                                    <input type="text" x-model="brandRemoveInput" @keyup.enter="bulkBrands('remove')" placeholder="Retirer" class="flex-1 text-xs rounded-lg border-gray-200 focus:border-rose-400 focus:ring-1 focus:ring-rose-400 px-2 py-1.5">
-                                    <button @click="bulkBrands('remove')" :disabled="busy || !brandRemoveInput.trim()" class="px-3 py-1.5 text-xs bg-rose-600 text-white rounded-lg disabled:opacity-50 hover:bg-rose-700">Retirer</button>
-                                </div>
+                            <div class="flex gap-1.5">
+                                <input type="text" x-model="brandAddInput" @keyup.enter="bulkBrands('add')" placeholder="Ajouter (Decathlon, ...)" class="flex-1 text-xs rounded-lg border-gray-200 focus:border-indigo-400 focus:ring-1 focus:ring-indigo-400 px-2 py-1.5">
+                                <button @click="bulkBrands('add')" :disabled="busy || !brandAddInput.trim()" class="px-3 py-1.5 text-xs bg-indigo-600 text-white rounded-lg disabled:opacity-50 hover:bg-indigo-700">Ajouter</button>
                             </div>
+                            <template x-if="brandChips.length > 0">
+                                <div class="mt-3">
+                                    <p class="text-[10px] text-gray-400 uppercase tracking-wider mb-1.5">Presentes dans la selection</p>
+                                    <div class="flex flex-wrap gap-1.5">
+                                        <template x-for="chip in brandChips" :key="chip.value">
+                                            <span class="inline-flex items-center gap-1 px-2 py-0.5 text-xs bg-gray-100 hover:bg-rose-50 hover:text-rose-700 rounded group cursor-pointer" @click="removeOne('brands', chip.value)">
+                                                <span x-text="chip.value"></span>
+                                                <span class="text-gray-400 text-[10px]" x-show="chip.count < selectedIds.length" x-text="`(${chip.count})`"></span>
+                                                <span class="text-gray-400 group-hover:text-rose-600">×</span>
+                                            </span>
+                                        </template>
+                                    </div>
+                                </div>
+                            </template>
                         </div>
 
                         {{-- People --}}
                         <div class="bg-white rounded-2xl border border-gray-100 shadow-sm p-4">
                             <h3 class="text-xs font-semibold text-gray-700 uppercase tracking-wider mb-2">Personnes</h3>
                             <p class="text-[11px] text-gray-400 mb-2">Ids normalises (ex: caroline, xavier).</p>
-                            <div class="space-y-2">
-                                <div class="flex gap-1.5">
-                                    <input type="text" x-model="peopleAddInput" @keyup.enter="bulkPeople('add')" placeholder="Ajouter (caroline, ...)" class="flex-1 text-xs rounded-lg border-gray-200 focus:border-indigo-400 focus:ring-1 focus:ring-indigo-400 px-2 py-1.5">
-                                    <button @click="bulkPeople('add')" :disabled="busy || !peopleAddInput.trim()" class="px-3 py-1.5 text-xs bg-indigo-600 text-white rounded-lg disabled:opacity-50 hover:bg-indigo-700">Ajouter</button>
-                                </div>
-                                <div class="flex gap-1.5">
-                                    <input type="text" x-model="peopleRemoveInput" @keyup.enter="bulkPeople('remove')" placeholder="Retirer" class="flex-1 text-xs rounded-lg border-gray-200 focus:border-rose-400 focus:ring-1 focus:ring-rose-400 px-2 py-1.5">
-                                    <button @click="bulkPeople('remove')" :disabled="busy || !peopleRemoveInput.trim()" class="px-3 py-1.5 text-xs bg-rose-600 text-white rounded-lg disabled:opacity-50 hover:bg-rose-700">Retirer</button>
-                                </div>
+                            <div class="flex gap-1.5">
+                                <input type="text" x-model="peopleAddInput" @keyup.enter="bulkPeople('add')" placeholder="Ajouter (caroline, ...)" class="flex-1 text-xs rounded-lg border-gray-200 focus:border-indigo-400 focus:ring-1 focus:ring-indigo-400 px-2 py-1.5">
+                                <button @click="bulkPeople('add')" :disabled="busy || !peopleAddInput.trim()" class="px-3 py-1.5 text-xs bg-indigo-600 text-white rounded-lg disabled:opacity-50 hover:bg-indigo-700">Ajouter</button>
                             </div>
+                            <template x-if="peopleChips.length > 0">
+                                <div class="mt-3">
+                                    <p class="text-[10px] text-gray-400 uppercase tracking-wider mb-1.5">Presentes dans la selection</p>
+                                    <div class="flex flex-wrap gap-1.5">
+                                        <template x-for="chip in peopleChips" :key="chip.value">
+                                            <span class="inline-flex items-center gap-1 px-2 py-0.5 text-xs bg-gray-100 hover:bg-rose-50 hover:text-rose-700 rounded group cursor-pointer" @click="removeOne('people', chip.value)">
+                                                <span x-text="chip.value"></span>
+                                                <span class="text-gray-400 text-[10px]" x-show="chip.count < selectedIds.length" x-text="`(${chip.count})`"></span>
+                                                <span class="text-gray-400 group-hover:text-rose-600">×</span>
+                                            </span>
+                                        </template>
+                                    </div>
+                                </div>
+                            </template>
                         </div>
 
                         {{-- Lieu / Evenement --}}
@@ -278,13 +336,18 @@
             lastMessage: '',
             lastError: '',
             tagAddInput: '',
-            tagRemoveInput: '',
             brandAddInput: '',
-            brandRemoveInput: '',
             peopleAddInput: '',
-            peopleRemoveInput: '',
             details: { city: '', region: '', country: '', event: '' },
             classification: { allow_pdc_vantour: null, allow_wildycaro: null, allow_mamawette: null, intimacy_level: '' },
+
+            // IA analysis state
+            aiPool: 'none',
+            aiInProgress: false,
+            aiTotal: 0,
+            aiDone: 0,
+            aiErrors: 0,
+            aiCurrentName: '',
 
             init() {},
 
@@ -299,8 +362,38 @@
                 else this.selectedIds = this.items.map(i => i.id);
             },
 
+            // ───── Chips computed ─────
+            // Union des valeurs présentes dans la sélection avec leur compteur d'occurrences.
+            buildChips(field) {
+                const counts = new Map();
+                for (const item of this.items) {
+                    if (!this.selectedIds.includes(item.id)) continue;
+                    const arr = item[field] || [];
+                    for (const v of arr) {
+                        if (!v) continue;
+                        counts.set(v, (counts.get(v) || 0) + 1);
+                    }
+                }
+                return [...counts.entries()]
+                    .map(([value, count]) => ({ value, count }))
+                    .sort((a, b) => b.count - a.count || a.value.localeCompare(b.value));
+            },
+            get tagChips() { return this.buildChips('thematic_tags'); },
+            get brandChips() { return this.buildChips('brands'); },
+            get peopleChips() { return this.buildChips('people_ids'); },
+
             hasDetailValues() {
                 return Object.values(this.details).some(v => (v || '').trim() !== '');
+            },
+
+            // ───── Mutation locale ─────
+            // Met à jour items[] en miroir de ce que le backend a fait, sans reload.
+            applyToSelected(field, mutator) {
+                this.items.forEach(item => {
+                    if (this.selectedIds.includes(item.id)) {
+                        item[field] = mutator(item[field] || []);
+                    }
+                });
             },
 
             async post(url, body) {
@@ -331,73 +424,88 @@
                 }
             },
 
+            // ───── Bulk add ─────
             async bulkTags(direction) {
                 if (this.selectedIds.length === 0) return;
-                const input = direction === 'add' ? this.tagAddInput : this.tagRemoveInput;
-                const items = input.split(',').map(s => s.trim()).filter(Boolean);
+                const items = this.tagAddInput.split(',').map(s => s.trim().toLowerCase()).filter(Boolean);
                 if (!items.length) return;
-                const data = await this.post('{{ route('media.tagsBatch') }}', {
-                    ids: this.selectedIds,
-                    [direction === 'add' ? 'add' : 'remove']: items,
-                });
+                const data = await this.post('{{ route('media.tagsBatch') }}', { ids: this.selectedIds, add: items });
                 if (data) {
-                    this.lastMessage = `Tags ${direction === 'add' ? 'ajoutes' : 'retires'} sur ${data.count} photo(s).`;
-                    if (direction === 'add') this.tagAddInput = ''; else this.tagRemoveInput = '';
-                    await this.refreshSelected();
+                    this.applyToSelected('thematic_tags', existing => [...new Set([...existing, ...items])]);
+                    this.lastMessage = `Tags ajoutes sur ${data.count} photo(s).`;
+                    this.tagAddInput = '';
                 }
             },
-
-            async bulkBrands(direction) {
+            async bulkBrands() {
                 if (this.selectedIds.length === 0) return;
-                const input = direction === 'add' ? this.brandAddInput : this.brandRemoveInput;
-                const items = input.split(',').map(s => s.trim()).filter(Boolean);
+                const items = this.brandAddInput.split(',').map(s => s.trim()).filter(Boolean);
                 if (!items.length) return;
-                const data = await this.post('{{ route('media.brandsBatch') }}', {
-                    ids: this.selectedIds,
-                    [direction === 'add' ? 'add' : 'remove']: items,
-                });
+                const data = await this.post('{{ route('media.brandsBatch') }}', { ids: this.selectedIds, add: items });
                 if (data) {
-                    this.lastMessage = `Marques ${direction === 'add' ? 'ajoutees' : 'retirees'} sur ${data.count} photo(s).`;
-                    if (direction === 'add') this.brandAddInput = ''; else this.brandRemoveInput = '';
-                    await this.refreshSelected();
+                    this.applyToSelected('brands', existing => {
+                        const seen = new Map(existing.map(b => [b.toLowerCase(), b]));
+                        for (const b of items) if (!seen.has(b.toLowerCase())) seen.set(b.toLowerCase(), b);
+                        return [...seen.values()];
+                    });
+                    this.lastMessage = `Marques ajoutees sur ${data.count} photo(s).`;
+                    this.brandAddInput = '';
                 }
             },
-
-            async bulkPeople(direction) {
+            async bulkPeople() {
                 if (this.selectedIds.length === 0) return;
-                const input = direction === 'add' ? this.peopleAddInput : this.peopleRemoveInput;
-                const items = input.split(',').map(s => s.trim().toLowerCase()).filter(Boolean);
+                const items = this.peopleAddInput.split(',').map(s => s.trim().toLowerCase()).filter(Boolean);
                 if (!items.length) return;
-                const data = await this.post('{{ route('media.peopleBatch') }}', {
-                    ids: this.selectedIds,
-                    [direction === 'add' ? 'add' : 'remove']: items,
-                });
+                const data = await this.post('{{ route('media.peopleBatch') }}', { ids: this.selectedIds, add: items });
                 if (data) {
-                    this.lastMessage = `Personnes ${direction === 'add' ? 'ajoutees' : 'retirees'} sur ${data.count} photo(s).`;
-                    if (direction === 'add') this.peopleAddInput = ''; else this.peopleRemoveInput = '';
-                    await this.refreshSelected();
+                    this.applyToSelected('people_ids', existing => [...new Set([...existing, ...items])]);
+                    this.lastMessage = `Personnes ajoutees sur ${data.count} photo(s).`;
+                    this.peopleAddInput = '';
                 }
             },
 
+            // ───── Remove via chip × ─────
+            async removeOne(kind, value) {
+                if (this.selectedIds.length === 0) return;
+                const routes = {
+                    tags: '{{ route('media.tagsBatch') }}',
+                    brands: '{{ route('media.brandsBatch') }}',
+                    people: '{{ route('media.peopleBatch') }}',
+                };
+                const fields = { tags: 'thematic_tags', brands: 'brands', people: 'people_ids' };
+                const data = await this.post(routes[kind], { ids: this.selectedIds, remove: [value] });
+                if (data) {
+                    const cmp = kind === 'brands' ? (a, b) => a.toLowerCase() === b.toLowerCase() : (a, b) => a === b;
+                    this.applyToSelected(fields[kind], existing => existing.filter(v => !cmp(v, value)));
+                    this.lastMessage = `"${value}" retire de ${data.count} photo(s).`;
+                }
+            },
+
+            // ───── Details / Classification ─────
             async bulkDetails(emptyMode) {
                 if (this.selectedIds.length === 0) return;
                 const body = { ids: this.selectedIds };
+                const fields = ['city', 'region', 'country', 'event'];
                 if (emptyMode) {
-                    // Ne touche que les champs visibles dans le bloc Lieu — les vide.
-                    body.city = null; body.region = null; body.country = null; body.event = null;
+                    for (const k of fields) body[k] = null;
                 } else {
-                    for (const k of ['city', 'region', 'country', 'event']) {
+                    for (const k of fields) {
                         const v = (this.details[k] || '').trim();
                         if (v !== '') body[k] = v;
                     }
-                    if (Object.keys(body).length === 1) return; // que ids
+                    if (Object.keys(body).length === 1) return;
                 }
                 const data = await this.post('{{ route('media.detailsBatch') }}', body);
                 if (data) {
+                    // Update local
+                    this.items.forEach(item => {
+                        if (this.selectedIds.includes(item.id)) {
+                            for (const k of fields) {
+                                if (k in body) item[k] = body[k];
+                            }
+                        }
+                    });
                     this.lastMessage = `${data.count} photo(s) mises a jour (${(data.fields || []).join(', ')}).`;
-                    if (emptyMode) this.details = { city: '', region: '', country: '', event: '' };
-                    else this.details = { city: '', region: '', country: '', event: '' };
-                    await this.refreshSelected();
+                    this.details = { city: '', region: '', country: '', event: '' };
                 }
             },
 
@@ -408,19 +516,73 @@
                 if (this.classification.allow_wildycaro !== null) body.allow_wildycaro = this.classification.allow_wildycaro;
                 if (this.classification.allow_mamawette !== null) body.allow_mamawette = this.classification.allow_mamawette;
                 if (this.classification.intimacy_level) body.intimacy_level = this.classification.intimacy_level;
-                if (Object.keys(body).length === 1) return; // que ids
+                if (Object.keys(body).length === 1) return;
                 const data = await this.post('{{ route('media.detailsBatch') }}', body);
                 if (data) {
-                    this.lastMessage = `${data.count} photo(s) classifiees (${(data.fields || []).join(', ')}).`;
-                    await this.refreshSelected();
+                    this.items.forEach(item => {
+                        if (this.selectedIds.includes(item.id)) {
+                            for (const flag of ['allow_pdc_vantour', 'allow_wildycaro', 'allow_mamawette', 'intimacy_level']) {
+                                if (flag in body) item[flag] = body[flag];
+                            }
+                        }
+                    });
+                    this.lastMessage = `${data.count} photo(s) classifiees.`;
                 }
             },
 
-            // Re-fetche les items selectionnes pour rafraichir leurs tags/brands/etc affiches dans la grille.
-            async refreshSelected() {
-                // Pour rester simple, on recharge la page apres un court delai (debounce visuel).
-                // En production on pourrait taper /api/media/{id} mais c'est plus de code pour peu de gain.
-                setTimeout(() => { window.location.reload(); }, 700);
+            // ───── IA analysis (sequentiel pour eviter de saturer Vision API) ─────
+            async runAiAnalysis() {
+                if (this.selectedIds.length === 0 || this.aiInProgress) return;
+                if (!confirm(`Analyser ${this.selectedIds.length} photo(s) avec l'IA ?\n\nLes tags, personnes, lieu et marques seront REMPLACES par ce que l'IA propose. Cout estime : ~$${(this.selectedIds.length * 0.005).toFixed(3)}.`)) return;
+
+                this.aiInProgress = true;
+                this.aiTotal = this.selectedIds.length;
+                this.aiDone = 0;
+                this.aiErrors = 0;
+                this.aiCurrentName = '';
+                this.lastMessage = '';
+                this.lastError = '';
+
+                const idsCopy = [...this.selectedIds];
+                for (const id of idsCopy) {
+                    const item = this.items.find(i => i.id === id);
+                    this.aiCurrentName = item?.filename || `#${id}`;
+                    try {
+                        const res = await fetch(`/media/${id}/analyze-vision`, {
+                            method: 'POST',
+                            headers: {
+                                'Content-Type': 'application/json',
+                                'Accept': 'application/json',
+                                'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').content,
+                            },
+                            body: JSON.stringify({ pool: this.aiPool || 'none' }),
+                        });
+                        if (res.ok) {
+                            const data = await res.json();
+                            // Mise à jour locale
+                            if (item) {
+                                if ('thematic_tags' in data) item.thematic_tags = data.thematic_tags || [];
+                                if ('people_ids' in data) item.people_ids = data.people_ids || [];
+                                if ('brands' in data) item.brands = data.brands || [];
+                                if ('city' in data) item.city = data.city;
+                                if ('region' in data) item.region = data.region;
+                                if ('country' in data) item.country = data.country;
+                                if ('event' in data) item.event = data.event;
+                            }
+                        } else {
+                            this.aiErrors++;
+                            console.warn(`Vision failed for ${id}`, await res.text());
+                        }
+                    } catch (e) {
+                        this.aiErrors++;
+                        console.warn(`Vision exception for ${id}`, e);
+                    }
+                    this.aiDone++;
+                }
+
+                this.aiInProgress = false;
+                this.aiCurrentName = '';
+                this.lastMessage = `Analyse IA terminee : ${this.aiDone - this.aiErrors} reussies, ${this.aiErrors} erreurs.`;
             },
         }
     }
