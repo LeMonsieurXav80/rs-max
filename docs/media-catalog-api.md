@@ -183,6 +183,55 @@ Pose les méta IA sur une photo existante (rattrapage legacy). Met `pending_anal
 { "id": 87, "status": "enriched", "pending_analysis": false }
 ```
 
+### `POST /api/media/{id}/analyze-vision`
+
+Analyse la photo via l'API Vision côté serveur (OpenAI gpt-4o par défaut, configurable dans `Settings → Contenu IA`) et retourne les champs structurés extraits : `description_fr`, `thematic_tags`, `people_ids`, `person_count`, `city`, `region`, `country`, `brands`, `event`, `taken_at`.
+
+**Coexiste avec le pipeline Mac** (`analyse-images.py` + `/ingest`). Le pipeline Mac continue de fonctionner — ce endpoint est un complément (UI ré-analyse, photos arrivées sans passer par le Mac, etc.).
+
+**Body JSON** (tous optionnels) :
+```jsonc
+{
+  "pool": "pdc_vantour",            // wildycaro|pdc_vantour|mamawette|none — oriente le prompt
+  "expected_people": ["caroline"],   // whitelist anti-hallucination pour people_ids
+  "context": "Voyage Portugal 2004", // contexte libre. Si absent, le nom du dossier est utilisé.
+  "apply": true                      // si true, écrit les champs en base. false (défaut) = preview seul.
+}
+```
+
+**Réponse 200** :
+```jsonc
+{
+  "id": 142,
+  "applied": true,
+  "result": {
+    "description_fr": "Plage d'Albufeira au coucher de soleil, parasols en paille alignés.",
+    "thematic_tags": ["plage", "parasols en paille", "coucher de soleil", "albufeira"],
+    "people_ids": [],
+    "person_count": 0,
+    "city": "Albufeira",
+    "region": null,
+    "country": "Portugal",
+    "brands": [],
+    "event": null,
+    "taken_at": null
+  }
+}
+```
+
+**Comportement avec `apply: true`** :
+- Champs nuls/vides retournés par l'IA → **pas écrasés** (préserve les valeurs existantes posées par le Mac ou l'utilisateur)
+- Le résultat brut est tracé dans `ai_metadata.vision_analysis` (date + pool hint + person_count)
+- `pending_analysis` passe à `false`
+
+**Erreurs** :
+- 422 si pas une image
+- 404 si fichier introuvable sur disque
+- 422 si tous les modèles Vision ont refusé l'image (politique de contenu OpenAI)
+- 502 si l'analyse a échoué (voir logs Laravel)
+
+**Personnaliser le prompt** : édite `Settings → Contenu IA → Prompts vision IA → Extraction de métadonnées`. Variables substituables : `{contexte}`, `{personnes_attendues}`, `{regles_pool}`.
+
 ### `POST /api/media/{id}/validate`
 
 Corrige les flags / tags / personnes / champs structurés d'une photo après coup.

@@ -7,6 +7,7 @@ use App\Models\MediaFile;
 use App\Models\MediaFolder;
 use App\Models\Post;
 use App\Models\Setting;
+use App\Services\AiAssistService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Storage;
@@ -187,6 +188,382 @@ class MediaController extends Controller
             'folders', 'totalCount', 'uncategorizedCount', 'unclassifiedCount',
             'currentFolder', 'currentPool', 'poolCounts'
         ));
+    }
+
+    /**
+     * Sous-page d'édition en masse. Même grille / sidebars que /media,
+     * mais panneau d'édition multiple à droite (tags ±, brands ±, people ±,
+     * city/region/country/event, intimacy, allow_*). Multi-select forcé.
+     */
+    public function manage(Request $request): View
+    {
+        $folderId = $request->input('folder');
+        $pool = $request->input('pool');
+
+        $query = MediaFile::with('folder')->latest();
+
+        if ($folderId === 'uncategorized') {
+            $query->whereNull('folder_id');
+        } elseif ($folderId) {
+            $rootFolder = MediaFolder::find($folderId);
+            $query->whereIn('folder_id', $rootFolder ? $rootFolder->descendantIds() : [(int) $folderId]);
+        }
+
+        if ($pool === 'pdc_vantour') {
+            $query->where('mime_type', 'like', 'image/%')->where('allow_pdc_vantour', true);
+        } elseif ($pool === 'wildycaro') {
+            $query->where('mime_type', 'like', 'image/%')->where('allow_wildycaro', true);
+        } elseif ($pool === 'mamawette') {
+            $query->where('mime_type', 'like', 'image/%')->where('allow_mamawette', true);
+        } elseif ($pool === 'never_publish') {
+            $query->where('mime_type', 'like', 'image/%')->where('intimacy_level', 'never_publish');
+        } elseif ($pool === 'unclassified') {
+            $query->where('mime_type', 'like', 'image/%')
+                ->where('allow_wildycaro', false)
+                ->where('allow_pdc_vantour', false)
+                ->where('allow_mamawette', false)
+                ->where(function ($q) {
+                    $q->whereNull('intimacy_level')->orWhere('intimacy_level', '!=', 'never_publish');
+                });
+        }
+
+        $items = $query->get()->map(fn (MediaFile $mf) => [
+            'id' => $mf->id,
+            'filename' => $mf->filename,
+            'url' => $mf->url,
+            'is_image' => $mf->is_image,
+            'is_video' => $mf->is_video,
+            'thumbnail_url' => $mf->is_video ? route('media.thumbnail', $mf->filename) : null,
+            'size_human' => $mf->size_human,
+            'date' => $mf->created_at->format('d/m/Y'),
+            'folder_id' => $mf->folder_id,
+            'folder_name' => $mf->folder?->name,
+            'folder_color' => $mf->folder?->color,
+            'thematic_tags' => $mf->thematic_tags ?? [],
+            'people_ids' => $mf->people_ids ?? [],
+            'brands' => $mf->brands ?? [],
+            'city' => $mf->city,
+            'region' => $mf->region,
+            'country' => $mf->country,
+            'event' => $mf->event,
+            'allow_wildycaro' => (bool) $mf->allow_wildycaro,
+            'allow_pdc_vantour' => (bool) $mf->allow_pdc_vantour,
+            'allow_mamawette' => (bool) $mf->allow_mamawette,
+            'intimacy_level' => $mf->intimacy_level,
+            'publication_count' => (int) $mf->publication_count,
+        ])->values();
+
+        $folders = MediaFolder::ordered()->withCount('files')->get();
+        $totalCount = MediaFile::count();
+        $uncategorizedCount = MediaFile::whereNull('folder_id')->count();
+        $unclassifiedCount = MediaFile::where('mime_type', 'like', 'image/%')
+            ->where('allow_wildycaro', false)
+            ->where('allow_pdc_vantour', false)
+            ->where('allow_mamawette', false)
+            ->where(function ($q) {
+                $q->whereNull('intimacy_level')->orWhere('intimacy_level', '!=', 'never_publish');
+            })
+            ->count();
+        $poolCounts = [
+            'pdc_vantour' => MediaFile::where('mime_type', 'like', 'image/%')->where('allow_pdc_vantour', true)->count(),
+            'wildycaro' => MediaFile::where('mime_type', 'like', 'image/%')->where('allow_wildycaro', true)->count(),
+            'mamawette' => MediaFile::where('mime_type', 'like', 'image/%')->where('allow_mamawette', true)->count(),
+            'never_publish' => MediaFile::where('mime_type', 'like', 'image/%')->where('intimacy_level', 'never_publish')->count(),
+            'unclassified' => $unclassifiedCount,
+        ];
+
+        return view('media.manage', [
+            'items' => $items,
+            'folders' => $folders,
+            'totalCount' => $totalCount,
+            'uncategorizedCount' => $uncategorizedCount,
+            'poolCounts' => $poolCounts,
+            'currentFolder' => $folderId,
+            'currentPool' => $pool,
+        ]);
+    }
+
+    /**
+     * POST /media/brands-batch — ajoute/retire des marques sur plusieurs photos.
+     * Body : ids[], add[], remove[]. Casse d'origine préservée à l'ajout, dédup case-insensitive.
+     */
+    public function brandsBatch(Request $request): JsonResponse
+    {
+        $data = $request->validate([
+            'ids' => 'required|array|min:1|max:500',
+            'ids.*' => 'integer',
+            'add' => 'nullable|array',
+            'add.*' => 'string|max:80',
+            'remove' => 'nullable|array',
+            'remove.*' => 'string|max:80',
+        ]);
+
+        $addClean = collect($data['add'] ?? [])->map(fn ($b) => trim((string) $b))->filter()->all();
+        $removeKeys = collect($data['remove'] ?? [])->map(fn ($b) => mb_strtolower(trim((string) $b)))->filter()->all();
+
+        $files = MediaFile::whereIn('id', $data['ids'])->get();
+        foreach ($files as $mf) {
+            $current = collect($mf->brands ?? [])->filter(fn ($b) => is_string($b) && trim($b) !== '');
+            // remove
+            if ($removeKeys) {
+                $current = $current->reject(fn ($b) => in_array(mb_strtolower(trim($b)), $removeKeys, true));
+            }
+            // add
+            $seen = $current->mapWithKeys(fn ($b) => [mb_strtolower(trim($b)) => true])->all();
+            foreach ($addClean as $b) {
+                $key = mb_strtolower($b);
+                if (! isset($seen[$key])) {
+                    $current->push($b);
+                    $seen[$key] = true;
+                }
+            }
+            $mf->update(['brands' => $current->values()->all()]);
+        }
+
+        return response()->json([
+            'count' => $files->count(),
+            'added' => $addClean,
+            'removed' => $data['remove'] ?? [],
+        ]);
+    }
+
+    /**
+     * POST /media/people-batch — ajoute/retire des people_ids sur plusieurs photos.
+     * Body : ids[], add[], remove[]. Lowercase + trim.
+     */
+    public function peopleBatch(Request $request): JsonResponse
+    {
+        $data = $request->validate([
+            'ids' => 'required|array|min:1|max:500',
+            'ids.*' => 'integer',
+            'add' => 'nullable|array',
+            'add.*' => 'string|max:50',
+            'remove' => 'nullable|array',
+            'remove.*' => 'string|max:50',
+        ]);
+
+        $addClean = collect($data['add'] ?? [])->map(fn ($p) => mb_strtolower(trim((string) $p)))->filter()->unique()->values()->all();
+        $removeClean = collect($data['remove'] ?? [])->map(fn ($p) => mb_strtolower(trim((string) $p)))->filter()->all();
+
+        $files = MediaFile::whereIn('id', $data['ids'])->get();
+        foreach ($files as $mf) {
+            $current = collect($mf->people_ids ?? [])->map(fn ($p) => mb_strtolower(trim((string) $p)))->filter();
+            foreach ($addClean as $p) {
+                $current->push($p);
+            }
+            if ($removeClean) {
+                $current = $current->reject(fn ($p) => in_array($p, $removeClean, true));
+            }
+            $mf->update(['people_ids' => $current->unique()->values()->all()]);
+        }
+
+        return response()->json([
+            'count' => $files->count(),
+            'added' => $addClean,
+            'removed' => $removeClean,
+        ]);
+    }
+
+    /**
+     * POST /media/{media}/analyze-vision — wrapper session-auth pour l'analyse Vision.
+     * Réplique le comportement de MediaApiController::analyzeVision pour le frontend web.
+     * Persiste tags/people/champs structurés extraits par l'IA sur la photo.
+     */
+    public function analyzeVision(Request $request, MediaFile $media, AiAssistService $ai): JsonResponse
+    {
+        $data = $request->validate([
+            'pool' => 'nullable|in:wildycaro,pdc_vantour,mamawette,none',
+            'expected_people' => 'nullable|array',
+            'expected_people.*' => 'string|max:50',
+            'context' => 'nullable|string|max:500',
+        ]);
+
+        if (! $media->is_image) {
+            return response()->json(['error' => 'analyze-vision ne supporte que les images'], 422);
+        }
+
+        $candidates = [
+            Storage::disk('local')->path("media/{$media->filename}"),
+            storage_path("app/media/{$media->filename}"),
+            Storage::disk('public')->path("media/{$media->filename}"),
+        ];
+        $absolutePath = null;
+        foreach ($candidates as $path) {
+            if (is_file($path)) {
+                $absolutePath = $path;
+                break;
+            }
+        }
+        if ($absolutePath === null) {
+            return response()->json(['error' => 'fichier image introuvable sur le storage'], 404);
+        }
+
+        $dataUrl = $this->resizeImageForVision($absolutePath);
+        if ($dataUrl === null) {
+            return response()->json(['error' => 'impossible de charger l\'image'], 500);
+        }
+
+        $context = $data['context'] ?? ($media->folder ? $media->folder->pathLabel() : null);
+
+        $result = $ai->extractMetadataFromImage(
+            imageDataUrl: $dataUrl,
+            context: $context,
+            expectedPeople: $data['expected_people'] ?? [],
+            pool: $data['pool'] ?? null,
+        );
+
+        if ($result === null) {
+            return response()->json(['error' => 'analyse Vision a échoué (voir logs)'], 502);
+        }
+        if ($result === 'refused') {
+            return response()->json(['error' => 'tous les modèles Vision ont refusé l\'analyse'], 422);
+        }
+
+        $update = [];
+        if ($result['description_fr'] !== null) {
+            $update['description_fr'] = $result['description_fr'];
+        }
+        if (! empty($result['thematic_tags'])) {
+            // Overwrite : l'IA propose une liste fraîche, on remplace l'existant.
+            $update['thematic_tags'] = collect($result['thematic_tags'])
+                ->map(fn ($t) => mb_strtolower(trim((string) $t)))
+                ->filter()
+                ->unique()
+                ->values()
+                ->all();
+        }
+        if (! empty($result['people_ids'])) {
+            $update['people_ids'] = $result['people_ids'];
+        }
+        if ($result['city'] !== null) {
+            $update['city'] = $result['city'];
+        }
+        if ($result['region'] !== null) {
+            $update['region'] = $result['region'];
+        }
+        if ($result['country'] !== null) {
+            $update['country'] = $result['country'];
+        }
+        if (! empty($result['brands'])) {
+            $update['brands'] = $result['brands'];
+        }
+        if ($result['event'] !== null) {
+            $update['event'] = $result['event'];
+        }
+        $aiMeta = is_array($media->ai_metadata) ? $media->ai_metadata : [];
+        $aiMeta['vision_analysis'] = [
+            'analyzed_at' => now()->toIso8601String(),
+            'pool_hint' => $data['pool'] ?? null,
+            'person_count' => $result['person_count'],
+        ];
+        $update['ai_metadata'] = $aiMeta;
+        $update['pending_analysis'] = false;
+
+        $media->update($update);
+        $media->refresh();
+
+        // Renvoie la photo mise à jour pour que le frontend puisse refresh sans reload.
+        return response()->json([
+            'id' => $media->id,
+            'thematic_tags' => $media->thematic_tags ?? [],
+            'people_ids' => $media->people_ids ?? [],
+            'brands' => $media->brands ?? [],
+            'city' => $media->city,
+            'region' => $media->region,
+            'country' => $media->country,
+            'event' => $media->event,
+            'description_fr' => $media->description_fr,
+        ]);
+    }
+
+    /**
+     * Helper privé : redimensionne à 1024px max et renvoie une data URL JPEG base64.
+     * Dupliqué de MediaApiController et AiAssistController. À extraire en trait
+     * si on l'utilise une 4ème fois.
+     */
+    private function resizeImageForVision(string $filePath): ?string
+    {
+        $mimeType = mime_content_type($filePath);
+        $image = match ($mimeType) {
+            'image/png' => @imagecreatefrompng($filePath),
+            'image/gif' => @imagecreatefromgif($filePath),
+            'image/webp' => function_exists('imagecreatefromwebp') ? @imagecreatefromwebp($filePath) : null,
+            default => @imagecreatefromjpeg($filePath),
+        };
+        if (! $image) {
+            return null;
+        }
+        $w = imagesx($image);
+        $h = imagesy($image);
+        $maxDim = 1024;
+        if ($w > $maxDim || $h > $maxDim) {
+            if ($w >= $h) {
+                $newW = $maxDim;
+                $newH = (int) round($h * ($maxDim / $w));
+            } else {
+                $newH = $maxDim;
+                $newW = (int) round($w * ($maxDim / $h));
+            }
+            $resized = imagecreatetruecolor($newW, $newH);
+            imagecopyresampled($resized, $image, 0, 0, 0, 0, $newW, $newH, $w, $h);
+            imagedestroy($image);
+            $image = $resized;
+        }
+        ob_start();
+        imagejpeg($image, null, 80);
+        $data = ob_get_clean();
+        imagedestroy($image);
+
+        return 'data:image/jpeg;base64,'.base64_encode($data);
+    }
+
+    /**
+     * POST /media/details-batch — applique des champs structurés à plusieurs photos.
+     * Body : ids[], + n'importe lesquels de city, region, country, event, intimacy_level,
+     * allow_pdc_vantour, allow_wildycaro, allow_mamawette. Une clé absente = pas touchée.
+     * Une clé présente avec valeur null vide le champ (sauf allow_*).
+     */
+    public function detailsBatch(Request $request): JsonResponse
+    {
+        $data = $request->validate([
+            'ids' => 'required|array|min:1|max:500',
+            'ids.*' => 'integer',
+            'city' => 'nullable|string|max:120',
+            'region' => 'nullable|string|max:120',
+            'country' => 'nullable|string|max:120',
+            'event' => 'nullable|string|max:200',
+            'intimacy_level' => 'nullable|in:public,prive,never_publish',
+            'allow_pdc_vantour' => 'nullable|boolean',
+            'allow_wildycaro' => 'nullable|boolean',
+            'allow_mamawette' => 'nullable|boolean',
+        ]);
+
+        $update = [];
+        foreach (['city', 'region', 'country', 'event'] as $field) {
+            if ($request->exists($field)) {
+                $val = $data[$field] ?? null;
+                $update[$field] = is_string($val) && trim($val) !== '' ? trim($val) : null;
+            }
+        }
+        if ($request->exists('intimacy_level')) {
+            $update['intimacy_level'] = $data['intimacy_level'] ?? 'public';
+        }
+        foreach (['allow_pdc_vantour', 'allow_wildycaro', 'allow_mamawette'] as $flag) {
+            if ($request->exists($flag)) {
+                $update[$flag] = (bool) ($data[$flag] ?? false);
+            }
+        }
+
+        if (empty($update)) {
+            return response()->json(['error' => 'aucun champ à mettre à jour'], 422);
+        }
+
+        $count = MediaFile::whereIn('id', $data['ids'])->update($update);
+
+        return response()->json([
+            'count' => $count,
+            'fields' => array_keys($update),
+        ]);
     }
 
     /**
