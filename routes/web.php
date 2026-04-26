@@ -177,6 +177,10 @@ Route::middleware(['auth', 'verified', 'throttle:600,1'])->group(function () {
     Route::post('media/classify-batch', [MediaController::class, 'classifyBatch'])->name('media.classifyBatch');
     Route::post('media/delete-batch', [MediaController::class, 'deleteBatch'])->name('media.deleteBatch');
     Route::post('media/tags-batch', [MediaController::class, 'tagsBatch'])->name('media.tagsBatch');
+    Route::post('media/brands-batch', [MediaController::class, 'brandsBatch'])->name('media.brandsBatch');
+    Route::post('media/people-batch', [MediaController::class, 'peopleBatch'])->name('media.peopleBatch');
+    Route::post('media/details-batch', [MediaController::class, 'detailsBatch'])->name('media.detailsBatch');
+    Route::get('media/manage', [MediaController::class, 'manage'])->name('media.manage');
     Route::get('media/autocomplete', [MediaController::class, 'autocomplete'])->name('media.autocomplete');
     Route::post('media/{media}/classify', [MediaController::class, 'classify'])->name('media.classify');
     Route::patch('media/{media}/tags', [MediaController::class, 'updateTags'])->name('media.updateTags');
