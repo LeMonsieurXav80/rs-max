@@ -43,6 +43,7 @@ Push une photo + métadonnées pré-calculées localement (description, tags, em
 ```jsonc
 {
   "phash": "a1b2c3d4...",                  // OBLIGATOIRE, dédup
+  "description_fr": "Plage d'Albufeira...", // description FR générée par le LM local
   "thematic_tags": ["plage", "parasol en paille", "calme", "albufeira", "2004"],
   "embedding": [0.12, -0.34, ...],         // ~512 floats CLIP, optionnel
   "embedding_model": "clip-ViT-B-32",
@@ -54,6 +55,7 @@ Push une photo + métadonnées pré-calculées localement (description, tags, em
   "allow_mamawette": false,
   "ai_metadata": { "person_count": 2, "..." : "..." },
   "source_path": "/Volumes/T5/Photos/...",
+  "source_context": "import batch 2004",   // texte libre, contexte d'origine
   "folder_path": "PdC/Espagne_2025",
 
   // Champs structurés (Avr 2026)
@@ -83,6 +85,70 @@ Push une photo + métadonnées pré-calculées localement (description, tags, em
 - Le serveur **compresse l'image** automatiquement (mêmes settings que les uploads web : redimensionnement max 2048px, qualité adaptative entre 200-500 KB)
 - Le serveur **normalise les tags** : split sur `:` et `,`, lowercase, dedup, max 60 chars/tag
 
+### `GET /api/media/{id}`
+
+Retourne **tous les champs** d'une photo : techniques (mime, size, dimensions, urls), IA (description, tags, embedding model, people), structurés (city/region/country/brands/event/taken_at), classification (allow_*, intimacy_level, pool_suggested), tracking (publication_count, ingested_at, pending_analysis), et dossier rattaché.
+
+**Query params** :
+- `include_embedding` : `1` pour inclure le vecteur (~512 floats). Défaut : omis (payload léger).
+
+**Réponse 200** :
+```jsonc
+{
+  "id": 142,
+  "filename": "20260425_143022_X8aB3kLm.jpg",
+  "original_name": "IMG_5421.jpg",
+  "mime_type": "image/jpeg",
+  "size": 328000,
+  "size_human": "320 KB",
+  "width": 2048,
+  "height": 1365,
+  "is_image": true,
+  "is_video": false,
+  "url_full": "/media/20260425_143022_X8aB3kLm.jpg",
+  "url_thumb": "/media/20260425_143022_X8aB3kLm.jpg",   // route('media.thumbnail', ...) si vidéo
+
+  "description_fr": "Plage d'Albufeira au coucher de soleil...",
+  "thematic_tags": ["plage", "parasol en paille", "calme"],
+  "embedding_model": "clip-ViT-B-32",
+  "pool_suggested": "pdc_vantour",
+  "allow_wildycaro": false,
+  "allow_pdc_vantour": true,
+  "allow_mamawette": false,
+  "intimacy_level": "public",
+  "people_ids": ["caroline"],
+
+  "city": "Albufeira",
+  "region": "Algarve",
+  "country": "Portugal",
+  "brands": ["Decathlon", "Quechua"],
+  "event": "Voyage Portugal 2004",
+  "taken_at": "2004-07-15T14:30:00+00:00",
+
+  "folder_id": 7,
+  "folder": { "id": 7, "name": "Espagne_2025", "slug": "espagne-2025", "path": "PdC / Espagne_2025" },
+
+  "source": "mac_pipeline",
+  "source_url": null,
+  "source_path": "/Volumes/T5/Photos/...",
+  "source_context": null,
+  "phash": "a1b2c3d4...",
+  "ai_metadata": { "person_count": 2 },
+
+  "pending_analysis": false,
+  "ingested_at": "2026-04-25T09:35:39+00:00",
+  "publication_count": 3,
+  "created_at": "2026-04-25T09:35:39+00:00",
+  "updated_at": "2026-04-25T09:35:39+00:00"
+
+  // "embedding": [...] présent uniquement si ?include_embedding=1
+}
+```
+
+**Garde-fou** : pas de restriction de pool sur cet endpoint (même politique que `/validate` et `/enrich`). Si tu as l'id, tu as déjà été autorisé en amont. Les filtres de pool ne s'appliquent qu'à `/search` (qui fait de la découverte).
+
+**Erreurs** : 404 si `{id}` n'existe pas.
+
 ### `GET /api/media/pending-analysis`
 
 Liste les photos qui attendent un enrichissement IA — uploads web sans tags, imports en masse, photos legacy.
@@ -111,7 +177,7 @@ Liste les photos qui attendent un enrichissement IA — uploads web sans tags, i
 
 Pose les méta IA sur une photo existante (rattrapage legacy). Met `pending_analysis = false`.
 
-**Body JSON** : mêmes champs que `/ingest` sans `file`. `phash` optionnel. Accepte aussi les champs structurés (`city`, `region`, `country`, `brands[]`, `event`, `taken_at`).
+**Body JSON** : mêmes champs que `/ingest` sans `file`. `phash` optionnel, `embedding` requis. Accepte également `description_fr`, `source_context`, et tous les champs structurés (`city`, `region`, `country`, `brands[]`, `event`, `taken_at`). Les clés absentes ne touchent pas la valeur existante ; les clés présentes avec `null` effacent (pour `city/region/country/event/taken_at/brands`).
 
 ```json
 { "id": 87, "status": "enriched", "pending_analysis": false }
@@ -163,16 +229,28 @@ Recherche dans la médiathèque locale.
 - Si `query_embedding` fourni : `embedding IS NOT NULL`
 
 **Réponse** :
-```json
+```jsonc
 {
   "results": [
     {
       "id": 142,
-      "similarity": 0.873,
+      "similarity": 0.873,                    // présent uniquement en mode embedding
       "url_thumb": "/media/...",
       "url_full": "/media/...",
+      "mime_type": "image/jpeg",
+      "width": 2048,
+      "height": 1365,
+      "description_fr": "Plage d'Albufeira...",
       "thematic_tags": ["plage", "parasol en paille"],
-      "people_ids": ["caroline"]
+      "people_ids": ["caroline"],
+      "city": "Albufeira",
+      "region": "Algarve",
+      "country": "Portugal",
+      "brands": ["Decathlon"],
+      "event": "Voyage Portugal 2004",
+      "taken_at": "2004-07-15T14:30:00+00:00",
+      "folder_id": 7,
+      "publication_count": 3
     }
   ],
   "filters_applied": {
@@ -183,7 +261,7 @@ Recherche dans la médiathèque locale.
 }
 ```
 
-`similarity` n'est présent que si `query_embedding` était fourni.
+`similarity` n'est présent que si `query_embedding` était fourni. Pour le payload **complet** d'une photo (folder, ai_metadata, source, allow_*, intimacy, phash, ingested_at, etc.), faire ensuite `GET /api/media/{id}`.
 
 **Tri par moins-publiées d'abord** (depuis Avr 2026) : en mode mots-clés (sans embedding), les résultats sont triés par `publication_count` croissant puis aléatoirement à publication_count égal. Évite de servir toujours les mêmes photos en auto-attach. En mode embedding, le tri reste par similarité cosine.
 

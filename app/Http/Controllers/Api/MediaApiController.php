@@ -285,24 +285,44 @@ class MediaApiController extends Controller
 
         $results = [];
 
+        // Colonnes incluses dans chaque résultat — partagées entre mode embedding et mode mots-clés.
+        $cols = [
+            'id', 'filename', 'mime_type', 'width', 'height',
+            'description_fr', 'thematic_tags', 'people_ids',
+            'city', 'region', 'country', 'brands', 'event', 'taken_at',
+            'folder_id', 'publication_count',
+        ];
+
+        $serialize = fn ($row): array => [
+            'id' => $row->id,
+            'url_thumb' => "/media/{$row->filename}",
+            'url_full' => "/media/{$row->filename}",
+            'mime_type' => $row->mime_type,
+            'width' => $row->width,
+            'height' => $row->height,
+            'description_fr' => $row->description_fr,
+            'thematic_tags' => $row->thematic_tags,
+            'people_ids' => $row->people_ids,
+            'city' => $row->city,
+            'region' => $row->region,
+            'country' => $row->country,
+            'brands' => $row->brands,
+            'event' => $row->event,
+            'taken_at' => $row->taken_at?->toIso8601String(),
+            'folder_id' => $row->folder_id,
+            'publication_count' => $row->publication_count,
+        ];
+
         if ($hasEmbedding) {
             // Mode embedding : tri par similarité cosine décroissante.
-            $candidates = $query->get(['id', 'filename', 'mime_type', 'description_fr', 'thematic_tags', 'people_ids', 'embedding']);
+            $candidates = $query->get([...$cols, 'embedding']);
             $queryVec = array_map('floatval', $params['query_embedding']);
             foreach ($candidates as $row) {
                 $emb = $row->embedding;
                 if (! is_array($emb) || count($emb) !== count($queryVec)) {
                     continue;
                 }
-                $results[] = [
-                    'id' => $row->id,
-                    'similarity' => $this->cosineSimilarity($queryVec, $emb),
-                    'url_thumb' => "/media/{$row->filename}",
-                    'url_full' => "/media/{$row->filename}",
-                    'description_fr' => $row->description_fr,
-                    'thematic_tags' => $row->thematic_tags,
-                    'people_ids' => $row->people_ids,
-                ];
+                $results[] = ['similarity' => $this->cosineSimilarity($queryVec, $emb)] + $serialize($row);
             }
             usort($results, fn ($a, $b) => $b['similarity'] <=> $a['similarity']);
         } else {
@@ -310,16 +330,9 @@ class MediaApiController extends Controller
             // Évite de toujours servir les mêmes photos quand l'auto-attach tape souvent la même requête.
             $candidates = $query->orderBy('publication_count')->inRandomOrder()
                 ->limit($limit)
-                ->get(['id', 'filename', 'mime_type', 'description_fr', 'thematic_tags', 'people_ids']);
+                ->get($cols);
             foreach ($candidates as $row) {
-                $results[] = [
-                    'id' => $row->id,
-                    'url_thumb' => "/media/{$row->filename}",
-                    'url_full' => "/media/{$row->filename}",
-                    'description_fr' => $row->description_fr,
-                    'thematic_tags' => $row->thematic_tags,
-                    'people_ids' => $row->people_ids,
-                ];
+                $results[] = $serialize($row);
             }
         }
 
@@ -377,6 +390,75 @@ class MediaApiController extends Controller
             'published_at' => $publication->published_at->toIso8601String(),
             'publication_count' => $media->publication_count,
         ], 201);
+    }
+
+    /**
+     * GET /api/media/{id} — retourne tous les champs d'une photo.
+     * Pas de restriction de pool : si on a l'id, on a déjà été autorisé en amont.
+     * `?include_embedding=1` ajoute le vecteur (~512 floats), omis par défaut pour rester léger.
+     */
+    public function show(Request $request, MediaFile $media): JsonResponse
+    {
+        $payload = [
+            'id' => $media->id,
+            'filename' => $media->filename,
+            'original_name' => $media->original_name,
+            'mime_type' => $media->mime_type,
+            'size' => $media->size,
+            'size_human' => $media->size_human,
+            'width' => $media->width,
+            'height' => $media->height,
+            'is_image' => $media->is_image,
+            'is_video' => $media->is_video,
+            'url_full' => "/media/{$media->filename}",
+            'url_thumb' => $media->is_video
+                ? route('media.thumbnail', $media->filename)
+                : "/media/{$media->filename}",
+
+            'description_fr' => $media->description_fr,
+            'thematic_tags' => $media->thematic_tags,
+            'embedding_model' => $media->embedding_model,
+            'pool_suggested' => $media->pool_suggested,
+            'allow_wildycaro' => $media->allow_wildycaro,
+            'allow_pdc_vantour' => $media->allow_pdc_vantour,
+            'allow_mamawette' => $media->allow_mamawette,
+            'intimacy_level' => $media->intimacy_level,
+            'people_ids' => $media->people_ids,
+
+            'city' => $media->city,
+            'region' => $media->region,
+            'country' => $media->country,
+            'brands' => $media->brands,
+            'event' => $media->event,
+            'taken_at' => $media->taken_at?->toIso8601String(),
+
+            'folder_id' => $media->folder_id,
+            'folder' => $media->folder ? [
+                'id' => $media->folder->id,
+                'name' => $media->folder->name,
+                'slug' => $media->folder->slug,
+                'path' => $media->folder->pathLabel(),
+            ] : null,
+
+            'source' => $media->source,
+            'source_url' => $media->source_url,
+            'source_path' => $media->source_path,
+            'source_context' => $media->source_context,
+            'phash' => $media->phash,
+            'ai_metadata' => $media->ai_metadata,
+
+            'pending_analysis' => $media->pending_analysis,
+            'ingested_at' => $media->ingested_at?->toIso8601String(),
+            'publication_count' => $media->publication_count,
+            'created_at' => $media->created_at?->toIso8601String(),
+            'updated_at' => $media->updated_at?->toIso8601String(),
+        ];
+
+        if ($request->boolean('include_embedding')) {
+            $payload['embedding'] = $media->embedding;
+        }
+
+        return response()->json($payload);
     }
 
     /**
