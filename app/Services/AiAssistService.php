@@ -45,14 +45,13 @@ TXT;
 
     /**
      * Prompt par défaut : extraction de métadonnées structurées depuis une photo (catalogue média).
-     * Variables substituées : {contexte}, {personnes_attendues}, {regles_pool}.
+     * Variables substituées : {contexte}, {personnes_attendues}.
      */
     public const DEFAULT_PROMPT_METADATA_EXTRACTION = <<<'TXT'
 Tu es un expert en analyse d'image. Tu extrais les informations structurées d'une photo pour alimenter un catalogue média.
 
 Contexte de la session : {contexte}
 Personnes potentiellement présentes : {personnes_attendues}
-{regles_pool}
 
 Réponds UNIQUEMENT en JSON valide :
 {
@@ -243,8 +242,8 @@ TXT;
         $userPrompt .= "\nAdapte le ton et la longueur à chaque plateforme. Respecte les limites de caractères.";
         $userPrompt .= "\nN'inclus PAS de hashtags dans le texte, ils sont gérés séparément.";
         $userPrompt .= "\n\nRéponds UNIQUEMENT en JSON valide avec les clés suivantes : "
-            . implode(', ', array_map(fn ($s) => "\"{$s}\"", $platformSlugs))
-            . '. Chaque valeur est le texte pour cette plateforme. Pas de markdown, pas d\'explication, juste le JSON.';
+            .implode(', ', array_map(fn ($s) => "\"{$s}\"", $platformSlugs))
+            .'. Chaque valeur est le texte pour cette plateforme. Pas de markdown, pas d\'explication, juste le JSON.';
 
         try {
             $response = Http::withHeaders([
@@ -379,10 +378,10 @@ TXT;
         }
 
         // System prompt with professional framing to avoid content refusals
-        $systemPrompt = "Tu es un assistant de gestion de réseaux sociaux professionnel. "
-            . "Tu travailles pour un(e) créateur/créatrice de contenu qui te fournit ses propres photos pour publication sur ses comptes. "
-            . "Ton rôle est de rédiger des légendes/descriptions engageantes pour accompagner ces photos.\n\n"
-            . $persona->system_prompt;
+        $systemPrompt = 'Tu es un assistant de gestion de réseaux sociaux professionnel. '
+            .'Tu travailles pour un(e) créateur/créatrice de contenu qui te fournit ses propres photos pour publication sur ses comptes. '
+            ."Ton rôle est de rédiger des légendes/descriptions engageantes pour accompagner ces photos.\n\n"
+            .$persona->system_prompt;
 
         // Try with configured model, then fallback models if refused
         $primaryModel = Setting::get('ai_model_vision', 'gpt-4o');
@@ -465,16 +464,14 @@ TXT;
      * Renvoie un tableau parsable, ou null en cas d'échec/refus, ou la string 'refused'
      * si tous les modèles ont refusé.
      *
-     * @param  string       $imageDataUrl    Data URL "data:image/jpeg;base64,..." de l'image à analyser
-     * @param  string|null  $context         Contexte libre (ex: nom du dossier, dossier source)
-     * @param  array        $expectedPeople  Ids de personnes attendues (ex: ["caroline", "xavier"])
-     * @param  string|null  $pool            Pool cible pour les règles spécifiques (pdc_vantour, wildycaro, mamawette, none)
+     * @param  string  $imageDataUrl  Data URL "data:image/jpeg;base64,..." de l'image à analyser
+     * @param  string|null  $context  Contexte libre (ex: nom/chemin du dossier rattaché — sert d'orientation)
+     * @param  array  $expectedPeople  Ids de personnes attendues (ex: ["caroline", "xavier"])
      */
     public function extractMetadataFromImage(
         string $imageDataUrl,
         ?string $context = null,
         array $expectedPeople = [],
-        ?string $pool = null,
     ): null|array|string {
         $apiKey = Setting::getEncrypted('openai_api_key');
         if (! $apiKey) {
@@ -487,7 +484,6 @@ TXT;
         $userPrompt = strtr($template, [
             '{contexte}' => $context !== null && trim($context) !== '' ? trim($context) : 'aucun',
             '{personnes_attendues}' => empty($expectedPeople) ? 'aucune' : implode(', ', $expectedPeople),
-            '{regles_pool}' => $this->getPoolRulesBlock($pool),
         ]);
 
         $contentBlocks = [
@@ -496,8 +492,8 @@ TXT;
         ];
 
         $systemPrompt = "Tu es un assistant d'analyse d'image pour un catalogue média. "
-            . "Tu observes une photo et extrais des métadonnées factuelles (lieu, marques, ambiance, tags). "
-            . "Tu réponds toujours en JSON valide selon le schéma demandé.";
+            .'Tu observes une photo et extrais des métadonnées factuelles (lieu, marques, ambiance, tags). '
+            .'Tu réponds toujours en JSON valide selon le schéma demandé.';
 
         $primaryModel = Setting::get('ai_model_vision', 'gpt-4o');
         $modelsToTry = array_unique([$primaryModel, 'gpt-4.1', 'gpt-4.1-mini', 'gpt-4o-mini']);
@@ -525,6 +521,7 @@ TXT;
                             'model' => $model,
                             'refusal' => $refusal,
                         ]);
+
                         continue;
                     }
 
@@ -541,7 +538,7 @@ TXT;
 
                     Log::info('AiAssistService: Metadata extracted', [
                         'model' => $model,
-                        'pool' => $pool,
+                        'context' => $context,
                         'tags_count' => count($parsed['thematic_tags'] ?? []),
                         'has_location' => ! empty($parsed['city']) || ! empty($parsed['country']),
                     ]);
@@ -604,26 +601,6 @@ TXT;
         ];
     }
 
-    /**
-     * Bloc de règles pool-specific injecté dans le prompt d'extraction.
-     * Inspiré de analyse-images.py POOL_RULES.
-     */
-    private function getPoolRulesBlock(?string $pool): string
-    {
-        return match ($pool) {
-            'pdc_vantour' => "POOL : PdC / Vantour (vanlife, voyages, paysage, food).\n"
-                . 'PRIORITÉ : objets/scène principale, lieu/cadre, lumière/ambiance, activité, composition.',
-            'wildycaro' => "POOL : WildyCaro (coaching, sensuel, mise en scène).\n"
-                . "PRIORITÉ : tenue, pose, parties visibles, ambiance corporelle, expression.\n"
-                . 'INCLURE aussi : lieu/cadre, lumière si elles renforcent l\'ambiance.',
-            'mamawette' => "POOL : Mamawette (compte privé, lingerie/nu).\n"
-                . "PRIORITÉ : tenue, pose, parties visibles, ambiance, expression.\n"
-                . 'INCLURE aussi : matières (dentelle, soie, satin), couleurs si discriminantes.',
-            'none', null => "POOL : non classifié. Couvre les catégories générales (objets, lieu, lumière, composition) sans spécialisation corporelle.",
-            default => '',
-        };
-    }
-
     private function getDefaultCharLimit(string $slug): int
     {
         return match ($slug) {
@@ -636,5 +613,256 @@ TXT;
             'bluesky' => 300,
             default => 0,
         };
+    }
+
+    /**
+     * Genere un commentaire bot adapte au type de post (article / texte / image).
+     * Utilise le persona + son contexte bot specifique au type detecte.
+     * Choisit automatiquement un modele vision si $imageUrl fourni.
+     *
+     * @param  Persona  $persona  Le persona du compte social (doit avoir bot_enabled=true)
+     * @param  string  $postKind  'article' | 'text' | 'image'
+     * @param  string  $postContent  Texte du post a commenter
+     * @param  string|null  $imageUrl  URL d'une image visible dans le post (declenche vision)
+     * @param  string|null  $authorName  Nom de l'auteur (pour personnalisation)
+     */
+    public function generateBotComment(
+        Persona $persona,
+        string $postKind,
+        string $postContent,
+        ?string $imageUrl = null,
+        ?string $authorName = null,
+    ): ?string {
+        $context = match ($postKind) {
+            'article' => $persona->bot_comment_context_article,
+            'image' => $persona->bot_comment_context_image,
+            default => $persona->bot_comment_context_text,
+        };
+
+        if (! $context || ! trim((string) $context)) {
+            $context = 'Reponds de maniere authentique et engageante au post.';
+        }
+
+        $maxLength = (int) ($persona->bot_comment_max_length ?: 280);
+
+        $systemPrompt = trim($persona->system_prompt)."\n\n".trim($context)
+            ."\n\nContraintes : reponse en {$maxLength} caracteres maximum, pas de hashtags, ton naturel, pas de formule de politesse generique.";
+
+        $authorBlock = $authorName ? "Auteur : {$authorName}\n" : '';
+        $userText = "{$authorBlock}Type de post : {$postKind}\n\nContenu du post :\n{$postContent}";
+
+        $needVision = $postKind === 'image' && ! empty($imageUrl);
+
+        if ($needVision) {
+            $userContent = [
+                ['type' => 'text', 'text' => $userText],
+                ['type' => 'image_url', 'image_url' => ['url' => $imageUrl]],
+            ];
+        } else {
+            $userContent = $userText;
+        }
+
+        $messages = [
+            ['role' => 'system', 'content' => $systemPrompt],
+            ['role' => 'user', 'content' => $userContent],
+        ];
+
+        $reply = $this->callLlm($messages, null, $needVision, [
+            'temperature' => 0.8,
+            'max_tokens' => 600,
+        ]);
+
+        if (! $reply) {
+            return null;
+        }
+
+        // Garde-fou : si le LLM depasse, on tronque proprement.
+        if (mb_strlen($reply) > $maxLength) {
+            $reply = mb_substr($reply, 0, $maxLength - 1).'…';
+        }
+
+        return $reply;
+    }
+
+    /**
+     * Appel LLM multi-provider (Groq / OpenRouter / Google AI / Mistral / Together / OpenAI).
+     * Selection :
+     *   1. $modelOverride si fourni (format "provider/model_id")
+     *   2. Sinon : free_llms_default_vision_model si $needVision, sinon free_llms_default_text_model
+     *   3. Fallback : OpenAI (modeles ai_model_text / ai_model_vision)
+     *
+     * Retourne le contenu textuel de la reponse (str) ou null en cas d'echec.
+     */
+    private function callLlm(array $messages, ?string $modelOverride, bool $needVision, array $opts = []): ?string
+    {
+        $qualified = $modelOverride;
+
+        if (! $qualified) {
+            $settingKey = $needVision ? 'free_llms_default_vision_model' : 'free_llms_default_text_model';
+            $qualified = Setting::get($settingKey) ?: null;
+        }
+
+        if ($qualified && str_contains($qualified, '/')) {
+            [$provider, $modelId] = explode('/', $qualified, 2);
+        } else {
+            $provider = 'openai';
+            $modelId = $qualified ?: Setting::get($needVision ? 'ai_model_vision' : 'ai_model_text', $needVision ? 'gpt-4o' : 'gpt-4o-mini');
+        }
+
+        $temperature = $opts['temperature'] ?? 0.7;
+        $maxTokens = $opts['max_tokens'] ?? 1000;
+
+        return match ($provider) {
+            'google_ai' => $this->callGoogleAi($messages, $modelId, $temperature, $maxTokens),
+            default => $this->callOpenAiCompatible($provider, $modelId, $messages, $temperature, $maxTokens),
+        };
+    }
+
+    /**
+     * Appelle un endpoint compatible OpenAI Chat Completions
+     * (OpenAI / Groq / OpenRouter / Mistral / Together).
+     */
+    private function callOpenAiCompatible(string $provider, string $modelId, array $messages, float $temperature, int $maxTokens): ?string
+    {
+        [$baseUrl, $apiKey] = match ($provider) {
+            'groq' => ['https://api.groq.com/openai/v1', Setting::getEncrypted('groq_api_key')],
+            'openrouter' => ['https://openrouter.ai/api/v1', Setting::getEncrypted('openrouter_api_key')],
+            'mistral' => ['https://api.mistral.ai/v1', Setting::getEncrypted('mistral_api_key')],
+            'together' => ['https://api.together.xyz/v1', Setting::getEncrypted('together_api_key')],
+            default => ['https://api.openai.com/v1', Setting::getEncrypted('openai_api_key')],
+        };
+
+        if (! $apiKey) {
+            Log::warning("AiAssistService: No API key for provider {$provider}");
+
+            return null;
+        }
+
+        try {
+            $resp = Http::withHeaders([
+                'Authorization' => "Bearer {$apiKey}",
+                'Content-Type' => 'application/json',
+            ])->timeout(60)->post("{$baseUrl}/chat/completions", [
+                'model' => $modelId,
+                'messages' => $messages,
+                'temperature' => $temperature,
+                'max_tokens' => $maxTokens,
+            ]);
+
+            if (! $resp->successful()) {
+                Log::error('AiAssistService: LLM API error', [
+                    'provider' => $provider,
+                    'model' => $modelId,
+                    'status' => $resp->status(),
+                    'body' => mb_substr($resp->body(), 0, 500),
+                ]);
+
+                return null;
+            }
+
+            $content = trim($resp->json('choices.0.message.content', ''));
+
+            return $content !== '' ? $content : null;
+        } catch (\Exception $e) {
+            Log::error('AiAssistService: LLM call exception', [
+                'provider' => $provider,
+                'error' => $e->getMessage(),
+            ]);
+
+            return null;
+        }
+    }
+
+    /**
+     * Adapter Google AI (format generateContent different d'OpenAI Chat).
+     */
+    private function callGoogleAi(array $messages, string $modelId, float $temperature, int $maxTokens): ?string
+    {
+        $apiKey = Setting::getEncrypted('google_ai_api_key');
+        if (! $apiKey) {
+            Log::warning('AiAssistService: No Google AI API key');
+
+            return null;
+        }
+
+        $systemInstruction = null;
+        $contents = [];
+
+        foreach ($messages as $msg) {
+            if ($msg['role'] === 'system') {
+                $systemInstruction = is_string($msg['content']) ? $msg['content'] : '';
+
+                continue;
+            }
+
+            $parts = [];
+            if (is_string($msg['content'])) {
+                $parts[] = ['text' => $msg['content']];
+            } else {
+                foreach ($msg['content'] as $block) {
+                    if ($block['type'] === 'text') {
+                        $parts[] = ['text' => $block['text']];
+                    } elseif ($block['type'] === 'image_url') {
+                        $url = $block['image_url']['url'] ?? '';
+                        if (str_starts_with($url, 'data:')) {
+                            // data URL → inline_data
+                            [$mimePart, $b64] = explode(',', $url, 2);
+                            $mime = preg_match('/data:([^;]+);base64/', $mimePart, $m) ? $m[1] : 'image/jpeg';
+                            $parts[] = ['inline_data' => ['mime_type' => $mime, 'data' => $b64]];
+                        } else {
+                            // URL distante → fetch + base64 (Google AI ne supporte pas les URL directes hors File API)
+                            try {
+                                $bin = Http::timeout(15)->get($url);
+                                if ($bin->successful()) {
+                                    $mime = $bin->header('Content-Type') ?: 'image/jpeg';
+                                    $parts[] = ['inline_data' => ['mime_type' => $mime, 'data' => base64_encode($bin->body())]];
+                                }
+                            } catch (\Exception $e) {
+                                Log::warning('AiAssistService: Failed to fetch image for Google AI', ['url' => $url]);
+                            }
+                        }
+                    }
+                }
+            }
+
+            $contents[] = [
+                'role' => $msg['role'] === 'assistant' ? 'model' : 'user',
+                'parts' => $parts,
+            ];
+        }
+
+        try {
+            $payload = [
+                'contents' => $contents,
+                'generationConfig' => [
+                    'temperature' => $temperature,
+                    'maxOutputTokens' => $maxTokens,
+                ],
+            ];
+            if ($systemInstruction) {
+                $payload['systemInstruction'] = ['parts' => [['text' => $systemInstruction]]];
+            }
+
+            $resp = Http::timeout(60)
+                ->post("https://generativelanguage.googleapis.com/v1beta/models/{$modelId}:generateContent?key={$apiKey}", $payload);
+
+            if (! $resp->successful()) {
+                Log::error('AiAssistService: Google AI error', [
+                    'model' => $modelId,
+                    'status' => $resp->status(),
+                    'body' => mb_substr($resp->body(), 0, 500),
+                ]);
+
+                return null;
+            }
+
+            $text = $resp->json('candidates.0.content.parts.0.text', '');
+
+            return $text !== '' ? trim($text) : null;
+        } catch (\Exception $e) {
+            Log::error('AiAssistService: Google AI exception', ['error' => $e->getMessage()]);
+
+            return null;
+        }
     }
 }

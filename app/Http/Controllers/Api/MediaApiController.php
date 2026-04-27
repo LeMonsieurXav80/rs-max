@@ -20,22 +20,17 @@ class MediaApiController extends Controller
 {
     use ProcessesImages;
 
-    // Tous les pools existants (acceptés par /ingest, /validate, /classify, /enrich).
-    private const ALL_POOLS = ['wildycaro', 'pdc_vantour', 'mamawette'];
-
-    // Pools accessibles via /api/media/search. Mamawette est exclu pour cloisonnement strict :
-    // les photos mamawette sont uniquement publiables manuellement via la médiathèque web.
-    private const SEARCHABLE_POOLS = ['wildycaro', 'pdc_vantour'];
-
     private const INTIMACY_LEVELS = ['public', 'prive', 'never_publish'];
 
-    // Niveaux d'intimacy retournables par /search. `prive` ne sort jamais via cet endpoint
-    // (les photos prive sont mamawette-only, et mamawette n'est pas searchable).
+    // Niveaux d'intimacy retournables par /search. Garde-fou photo : surclasse la
+    // visibilité du dossier (une photo never_publish ne sort jamais, même dans un
+    // dossier public).
     private const SAFE_INTIMACY = ['public'];
 
     /**
      * POST /api/media/ingest — pipeline Mac.
-     * Reçoit le fichier + métadonnées pré-calculées (description, embedding, tags, pool, etc.).
+     * Reçoit le fichier + métadonnées pré-calculées (description, embedding, tags, etc.).
+     * Le `folder_path` détermine où la photo est rangée (et donc sa visibilité API).
      * Idempotent par phash : si la photo existe déjà, renvoie l'ID existant.
      */
     public function ingest(Request $request): JsonResponse
@@ -57,13 +52,9 @@ class MediaApiController extends Controller
             'embedding' => 'nullable|array',
             'embedding.*' => 'numeric',
             'embedding_model' => 'nullable|string|max:50',
-            'pool_suggested' => ['nullable', Rule::in([...self::ALL_POOLS, 'both', 'none'])],
             'people_ids' => 'nullable|array',
             'people_ids.*' => 'string',
             'intimacy_level' => ['nullable', Rule::in(self::INTIMACY_LEVELS)],
-            'allow_wildycaro' => 'nullable|boolean',
-            'allow_pdc_vantour' => 'nullable|boolean',
-            'allow_mamawette' => 'nullable|boolean',
             'ai_metadata' => 'nullable|array',
             'source_context' => 'nullable|string',
             'source_path' => 'nullable|string|max:512',
@@ -132,10 +123,6 @@ class MediaApiController extends Controller
             'thematic_tags' => $this->normalizeTags($meta['thematic_tags'] ?? null),
             'embedding' => $meta['embedding'] ?? null,
             'embedding_model' => $meta['embedding_model'] ?? null,
-            'pool_suggested' => $meta['pool_suggested'] ?? null,
-            'allow_wildycaro' => (bool) ($meta['allow_wildycaro'] ?? false),
-            'allow_pdc_vantour' => (bool) ($meta['allow_pdc_vantour'] ?? false),
-            'allow_mamawette' => (bool) ($meta['allow_mamawette'] ?? false),
             'intimacy_level' => $meta['intimacy_level'] ?? 'public',
             'people_ids' => $meta['people_ids'] ?? null,
             'ai_metadata' => $meta['ai_metadata'] ?? null,
@@ -162,14 +149,13 @@ class MediaApiController extends Controller
     }
 
     /**
-     * POST /api/media/{id}/validate — corrige les flags d'une photo après coup.
+     * POST /api/media/{id}/validate — corrige les métadonnées d'une photo après coup.
+     * `folder_id` permet de la déplacer (la visibilité API découle du dossier).
      */
     public function validateMedia(Request $request, MediaFile $media): JsonResponse
     {
         $data = $request->validate([
-            'allow_wildycaro' => 'nullable|boolean',
-            'allow_pdc_vantour' => 'nullable|boolean',
-            'allow_mamawette' => 'nullable|boolean',
+            'folder_id' => 'nullable|integer|exists:media_folders,id',
             'intimacy_level' => ['nullable', Rule::in(self::INTIMACY_LEVELS)],
             'thematic_tags_override' => 'nullable|array',
             'thematic_tags_override.*' => 'string',
@@ -185,9 +171,7 @@ class MediaApiController extends Controller
         ]);
 
         $update = array_filter([
-            'allow_wildycaro' => $data['allow_wildycaro'] ?? null,
-            'allow_pdc_vantour' => $data['allow_pdc_vantour'] ?? null,
-            'allow_mamawette' => $data['allow_mamawette'] ?? null,
+            'folder_id' => $data['folder_id'] ?? null,
             'intimacy_level' => $data['intimacy_level'] ?? null,
         ], fn ($v) => $v !== null);
 
@@ -219,21 +203,20 @@ class MediaApiController extends Controller
         return response()->json([
             'id' => $media->id,
             'updated' => array_keys($update),
-            'allow_wildycaro' => $media->allow_wildycaro,
-            'allow_pdc_vantour' => $media->allow_pdc_vantour,
-            'allow_mamawette' => $media->allow_mamawette,
+            'folder_id' => $media->folder_id,
             'intimacy_level' => $media->intimacy_level,
         ]);
     }
 
     /**
      * GET /api/media/search — recherche sémantique par embedding.
-     * Pool obligatoire, double garde-fou intimacy_level.
+     * `folder` (slug) obligatoire et doit être public. Le filtre couvre le dossier
+     * et tous ses sous-dossiers. Garde-fou supplémentaire : intimacy_level=public.
      */
     public function search(Request $request): JsonResponse
     {
         $params = $request->validate([
-            'pool' => ['required', Rule::in(self::SEARCHABLE_POOLS)],
+            'folder' => 'required|string|exists:media_folders,slug',
             'query_embedding' => 'nullable|array|min:1',
             'query_embedding.*' => 'numeric',
             'tags' => 'nullable|array',
@@ -244,16 +227,24 @@ class MediaApiController extends Controller
             'limit' => 'nullable|integer|min:1|max:200',
         ]);
 
-        $pool = $params['pool'];
-        $limit = $params['limit'] ?? 20;
-        $excludeDays = $params['exclude_recently_published_days']
-            ?? ($pool === 'pdc_vantour' ? 30 : 0);
+        $folder = MediaFolder::where('slug', $params['folder'])->firstOrFail();
+        if ($folder->is_private) {
+            return response()->json([
+                'error' => 'folder is private and not accessible via API',
+                'folder' => $folder->slug,
+            ], 403);
+        }
 
-        $allowColumn = "allow_{$pool}";
+        // On ne descend dans les sous-dossiers que tant qu'ils sont publics aussi.
+        // Un sous-dossier privé sous un parent public reste cloisonné.
+        $folderIds = $this->collectPublicDescendantIds($folder);
+
+        $limit = $params['limit'] ?? 20;
+        $excludeDays = $params['exclude_recently_published_days'] ?? 0;
         $hasEmbedding = ! empty($params['query_embedding']);
 
         $query = MediaFile::query()
-            ->where($allowColumn, true)
+            ->whereIn('folder_id', $folderIds)
             ->whereIn('intimacy_level', self::SAFE_INTIMACY);
 
         // L'embedding n'est requis que si on veut faire un tri sémantique.
@@ -343,7 +334,8 @@ class MediaApiController extends Controller
         Log::channel(config('logging.channels.media_search') ? 'media_search' : 'stack')
             ->info('media.search', [
                 'token_name' => $request->user()?->currentAccessToken()?->name,
-                'pool' => $pool,
+                'folder' => $folder->slug,
+                'folder_ids' => $folderIds,
                 'tags' => $params['tags'] ?? [],
                 'people' => $params['people'] ?? [],
                 'exclude_days' => $excludeDays,
@@ -354,11 +346,39 @@ class MediaApiController extends Controller
         return response()->json([
             'results' => $results,
             'filters_applied' => [
-                'pool' => $pool,
+                'folder' => $folder->slug,
+                'folder_ids' => $folderIds,
                 'intimacy' => implode('|', self::SAFE_INTIMACY),
                 'exclude_recently_published_days' => $excludeDays,
             ],
         ]);
+    }
+
+    /**
+     * Retourne les ids du dossier + descendants tant que la chaîne reste publique.
+     * Un sous-dossier privé arrête la descente sur sa branche.
+     */
+    private function collectPublicDescendantIds(MediaFolder $root): array
+    {
+        if ($root->is_private) {
+            return [];
+        }
+
+        $ids = [$root->id];
+        $stack = [$root->id];
+
+        while ($stack) {
+            $children = MediaFolder::whereIn('parent_id', $stack)
+                ->where('is_private', false)
+                ->pluck('id')->all();
+            if (! $children) {
+                break;
+            }
+            $ids = array_merge($ids, $children);
+            $stack = $children;
+        }
+
+        return $ids;
     }
 
     /**
@@ -396,7 +416,7 @@ class MediaApiController extends Controller
 
     /**
      * GET /api/media/{id} — retourne tous les champs d'une photo.
-     * Pas de restriction de pool : si on a l'id, on a déjà été autorisé en amont.
+     * Pas de restriction de visibilité : si on a l'id, on a déjà été autorisé en amont.
      * `?include_embedding=1` ajoute le vecteur (~512 floats), omis par défaut pour rester léger.
      */
     public function show(Request $request, MediaFile $media): JsonResponse
@@ -420,10 +440,6 @@ class MediaApiController extends Controller
             'description_fr' => $media->description_fr,
             'thematic_tags' => $media->thematic_tags,
             'embedding_model' => $media->embedding_model,
-            'pool_suggested' => $media->pool_suggested,
-            'allow_wildycaro' => $media->allow_wildycaro,
-            'allow_pdc_vantour' => $media->allow_pdc_vantour,
-            'allow_mamawette' => $media->allow_mamawette,
             'intimacy_level' => $media->intimacy_level,
             'people_ids' => $media->people_ids,
 
@@ -506,13 +522,9 @@ class MediaApiController extends Controller
             'embedding' => 'required|array|min:1',
             'embedding.*' => 'numeric',
             'embedding_model' => 'nullable|string|max:50',
-            'pool_suggested' => ['nullable', Rule::in([...self::ALL_POOLS, 'both', 'none'])],
             'people_ids' => 'nullable|array',
             'people_ids.*' => 'string',
             'intimacy_level' => ['nullable', Rule::in(self::INTIMACY_LEVELS)],
-            'allow_wildycaro' => 'nullable|boolean',
-            'allow_pdc_vantour' => 'nullable|boolean',
-            'allow_mamawette' => 'nullable|boolean',
             'ai_metadata' => 'nullable|array',
             'phash' => 'nullable|string|max:64',
             'city' => 'nullable|string|max:120',
@@ -531,12 +543,8 @@ class MediaApiController extends Controller
                 : $media->thematic_tags,
             'embedding' => $data['embedding'],
             'embedding_model' => $data['embedding_model'] ?? $media->embedding_model,
-            'pool_suggested' => $data['pool_suggested'] ?? $media->pool_suggested,
             'people_ids' => $data['people_ids'] ?? $media->people_ids,
             'intimacy_level' => $data['intimacy_level'] ?? $media->intimacy_level,
-            'allow_wildycaro' => $data['allow_wildycaro'] ?? $media->allow_wildycaro,
-            'allow_pdc_vantour' => $data['allow_pdc_vantour'] ?? $media->allow_pdc_vantour,
-            'allow_mamawette' => $data['allow_mamawette'] ?? $media->allow_mamawette,
             'ai_metadata' => $data['ai_metadata'] ?? $media->ai_metadata,
             'phash' => $data['phash'] ?? $media->phash,
             'city' => array_key_exists('city', $data) ? $this->cleanString($data['city'], 120) : $media->city,
@@ -561,8 +569,9 @@ class MediaApiController extends Controller
      * et remplit les champs structurés (description_fr, thematic_tags, people_ids,
      * city, region, country, brands, event). Pas de file en input : on lit depuis le storage.
      *
-     * Optionnels : `pool` (oriente le prompt), `expected_people[]`, `context`,
-     * `apply` (true = écrit en base, false = retourne juste le résultat sans persister).
+     * Optionnels : `expected_people[]`, `context`, `apply` (true = écrit en base,
+     * false = retourne juste le résultat sans persister). Le contexte du dossier
+     * rattaché (nom + chemin) est utilisé automatiquement pour orienter le prompt.
      *
      * Coexiste avec le pipeline Mac (analyse-images.py + /ingest) — ce endpoint est
      * un complément, pas un remplacement. Utile depuis l'UI ou pour ré-analyser.
@@ -570,7 +579,6 @@ class MediaApiController extends Controller
     public function analyzeVision(Request $request, MediaFile $media, AiAssistService $ai): JsonResponse
     {
         $data = $request->validate([
-            'pool' => ['nullable', Rule::in([...self::ALL_POOLS, 'none'])],
             'expected_people' => 'nullable|array',
             'expected_people.*' => 'string|max:50',
             'context' => 'nullable|string|max:500',
@@ -614,7 +622,6 @@ class MediaApiController extends Controller
             imageDataUrl: $dataUrl,
             context: $context,
             expectedPeople: $data['expected_people'] ?? [],
-            pool: $data['pool'] ?? null,
         );
 
         if ($result === null) {
@@ -655,7 +662,7 @@ class MediaApiController extends Controller
             $aiMeta = is_array($media->ai_metadata) ? $media->ai_metadata : [];
             $aiMeta['vision_analysis'] = [
                 'analyzed_at' => now()->toIso8601String(),
-                'pool_hint' => $data['pool'] ?? null,
+                'folder_id' => $media->folder_id,
                 'person_count' => $result['person_count'],
             ];
             $update['ai_metadata'] = $aiMeta;

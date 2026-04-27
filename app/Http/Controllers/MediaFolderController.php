@@ -29,6 +29,7 @@ class MediaFolderController extends Controller
             'name' => 'required|string|max:100',
             'color' => 'nullable|string|max:7',
             'parent_id' => 'nullable|exists:media_folders,id',
+            'is_private' => 'nullable|boolean',
         ]);
 
         $name = $request->input('name');
@@ -47,6 +48,7 @@ class MediaFolderController extends Controller
             'slug' => $slug,
             'parent_id' => $request->input('parent_id'),
             'color' => $request->input('color', '#6366f1'),
+            'is_private' => (bool) $request->input('is_private', false),
             'sort_order' => $maxOrder + 1,
         ]);
 
@@ -62,6 +64,7 @@ class MediaFolderController extends Controller
             'name' => 'sometimes|required|string|max:100',
             'color' => 'sometimes|string|max:7',
             'parent_id' => 'sometimes|nullable|exists:media_folders,id',
+            'is_private' => 'sometimes|boolean',
         ]);
 
         if ($request->has('name')) {
@@ -71,6 +74,10 @@ class MediaFolderController extends Controller
 
         if ($request->has('color')) {
             $folder->color = $request->input('color');
+        }
+
+        if ($request->has('is_private')) {
+            $folder->is_private = (bool) $request->input('is_private');
         }
 
         if ($request->has('parent_id')) {

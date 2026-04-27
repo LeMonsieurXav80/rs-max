@@ -363,7 +363,7 @@ class ThreadController extends Controller
             'hook_category_id' => 'nullable|integer|exists:hook_categories,id',
             'accounts' => 'required|array|min:1',
             'accounts.*' => 'integer|exists:social_accounts,id',
-            'pool' => 'nullable|in:wildycaro,pdc_vantour',
+            'folder' => 'nullable|string|exists:media_folders,slug',
         ]);
 
         // Determine platform slugs from selected accounts.
@@ -380,8 +380,8 @@ class ThreadController extends Controller
 
         $hookCategoryId = $validated['hook_category_id'] ?? null;
         $contextInstructions = $validated['context_instructions'] ?? null;
-        $pool = $validated['pool'] ?? 'pdc_vantour';
-        $result = $service->generate($validated['source_url'], $persona, $platformSlugs, $hookCategoryId, $contextInstructions, $pool);
+        $folderSlug = $validated['folder'] ?? null;
+        $result = $service->generate($validated['source_url'], $persona, $platformSlugs, $hookCategoryId, $contextInstructions, $folderSlug);
 
         if (! $result) {
             return response()->json([

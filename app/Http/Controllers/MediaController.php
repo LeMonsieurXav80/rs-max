@@ -26,9 +26,11 @@ class MediaController extends Controller
     {
         $filter = $request->input('filter', 'all');
         $folderId = $request->input('folder');
-        $pool = $request->input('pool');
 
-        // Query from database
+        // Filtre transversal "Jamais publier" — porte sur intimacy_level (par photo),
+        // indépendant du dossier. Remplace l'ancien pool=never_publish.
+        $intimacyFilter = $request->input('intimacy');
+
         $query = MediaFile::with('folder')->latest();
 
         if ($folderId === 'uncategorized') {
@@ -48,26 +50,12 @@ class MediaController extends Controller
         } elseif ($filter === 'videos') {
             $query->where('mime_type', 'like', 'video/%');
         } elseif ($filter === 'unclassified') {
-            // Alias rétro-compatible : équivaut à pool=unclassified.
-            $pool = 'unclassified';
+            // Alias rétro-compat : photos sans dossier.
+            $query->whereNull('folder_id');
         }
 
-        if ($pool === 'pdc_vantour') {
-            $query->where('mime_type', 'like', 'image/%')->where('allow_pdc_vantour', true);
-        } elseif ($pool === 'wildycaro') {
-            $query->where('mime_type', 'like', 'image/%')->where('allow_wildycaro', true);
-        } elseif ($pool === 'mamawette') {
-            $query->where('mime_type', 'like', 'image/%')->where('allow_mamawette', true);
-        } elseif ($pool === 'never_publish') {
-            $query->where('mime_type', 'like', 'image/%')->where('intimacy_level', 'never_publish');
-        } elseif ($pool === 'unclassified') {
-            $query->where('mime_type', 'like', 'image/%')
-                ->where('allow_wildycaro', false)
-                ->where('allow_pdc_vantour', false)
-                ->where('allow_mamawette', false)
-                ->where(function ($q) {
-                    $q->whereNull('intimacy_level')->orWhere('intimacy_level', '!=', 'never_publish');
-                });
+        if ($intimacyFilter === 'never_publish') {
+            $query->where('intimacy_level', 'never_publish');
         }
 
         $mediaFiles = $query->get();
@@ -96,10 +84,7 @@ class MediaController extends Controller
                 'description_fr' => $mf->description_fr,
                 'thematic_tags' => $mf->thematic_tags ?? [],
                 'people_ids' => $mf->people_ids ?? [],
-                'pool_suggested' => $mf->pool_suggested,
-                'allow_wildycaro' => (bool) $mf->allow_wildycaro,
-                'allow_pdc_vantour' => (bool) $mf->allow_pdc_vantour,
-                'allow_mamawette' => (bool) $mf->allow_mamawette,
+                'folder_is_private' => $mf->folder?->is_private ?? false,
                 'intimacy_level' => $mf->intimacy_level,
                 'pending_analysis' => (bool) $mf->pending_analysis,
                 'source_context' => $mf->source_context,
@@ -163,30 +148,17 @@ class MediaController extends Controller
         $videoCount = MediaFile::where('mime_type', 'like', 'video/%')->count();
         $totalCount = MediaFile::count();
         $uncategorizedCount = MediaFile::whereNull('folder_id')->count();
-        $unclassifiedCount = MediaFile::where('mime_type', 'like', 'image/%')
-            ->where('allow_wildycaro', false)
-            ->where('allow_pdc_vantour', false)
-            ->where('allow_mamawette', false)
-            ->where(function ($q) {
-                $q->whereNull('intimacy_level')->orWhere('intimacy_level', '!=', 'never_publish');
-            })
+        $neverPublishCount = MediaFile::where('mime_type', 'like', 'image/%')
+            ->where('intimacy_level', 'never_publish')
             ->count();
 
-        $poolCounts = [
-            'pdc_vantour' => MediaFile::where('mime_type', 'like', 'image/%')->where('allow_pdc_vantour', true)->count(),
-            'wildycaro' => MediaFile::where('mime_type', 'like', 'image/%')->where('allow_wildycaro', true)->count(),
-            'mamawette' => MediaFile::where('mime_type', 'like', 'image/%')->where('allow_mamawette', true)->count(),
-            'never_publish' => MediaFile::where('mime_type', 'like', 'image/%')->where('intimacy_level', 'never_publish')->count(),
-            'unclassified' => $unclassifiedCount,
-        ];
-
         $currentFolder = $folderId;
-        $currentPool = $pool;
+        $currentIntimacy = $intimacyFilter;
 
         return view('media.index', compact(
             'items', 'mediaPostMap', 'filter', 'imageCount', 'videoCount',
-            'folders', 'totalCount', 'uncategorizedCount', 'unclassifiedCount',
-            'currentFolder', 'currentPool', 'poolCounts'
+            'folders', 'totalCount', 'uncategorizedCount', 'neverPublishCount',
+            'currentFolder', 'currentIntimacy'
         ));
     }
 
@@ -198,7 +170,7 @@ class MediaController extends Controller
     public function manage(Request $request): View
     {
         $folderId = $request->input('folder');
-        $pool = $request->input('pool');
+        $intimacyFilter = $request->input('intimacy');
 
         $query = MediaFile::with('folder')->latest();
 
@@ -209,22 +181,8 @@ class MediaController extends Controller
             $query->whereIn('folder_id', $rootFolder ? $rootFolder->descendantIds() : [(int) $folderId]);
         }
 
-        if ($pool === 'pdc_vantour') {
-            $query->where('mime_type', 'like', 'image/%')->where('allow_pdc_vantour', true);
-        } elseif ($pool === 'wildycaro') {
-            $query->where('mime_type', 'like', 'image/%')->where('allow_wildycaro', true);
-        } elseif ($pool === 'mamawette') {
-            $query->where('mime_type', 'like', 'image/%')->where('allow_mamawette', true);
-        } elseif ($pool === 'never_publish') {
-            $query->where('mime_type', 'like', 'image/%')->where('intimacy_level', 'never_publish');
-        } elseif ($pool === 'unclassified') {
-            $query->where('mime_type', 'like', 'image/%')
-                ->where('allow_wildycaro', false)
-                ->where('allow_pdc_vantour', false)
-                ->where('allow_mamawette', false)
-                ->where(function ($q) {
-                    $q->whereNull('intimacy_level')->orWhere('intimacy_level', '!=', 'never_publish');
-                });
+        if ($intimacyFilter === 'never_publish') {
+            $query->where('intimacy_level', 'never_publish');
         }
 
         $items = $query->get()->map(fn (MediaFile $mf) => [
@@ -247,9 +205,7 @@ class MediaController extends Controller
             'region' => $mf->region,
             'country' => $mf->country,
             'event' => $mf->event,
-            'allow_wildycaro' => (bool) $mf->allow_wildycaro,
-            'allow_pdc_vantour' => (bool) $mf->allow_pdc_vantour,
-            'allow_mamawette' => (bool) $mf->allow_mamawette,
+            'folder_is_private' => $mf->folder?->is_private ?? false,
             'intimacy_level' => $mf->intimacy_level,
             'publication_count' => (int) $mf->publication_count,
         ])->values();
@@ -257,30 +213,16 @@ class MediaController extends Controller
         $folders = MediaFolder::ordered()->withCount('files')->get();
         $totalCount = MediaFile::count();
         $uncategorizedCount = MediaFile::whereNull('folder_id')->count();
-        $unclassifiedCount = MediaFile::where('mime_type', 'like', 'image/%')
-            ->where('allow_wildycaro', false)
-            ->where('allow_pdc_vantour', false)
-            ->where('allow_mamawette', false)
-            ->where(function ($q) {
-                $q->whereNull('intimacy_level')->orWhere('intimacy_level', '!=', 'never_publish');
-            })
-            ->count();
-        $poolCounts = [
-            'pdc_vantour' => MediaFile::where('mime_type', 'like', 'image/%')->where('allow_pdc_vantour', true)->count(),
-            'wildycaro' => MediaFile::where('mime_type', 'like', 'image/%')->where('allow_wildycaro', true)->count(),
-            'mamawette' => MediaFile::where('mime_type', 'like', 'image/%')->where('allow_mamawette', true)->count(),
-            'never_publish' => MediaFile::where('mime_type', 'like', 'image/%')->where('intimacy_level', 'never_publish')->count(),
-            'unclassified' => $unclassifiedCount,
-        ];
+        $neverPublishCount = MediaFile::where('intimacy_level', 'never_publish')->count();
 
         return view('media.manage', [
             'items' => $items,
             'folders' => $folders,
             'totalCount' => $totalCount,
             'uncategorizedCount' => $uncategorizedCount,
-            'poolCounts' => $poolCounts,
+            'neverPublishCount' => $neverPublishCount,
             'currentFolder' => $folderId,
-            'currentPool' => $pool,
+            'currentIntimacy' => $intimacyFilter,
         ]);
     }
 
@@ -373,7 +315,6 @@ class MediaController extends Controller
     public function analyzeVision(Request $request, MediaFile $media, AiAssistService $ai): JsonResponse
     {
         $data = $request->validate([
-            'pool' => 'nullable|in:wildycaro,pdc_vantour,mamawette,none',
             'expected_people' => 'nullable|array',
             'expected_people.*' => 'string|max:50',
             'context' => 'nullable|string|max:500',
@@ -410,7 +351,6 @@ class MediaController extends Controller
             imageDataUrl: $dataUrl,
             context: $context,
             expectedPeople: $data['expected_people'] ?? [],
-            pool: $data['pool'] ?? null,
         );
 
         if ($result === null) {
@@ -454,7 +394,7 @@ class MediaController extends Controller
         $aiMeta = is_array($media->ai_metadata) ? $media->ai_metadata : [];
         $aiMeta['vision_analysis'] = [
             'analyzed_at' => now()->toIso8601String(),
-            'pool_hint' => $data['pool'] ?? null,
+            'folder_id' => $media->folder_id,
             'person_count' => $result['person_count'],
         ];
         $update['ai_metadata'] = $aiMeta;
@@ -520,9 +460,9 @@ class MediaController extends Controller
 
     /**
      * POST /media/details-batch — applique des champs structurés à plusieurs photos.
-     * Body : ids[], + n'importe lesquels de city, region, country, event, intimacy_level,
-     * allow_pdc_vantour, allow_wildycaro, allow_mamawette. Une clé absente = pas touchée.
-     * Une clé présente avec valeur null vide le champ (sauf allow_*).
+     * Body : ids[], + n'importe lesquels de city, region, country, event, intimacy_level.
+     * La visibilité API est désormais portée par le dossier (cf. media.folders.update),
+     * pas par la photo. Pour déplacer plusieurs photos : media.folders.move.
      */
     public function detailsBatch(Request $request): JsonResponse
     {
@@ -534,9 +474,6 @@ class MediaController extends Controller
             'country' => 'nullable|string|max:120',
             'event' => 'nullable|string|max:200',
             'intimacy_level' => 'nullable|in:public,prive,never_publish',
-            'allow_pdc_vantour' => 'nullable|boolean',
-            'allow_wildycaro' => 'nullable|boolean',
-            'allow_mamawette' => 'nullable|boolean',
         ]);
 
         $update = [];
@@ -548,11 +485,6 @@ class MediaController extends Controller
         }
         if ($request->exists('intimacy_level')) {
             $update['intimacy_level'] = $data['intimacy_level'] ?? 'public';
-        }
-        foreach (['allow_pdc_vantour', 'allow_wildycaro', 'allow_mamawette'] as $flag) {
-            if ($request->exists($flag)) {
-                $update[$flag] = (bool) ($data[$flag] ?? false);
-            }
         }
 
         if (empty($update)) {
@@ -691,93 +623,68 @@ class MediaController extends Controller
     }
 
     /**
-     * Liste les photos non classées (allow_wildycaro=false ET allow_pdc_vantour=false).
-     * Utilisée par Caroline (uploads sans pool) et pour rattraper les photos legacy.
-     */
-    /**
-     * Classe une photo dans un pool depuis la vue "Photos à classer".
+     * POST /media/{id}/classify — déplace une photo dans un dossier et/ou modifie son intimacy.
+     * `folder_id` null = retire du dossier (devient "à classer"). `intimacy_level` "never_publish"
+     * marque la photo comme jamais publiable, indépendamment de la visibilité du dossier.
      */
     public function classify(Request $request, MediaFile $media): JsonResponse
     {
         $data = $request->validate([
-            'action' => 'required|in:wildycaro,pdc_vantour,mamawette,never_publish,unclassify',
+            'folder_id' => 'nullable|integer|exists:media_folders,id',
             'intimacy_level' => 'nullable|in:public,prive,never_publish',
         ]);
 
-        // Chaque pool a son intimacy par défaut. mamawette est privé par construction
-        // (compte privé), les autres sont publics.
-        $update = match ($data['action']) {
-            'wildycaro' => [
-                'allow_wildycaro' => true, 'allow_pdc_vantour' => false, 'allow_mamawette' => false,
-                'intimacy_level' => 'public',
-            ],
-            'pdc_vantour' => [
-                'allow_wildycaro' => false, 'allow_pdc_vantour' => true, 'allow_mamawette' => false,
-                'intimacy_level' => 'public',
-            ],
-            'mamawette' => [
-                'allow_wildycaro' => false, 'allow_pdc_vantour' => false, 'allow_mamawette' => true,
-                'intimacy_level' => 'prive',
-            ],
-            'never_publish' => ['intimacy_level' => 'never_publish'],
-            'unclassify' => [
-                'allow_wildycaro' => false, 'allow_pdc_vantour' => false, 'allow_mamawette' => false,
-                'intimacy_level' => null,
-            ],
-        };
-
-        if (! empty($data['intimacy_level']) && $data['action'] !== 'never_publish') {
+        $update = [];
+        if ($request->exists('folder_id')) {
+            $update['folder_id'] = $data['folder_id'];
+        }
+        if (! empty($data['intimacy_level'])) {
             $update['intimacy_level'] = $data['intimacy_level'];
+        }
+
+        if (empty($update)) {
+            return response()->json(['error' => 'aucun champ à mettre à jour'], 422);
         }
 
         $media->update($update);
 
         return response()->json([
             'id' => $media->id,
-            'allow_wildycaro' => $media->allow_wildycaro,
-            'allow_pdc_vantour' => $media->allow_pdc_vantour,
-            'allow_mamawette' => $media->allow_mamawette,
+            'folder_id' => $media->folder_id,
             'intimacy_level' => $media->intimacy_level,
         ]);
     }
 
     /**
-     * Classe plusieurs photos d'un coup dans le même pool.
+     * POST /media/classify-batch — applique folder_id et/ou intimacy_level à plusieurs photos.
      */
     public function classifyBatch(Request $request): JsonResponse
     {
         $data = $request->validate([
             'ids' => 'required|array|min:1|max:500',
             'ids.*' => 'integer',
-            'action' => 'required|in:wildycaro,pdc_vantour,mamawette,never_publish,unclassify',
+            'folder_id' => 'nullable|integer|exists:media_folders,id',
+            'intimacy_level' => 'nullable|in:public,prive,never_publish',
         ]);
 
-        $update = match ($data['action']) {
-            'wildycaro' => [
-                'allow_wildycaro' => true, 'allow_pdc_vantour' => false, 'allow_mamawette' => false,
-                'intimacy_level' => 'public',
-            ],
-            'pdc_vantour' => [
-                'allow_wildycaro' => false, 'allow_pdc_vantour' => true, 'allow_mamawette' => false,
-                'intimacy_level' => 'public',
-            ],
-            'mamawette' => [
-                'allow_wildycaro' => false, 'allow_pdc_vantour' => false, 'allow_mamawette' => true,
-                'intimacy_level' => 'prive',
-            ],
-            'never_publish' => ['intimacy_level' => 'never_publish'],
-            'unclassify' => [
-                'allow_wildycaro' => false, 'allow_pdc_vantour' => false, 'allow_mamawette' => false,
-                'intimacy_level' => null,
-            ],
-        };
+        $update = [];
+        if ($request->exists('folder_id')) {
+            $update['folder_id'] = $data['folder_id'];
+        }
+        if (! empty($data['intimacy_level'])) {
+            $update['intimacy_level'] = $data['intimacy_level'];
+        }
+
+        if (empty($update)) {
+            return response()->json(['error' => 'aucun champ à mettre à jour'], 422);
+        }
 
         $count = MediaFile::whereIn('id', $data['ids'])->update($update);
 
         return response()->json([
             'count' => $count,
             'ids' => $data['ids'],
-            'action' => $data['action'],
+            'fields' => array_keys($update),
         ]);
     }
 

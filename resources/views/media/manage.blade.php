@@ -32,6 +32,7 @@
                     'depth' => $depth,
                     'has_children' => $hasChildren,
                     'color' => $f->color,
+                    'is_private' => (bool) $f->is_private,
                     'files_count' => $f->files_count,
                 ]);
                 if ($hasChildren) {
@@ -91,12 +92,15 @@
                                 </button>
                                 <span x-show="!f.has_children" class="w-4 h-4 flex-shrink-0"></span>
                                 {{-- Lien navigation --}}
-                                <a :href="`{{ route('media.manage') }}?folder=${f.id}{{ $currentPool ? '&pool='.urlencode($currentPool) : '' }}`"
+                                <a :href="`{{ route('media.manage') }}?folder=${f.id}{{ ($currentIntimacy ?? null) ? '&intimacy='.urlencode($currentIntimacy) : '' }}`"
                                    class="flex-1 flex items-center justify-between px-2 py-1.5 rounded-lg text-sm transition-colors min-w-0"
                                    :class="String({{ json_encode($currentFolder) }}) === String(f.id) ? 'bg-indigo-50 text-indigo-700 font-medium' : 'text-gray-600 hover:bg-gray-50'">
                                     <span class="flex items-center gap-2 min-w-0 truncate">
                                         <span class="w-2 h-2 rounded-sm flex-shrink-0" :style="`background-color: ${f.color || '#9ca3af'}`"></span>
                                         <span class="truncate" x-text="f.name"></span>
+                                        <template x-if="f.is_private">
+                                            <svg class="w-3 h-3 text-gray-400 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M16.5 10.5V6.75a4.5 4.5 0 1 0-9 0v3.75m-.75 11.25h10.5a2.25 2.25 0 0 0 2.25-2.25v-6.75a2.25 2.25 0 0 0-2.25-2.25H6.75a2.25 2.25 0 0 0-2.25 2.25v6.75a2.25 2.25 0 0 0 2.25 2.25Z" /></svg>
+                                        </template>
                                     </span>
                                     <span class="text-xs text-gray-400 flex-shrink-0" x-text="f.files_count"></span>
                                 </a>
@@ -104,20 +108,19 @@
                         </template>
                     </div>
 
-                    {{-- Pools --}}
+                    {{-- Filtre transversal "Jamais publier" (override par photo, indépendant du dossier) --}}
                     <div class="bg-white rounded-2xl border border-gray-100 shadow-sm p-3">
-                        <h3 class="text-[10px] font-semibold uppercase tracking-widest text-gray-400 px-2 pb-2">Pools</h3>
-                        <a href="{{ route('media.manage') }}" class="flex items-center justify-between px-2 py-1.5 rounded-lg text-sm transition-colors {{ ! $currentPool ? 'bg-indigo-50 text-indigo-700 font-medium' : 'text-gray-600 hover:bg-gray-50' }}">
+                        <h3 class="text-[10px] font-semibold uppercase tracking-widest text-gray-400 px-2 pb-2">Filtres</h3>
+                        <a href="{{ route('media.manage', array_filter(['folder' => $currentFolder])) }}"
+                           class="flex items-center justify-between px-2 py-1.5 rounded-lg text-sm transition-colors {{ ! ($currentIntimacy ?? null) ? 'bg-indigo-50 text-indigo-700 font-medium' : 'text-gray-600 hover:bg-gray-50' }}">
                             <span>Tous</span>
                             <span class="text-xs text-gray-400">{{ $totalCount }}</span>
                         </a>
-                        @foreach (['pdc_vantour' => 'PdC / Vantour', 'wildycaro' => 'Wildycaro', 'mamawette' => 'Mamawette', 'unclassified' => 'A classer', 'never_publish' => 'Jamais publier'] as $slug => $label)
-                            <a href="{{ route('media.manage', array_merge(request()->only('folder'), ['pool' => $slug])) }}"
-                               class="flex items-center justify-between px-2 py-1.5 rounded-lg text-sm transition-colors {{ $currentPool === $slug ? 'bg-indigo-50 text-indigo-700 font-medium' : 'text-gray-600 hover:bg-gray-50' }}">
-                                <span>{{ $label }}</span>
-                                <span class="text-xs text-gray-400">{{ $poolCounts[$slug] ?? 0 }}</span>
-                            </a>
-                        @endforeach
+                        <a href="{{ route('media.manage', array_filter(['folder' => $currentFolder, 'intimacy' => 'never_publish'])) }}"
+                           class="flex items-center justify-between px-2 py-1.5 rounded-lg text-sm transition-colors {{ ($currentIntimacy ?? null) === 'never_publish' ? 'bg-indigo-50 text-indigo-700 font-medium' : 'text-gray-600 hover:bg-gray-50' }}">
+                            <span>🚫 Jamais publier</span>
+                            <span class="text-xs text-gray-400">{{ $neverPublishCount ?? 0 }}</span>
+                        </a>
                     </div>
                 </div>
             </aside>
@@ -351,29 +354,15 @@
 
                         <div class="bg-white rounded-xl border border-gray-100 shadow-sm overflow-hidden" x-data="{ open: true }">
                             <button @click="open = !open" class="w-full flex items-center justify-between px-3 py-2 hover:bg-gray-50">
-                                <span class="text-[11px] font-semibold text-gray-700 uppercase tracking-wider">Classification</span>
+                                <span class="text-[11px] font-semibold text-gray-700 uppercase tracking-wider">Visibilité</span>
                                 <svg class="w-3.5 h-3.5 text-gray-400 transition-transform" :class="open && 'rotate-180'" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="m19.5 8.25-7.5 7.5-7.5-7.5" /></svg>
                             </button>
                             <div x-show="open" x-collapse class="px-3 pb-3 space-y-2 border-t border-gray-100 text-xs">
-                                <div class="pt-2 grid grid-cols-3 gap-1">
-                                    <label class="flex items-center gap-1 cursor-pointer p-1 rounded hover:bg-gray-50">
-                                        <input type="checkbox" x-model="classification.allow_pdc_vantour" class="rounded border-gray-300">
-                                        <span class="text-[10px]">PdC</span>
-                                    </label>
-                                    <label class="flex items-center gap-1 cursor-pointer p-1 rounded hover:bg-gray-50">
-                                        <input type="checkbox" x-model="classification.allow_wildycaro" class="rounded border-gray-300">
-                                        <span class="text-[10px]">Wildy</span>
-                                    </label>
-                                    <label class="flex items-center gap-1 cursor-pointer p-1 rounded hover:bg-gray-50">
-                                        <input type="checkbox" x-model="classification.allow_mamawette" class="rounded border-gray-300">
-                                        <span class="text-[10px]">🔒 Mama</span>
-                                    </label>
-                                </div>
+                                <p class="pt-2 text-[10px] text-gray-500 italic">La visibilité API découle du dossier (privé / public). Cet override surclasse pour la photo.</p>
                                 <select x-model="classification.intimacy_level" class="w-full text-xs rounded-lg border-gray-200 px-2 py-1.5">
-                                    <option value="">Intimite : ne pas modifier</option>
-                                    <option value="public">Public</option>
-                                    <option value="prive">Prive</option>
-                                    <option value="never_publish">Jamais publier</option>
+                                    <option value="">Ne pas modifier</option>
+                                    <option value="public">Suit le dossier</option>
+                                    <option value="never_publish">🚫 Jamais publier</option>
                                 </select>
                                 <button @click="bulkClassification()" :disabled="busy" class="w-full px-3 py-1.5 text-xs bg-indigo-600 text-white rounded-lg disabled:opacity-40 hover:bg-indigo-700">Appliquer</button>
                             </div>
@@ -436,7 +425,7 @@
             descriptionInput: '',
             lastSelectedSnapshot: '', // pour detecter quand selection a 1 photo change → pre-remplir description
             details: { city: '', region: '', country: '', event: '' },
-            classification: { allow_pdc_vantour: null, allow_wildycaro: null, allow_mamawette: null, intimacy_level: '' },
+            classification: { intimacy_level: '' },
 
             // IA analysis state
             aiContext: '',
@@ -677,21 +666,16 @@
             async bulkClassification() {
                 if (this.selectedIds.length === 0) return;
                 const body = { ids: this.selectedIds };
-                if (this.classification.allow_pdc_vantour !== null) body.allow_pdc_vantour = this.classification.allow_pdc_vantour;
-                if (this.classification.allow_wildycaro !== null) body.allow_wildycaro = this.classification.allow_wildycaro;
-                if (this.classification.allow_mamawette !== null) body.allow_mamawette = this.classification.allow_mamawette;
                 if (this.classification.intimacy_level) body.intimacy_level = this.classification.intimacy_level;
                 if (Object.keys(body).length === 1) return;
                 const data = await this.post('{{ route('media.detailsBatch') }}', body);
                 if (data) {
                     this.items.forEach(item => {
-                        if (this.selectedIds.includes(item.id)) {
-                            for (const flag of ['allow_pdc_vantour', 'allow_wildycaro', 'allow_mamawette', 'intimacy_level']) {
-                                if (flag in body) item[flag] = body[flag];
-                            }
+                        if (this.selectedIds.includes(item.id) && 'intimacy_level' in body) {
+                            item.intimacy_level = body.intimacy_level;
                         }
                     });
-                    this.lastMessage = `${data.count} photo(s) classifiees.`;
+                    this.lastMessage = `${data.count} photo(s) mises a jour.`;
                 }
             },
 

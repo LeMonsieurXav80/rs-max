@@ -14,11 +14,13 @@ class MediaFolder extends Model
         'parent_id',
         'color',
         'is_system',
+        'is_private',
         'sort_order',
     ];
 
     protected $casts = [
         'is_system' => 'boolean',
+        'is_private' => 'boolean',
         'sort_order' => 'integer',
         'parent_id' => 'integer',
     ];

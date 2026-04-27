@@ -28,7 +28,7 @@ class ThreadContentGenerationService
      *   - 'compiled' => ['facebook' => '...', 'telegram' => '...']
      *   - 'title' => '...'
      */
-    public function generate(string $sourceUrl, Persona $persona, array $platformSlugs, ?int $hookCategoryId = null, ?string $contextInstructions = null, ?string $pool = null): ?array
+    public function generate(string $sourceUrl, Persona $persona, array $platformSlugs, ?int $hookCategoryId = null, ?string $contextInstructions = null, ?string $folderSlug = null): ?array
     {
         $apiKey = Setting::getEncrypted('openai_api_key');
         if (! $apiKey) {
@@ -205,8 +205,8 @@ class ThreadContentGenerationService
                 }
             }
 
-            // Auto-attache une photo par segment selon photo_keywords (si pool fourni).
-            $this->attachPhotosByKeywords($normalized['segments'], $pool);
+            // Auto-attache une photo par segment selon photo_keywords (si dossier fourni).
+            $this->attachPhotosByKeywords($normalized['segments'], $folderSlug);
 
             return $normalized;
 
@@ -221,7 +221,7 @@ class ThreadContentGenerationService
      * Generate a thread from free-form instructions (no source URL).
      * Used by the API for bulk thread scheduling.
      */
-    public function generateFromInstructions(string $instructions, Persona $persona, array $platformSlugs, int $threadNumber = 1, int $totalThreads = 1, ?string $pool = null): ?array
+    public function generateFromInstructions(string $instructions, Persona $persona, array $platformSlugs, int $threadNumber = 1, int $totalThreads = 1, ?string $folderSlug = null): ?array
     {
         $apiKey = Setting::getEncrypted('openai_api_key');
         if (! $apiKey) {
@@ -353,7 +353,7 @@ class ThreadContentGenerationService
             }
 
             $normalized = $this->normalizeResponse($parsed, $platformSlugs);
-            $this->attachPhotosByKeywords($normalized['segments'], $pool);
+            $this->attachPhotosByKeywords($normalized['segments'], $folderSlug);
 
             return $normalized;
 
@@ -438,12 +438,12 @@ class ThreadContentGenerationService
      *  2) Sinon match large (au moins UN keyword).
      *  3) Évite de réutiliser une photo déjà attachée à un autre segment du même thread.
      *  4) Évite les photos publiées dans les 30 derniers jours (cohérent avec le défaut /search).
-     *  5) Mamawette est exclu de cet auto-attach (cloisonnement).
+     *  5) Les dossiers privés sont exclus (et coupent la descente sur leur branche).
      */
-    private function attachPhotosByKeywords(array &$segments, ?string $pool): void
+    private function attachPhotosByKeywords(array &$segments, ?string $folderSlug): void
     {
         Log::info('attachPhotosByKeywords called', [
-            'pool' => $pool,
+            'folder' => $folderSlug,
             'segment_count' => count($segments),
             'segments_summary' => array_map(fn ($s) => [
                 'pos' => $s['position'] ?? null,
@@ -452,13 +452,33 @@ class ThreadContentGenerationService
             ], $segments),
         ]);
 
-        if (! $pool || ! in_array($pool, ['wildycaro', 'pdc_vantour'], true)) {
-            Log::info('attachPhotosByKeywords: skipped (no valid pool)');
+        if (! $folderSlug) {
+            Log::info('attachPhotosByKeywords: skipped (no folder provided)');
 
             return;
         }
 
-        $allowColumn = "allow_{$pool}";
+        $folder = \App\Models\MediaFolder::where('slug', $folderSlug)->first();
+        if (! $folder || $folder->is_private) {
+            Log::info('attachPhotosByKeywords: skipped (folder unknown or private)', ['folder' => $folderSlug]);
+
+            return;
+        }
+
+        // Collecte récursive des sous-dossiers publics — un sous-dossier privé arrête la branche.
+        $folderIds = [$folder->id];
+        $stack = [$folder->id];
+        while ($stack) {
+            $children = \App\Models\MediaFolder::whereIn('parent_id', $stack)
+                ->where('is_private', false)
+                ->pluck('id')->all();
+            if (! $children) {
+                break;
+            }
+            $folderIds = array_merge($folderIds, $children);
+            $stack = $children;
+        }
+
         $alreadyAttached = [];
 
         foreach ($segments as &$segment) {
@@ -471,7 +491,7 @@ class ThreadContentGenerationService
             }
 
             $base = MediaFile::query()
-                ->where($allowColumn, true)
+                ->whereIn('folder_id', $folderIds)
                 ->where('intimacy_level', 'public')
                 ->where('mime_type', 'like', 'image/%')
                 ->whereDoesntHave('publications', function ($q) {

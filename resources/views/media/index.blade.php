@@ -3,18 +3,24 @@
 @section('title', 'Medias')
 
 @section('content')
-    @if (($unclassifiedCount ?? 0) > 0)
+    @if (($uncategorizedCount ?? 0) > 0)
         <div class="bg-amber-50 border-b border-amber-200 px-6 py-3 flex items-center justify-between">
             <div class="flex items-center gap-3">
                 <svg class="w-5 h-5 text-amber-600" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126ZM12 15.75h.007v.008H12v-.008Z" /></svg>
                 <span class="text-sm text-amber-900">
-                    <strong>{{ $unclassifiedCount }}</strong> photo(s) à classer (pool non défini).
+                    <strong>{{ $uncategorizedCount }}</strong> photo(s) sans dossier.
                 </span>
             </div>
-            <a href="{{ route('media.index', ['filter' => 'unclassified']) }}" class="text-sm font-medium text-amber-900 hover:underline">Classer maintenant →</a>
+            <a href="{{ route('media.index', ['folder' => 'uncategorized']) }}" class="text-sm font-medium text-amber-900 hover:underline">Classer maintenant →</a>
         </div>
     @endif
     @php
+        // Palette de 16 couleurs (Tailwind 400) en 2 rangées de 8.
+        // Rangée 1 = chaudes/vertes, rangée 2 = froides/violettes.
+        $folderPalette = [
+            '#9ca3af', '#f87171', '#fb923c', '#fbbf24', '#facc15', '#a3e635', '#34d399', '#10b981',
+            '#2dd4bf', '#22d3ee', '#60a5fa', '#818cf8', '#a78bfa', '#c084fc', '#f472b6', '#fb7185',
+        ];
         $itemsJson = $items->map(function ($item) use ($mediaPostMap) {
             $item['posts'] = $mediaPostMap[$item['filename']] ?? [];
             $statuses = collect($item['posts'])->pluck('status')->unique();
@@ -89,6 +95,7 @@
                 'has_children' => $hasChildren,
                 'color' => $f->color,
                 'is_system' => $f->is_system,
+                'is_private' => (bool) $f->is_private,
                 'files_count' => $f->files_count,
                 'children_count' => $childrenCountById->get($f->id, 0),
             ];
@@ -109,7 +116,7 @@
         items: @js($itemsJson),
         folders: @js($foldersJson),
         currentFolder: @js($currentFolder),
-        currentPool: @js($currentPool),
+        currentIntimacy: @js($currentIntimacy ?? null),
         totalCount: {{ $totalCount }},
         uncategorizedCount: {{ $uncategorizedCount }},
         bulkDeleteConfirm: false,
@@ -150,6 +157,14 @@
         deleteFolderConfirm: null,
         folderMenuOpen: null,
         movingToFolder: false,
+        // Édition inline du dossier sélectionné (panneau Propriétés sous l'arbre).
+        folderEditName: '',
+        // Palette : 15 couleurs Tailwind 400 (pleines mais douces).
+        folderColors: [
+            '#9ca3af', '#f87171', '#fb923c', '#fbbf24', '#facc15',
+            '#a3e635', '#34d399', '#10b981', '#22d3ee', '#60a5fa',
+            '#818cf8', '#a78bfa', '#c084fc', '#f472b6', '#fb7185'
+        ],
         get currentFolderId() {
             if (!this.currentFolder || this.currentFolder === 'uncategorized') return null;
             const n = parseInt(this.currentFolder);
@@ -235,17 +250,8 @@
                 alert('Erreur de connexion.');
             }
         },
-        poolUpdateForAction(action) {
-            return action === 'wildycaro'
-                ? { allow_wildycaro: true, allow_pdc_vantour: false, allow_mamawette: false, intimacy_level: 'public' }
-                : action === 'pdc_vantour'
-                ? { allow_wildycaro: false, allow_pdc_vantour: true, allow_mamawette: false, intimacy_level: 'public' }
-                : action === 'mamawette'
-                ? { allow_wildycaro: false, allow_pdc_vantour: false, allow_mamawette: true, intimacy_level: 'prive' }
-                : { intimacy_level: 'never_publish' };
-        },
-        async classifySingle(action) {
-            if (!this.selected || !this.selected.id || !action) return;
+        async setIntimacy(level) {
+            if (!this.selected || !this.selected.id) return;
             const id = this.selected.id;
             try {
                 const res = await fetch(`/media/${id}/classify`, {
@@ -255,36 +261,18 @@
                         'Content-Type': 'application/json',
                         'Accept': 'application/json',
                     },
-                    body: JSON.stringify({ action }),
+                    body: JSON.stringify({ intimacy_level: level }),
                 });
                 if (!res.ok) throw new Error('HTTP ' + res.status);
                 const result = await res.json();
-                Object.assign(this.selected, {
-                    allow_pdc_vantour: !!result.allow_pdc_vantour,
-                    allow_wildycaro: !!result.allow_wildycaro,
-                    allow_mamawette: !!result.allow_mamawette,
-                    intimacy_level: result.intimacy_level,
-                });
+                this.selected.intimacy_level = result.intimacy_level;
                 const idx = this.items.findIndex(i => i.id === id);
-                if (idx !== -1) Object.assign(this.items[idx], {
-                    allow_pdc_vantour: !!result.allow_pdc_vantour,
-                    allow_wildycaro: !!result.allow_wildycaro,
-                    allow_mamawette: !!result.allow_mamawette,
-                    intimacy_level: result.intimacy_level,
-                });
-                // En vue A classer, on retire la photo de la grille si elle vient d etre classee ;
-                // si on vient au contraire de la marquer comme A classer, on la laisse visible.
-                const params = new URLSearchParams(window.location.search);
-                const isUnclassifiedView = params.get('filter') === 'unclassified' || params.get('pool') === 'unclassified';
-                if (isUnclassifiedView && action !== 'unclassify') {
-                    this.items = this.items.filter(i => i.id !== id);
-                    this.selected = null;
-                }
+                if (idx !== -1) this.items[idx].intimacy_level = result.intimacy_level;
             } catch(e) {
-                alert('Erreur classification : ' + e.message);
+                alert('Erreur visibilité : ' + e.message);
             }
         },
-        async bulkClassify(action) {
+        async bulkSetIntimacy(level) {
             if (this.multiSelected.length === 0) return;
             const ids = [...this.multiSelected];
             try {
@@ -295,19 +283,13 @@
                         'Content-Type': 'application/json',
                         'Accept': 'application/json',
                     },
-                    body: JSON.stringify({ ids, action }),
+                    body: JSON.stringify({ ids, intimacy_level: level }),
                 });
                 if (!res.ok) throw new Error('HTTP ' + res.status);
-                const isUnclassifiedFilter = new URLSearchParams(window.location.search).get('filter') === 'unclassified';
-                if (isUnclassifiedFilter) {
-                    this.items = this.items.filter(i => !ids.includes(i.id));
-                } else {
-                    const update = this.poolUpdateForAction(action);
-                    this.items = this.items.map(i => ids.includes(i.id) ? { ...i, ...update } : i);
-                }
+                this.items = this.items.map(i => ids.includes(i.id) ? { ...i, intimacy_level: level } : i);
                 this.exitMultiSelect();
             } catch(e) {
-                alert('Erreur classification batch : ' + e.message);
+                alert('Erreur visibilité batch : ' + e.message);
             }
         },
         navigateFolder(folderId) {
@@ -318,17 +300,6 @@
                 params.set('folder', folderId);
             }
             params.delete('filter');
-            window.location.href = '{{ route('media.index') }}' + (params.toString() ? '?' + params.toString() : '');
-        },
-        navigatePool(pool) {
-            const params = new URLSearchParams(window.location.search);
-            if (pool === null) {
-                params.delete('pool');
-            } else {
-                params.set('pool', pool);
-            }
-            // L'alias rétro-compat filter=unclassified n'est plus utile dès qu'on pose pool=
-            if (params.get('filter') === 'unclassified') params.delete('filter');
             window.location.href = '{{ route('media.index') }}' + (params.toString() ? '?' + params.toString() : '');
         },
         async bulkDelete() {
@@ -871,6 +842,78 @@
             this.editFolderName = folder.name;
             this.editFolderColor = folder.color;
         },
+        async toggleFolderPrivacy(folder) {
+            const next = !folder.is_private;
+            try {
+                const response = await fetch('/media/folders/' + folder.id, {
+                    method: 'PATCH',
+                    headers: {
+                        'X-CSRF-TOKEN': document.querySelector('meta[name=csrf-token]').getAttribute('content'),
+                        'Content-Type': 'application/json',
+                        'Accept': 'application/json',
+                    },
+                    body: JSON.stringify({ is_private: next }),
+                });
+                if (response.ok) {
+                    folder.is_private = next;
+                } else {
+                    alert('Impossible de changer la visibilité du dossier.');
+                }
+            } catch (e) {
+                alert('Erreur de connexion.');
+            }
+        },
+        async renameSelectedFolder() {
+            const folder = this.currentFolderObj;
+            if (!folder) return;
+            const newName = (this.folderEditName || '').trim();
+            if (newName === '' || newName === folder.name) {
+                this.folderEditName = folder.name; // restaure si vide
+                return;
+            }
+            try {
+                const response = await fetch('/media/folders/' + folder.id, {
+                    method: 'PATCH',
+                    headers: {
+                        'X-CSRF-TOKEN': document.querySelector('meta[name=csrf-token]').getAttribute('content'),
+                        'Content-Type': 'application/json',
+                        'Accept': 'application/json',
+                    },
+                    body: JSON.stringify({ name: newName }),
+                });
+                if (response.ok) {
+                    folder.name = newName;
+                } else {
+                    alert('Impossible de renommer le dossier.');
+                    this.folderEditName = folder.name;
+                }
+            } catch (e) {
+                alert('Erreur de connexion.');
+                this.folderEditName = folder.name;
+            }
+        },
+        async setSelectedFolderColor(color) {
+            const folder = this.currentFolderObj;
+            if (!folder || folder.color === color) return;
+            try {
+                const response = await fetch('/media/folders/' + folder.id, {
+                    method: 'PATCH',
+                    headers: {
+                        'X-CSRF-TOKEN': document.querySelector('meta[name=csrf-token]').getAttribute('content'),
+                        'Content-Type': 'application/json',
+                        'Accept': 'application/json',
+                    },
+                    body: JSON.stringify({ color }),
+                });
+                if (response.ok) {
+                    folder.color = color;
+                } else {
+                    alert('Impossible de changer la couleur.');
+                }
+            } catch (e) {
+                alert('Erreur de connexion.');
+            }
+        },
         async saveFolder(folder) {
             try {
                 const response = await fetch('/media/folders/' + folder.id, {
@@ -1007,15 +1050,15 @@
         {{-- Filters + multi-select --}}
         <div class="flex flex-wrap items-center justify-between gap-4 mb-6">
             <div class="flex items-center gap-2">
-                <a href="{{ route('media.index', array_filter(['folder' => $currentFolder, 'pool' => $currentPool])) }}"
+                <a href="{{ route('media.index', array_filter(['folder' => $currentFolder, 'intimacy' => $currentIntimacy ?? null])) }}"
                    class="px-3 py-1.5 text-sm font-medium rounded-lg transition-colors {{ $filter === 'all' ? 'bg-indigo-600 text-white' : 'bg-white text-gray-600 border border-gray-200 hover:bg-gray-50' }}">
                     Tous
                 </a>
-                <a href="{{ route('media.index', array_filter(['filter' => 'images', 'folder' => $currentFolder, 'pool' => $currentPool])) }}"
+                <a href="{{ route('media.index', array_filter(['filter' => 'images', 'folder' => $currentFolder, 'intimacy' => $currentIntimacy ?? null])) }}"
                    class="px-3 py-1.5 text-sm font-medium rounded-lg transition-colors {{ $filter === 'images' ? 'bg-indigo-600 text-white' : 'bg-white text-gray-600 border border-gray-200 hover:bg-gray-50' }}">
                     Images
                 </a>
-                <a href="{{ route('media.index', array_filter(['filter' => 'videos', 'folder' => $currentFolder, 'pool' => $currentPool])) }}"
+                <a href="{{ route('media.index', array_filter(['filter' => 'videos', 'folder' => $currentFolder, 'intimacy' => $currentIntimacy ?? null])) }}"
                    class="px-3 py-1.5 text-sm font-medium rounded-lg transition-colors {{ $filter === 'videos' ? 'bg-indigo-600 text-white' : 'bg-white text-gray-600 border border-gray-200 hover:bg-gray-50' }}">
                     Videos
                 </a>
@@ -1067,24 +1110,16 @@
                     </button>
                 </div>
 
-                {{-- Action : classer dans un POOL de publication --}}
+                {{-- Action : marquer comme jamais publiable (override par photo) --}}
                 <div class="flex items-center gap-1.5 px-2 py-1 bg-white border border-amber-200 rounded-lg">
-                    <span class="text-[11px] font-medium text-gray-500 uppercase tracking-wide">Pool</span>
-                    <button @click="bulkClassify('pdc_vantour')"
+                    <span class="text-[11px] font-medium text-gray-500 uppercase tracking-wide">Visibilité</span>
+                    <button @click="bulkSetIntimacy('public')"
                             class="px-2.5 py-1 text-xs font-medium bg-emerald-500 hover:bg-emerald-600 text-white rounded">
-                        PdC / Vantour
+                        Suit le dossier
                     </button>
-                    <button @click="bulkClassify('wildycaro')"
-                            class="px-2.5 py-1 text-xs font-medium bg-rose-500 hover:bg-rose-600 text-white rounded">
-                        Wildycaro
-                    </button>
-                    <button @click="bulkClassify('mamawette')"
-                            class="px-2.5 py-1 text-xs font-medium bg-purple-700 hover:bg-purple-800 text-white rounded">
-                        🔒 Mamawette
-                    </button>
-                    <button @click="bulkClassify('never_publish')"
+                    <button @click="bulkSetIntimacy('never_publish')"
                             class="px-2.5 py-1 text-xs font-medium bg-gray-700 hover:bg-gray-800 text-white rounded">
-                        Jamais publier
+                        🚫 Jamais publier
                     </button>
                 </div>
 
@@ -1147,63 +1182,129 @@
                                 <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M12 4.5v15m7.5-7.5h-15" /></svg>
                             </button>
                         </div>
-                        <a href="{{ route('media.index', array_filter(['pool' => $currentPool, 'filter' => $filter !== 'all' ? $filter : null])) }}"
+                        <a href="{{ route('media.index', array_filter(['intimacy' => $currentIntimacy ?? null, 'filter' => $filter !== 'all' ? $filter : null])) }}"
                            class="flex items-center justify-between px-2 py-1.5 rounded-lg text-sm transition-colors {{ ! $currentFolder ? 'bg-indigo-50 text-indigo-700 font-medium' : 'text-gray-600 hover:bg-gray-50' }}">
                             <span>Tous les dossiers</span>
                             <span class="text-xs text-gray-400">{{ $totalCount }}</span>
                         </a>
-                        <a href="{{ route('media.index', array_filter(['pool' => $currentPool, 'filter' => $filter !== 'all' ? $filter : null, 'folder' => 'uncategorized'])) }}"
+                        <a href="{{ route('media.index', array_filter(['intimacy' => $currentIntimacy ?? null, 'filter' => $filter !== 'all' ? $filter : null, 'folder' => 'uncategorized'])) }}"
                            class="flex items-center justify-between px-2 py-1.5 rounded-lg text-sm transition-colors {{ $currentFolder === 'uncategorized' ? 'bg-indigo-50 text-indigo-700 font-medium' : 'text-gray-600 hover:bg-gray-50' }}">
                             <span class="text-gray-500 italic">Sans dossier</span>
                             <span class="text-xs text-gray-400">{{ $uncategorizedCount }}</span>
                         </a>
                         <template x-for="f in folders" :key="f.id">
-                            <div x-show="isFolderVisible(f)" class="flex items-center group rounded-lg hover:bg-gray-50" :style="`padding-left: ${f.depth * 12}px`">
+                            <div x-show="isFolderVisible(f)" class="flex items-center group rounded-lg hover:bg-gray-50" :style="`padding-left: ${f.depth * 8}px`">
                                 <button x-show="f.has_children" @click.stop="toggleFolderOpen(f.id)" type="button"
                                         class="w-4 h-4 flex items-center justify-center text-gray-400 hover:text-gray-700 flex-shrink-0">
                                     <svg class="w-3 h-3 transition-transform" :class="isFolderOpen(f.id) && 'rotate-90'" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="m8.25 4.5 7.5 7.5-7.5 7.5" /></svg>
                                 </button>
                                 <span x-show="!f.has_children" class="w-4 h-4 flex-shrink-0"></span>
-                                <a :href="`{{ route('media.index') }}?folder=${f.id}{{ $currentPool ? '&pool='.urlencode($currentPool) : '' }}{{ $filter !== 'all' ? '&filter='.$filter : '' }}`"
+                                <a :href="`{{ route('media.index') }}?folder=${f.id}{{ ($currentIntimacy ?? null) ? '&intimacy='.urlencode($currentIntimacy) : '' }}{{ $filter !== 'all' ? '&filter='.$filter : '' }}`"
                                    class="flex-1 flex items-center justify-between px-2 py-1.5 rounded-lg text-sm transition-colors min-w-0"
                                    :class="String({{ json_encode($currentFolder) }}) === String(f.id) ? 'bg-indigo-50 text-indigo-700 font-medium' : 'text-gray-600 hover:bg-gray-50'">
                                     <span class="flex items-center gap-2 min-w-0 truncate">
                                         <span class="w-2 h-2 rounded-sm flex-shrink-0" :style="`background-color: ${f.color || '#9ca3af'}`"></span>
                                         <span class="truncate" x-text="f.name"></span>
+                                        <template x-if="f.is_private">
+                                            <svg class="w-3 h-3 text-gray-400 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M16.5 10.5V6.75a4.5 4.5 0 1 0-9 0v3.75m-.75 11.25h10.5a2.25 2.25 0 0 0 2.25-2.25v-6.75a2.25 2.25 0 0 0-2.25-2.25H6.75a2.25 2.25 0 0 0-2.25 2.25v6.75a2.25 2.25 0 0 0 2.25 2.25Z" /></svg>
+                                        </template>
                                     </span>
                                     <span class="text-xs text-gray-400 flex-shrink-0" x-text="f.files_count"></span>
                                 </a>
-                                {{-- Actions au survol : creer sous-dossier + supprimer --}}
+                                {{-- Action au survol : créer sous-dossier (rename / couleur / privé / supprimer dans le panneau d'édition ci-dessous) --}}
                                 <div class="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0 pr-1">
                                     <button type="button" @click.stop="promptCreateFolder(f.id)" :title="'Creer sous-dossier dans ' + f.name"
                                             class="w-5 h-5 flex items-center justify-center rounded text-gray-400 hover:bg-indigo-50 hover:text-indigo-600">
                                         <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M12 4.5v15m7.5-7.5h-15" /></svg>
-                                    </button>
-                                    <button type="button" @click.stop="deleteFolderConfirm = f" :title="'Supprimer ' + f.name"
-                                            class="w-5 h-5 flex items-center justify-center rounded text-gray-400 hover:bg-rose-50 hover:text-rose-600">
-                                        <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="m14.74 9-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 0 1-2.244 2.077H8.084a2.25 2.25 0 0 1-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 0 0-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 0 1 3.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 0 0-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 0 0-7.5 0" /></svg>
                                     </button>
                                 </div>
                             </div>
                         </template>
                     </div>
 
-                    {{-- Pools --}}
-                    <div class="bg-white rounded-2xl border border-gray-100 shadow-sm p-3">
-                        <h3 class="text-[10px] font-semibold uppercase tracking-widest text-gray-400 px-2 pb-2">Pools</h3>
-                        <a href="{{ route('media.index', array_filter(['folder' => $currentFolder, 'filter' => $filter !== 'all' ? $filter : null])) }}"
-                           class="flex items-center justify-between px-2 py-1.5 rounded-lg text-sm transition-colors {{ ! $currentPool ? 'bg-indigo-50 text-indigo-700 font-medium' : 'text-gray-600 hover:bg-gray-50' }}">
-                            <span>Tous</span>
-                            <span class="text-xs text-gray-400">{{ $totalCount }}</span>
-                        </a>
-                        @foreach (['pdc_vantour' => ['PdC / Vantour', 'emerald'], 'wildycaro' => ['Wildycaro', 'rose'], 'mamawette' => ['🔒 Mamawette', 'purple'], 'unclassified' => ['A classer', 'amber'], 'never_publish' => ['Jamais publier', 'gray']] as $slug => $cfg)
-                            <a href="{{ route('media.index', array_filter(['folder' => $currentFolder, 'filter' => $filter !== 'all' ? $filter : null, 'pool' => $slug])) }}"
-                               class="flex items-center justify-between px-2 py-1.5 rounded-lg text-sm transition-colors {{ $currentPool === $slug ? 'bg-indigo-50 text-indigo-700 font-medium' : 'text-gray-600 hover:bg-gray-50' }}">
-                                <span>{{ $cfg[0] }}</span>
-                                <span class="text-xs text-gray-400">{{ $poolCounts[$slug] ?? 0 }}</span>
+                    {{-- Panneau d'édition du dossier sélectionné — sinon filtre transversal "Jamais publier". --}}
+                    <template x-if="currentFolderObj">
+                        <div class="bg-white rounded-2xl border border-gray-100 shadow-sm p-3 space-y-3" x-data="{ confirmDelete: false }" x-effect="if (currentFolderObj && folderEditName !== currentFolderObj.name) folderEditName = currentFolderObj.name">
+                            <h3 class="text-[10px] font-semibold uppercase tracking-widest text-gray-400 px-1">Propriétés du dossier</h3>
+
+                            {{-- Nom (rename inline + bouton ✓ visible quand modifié, save aussi sur Enter) --}}
+                            <div>
+                                <label class="text-[10px] text-gray-400 block mb-1 px-1">Nom</label>
+                                <div class="flex items-center gap-1">
+                                    <input type="text" x-model="folderEditName"
+                                           @keydown.enter.prevent="renameSelectedFolder()"
+                                           class="flex-1 text-sm border border-gray-200 rounded-lg px-2.5 py-1.5 focus:border-indigo-400 focus:ring-1 focus:ring-indigo-400">
+                                    <button type="button" @click="renameSelectedFolder()"
+                                            :disabled="!folderEditName.trim() || folderEditName.trim() === currentFolderObj.name"
+                                            class="px-2 py-1 text-xs rounded-md transition-colors disabled:opacity-30 disabled:cursor-not-allowed bg-indigo-600 text-white hover:bg-indigo-700"
+                                            title="Valider le nouveau nom">
+                                        ✓
+                                    </button>
+                                </div>
+                            </div>
+
+                            {{-- Palette de 15 couleurs (3 rangées de 5) — rendue côté Blade pour éviter les quirks x-for/x-if --}}
+                            <div>
+                                <label class="text-[10px] text-gray-400 block mb-1 px-1">Couleur</label>
+                                <div class="grid gap-1.5 px-1" style="grid-template-columns: repeat(8, minmax(0, 1fr));">
+                                    @foreach ($folderPalette as $c)
+                                        <button type="button" @click="setSelectedFolderColor('{{ $c }}')" title="{{ $c }}"
+                                                class="w-4 h-4 rounded-full border-2 transition-all"
+                                                :class="(currentFolderObj.color || '#9ca3af').toLowerCase() === '{{ strtolower($c) }}' ? 'border-gray-900 scale-110' : 'border-transparent hover:scale-110'"
+                                                style="background-color: {{ $c }};"></button>
+                                    @endforeach
+                                </div>
+                            </div>
+
+                            {{-- Toggle privé --}}
+                            <label class="flex items-center gap-2 cursor-pointer px-1">
+                                <input type="checkbox" :checked="currentFolderObj.is_private"
+                                       @change="toggleFolderPrivacy(currentFolderObj)"
+                                       class="rounded border-gray-300 text-indigo-600 focus:ring-indigo-400">
+                                <span class="text-xs text-gray-700">🔒 Dossier privé (jamais via API)</span>
+                            </label>
+
+                            {{-- Suppression (les photos passent en "Sans dossier", pas supprimées) --}}
+                            <div class="pt-2 border-t border-gray-100">
+                                <template x-if="!confirmDelete">
+                                    <button type="button" @click="confirmDelete = true"
+                                            class="w-full text-xs text-rose-600 hover:bg-rose-50 px-2 py-1.5 rounded-lg transition-colors">
+                                        Supprimer ce dossier
+                                    </button>
+                                </template>
+                                <template x-if="confirmDelete">
+                                    <div class="space-y-1.5">
+                                        <p class="text-[10px] text-gray-600 px-1">
+                                            Les <span x-text="currentFolderObj.files_count"></span> photo(s) deviendront « Sans dossier ». Confirmer ?
+                                        </p>
+                                        <div class="flex gap-1">
+                                            <button type="button" @click="confirmDelete = false"
+                                                    class="flex-1 text-xs text-gray-600 hover:bg-gray-100 px-2 py-1.5 rounded-lg">Annuler</button>
+                                            <button type="button" @click="deleteFolder(currentFolderObj); confirmDelete = false"
+                                                    class="flex-1 text-xs bg-rose-600 text-white hover:bg-rose-700 px-2 py-1.5 rounded-lg">Supprimer</button>
+                                        </div>
+                                    </div>
+                                </template>
+                            </div>
+                        </div>
+                    </template>
+
+                    {{-- Filtre transversal "Jamais publier" — visible quand aucun dossier sélectionné. --}}
+                    <template x-if="!currentFolderObj">
+                        <div class="bg-white rounded-2xl border border-gray-100 shadow-sm p-3">
+                            <h3 class="text-[10px] font-semibold uppercase tracking-widest text-gray-400 px-2 pb-2">Filtres</h3>
+                            <a href="{{ route('media.index', array_filter(['folder' => $currentFolder, 'filter' => $filter !== 'all' ? $filter : null])) }}"
+                               class="flex items-center justify-between px-2 py-1.5 rounded-lg text-sm transition-colors {{ ! ($currentIntimacy ?? null) ? 'bg-indigo-50 text-indigo-700 font-medium' : 'text-gray-600 hover:bg-gray-50' }}">
+                                <span>Tous</span>
+                                <span class="text-xs text-gray-400">{{ $totalCount }}</span>
                             </a>
-                        @endforeach
-                    </div>
+                            <a href="{{ route('media.index', array_filter(['folder' => $currentFolder, 'filter' => $filter !== 'all' ? $filter : null, 'intimacy' => 'never_publish'])) }}"
+                               class="flex items-center justify-between px-2 py-1.5 rounded-lg text-sm transition-colors {{ ($currentIntimacy ?? null) === 'never_publish' ? 'bg-indigo-50 text-indigo-700 font-medium' : 'text-gray-600 hover:bg-gray-50' }}">
+                                <span>🚫 Jamais publier</span>
+                                <span class="text-xs text-gray-400">{{ $neverPublishCount ?? 0 }}</span>
+                            </a>
+                        </div>
+                    </template>
                 </div>
             </aside>
 
@@ -1415,7 +1516,9 @@
                                     {{-- Filename --}}
                                     <h3 class="text-sm font-semibold text-gray-900 break-all" x-text="selected.filename"></h3>
 
-                                    {{-- Folder + Pool selectors (côte à côte) --}}
+                                    {{-- Dossier + intimacy override (côte à côte). La visibilité API
+                                         dépend du dossier (is_private) ; intimacy_level=never_publish
+                                         surclasse pour cette photo précise. --}}
                                     <div class="grid grid-cols-2 gap-2">
                                         <div>
                                             <label class="text-xs text-gray-400 block mb-1">Dossier</label>
@@ -1423,20 +1526,18 @@
                                                     class="w-full text-sm border border-gray-200 rounded-lg px-2.5 py-1.5 focus:border-indigo-400 focus:ring-1 focus:ring-indigo-400">
                                                 <option value="" :selected="!selected.folder_id">Non classé</option>
                                                 <template x-for="folder in folders" :key="folder.id">
-                                                    <option :value="folder.id" :selected="selected.folder_id == folder.id" x-text="folder.path || folder.name"></option>
+                                                    <option :value="folder.id" :selected="selected.folder_id == folder.id"
+                                                            x-text="(folder.is_private ? '🔒 ' : '') + (folder.path || folder.name)"></option>
                                                 </template>
                                             </select>
                                         </div>
                                         <template x-if="selected.is_image">
                                             <div>
-                                                <label class="text-xs text-gray-400 block mb-1">Pool</label>
-                                                <select @change="classifySingle($event.target.value)"
+                                                <label class="text-xs text-gray-400 block mb-1">Visibilité photo</label>
+                                                <select @change="setIntimacy($event.target.value)"
                                                         class="w-full text-sm border border-gray-200 rounded-lg px-2.5 py-1.5 focus:border-indigo-400 focus:ring-1 focus:ring-indigo-400">
-                                                    <option value="unclassify" :selected="!selected.allow_pdc_vantour && !selected.allow_wildycaro && !selected.allow_mamawette && selected.intimacy_level !== 'never_publish'">— À classer —</option>
-                                                    <option value="pdc_vantour" :selected="selected.allow_pdc_vantour">PdC / Vantour</option>
-                                                    <option value="wildycaro" :selected="selected.allow_wildycaro">Wildycaro</option>
-                                                    <option value="mamawette" :selected="selected.allow_mamawette">🔒 Mamawette</option>
-                                                    <option value="never_publish" :selected="selected.intimacy_level === 'never_publish'">Jamais publier</option>
+                                                    <option value="public" :selected="selected.intimacy_level === 'public' || !selected.intimacy_level">Suit le dossier</option>
+                                                    <option value="never_publish" :selected="selected.intimacy_level === 'never_publish'">🚫 Jamais publier</option>
                                                 </select>
                                             </div>
                                         </template>
@@ -1590,31 +1691,22 @@
 
                                             {{-- IA Vision : deplacee dans la sidebar gauche --}}
 
-                                            {{-- Pool / Intimacy --}}
-                                            <div class="grid grid-cols-2 gap-2 text-xs">
-                                                <div>
-                                                    <span class="text-[10px] text-gray-400 block mb-1">Pool</span>
-                                                    <div class="flex flex-wrap gap-1">
-                                                        <template x-if="selected.allow_pdc_vantour">
-                                                            <span class="bg-emerald-100 text-emerald-800 text-[10px] px-2 py-0.5 rounded font-medium">PdC / Vantour</span>
-                                                        </template>
-                                                        <template x-if="selected.allow_wildycaro">
-                                                            <span class="bg-rose-100 text-rose-800 text-[10px] px-2 py-0.5 rounded font-medium">Wildycaro</span>
-                                                        </template>
-                                                        <template x-if="selected.allow_mamawette">
-                                                            <span class="bg-purple-100 text-purple-900 text-[10px] px-2 py-0.5 rounded font-medium">🔒 Mamawette</span>
-                                                        </template>
-                                                        <template x-if="!selected.allow_pdc_vantour && !selected.allow_wildycaro && !selected.allow_mamawette && selected.intimacy_level !== 'never_publish'">
-                                                            <span class="bg-amber-100 text-amber-800 text-[10px] px-2 py-0.5 rounded font-medium">À classer</span>
-                                                        </template>
-                                                        <template x-if="selected.intimacy_level === 'never_publish'">
-                                                            <span class="bg-gray-700 text-white text-[10px] px-2 py-0.5 rounded font-medium">Jamais publier</span>
-                                                        </template>
-                                                    </div>
-                                                </div>
-                                                <div>
-                                                    <span class="text-[10px] text-gray-400 block mb-1">Intimacy</span>
-                                                    <span class="text-gray-700 font-medium text-[11px]" x-text="selected.intimacy_level || '—'"></span>
+                                            {{-- Visibilité (héritée du dossier + override par photo) --}}
+                                            <div>
+                                                <span class="text-[10px] text-gray-400 block mb-1">Visibilité</span>
+                                                <div class="flex flex-wrap gap-1">
+                                                    <template x-if="selected.intimacy_level === 'never_publish'">
+                                                        <span class="bg-gray-700 text-white text-[10px] px-2 py-0.5 rounded font-medium">🚫 Jamais publier</span>
+                                                    </template>
+                                                    <template x-if="selected.intimacy_level !== 'never_publish' && selected.folder_is_private">
+                                                        <span class="bg-purple-100 text-purple-900 text-[10px] px-2 py-0.5 rounded font-medium">🔒 Dossier privé</span>
+                                                    </template>
+                                                    <template x-if="selected.intimacy_level !== 'never_publish' && !selected.folder_is_private && selected.folder_id">
+                                                        <span class="bg-emerald-100 text-emerald-800 text-[10px] px-2 py-0.5 rounded font-medium">Visible via API</span>
+                                                    </template>
+                                                    <template x-if="!selected.folder_id">
+                                                        <span class="bg-amber-100 text-amber-800 text-[10px] px-2 py-0.5 rounded font-medium">Sans dossier</span>
+                                                    </template>
                                                 </div>
                                             </div>
 
