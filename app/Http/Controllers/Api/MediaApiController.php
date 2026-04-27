@@ -511,6 +511,31 @@ class MediaApiController extends Controller
     }
 
     /**
+     * GET /api/media/folders — liste tous les dossiers (publics + privés) pour le pipeline Mac.
+     * Le pipeline est authentifié Sanctum (trusted), il a besoin de la liste complète pour
+     * proposer un choix interactif et résoudre slug → folder_id en mode legacy.
+     * Les dossiers privés sont marqués `is_private: true` pour que le script affiche un cadenas.
+     */
+    public function folders(Request $request): JsonResponse
+    {
+        $folders = MediaFolder::ordered()->get(['id', 'slug', 'name', 'parent_id', 'is_private', 'sort_order']);
+
+        $items = $folders->map(fn (MediaFolder $f) => [
+            'id' => $f->id,
+            'slug' => $f->slug,
+            'name' => $f->name,
+            'path' => $f->pathLabel(),
+            'parent_id' => $f->parent_id,
+            'is_private' => $f->is_private,
+        ])->values();
+
+        return response()->json([
+            'count' => $items->count(),
+            'folders' => $items,
+        ]);
+    }
+
+    /**
      * POST /api/media/{id}/enrich — pose les métadonnées IA sur une photo legacy.
      */
     public function enrich(Request $request, MediaFile $media): JsonResponse

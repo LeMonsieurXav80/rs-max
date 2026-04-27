@@ -54,8 +54,9 @@ Route::middleware('auth:sanctum')->group(function () {
     // ── Catalogue média (pipeline Mac + recherche sémantique) ──
     Route::post('/media/ingest', [MediaApiController::class, 'ingest']);
     Route::get('/media/search', [MediaApiController::class, 'search']);
+    Route::get('/media/folders', [MediaApiController::class, 'folders']);
     Route::get('/media/pending-analysis', [MediaApiController::class, 'pendingAnalysis']);
-    Route::get('/media/{media}', [MediaApiController::class, 'show']); // après /search et /pending-analysis pour ne pas les capturer
+    Route::get('/media/{media}', [MediaApiController::class, 'show']); // après /search, /folders et /pending-analysis pour ne pas les capturer
     Route::post('/media/{media}/validate', [MediaApiController::class, 'validateMedia']);
     Route::post('/media/{media}/enrich', [MediaApiController::class, 'enrich']);
     Route::post('/media/{media}/mark-published', [MediaApiController::class, 'markPublished']);
