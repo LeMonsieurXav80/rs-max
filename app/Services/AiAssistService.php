@@ -620,7 +620,7 @@ TXT;
      * Utilise le persona + son contexte bot specifique au type detecte.
      * Choisit automatiquement un modele vision si $imageUrl fourni.
      *
-     * @param  Persona  $persona  Le persona du compte social (doit avoir bot_enabled=true)
+     * @param  Persona  $persona  Le persona du compte social (doit avoir au moins un bot_comment_context_* rempli)
      * @param  string  $postKind  'article' | 'text' | 'image'
      * @param  string  $postContent  Texte du post a commenter
      * @param  string|null  $imageUrl  URL d'une image visible dans le post (declenche vision)

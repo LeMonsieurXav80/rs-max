@@ -78,6 +78,47 @@
                        class="rounded border-gray-300 text-indigo-600 shadow-sm focus:ring-indigo-500">
                 <label for="is_active" class="text-sm font-medium text-gray-700">Persona actif</label>
             </div>
+
+            <hr class="border-gray-100">
+
+            {{-- Commentaires bot automatiques --}}
+            <div>
+                <h3 class="text-sm font-semibold text-gray-900">Commentaires bot automatiques</h3>
+                <p class="text-xs text-gray-500 mt-1">Remplis un ou plusieurs contextes ci-dessous pour activer les commentaires bot. Si un contexte est vide pour un type de post (texte / article / image), le bot ne commentera pas ce type.</p>
+
+                <div class="mt-4 space-y-4">
+                    <div>
+                        <label for="bot_comment_max_length" class="block text-sm font-medium text-gray-700 mb-1">Longueur max d'un commentaire (caracteres)</label>
+                        <input type="number" name="bot_comment_max_length" id="bot_comment_max_length"
+                               value="{{ old('bot_comment_max_length', 280) }}"
+                               min="50" max="1000"
+                               class="w-32 rounded-xl border-gray-300 shadow-sm focus:border-emerald-500 focus:ring-emerald-500 text-sm">
+                        <p class="text-xs text-gray-500 mt-1">300 pour Bluesky, 280 pour Twitter, plus libre ailleurs.</p>
+                    </div>
+
+                    <div>
+                        <label for="bot_comment_context_text" class="block text-sm font-medium text-gray-700 mb-1">Contexte — post texte seul</label>
+                        <textarea name="bot_comment_context_text" id="bot_comment_context_text" rows="3"
+                                  placeholder="Ex: Reagis avec une question pertinente ou une opinion engageante. Reste authentique."
+                                  class="w-full rounded-xl border-gray-300 shadow-sm focus:border-emerald-500 focus:ring-emerald-500 text-sm">{{ old('bot_comment_context_text') }}</textarea>
+                    </div>
+
+                    <div>
+                        <label for="bot_comment_context_article" class="block text-sm font-medium text-gray-700 mb-1">Contexte — post avec lien article</label>
+                        <textarea name="bot_comment_context_article" id="bot_comment_context_article" rows="3"
+                                  placeholder="Ex: Commente le sujet de l'article (sans le resumer). Apporte un point de vue ou une experience."
+                                  class="w-full rounded-xl border-gray-300 shadow-sm focus:border-emerald-500 focus:ring-emerald-500 text-sm">{{ old('bot_comment_context_article') }}</textarea>
+                    </div>
+
+                    <div>
+                        <label for="bot_comment_context_image" class="block text-sm font-medium text-gray-700 mb-1">Contexte — post avec image (vision)</label>
+                        <textarea name="bot_comment_context_image" id="bot_comment_context_image" rows="3"
+                                  placeholder="Ex: Reagis a ce que tu vois sur l'image. Decris un detail concret avant de commenter."
+                                  class="w-full rounded-xl border-gray-300 shadow-sm focus:border-emerald-500 focus:ring-emerald-500 text-sm">{{ old('bot_comment_context_image') }}</textarea>
+                        <p class="text-xs text-gray-500 mt-1">Necessite un modele vision (Llama 4, Pixtral, Gemini Flash...) configure dans Reglages → IA Gratuite.</p>
+                    </div>
+                </div>
+            </div>
         </div>
 
         {{-- Submit --}}
