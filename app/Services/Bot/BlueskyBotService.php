@@ -2,11 +2,12 @@
 
 namespace App\Services\Bot;
 
-use Carbon\Carbon;
 use App\Models\BotActionLog;
 use App\Models\BotSearchTerm;
 use App\Models\Setting;
 use App\Models\SocialAccount;
+use App\Services\AiAssistService;
+use Carbon\Carbon;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
@@ -18,6 +19,11 @@ class BlueskyBotService
     private const PUBLIC_API = 'https://public.api.bsky.app';
 
     private ?int $currentAccountId = null;
+
+    public function __construct(private ?AiAssistService $ai = null)
+    {
+        $this->ai ??= app(AiAssistService::class);
+    }
 
     public function runForAccount(SocialAccount $account): array
     {
@@ -33,8 +39,9 @@ class BlueskyBotService
         $totalLikes = 0;
         $termsProcessed = 0;
 
-        // 1. Search terms: like posts + replies
+        // 1. Search terms: like posts + replies (purpose=likes)
         $terms = BotSearchTerm::where('social_account_id', $account->id)
+            ->purpose(BotSearchTerm::PURPOSE_LIKES)
             ->where('is_active', true)
             ->get();
 
@@ -75,6 +82,43 @@ class BlueskyBotService
             $unfollows = $this->unfollowNonFollowers($account, $auth);
         }
 
+        // 6. Comments par mots-cles (necessite un Persona avec au moins un contexte de commentaire)
+        $commentsPosted = 0;
+        if (! $this->shouldStop() && Setting::get("bot_comments_keyword_bluesky_{$account->id}") === '1') {
+            $persona = $account->persona;
+            if ($persona && $persona->hasBotComments()) {
+                $commentTerms = BotSearchTerm::where('social_account_id', $account->id)
+                    ->purpose(BotSearchTerm::PURPOSE_COMMENTS)
+                    ->where('is_active', true)
+                    ->get();
+                foreach ($commentTerms as $term) {
+                    if ($this->shouldStop()) {
+                        break;
+                    }
+                    $commentsPosted += $this->processCommentSearchTerm($account, $auth, $term);
+                    $term->update(['last_run_at' => now()]);
+                }
+            } else {
+                Log::info('BlueskyBotService: comments skipped — persona missing or no bot_comment_context_* filled', ['account_id' => $account->id]);
+            }
+        }
+
+        // 7. Follow par mots-cles
+        $followsKeyword = 0;
+        if (! $this->shouldStop() && Setting::get("bot_follow_keyword_bluesky_{$account->id}") === '1') {
+            $followTerms = BotSearchTerm::where('social_account_id', $account->id)
+                ->purpose(BotSearchTerm::PURPOSE_FOLLOW)
+                ->where('is_active', true)
+                ->get();
+            foreach ($followTerms as $term) {
+                if ($this->shouldStop()) {
+                    break;
+                }
+                $followsKeyword += $this->processFollowSearchTerm($account, $auth, $term);
+                $term->update(['last_run_at' => now()]);
+            }
+        }
+
         return [
             'total_likes' => $totalLikes,
             'terms_processed' => $termsProcessed,
@@ -82,6 +126,8 @@ class BlueskyBotService
             'comment_likes' => $commentLikes,
             'feed_likes' => $feedLikes,
             'unfollows' => $unfollows,
+            'comments_posted' => $commentsPosted,
+            'follows_keyword' => $followsKeyword,
         ];
     }
 
@@ -139,7 +185,7 @@ class BlueskyBotService
 
     private function searchPosts(string $query, int $limit = 10): array
     {
-        $response = Http::get(self::PUBLIC_API . '/xrpc/app.bsky.feed.searchPosts', [
+        $response = Http::get(self::PUBLIC_API.'/xrpc/app.bsky.feed.searchPosts', [
             'q' => $query,
             'sort' => 'top',
             'limit' => min($limit, 50),
@@ -159,7 +205,7 @@ class BlueskyBotService
 
     private function likePostReplies(SocialAccount $account, array $auth, string $postUri, string $searchTerm): int
     {
-        $response = Http::get(self::PUBLIC_API . '/xrpc/app.bsky.feed.getPostThread', [
+        $response = Http::get(self::PUBLIC_API.'/xrpc/app.bsky.feed.getPostThread', [
             'uri' => $postUri,
             'depth' => 2,
             'parentHeight' => 0,
@@ -210,7 +256,7 @@ class BlueskyBotService
 
     private function followIfHighFollowing(SocialAccount $account, array $auth, string $did, string $handle): void
     {
-        $response = Http::get(self::PUBLIC_API . '/xrpc/app.bsky.actor.getProfile', [
+        $response = Http::get(self::PUBLIC_API.'/xrpc/app.bsky.actor.getProfile', [
             'actor' => $did,
         ]);
 
@@ -247,7 +293,7 @@ class BlueskyBotService
     private function followActor(array $auth, string $did): bool
     {
         $response = Http::withToken($auth['accessJwt'])
-            ->post(self::PDS_BASE . '/xrpc/com.atproto.repo.createRecord', [
+            ->post(self::PDS_BASE.'/xrpc/com.atproto.repo.createRecord', [
                 'repo' => $auth['did'],
                 'collection' => 'app.bsky.graph.follow',
                 'record' => [
@@ -275,7 +321,7 @@ class BlueskyBotService
     private function processLikeback(SocialAccount $account, array $auth): int
     {
         // Fetch our recent posts
-        $response = Http::get(self::PUBLIC_API . '/xrpc/app.bsky.feed.getAuthorFeed', [
+        $response = Http::get(self::PUBLIC_API.'/xrpc/app.bsky.feed.getAuthorFeed', [
             'actor' => $auth['did'],
             'limit' => 15,
         ]);
@@ -295,7 +341,7 @@ class BlueskyBotService
             }
 
             $postUri = $post['uri'];
-            $likesResponse = Http::get(self::PUBLIC_API . '/xrpc/app.bsky.feed.getLikes', [
+            $likesResponse = Http::get(self::PUBLIC_API.'/xrpc/app.bsky.feed.getLikes', [
                 'uri' => $postUri,
                 'limit' => 20,
             ]);
@@ -339,7 +385,7 @@ class BlueskyBotService
 
     private function likeRecentPostsOf(SocialAccount $account, array $auth, string $did, string $handle): int
     {
-        $response = Http::get(self::PUBLIC_API . '/xrpc/app.bsky.feed.getAuthorFeed', [
+        $response = Http::get(self::PUBLIC_API.'/xrpc/app.bsky.feed.getAuthorFeed', [
             'actor' => $did,
             'limit' => 5,
         ]);
@@ -400,7 +446,7 @@ class BlueskyBotService
 
     private function likeOwnPostComments(SocialAccount $account, array $auth): int
     {
-        $response = Http::get(self::PUBLIC_API . '/xrpc/app.bsky.feed.getAuthorFeed', [
+        $response = Http::get(self::PUBLIC_API.'/xrpc/app.bsky.feed.getAuthorFeed', [
             'actor' => $auth['did'],
             'limit' => 20,
         ]);
@@ -434,7 +480,7 @@ class BlueskyBotService
             }
 
             // Fetch thread to get replies
-            $threadResponse = Http::get(self::PUBLIC_API . '/xrpc/app.bsky.feed.getPostThread', [
+            $threadResponse = Http::get(self::PUBLIC_API.'/xrpc/app.bsky.feed.getPostThread', [
                 'uri' => $post['uri'],
                 'depth' => 2,
                 'parentHeight' => 0,
@@ -499,7 +545,7 @@ class BlueskyBotService
     private function likeRandomFeedPosts(SocialAccount $account, array $auth): int
     {
         $response = Http::withToken($auth['accessJwt'])
-            ->get(self::PDS_BASE . '/xrpc/app.bsky.feed.getTimeline', [
+            ->get(self::PDS_BASE.'/xrpc/app.bsky.feed.getTimeline', [
                 'limit' => 50,
             ]);
 
@@ -640,6 +686,7 @@ class BlueskyBotService
             // If we have a follow date and it's within the grace period, skip
             if ($followedAt && $followedAt->greaterThan($graceLimit)) {
                 $skippedGrace++;
+
                 continue;
             }
 
@@ -727,7 +774,7 @@ class BlueskyBotService
                 $params['cursor'] = $cursor;
             }
 
-            $response = Http::get(self::PUBLIC_API . $endpoint, $params);
+            $response = Http::get(self::PUBLIC_API.$endpoint, $params);
             if (! $response->successful()) {
                 break;
             }
@@ -769,7 +816,7 @@ class BlueskyBotService
             }
 
             $response = Http::withToken($auth['accessJwt'])
-                ->get(self::PDS_BASE . '/xrpc/com.atproto.repo.listRecords', $params);
+                ->get(self::PDS_BASE.'/xrpc/com.atproto.repo.listRecords', $params);
 
             if (! $response->successful()) {
                 return null;
@@ -804,7 +851,7 @@ class BlueskyBotService
         }
 
         $response = Http::withToken($auth['accessJwt'])
-            ->post(self::PDS_BASE . '/xrpc/com.atproto.repo.deleteRecord', [
+            ->post(self::PDS_BASE.'/xrpc/com.atproto.repo.deleteRecord', [
                 'repo' => $auth['did'],
                 'collection' => $collection,
                 'rkey' => $rkey,
@@ -823,12 +870,276 @@ class BlueskyBotService
         return true;
     }
 
+    // ─── 6. Comments par mots-cles ───────────────────────────────────
+
+    /**
+     * Pour un terme de recherche (purpose=comments), poste un commentaire IA
+     * adapte au type de post (article / texte / image) en utilisant le persona
+     * du compte (avec ses bot_comment_context_*).
+     */
+    private function processCommentSearchTerm(SocialAccount $account, array $auth, BotSearchTerm $term): int
+    {
+        $persona = $account->persona;
+        if (! $persona || ! $persona->hasBotComments()) {
+            return 0;
+        }
+
+        $maxPerRun = $term->effectiveMaxPerRun();
+        $globalCap = (int) Setting::get("bot_comments_max_per_run_bluesky_{$account->id}", 3);
+        $limit = min($maxPerRun, $globalCap);
+
+        if ($limit <= 0) {
+            return 0;
+        }
+
+        $posts = $this->searchPosts($term->term, $limit * 3); // marge pour filtrer
+        if (empty($posts)) {
+            return 0;
+        }
+
+        $posted = 0;
+        foreach ($posts as $post) {
+            if ($this->shouldStop() || $posted >= $limit) {
+                break;
+            }
+
+            $postUri = $post['uri'] ?? null;
+            $postCid = $post['cid'] ?? null;
+            $authorDid = $post['author']['did'] ?? null;
+
+            if (! $postUri || ! $postCid || $authorDid === $auth['did']) {
+                continue;
+            }
+
+            // Skip si on a deja commente ce post
+            if ($this->alreadyActioned($account->id, "comment:{$postUri}")) {
+                continue;
+            }
+
+            $record = $post['record'] ?? [];
+            $kind = $this->detectPostKind($post);
+
+            // Pas de contexte rempli pour ce type de post -> on skip
+            if (! $persona->botContextFor($kind)) {
+                continue;
+            }
+
+            $imageUrl = $kind === 'image' ? $this->extractImageUrl($post) : null;
+            $postText = $record['text'] ?? '';
+            $authorHandle = $post['author']['handle'] ?? null;
+
+            $comment = $this->ai->generateBotComment(
+                $persona,
+                $kind,
+                $postText,
+                $imageUrl,
+                $authorHandle
+            );
+
+            if (! $comment) {
+                Log::warning('BlueskyBotService: comment generation failed', [
+                    'account_id' => $account->id,
+                    'post_uri' => $postUri,
+                    'kind' => $kind,
+                ]);
+
+                continue;
+            }
+
+            // Tronque a la limite Bluesky (300 caracteres) en plus de la limite persona
+            $platformLimit = (int) Setting::get('platform_char_limit_bluesky', 300);
+            if (mb_strlen($comment) > $platformLimit) {
+                $comment = mb_substr($comment, 0, $platformLimit - 1).'…';
+            }
+
+            $success = $this->replyToPost($auth, $postUri, $postCid, $comment);
+            $this->logAction(
+                $account,
+                'comment_keyword',
+                "comment:{$postUri}",
+                $post,
+                $term->term,
+                $success,
+                $success ? null : 'reply API failed'
+            );
+
+            if ($success) {
+                $posted++;
+                usleep(800_000); // 800ms entre commentaires
+            }
+        }
+
+        return $posted;
+    }
+
+    // ─── 7. Follow par mots-cles ─────────────────────────────────────
+
+    /**
+     * Pour un terme de recherche (purpose=follow), follow les auteurs de posts matchant.
+     * Skip les comptes deja suivis et ceux deja actionnes.
+     */
+    private function processFollowSearchTerm(SocialAccount $account, array $auth, BotSearchTerm $term): int
+    {
+        $maxPerRun = $term->effectiveMaxPerRun();
+        $globalCap = (int) Setting::get("bot_follow_max_bluesky_{$account->id}", 5);
+        $limit = min($maxPerRun, $globalCap);
+
+        if ($limit <= 0) {
+            return 0;
+        }
+
+        $posts = $this->searchPosts($term->term, $limit * 4);
+        if (empty($posts)) {
+            return 0;
+        }
+
+        $followed = 0;
+        $seenDids = [];
+
+        foreach ($posts as $post) {
+            if ($this->shouldStop() || $followed >= $limit) {
+                break;
+            }
+
+            $authorDid = $post['author']['did'] ?? null;
+            $authorHandle = $post['author']['handle'] ?? null;
+
+            if (! $authorDid || $authorDid === $auth['did'] || isset($seenDids[$authorDid])) {
+                continue;
+            }
+            $seenDids[$authorDid] = true;
+
+            // Skip si deja actionne (evite re-follow)
+            if ($this->alreadyActioned($account->id, "follow:{$authorDid}")) {
+                continue;
+            }
+
+            // Verifie qu'on ne suit pas deja
+            $profile = Http::get(self::PUBLIC_API.'/xrpc/app.bsky.actor.getProfile', ['actor' => $authorDid]);
+            if ($profile->successful() && $profile->json('viewer.following')) {
+                continue;
+            }
+
+            $success = $this->followActor($auth, $authorDid);
+
+            BotActionLog::create([
+                'social_account_id' => $account->id,
+                'action_type' => 'follow_keyword',
+                'target_uri' => "follow:{$authorDid}",
+                'target_author' => $authorHandle,
+                'target_text' => mb_substr($post['record']['text'] ?? '', 0, 200),
+                'search_term' => $term->term,
+                'success' => $success,
+            ]);
+
+            if ($success) {
+                $followed++;
+                usleep(500_000);
+            }
+        }
+
+        return $followed;
+    }
+
+    /**
+     * Detecte le type de contenu d'un post Bluesky pour adapter le prompt IA.
+     * Retourne 'image' | 'article' | 'text'.
+     */
+    public function detectPostKind(array $post): string
+    {
+        $embed = $post['embed'] ?? $post['record']['embed'] ?? null;
+        if (! is_array($embed)) {
+            return 'text';
+        }
+
+        $type = $embed['$type'] ?? '';
+
+        if (str_contains($type, 'app.bsky.embed.images')) {
+            return 'image';
+        }
+        if (str_contains($type, 'app.bsky.embed.video')) {
+            return 'image'; // traite comme media (vision peut analyser le frame initial)
+        }
+        if (str_contains($type, 'app.bsky.embed.external')) {
+            return 'article';
+        }
+        if (str_contains($type, 'app.bsky.embed.recordWithMedia')) {
+            $media = $embed['media'] ?? [];
+            $mediaType = $media['$type'] ?? '';
+            if (str_contains($mediaType, 'images') || str_contains($mediaType, 'video')) {
+                return 'image';
+            }
+        }
+
+        return 'text';
+    }
+
+    /**
+     * Extrait la premiere URL d'image visible d'un post (utilisee pour vision).
+     */
+    public function extractImageUrl(array $post): ?string
+    {
+        $embed = $post['embed'] ?? null;
+        if (! is_array($embed)) {
+            return null;
+        }
+
+        // Vue feed : embed.images[].fullsize / .thumb
+        if (isset($embed['images'][0]['fullsize'])) {
+            return $embed['images'][0]['fullsize'];
+        }
+        if (isset($embed['images'][0]['thumb'])) {
+            return $embed['images'][0]['thumb'];
+        }
+
+        // recordWithMedia
+        if (isset($embed['media']['images'][0]['fullsize'])) {
+            return $embed['media']['images'][0]['fullsize'];
+        }
+
+        return null;
+    }
+
+    /**
+     * Poste un reply sur un post existant. Le post racine est le post commente
+     * (suffisant pour les top-level replies, qui couvrent notre cas d'usage).
+     */
+    private function replyToPost(array $auth, string $parentUri, string $parentCid, string $text): bool
+    {
+        $response = Http::withToken($auth['accessJwt'])
+            ->post(self::PDS_BASE.'/xrpc/com.atproto.repo.createRecord', [
+                'repo' => $auth['did'],
+                'collection' => 'app.bsky.feed.post',
+                'record' => [
+                    '$type' => 'app.bsky.feed.post',
+                    'text' => $text,
+                    'createdAt' => now()->toIso8601ZuluString(),
+                    'reply' => [
+                        'root' => ['uri' => $parentUri, 'cid' => $parentCid],
+                        'parent' => ['uri' => $parentUri, 'cid' => $parentCid],
+                    ],
+                ],
+            ]);
+
+        if (! $response->successful()) {
+            Log::warning('BlueskyBotService: reply failed', [
+                'parent_uri' => $parentUri,
+                'status' => $response->status(),
+                'error' => $response->json('message'),
+            ]);
+
+            return false;
+        }
+
+        return true;
+    }
+
     // ─── Common helpers ──────────────────────────────────────────────
 
     private function likeRecord(array $auth, string $uri, string $cid): bool
     {
         $response = Http::withToken($auth['accessJwt'])
-            ->post(self::PDS_BASE . '/xrpc/com.atproto.repo.createRecord', [
+            ->post(self::PDS_BASE.'/xrpc/com.atproto.repo.createRecord', [
                 'repo' => $auth['did'],
                 'collection' => 'app.bsky.feed.like',
                 'record' => [
@@ -888,7 +1199,7 @@ class BlueskyBotService
 
         if ($refreshJwt) {
             $response = Http::withToken($refreshJwt)
-                ->post(self::PDS_BASE . '/xrpc/com.atproto.server.refreshSession');
+                ->post(self::PDS_BASE.'/xrpc/com.atproto.server.refreshSession');
 
             if ($response->successful()) {
                 $data = $response->json();
@@ -904,7 +1215,7 @@ class BlueskyBotService
             }
         }
 
-        $response = Http::post(self::PDS_BASE . '/xrpc/com.atproto.server.createSession', [
+        $response = Http::post(self::PDS_BASE.'/xrpc/com.atproto.server.createSession', [
             'identifier' => $credentials['handle'],
             'password' => $credentials['app_password'],
         ]);

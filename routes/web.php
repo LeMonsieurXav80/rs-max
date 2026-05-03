@@ -2,7 +2,9 @@
 
 use App\Http\Controllers\AccountGroupController;
 use App\Http\Controllers\AiAssistController;
-use App\Http\Controllers\BotController;
+use App\Http\Controllers\Bot\BlueskyBotController;
+use App\Http\Controllers\Bot\FacebookBotController;
+use App\Http\Controllers\BotHubController;
 use App\Http\Controllers\BulkPostController;
 use App\Http\Controllers\CrossPostController;
 use App\Http\Controllers\DashboardController;
@@ -278,26 +280,37 @@ Route::middleware(['auth', 'verified', 'throttle:600,1'])->group(function () {
         Route::post('reddit-sources/{redditSource}/confirm-publications', [RedditSourceController::class, 'confirmPublications'])->name('reddit-sources.confirmPublications');
 
         // Bot actions
-        Route::get('bot', [BotController::class, 'index'])->name('bot.index');
-        Route::post('bot/terms', [BotController::class, 'addTerm'])->name('bot.addTerm');
-        Route::delete('bot/terms/{term}', [BotController::class, 'removeTerm'])->name('bot.removeTerm');
-        Route::patch('bot/terms/{term}/toggle', [BotController::class, 'toggleTerm'])->name('bot.toggleTerm');
-        Route::post('bot/run/bluesky', [BotController::class, 'runBluesky'])->name('bot.runBluesky');
-        Route::post('bot/run/facebook', [BotController::class, 'runFacebook'])->name('bot.runFacebook');
-        Route::get('bot/status', [BotController::class, 'botStatus'])->name('bot.status');
-        Route::post('bot/status-batch', [BotController::class, 'botStatusBatch'])->name('bot.statusBatch');
-        Route::post('bot/stop', [BotController::class, 'stopBot'])->name('bot.stop');
-        Route::post('bot/frequency', [BotController::class, 'updateFrequency'])->name('bot.updateFrequency');
-        Route::post('bot/option', [BotController::class, 'updateOption'])->name('bot.updateOption');
-        Route::post('bot/unfollow-max', [BotController::class, 'updateUnfollowMax'])->name('bot.updateUnfollowMax');
-        Route::delete('bot/logs', [BotController::class, 'clearLogs'])->name('bot.clearLogs');
-        Route::post('bot/targets', [BotController::class, 'addTarget'])->name('bot.addTarget');
-        Route::delete('bot/targets/{target}', [BotController::class, 'removeTarget'])->name('bot.removeTarget');
-        Route::post('bot/targets/{target}/run', [BotController::class, 'runTarget'])->name('bot.runTarget');
-        Route::post('bot/targets/{target}/stop', [BotController::class, 'stopTarget'])->name('bot.stopTarget');
-        Route::post('bot/targets/{target}/reset', [BotController::class, 'resetTarget'])->name('bot.resetTarget');
-        Route::get('bot/target-status/{target}', [BotController::class, 'targetStatus'])->name('bot.targetStatus');
-        Route::get('bot/api-status/{account}', [BotController::class, 'apiStatus'])->name('bot.apiStatus');
+        // Bot — Hub + Logs
+        Route::get('bot', [BotHubController::class, 'index'])->name('bot.index');
+        Route::get('bot/logs', [BotHubController::class, 'logs'])->name('bot.logs');
+        Route::delete('bot/logs', [BotHubController::class, 'clearLogs'])->name('bot.clearLogs');
+
+        // Bot — Bluesky
+        Route::get('bot/bluesky', [BlueskyBotController::class, 'index'])->name('bot.bluesky.index');
+        Route::post('bot/bluesky/terms/{purpose}', [BlueskyBotController::class, 'addTerm'])->name('bot.bluesky.addTerm');
+        Route::delete('bot/bluesky/terms/{term}', [BlueskyBotController::class, 'removeTerm'])->name('bot.bluesky.removeTerm');
+        Route::patch('bot/bluesky/terms/{term}/toggle', [BlueskyBotController::class, 'toggleTerm'])->name('bot.bluesky.toggleTerm');
+        Route::post('bot/bluesky/option', [BlueskyBotController::class, 'updateOption'])->name('bot.bluesky.updateOption');
+        Route::post('bot/bluesky/numeric', [BlueskyBotController::class, 'updateNumeric'])->name('bot.bluesky.updateNumeric');
+        Route::post('bot/bluesky/frequency', [BlueskyBotController::class, 'updateFrequency'])->name('bot.bluesky.updateFrequency');
+        Route::post('bot/bluesky/run', [BlueskyBotController::class, 'run'])->name('bot.bluesky.run');
+        Route::post('bot/bluesky/stop', [BlueskyBotController::class, 'stop'])->name('bot.bluesky.stop');
+        Route::get('bot/bluesky/status', [BlueskyBotController::class, 'status'])->name('bot.bluesky.status');
+        Route::post('bot/bluesky/status-batch', [BlueskyBotController::class, 'statusBatch'])->name('bot.bluesky.statusBatch');
+        Route::post('bot/bluesky/targets', [BlueskyBotController::class, 'addTarget'])->name('bot.bluesky.addTarget');
+        Route::delete('bot/bluesky/targets/{target}', [BlueskyBotController::class, 'removeTarget'])->name('bot.bluesky.removeTarget');
+        Route::post('bot/bluesky/targets/{target}/run', [BlueskyBotController::class, 'runTarget'])->name('bot.bluesky.runTarget');
+        Route::post('bot/bluesky/targets/{target}/stop', [BlueskyBotController::class, 'stopTarget'])->name('bot.bluesky.stopTarget');
+        Route::post('bot/bluesky/targets/{target}/reset', [BlueskyBotController::class, 'resetTarget'])->name('bot.bluesky.resetTarget');
+        Route::get('bot/bluesky/target-status/{target}', [BlueskyBotController::class, 'targetStatus'])->name('bot.bluesky.targetStatus');
+        Route::get('bot/bluesky/api-status/{account}', [BlueskyBotController::class, 'apiStatus'])->name('bot.bluesky.apiStatus');
+
+        // Bot — Facebook
+        Route::get('bot/facebook', [FacebookBotController::class, 'index'])->name('bot.facebook.index');
+        Route::post('bot/facebook/frequency', [FacebookBotController::class, 'updateFrequency'])->name('bot.facebook.updateFrequency');
+        Route::post('bot/facebook/run', [FacebookBotController::class, 'run'])->name('bot.facebook.run');
+        Route::post('bot/facebook/stop', [FacebookBotController::class, 'stop'])->name('bot.facebook.stop');
+        Route::get('bot/facebook/status', [FacebookBotController::class, 'status'])->name('bot.facebook.status');
 
         // Cross-post (temporary tool)
         Route::get('tools/crosspost', [CrossPostController::class, 'index'])->name('crosspost.index');
@@ -331,6 +344,7 @@ Route::middleware(['auth', 'verified', 'throttle:600,1'])->group(function () {
         Route::get('settings', [SettingsController::class, 'index'])->name('settings.index');
         Route::patch('settings', [SettingsController::class, 'update'])->name('settings.update');
         Route::post('settings/test-notification', [SettingsController::class, 'testNotification'])->name('settings.testNotification');
+        Route::post('settings/refresh-free-llms', [SettingsController::class, 'refreshFreeLlms'])->name('settings.refreshFreeLlms');
 
         // Source items API (for thread creation source browser)
         Route::get('api/source-items/sources', [SourceItemController::class, 'sources'])->name('sourceItems.sources');
