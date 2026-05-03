@@ -352,6 +352,20 @@
                             </div>
                         </div>
 
+                        <div class="bg-white rounded-xl border border-gray-100 shadow-sm overflow-hidden" x-data="{ open: false }">
+                            <button @click="open = !open" class="w-full flex items-center justify-between px-3 py-2 hover:bg-gray-50">
+                                <span class="text-[11px] font-semibold text-gray-700 uppercase tracking-wider">Date de prise de vue</span>
+                                <svg class="w-3.5 h-3.5 text-gray-400 transition-transform" :class="open && 'rotate-180'" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="m19.5 8.25-7.5 7.5-7.5-7.5" /></svg>
+                            </button>
+                            <div x-show="open" x-collapse class="px-3 pb-3 space-y-2 border-t border-gray-100">
+                                <input type="date" x-model="takenAt" class="w-full text-xs rounded-lg border-gray-200 focus:border-indigo-400 focus:ring-1 focus:ring-indigo-400 px-2 py-1.5 mt-2">
+                                <div class="flex gap-1.5">
+                                    <button @click="bulkTakenAt(false)" :disabled="busy || !takenAt" class="flex-1 px-3 py-1.5 text-xs bg-indigo-600 text-white rounded-lg disabled:opacity-40 hover:bg-indigo-700">Appliquer</button>
+                                    <button @click="bulkTakenAt(true)" :disabled="busy" class="px-3 py-1.5 text-xs bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200" title="Effacer la date sur les photos selectionnees">Vider</button>
+                                </div>
+                            </div>
+                        </div>
+
                         <div class="bg-white rounded-xl border border-gray-100 shadow-sm overflow-hidden" x-data="{ open: true }">
                             <button @click="open = !open" class="w-full flex items-center justify-between px-3 py-2 hover:bg-gray-50">
                                 <span class="text-[11px] font-semibold text-gray-700 uppercase tracking-wider">Visibilité</span>
@@ -426,6 +440,7 @@
             lastSelectedSnapshot: '', // pour detecter quand selection a 1 photo change → pre-remplir description
             details: { city: '', region: '', country: '', event: '' },
             classification: { intimacy_level: '' },
+            takenAt: '',
 
             // IA analysis state
             aiContext: '',
@@ -663,6 +678,25 @@
                 }
             },
 
+            async bulkTakenAt(emptyMode) {
+                if (this.selectedIds.length === 0) return;
+                const body = { ids: this.selectedIds };
+                body.taken_at = emptyMode ? null : this.takenAt;
+                if (!emptyMode && !this.takenAt) return;
+                const data = await this.post('{{ route('media.detailsBatch') }}', body);
+                if (data) {
+                    this.items.forEach(item => {
+                        if (this.selectedIds.includes(item.id)) {
+                            item.taken_at = body.taken_at;
+                        }
+                    });
+                    this.lastMessage = emptyMode
+                        ? `Date effacee sur ${data.count} photo(s).`
+                        : `Date appliquee a ${data.count} photo(s).`;
+                    if (emptyMode) this.takenAt = '';
+                }
+            },
+
             async bulkClassification() {
                 if (this.selectedIds.length === 0) return;
                 const body = { ids: this.selectedIds };
@@ -718,6 +752,7 @@
                                 if ('region' in data) item.region = data.region;
                                 if ('country' in data) item.country = data.country;
                                 if ('event' in data) item.event = data.event;
+                                if ('taken_at' in data) item.taken_at = data.taken_at;
                             }
                             // Si c'est l'unique photo selectionnee, refresh le textarea description
                             if (this.selectedIds.length === 1 && this.selectedIds[0] === id) {

@@ -42,7 +42,7 @@ class MediaFolder extends Model
 
     public function scopeOrdered($query)
     {
-        return $query->orderBy('sort_order')->orderBy('name');
+        return $query->orderBy('name');
     }
 
     /**
@@ -56,7 +56,9 @@ class MediaFolder extends Model
 
         while ($stack) {
             $children = self::whereIn('parent_id', $stack)->pluck('id')->all();
-            if (! $children) break;
+            if (! $children) {
+                break;
+            }
             $ids = array_merge($ids, $children);
             $stack = $children;
         }
@@ -77,6 +79,7 @@ class MediaFolder extends Model
             $cursor = $cursor->parent;
             $depth++;
         }
+
         return implode($separator, $names);
     }
 

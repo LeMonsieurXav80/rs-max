@@ -391,6 +391,13 @@ class MediaController extends Controller
         if ($result['event'] !== null) {
             $update['event'] = $result['event'];
         }
+        if (! empty($result['taken_at'])) {
+            try {
+                $update['taken_at'] = \Carbon\Carbon::parse($result['taken_at']);
+            } catch (\Throwable $e) {
+                // Date non parsable -> on ignore plutot que de casser l'analyse.
+            }
+        }
         $aiMeta = is_array($media->ai_metadata) ? $media->ai_metadata : [];
         $aiMeta['vision_analysis'] = [
             'analyzed_at' => now()->toIso8601String(),
@@ -414,6 +421,7 @@ class MediaController extends Controller
             'country' => $media->country,
             'event' => $media->event,
             'description_fr' => $media->description_fr,
+            'taken_at' => $media->taken_at?->toIso8601String(),
         ]);
     }
 
@@ -474,6 +482,7 @@ class MediaController extends Controller
             'country' => 'nullable|string|max:120',
             'event' => 'nullable|string|max:200',
             'intimacy_level' => 'nullable|in:public,prive,never_publish',
+            'taken_at' => 'nullable|date',
         ]);
 
         $update = [];
@@ -485,6 +494,9 @@ class MediaController extends Controller
         }
         if ($request->exists('intimacy_level')) {
             $update['intimacy_level'] = $data['intimacy_level'] ?? 'public';
+        }
+        if ($request->exists('taken_at')) {
+            $update['taken_at'] = ! empty($data['taken_at']) ? \Carbon\Carbon::parse($data['taken_at']) : null;
         }
 
         if (empty($update)) {
