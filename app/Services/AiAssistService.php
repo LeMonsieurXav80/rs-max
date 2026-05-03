@@ -82,7 +82,13 @@ RÈGLES :
 - city/region/country : null si non identifiable visuellement (pas deviner). Cf. règle d'utilisation du contexte ci-dessus si le contexte aide à confirmer.
 - brands : tableau de marques visibles (logos, packaging). Vide si aucune.
 - event : null si pas d'évènement contextuel évident. Si le contexte mentionne explicitement un événement ("Voyage Portugal 2024", "Mariage Léa", "Festival X"), utilise cette valeur.
-- taken_at : null (l'EXIF est traité ailleurs).
+- taken_at : date de prise de vue au format ISO "YYYY-MM-DD". Extrais-la du contexte si possible :
+  - "voyage Portugal aout 2024" → "2024-08-01"
+  - "Noel 2023" → "2023-12-25"
+  - "ete 2024" → "2024-07-01"
+  - "2024" seul → "2024-01-01"
+  - Si une date precise est donnee (ex: "15 mars 2024"), utilise-la exactement.
+  - Si rien n'est exploitable dans le contexte, laisse null. Ne devine pas depuis l'image seule.
 
 Réponds en JSON pur, sans ```json``` ni explications.
 TXT;
