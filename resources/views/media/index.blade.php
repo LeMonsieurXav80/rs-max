@@ -1224,7 +1224,7 @@
 
                     {{-- Panneau d'édition du dossier sélectionné — sinon filtre transversal "Jamais publier". --}}
                     <template x-if="currentFolderObj">
-                        <div class="bg-white rounded-2xl border border-gray-100 shadow-sm p-3 space-y-3" x-data="{ confirmDelete: false }" x-effect="if (currentFolderObj && folderEditName !== currentFolderObj.name) folderEditName = currentFolderObj.name">
+                        <div class="bg-white rounded-2xl border border-gray-100 shadow-sm p-3 space-y-3" x-data="{ confirmDelete: false }" x-init="folderEditName = currentFolderObj.name">
                             <h3 class="text-[10px] font-semibold uppercase tracking-widest text-gray-400 px-1">Propriétés du dossier</h3>
 
                             {{-- Nom (rename inline + bouton ✓ visible quand modifié, save aussi sur Enter) --}}
