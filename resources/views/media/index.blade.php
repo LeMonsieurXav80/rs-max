@@ -891,7 +891,7 @@
             this.dragOverFolderId = null;
         },
         onRootDragOver(ev) {
-            // Drop sur "Tous les dossiers" : uniquement pour les dossiers (= racine)
+            // Drop sur 'Tous les dossiers' : uniquement pour les dossiers (= racine)
             if (this.draggedFolderId === null) return;
             const dragged = this.folders.find(f => f.id === this.draggedFolderId);
             if (dragged && dragged.parent_id === null) return; // deja a la racine
@@ -900,7 +900,7 @@
             this.dragOverRoot = true;
         },
         onUncategorizedDragOver(ev) {
-            // Drop sur "Sans dossier" : uniquement pour les photos (= decategoriser)
+            // Drop sur 'Sans dossier' : uniquement pour les photos (= decategoriser)
             if (this.draggedPhotoIds.length === 0) return;
             ev.preventDefault();
             ev.dataTransfer.dropEffect = 'move';
