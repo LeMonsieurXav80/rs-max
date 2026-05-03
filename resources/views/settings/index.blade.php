@@ -29,6 +29,11 @@
                             class="px-4 py-3 text-sm font-medium border-b-2 transition-colors whitespace-nowrap">
                         Contenu IA
                     </button>
+                    <button type="button" @click="activeTab = 'ia_libre'"
+                            :class="activeTab === 'ia_libre' ? 'border-indigo-500 text-indigo-600' : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'"
+                            class="px-4 py-3 text-sm font-medium border-b-2 transition-colors whitespace-nowrap">
+                        IA Gratuite
+                    </button>
                     <button type="button" @click="activeTab = 'platforms'"
                             :class="activeTab === 'platforms' ? 'border-indigo-500 text-indigo-600' : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'"
                             class="px-4 py-3 text-sm font-medium border-b-2 transition-colors whitespace-nowrap">
@@ -153,12 +158,151 @@
 
                         <div>
                             <label for="ai_prompt_metadata_extraction" class="block text-sm font-medium text-gray-700 mb-1">Extraction de metadonnees depuis une photo (catalogue media)</label>
-                            <p class="text-xs text-gray-400 mb-2">Variables : <code class="bg-gray-100 px-1 rounded">{contexte}</code>, <code class="bg-gray-100 px-1 rounded">{personnes_attendues}</code>, <code class="bg-gray-100 px-1 rounded">{regles_pool}</code>. Doit retourner du JSON parsable avec les cles : <code class="bg-gray-100 px-1 rounded">description_fr, thematic_tags, people_ids, person_count, city, region, country, brands, event, taken_at</code>.</p>
+                            <p class="text-xs text-gray-400 mb-2">Variables : <code class="bg-gray-100 px-1 rounded">{contexte}</code>, <code class="bg-gray-100 px-1 rounded">{personnes_attendues}</code>. Doit retourner du JSON parsable avec les cles : <code class="bg-gray-100 px-1 rounded">description_fr, thematic_tags, people_ids, person_count, city, region, country, brands, event, taken_at</code>.</p>
                             <textarea id="ai_prompt_metadata_extraction" name="ai_prompt_metadata_extraction" rows="20"
                                 class="w-full rounded-xl border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 text-xs font-mono">{{ $settings['ai_prompt_metadata_extraction'] }}</textarea>
                             @error('ai_prompt_metadata_extraction')
                                 <p class="text-xs text-red-600 mt-1">{{ $message }}</p>
                             @enderror
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            {{-- ═══════════════════════════════════════ --}}
+            {{-- TAB: IA Gratuite                       --}}
+            {{-- ═══════════════════════════════════════ --}}
+            <div x-show="activeTab === 'ia_libre'" x-cloak>
+                <div class="bg-white rounded-2xl border border-gray-100 shadow-sm p-6 space-y-6">
+                    <div>
+                        <div class="flex items-center gap-3 mb-1">
+                            <svg class="w-5 h-5 text-emerald-500" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1.5">
+                                <path stroke-linecap="round" stroke-linejoin="round" d="M3.75 13.5l10.5-11.25L12 10.5h8.25L9.75 21.75 12 13.5H3.75Z" />
+                            </svg>
+                            <h2 class="text-lg font-semibold text-gray-800">IA Gratuite (Groq, OpenRouter, Google AI…)</h2>
+                        </div>
+                        <p class="text-sm text-gray-600 mb-4">
+                            Configure des fournisseurs LLM gratuits pour alimenter les bots et la generation de contenu sans payer OpenAI.
+                        </p>
+
+                        @if (session('status') && str_starts_with(session('status'), 'free-llms-refreshed:'))
+                            <div class="rounded-xl bg-emerald-50 border border-emerald-200 p-3 text-sm text-emerald-800 mb-4">
+                                Modeles mis a jour — {{ str_replace('free-llms-refreshed: ', '', session('status')) }}
+                            </div>
+                        @endif
+
+                        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            @php
+                                $providers = [
+                                    ['key' => 'groq_api_key', 'label' => 'Cle API Groq', 'has' => $freeLlm['has_groq_key'], 'help' => 'console.groq.com/keys'],
+                                    ['key' => 'openrouter_api_key', 'label' => 'Cle API OpenRouter', 'has' => $freeLlm['has_openrouter_key'], 'help' => 'openrouter.ai/keys'],
+                                    ['key' => 'google_ai_api_key', 'label' => 'Cle API Google AI Studio', 'has' => $freeLlm['has_google_ai_key'], 'help' => 'aistudio.google.com/apikey'],
+                                    ['key' => 'mistral_api_key', 'label' => 'Cle API Mistral', 'has' => $freeLlm['has_mistral_key'], 'help' => 'console.mistral.ai/api-keys'],
+                                    ['key' => 'together_api_key', 'label' => 'Cle API Together AI', 'has' => $freeLlm['has_together_key'], 'help' => 'api.together.xyz/settings/api-keys'],
+                                ];
+                            @endphp
+                            @foreach ($providers as $p)
+                                <div>
+                                    <label class="block text-sm font-medium text-gray-700">
+                                        {{ $p['label'] }}
+                                        @if ($p['has'])
+                                            <span class="ml-2 text-xs text-emerald-600 font-normal">configuree</span>
+                                        @endif
+                                    </label>
+                                    <input type="password" name="{{ $p['key'] }}" autocomplete="off"
+                                           placeholder="{{ $p['has'] ? '•••••••• (laisser vide pour conserver)' : 'sk-...' }}"
+                                           class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 text-sm">
+                                    <p class="text-xs text-gray-500 mt-1">{{ $p['help'] }}</p>
+                                </div>
+                            @endforeach
+                        </div>
+                    </div>
+
+                    <div class="border-t border-gray-100 pt-6">
+                        <div class="flex items-center justify-between mb-3">
+                            <div>
+                                <h3 class="text-sm font-semibold text-gray-800">Modeles disponibles</h3>
+                                <p class="text-xs text-gray-500">
+                                    @if ($freeLlm['last_refresh_at'])
+                                        Derniere mise a jour : {{ \Carbon\Carbon::parse($freeLlm['last_refresh_at'])->diffForHumans() }}
+                                    @else
+                                        Jamais mis a jour
+                                    @endif
+                                </p>
+                            </div>
+                            <button type="button" onclick="refreshFreeLlms(this)"
+                                    class="inline-flex items-center gap-2 px-3 py-2 bg-emerald-600 hover:bg-emerald-700 disabled:bg-emerald-400 text-white text-sm font-medium rounded-md">
+                                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2">
+                                    <path stroke-linecap="round" stroke-linejoin="round" d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0 3.181 3.183a8.25 8.25 0 0 0 13.803-3.7M4.031 9.865a8.25 8.25 0 0 1 13.803-3.7l3.181 3.182m0-4.991v4.99" />
+                                </svg>
+                                Mettre a jour les LLM gratuits
+                            </button>
+                        </div>
+
+                        @if ($freeLlm['models']->isEmpty())
+                            <p class="text-sm text-gray-500 italic">Aucun modele decouvert. Ajoute au moins une cle API ci-dessus, sauvegarde, puis clique sur "Mettre a jour les LLM gratuits".</p>
+                        @else
+                            <div class="overflow-x-auto rounded-md border border-gray-200">
+                                <table class="min-w-full text-sm">
+                                    <thead class="bg-gray-50 text-xs text-gray-600 uppercase">
+                                        <tr>
+                                            <th class="px-3 py-2 text-left">Provider</th>
+                                            <th class="px-3 py-2 text-left">Modele</th>
+                                            <th class="px-3 py-2 text-center">Vision</th>
+                                            <th class="px-3 py-2 text-right">Contexte</th>
+                                            <th class="px-3 py-2 text-left">Identifiant</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody class="divide-y divide-gray-100">
+                                        @foreach ($freeLlm['models'] as $m)
+                                            <tr>
+                                                <td class="px-3 py-2 font-medium text-gray-700">{{ $m->provider }}</td>
+                                                <td class="px-3 py-2 text-gray-800">{{ $m->display_name }}</td>
+                                                <td class="px-3 py-2 text-center">
+                                                    @if ($m->supports_vision)
+                                                        <span class="text-emerald-600">oui</span>
+                                                    @else
+                                                        <span class="text-gray-400">non</span>
+                                                    @endif
+                                                </td>
+                                                <td class="px-3 py-2 text-right text-gray-600">
+                                                    {{ $m->context_length ? number_format($m->context_length) : '—' }}
+                                                </td>
+                                                <td class="px-3 py-2 font-mono text-xs text-gray-500">{{ $m->qualified_name }}</td>
+                                            </tr>
+                                        @endforeach
+                                    </tbody>
+                                </table>
+                            </div>
+                        @endif
+                    </div>
+
+                    <div class="border-t border-gray-100 pt-6 grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700">Modele texte par defaut</label>
+                            <select name="free_llms_default_text_model"
+                                    class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 text-sm">
+                                <option value="">— OpenAI (configure dans "Contenu IA") —</option>
+                                @foreach ($freeLlm['models']->where('supports_text', true) as $m)
+                                    <option value="{{ $m->qualified_name }}" @selected($settings['free_llms_default_text_model'] === $m->qualified_name)>
+                                        {{ $m->qualified_name }}
+                                    </option>
+                                @endforeach
+                            </select>
+                            <p class="text-xs text-gray-500 mt-1">Utilise pour les commentaires bot et les reponses de l'inbox.</p>
+                        </div>
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700">Modele vision par defaut</label>
+                            <select name="free_llms_default_vision_model"
+                                    class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 text-sm">
+                                <option value="">— OpenAI (configure dans "Contenu IA") —</option>
+                                @foreach ($freeLlm['models']->where('supports_vision', true) as $m)
+                                    <option value="{{ $m->qualified_name }}" @selected($settings['free_llms_default_vision_model'] === $m->qualified_name)>
+                                        {{ $m->qualified_name }}
+                                    </option>
+                                @endforeach
+                            </select>
+                            <p class="text-xs text-gray-500 mt-1">Utilise pour analyser les images des posts (commentaires bot avec image).</p>
                         </div>
                     </div>
                 </div>
@@ -824,5 +968,18 @@
                 </button>
             </div>
         </form>
+
+        {{-- Form isole pour le bouton "Mettre a jour les LLM gratuits" (evite le conflit method spoofing PATCH) --}}
+        <form id="refresh-free-llms-form" method="POST" action="{{ route('settings.refreshFreeLlms') }}" class="hidden">
+            @csrf
+        </form>
+        <script>
+            function refreshFreeLlms(btn) {
+                btn.disabled = true;
+                const originalHtml = btn.innerHTML;
+                btn.innerHTML = 'Mise a jour en cours...';
+                document.getElementById('refresh-free-llms-form').submit();
+            }
+        </script>
     </div>
 @endsection

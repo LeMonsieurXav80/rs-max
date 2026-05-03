@@ -2,9 +2,12 @@
 
 namespace App\Http\Controllers;
 
+use App\Models\FreeLlmModel;
 use App\Models\Setting;
+use App\Services\Llm\FreeLlmDiscoveryService;
 use App\Services\TelegramNotificationService;
 use Illuminate\Http\JsonResponse;
+use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Http;
 use Illuminate\View\View;
@@ -84,6 +87,10 @@ class SettingsController extends Controller
         // Notifications
         'notify_publish_error',
         'notify_telegram_chat_id',
+        // IA Gratuite (cles API + defauts)
+        'free_llms_default_text_model',
+        'free_llms_default_vision_model',
+        'free_llms_last_refresh_at',
     ];
 
     private const DEFAULTS = [
@@ -157,6 +164,10 @@ class SettingsController extends Controller
         // Notifications
         'notify_publish_error' => false,
         'notify_telegram_chat_id' => '',
+        // IA Gratuite
+        'free_llms_default_text_model' => '',
+        'free_llms_default_vision_model' => '',
+        'free_llms_last_refresh_at' => '',
         'inbox_reply_prompt' => "Tu reponds a des commentaires et messages sur les reseaux sociaux. Adapte la longueur et le style de ta reponse au message recu :\n- Emoji seul ou reaction simple (coeur, flamme, applaudissements...) → reponds par 1-2 emojis adaptes, rien d'autre\n- Compliment court (\"bravo\", \"top\", \"j'adore\", \"genial\") → remercie en 2-5 mots max, tu peux ajouter un emoji\n- Question → reponds brievement et precisement, 1-2 phrases max\n- Commentaire developpe ou avis → 1-2 phrases engageantes max\n- Message prive → reponds de maniere naturelle et conversationnelle\n\nRegles absolues :\n- Ne fais JAMAIS une reponse plus longue que le message original\n- Pas de hashtags\n- Pas de formule de politesse generique (\"Merci pour votre commentaire !\")\n- Sois authentique, pas corporate\n- Garde le ton et la personnalite definis dans ton profil",
     ];
 
@@ -203,7 +214,17 @@ class SettingsController extends Controller
 
         $hasNotifyBotToken = (bool) Setting::getEncrypted('notify_telegram_bot_token');
 
-        return view('settings.index', compact('settings', 'hasOpenaiKey', 'availableModels', 'hasNotifyBotToken'));
+        $freeLlm = [
+            'has_groq_key' => (bool) Setting::getEncrypted('groq_api_key'),
+            'has_openrouter_key' => (bool) Setting::getEncrypted('openrouter_api_key'),
+            'has_google_ai_key' => (bool) Setting::getEncrypted('google_ai_api_key'),
+            'has_mistral_key' => (bool) Setting::getEncrypted('mistral_api_key'),
+            'has_together_key' => (bool) Setting::getEncrypted('together_api_key'),
+            'models' => FreeLlmModel::available()->orderBy('provider')->orderBy('display_name')->get(),
+            'last_refresh_at' => Setting::get('free_llms_last_refresh_at'),
+        ];
+
+        return view('settings.index', compact('settings', 'hasOpenaiKey', 'availableModels', 'hasNotifyBotToken', 'freeLlm'));
     }
 
     public function update(Request $request)
@@ -282,6 +303,14 @@ class SettingsController extends Controller
             'pixabay_api_key' => 'nullable|string|min:10|max:100',
             'unsplash_access_key' => 'nullable|string|min:10|max:100',
             'stock_photos_auto_fallback' => 'nullable',
+            // IA Gratuite (cles API + defauts)
+            'groq_api_key' => 'nullable|string|min:10|max:200',
+            'openrouter_api_key' => 'nullable|string|min:10|max:200',
+            'google_ai_api_key' => 'nullable|string|min:10|max:200',
+            'mistral_api_key' => 'nullable|string|min:10|max:200',
+            'together_api_key' => 'nullable|string|min:10|max:200',
+            'free_llms_default_text_model' => 'nullable|string|max:200',
+            'free_llms_default_vision_model' => 'nullable|string|max:200',
         ]);
 
         // Handle encrypted keys separately
@@ -301,6 +330,14 @@ class SettingsController extends Controller
                 Setting::setEncrypted($stockKey, $validated[$stockKey]);
             }
             unset($validated[$stockKey]);
+        }
+
+        // IA Gratuite : clés API chiffrées (5 providers)
+        foreach (['groq_api_key', 'openrouter_api_key', 'google_ai_api_key', 'mistral_api_key', 'together_api_key'] as $llmKey) {
+            if ($request->filled($llmKey)) {
+                Setting::setEncrypted($llmKey, $validated[$llmKey]);
+            }
+            unset($validated[$llmKey]);
         }
 
         // Checkbox stock auto-fallback (absent = false)
@@ -336,5 +373,20 @@ class SettingsController extends Controller
         $success = TelegramNotificationService::sendTest();
 
         return response()->json(['success' => $success, 'error' => $success ? null : 'Echec envoi']);
+    }
+
+    public function refreshFreeLlms(Request $request, FreeLlmDiscoveryService $discovery): RedirectResponse
+    {
+        if (! $request->user()->isManager()) {
+            abort(403);
+        }
+
+        $results = $discovery->refresh();
+        $total = array_sum($results);
+        $detail = collect($results)->map(fn ($n, $p) => "{$p}: {$n}")->implode(', ');
+
+        return redirect()
+            ->route('settings.index', ['tab' => 'ia_libre'])
+            ->with('status', "free-llms-refreshed: {$total} ({$detail})");
     }
 }
