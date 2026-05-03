@@ -205,6 +205,8 @@ class MediaController extends Controller
             'region' => $mf->region,
             'country' => $mf->country,
             'event' => $mf->event,
+            'taken_at' => $mf->taken_at?->format('Y-m-d'),
+            'taken_at_label' => $mf->taken_at?->locale('fr')->isoFormat('MMMM YYYY'),
             'folder_is_private' => $mf->folder?->is_private ?? false,
             'intimacy_level' => $mf->intimacy_level,
             'publication_count' => (int) $mf->publication_count,
