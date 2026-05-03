@@ -143,6 +143,7 @@
         bulkBrandInput: '',
         bulkPersonInput: '',
         bulkDescriptionInput: '',
+        bulkTakenAt: '',
         // IA Vision (mono-photo et bulk)
         aiContext: '',
         aiInProgress: false,
@@ -687,6 +688,36 @@
                 } catch(e) { /* skip */ }
             }
             this.bulkDescriptionInput = '';
+        },
+        async bulkSetTakenAt(emptyMode) {
+            if (this.multiSelected.length === 0) return;
+            if (!emptyMode && !this.bulkTakenAt) return;
+            const csrf = document.querySelector('meta[name=csrf-token]').getAttribute('content');
+            try {
+                const res = await fetch('{{ route('media.detailsBatch') }}', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json', 'X-CSRF-TOKEN': csrf, 'Accept': 'application/json' },
+                    body: JSON.stringify({
+                        ids: this.multiSelected,
+                        taken_at: emptyMode ? null : this.bulkTakenAt,
+                    }),
+                });
+                if (res.ok) {
+                    const data = await res.json();
+                    const newVal = emptyMode ? null : this.bulkTakenAt;
+                    this.items.forEach(item => {
+                        if (this.multiSelected.includes(item.id)) item.taken_at = newVal;
+                    });
+                    if (emptyMode) this.bulkTakenAt = '';
+                    alert(emptyMode
+                        ? `Date effacee sur ${data.count} photo(s).`
+                        : `Date appliquee a ${data.count} photo(s).`);
+                } else {
+                    alert('Impossible de mettre a jour la date.');
+                }
+            } catch (e) {
+                alert('Erreur de connexion.');
+            }
         },
         copyMacCommand() {
             if (this.multiSelected.length === 0) return;
@@ -1566,6 +1597,17 @@
                                     <div class="flex gap-1.5 mt-1.5">
                                         <button @click="bulkSaveDescription()" class="flex-1 px-3 py-1.5 text-xs bg-indigo-600 text-white rounded-lg hover:bg-indigo-700">Sauvegarder</button>
                                         <button @click="bulkDescriptionInput = ''; bulkSaveDescription()" class="px-3 py-1.5 text-xs bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200">Vider</button>
+                                    </div>
+                                </div>
+
+                                {{-- Date de prise de vue bulk --}}
+                                <div class="bg-white rounded-xl border border-gray-100 p-2.5">
+                                    <h4 class="text-[11px] font-semibold text-gray-700 uppercase tracking-wider mb-1.5">Date de prise de vue</h4>
+                                    <input type="date" x-model="bulkTakenAt"
+                                           class="w-full text-xs rounded-lg border-gray-200 focus:border-indigo-400 focus:ring-1 focus:ring-indigo-400 px-2 py-1.5">
+                                    <div class="flex gap-1.5 mt-1.5">
+                                        <button @click="bulkSetTakenAt(false)" :disabled="!bulkTakenAt" class="flex-1 px-3 py-1.5 text-xs bg-indigo-600 text-white rounded-lg disabled:opacity-40 hover:bg-indigo-700">Appliquer</button>
+                                        <button @click="bulkSetTakenAt(true)" class="px-3 py-1.5 text-xs bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200" title="Effacer la date sur les photos selectionnees">Vider</button>
                                     </div>
                                 </div>
 
