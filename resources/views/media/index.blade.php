@@ -158,10 +158,12 @@
         deleteFolderConfirm: null,
         folderMenuOpen: null,
         movingToFolder: false,
-        // Drag & drop pour reorganiser la hierarchie de dossiers
+        // Drag & drop : reorganiser dossiers OU deplacer photos vers un dossier
         draggedFolderId: null,
+        draggedPhotoIds: [],
         dragOverFolderId: null,
         dragOverRoot: false,
+        dragOverUncategorized: false,
         // Édition inline du dossier sélectionné (panneau Propriétés sous l'arbre).
         folderEditName: '',
         // Palette : 15 couleurs Tailwind 400 (pleines mais douces).
@@ -732,6 +734,8 @@
         handleDrop(e) {
             e.preventDefault();
             this.dragOver = false;
+            // Si c'est un drag interne (photo de la grille / dossier), on ne tente pas d'upload.
+            if (this.draggedPhotoIds.length > 0 || this.draggedFolderId !== null) return;
             this.uploadFiles(e.dataTransfer.files);
         },
         handleFileSelect(e) {
@@ -831,28 +835,54 @@
         isFolderVisible(f) {
             return (f.parent_chain || []).every(p => this.openFolders.includes(p));
         },
-        // ───── Drag & drop : reorganiser la hierarchie de dossiers ─────
+        // ───── Drag & drop : dossiers (reorga) + photos (move) ─────
         onFolderDragStart(folderId, ev) {
             this.draggedFolderId = folderId;
+            this.draggedPhotoIds = [];
             ev.dataTransfer.effectAllowed = 'move';
             // setData necessaire pour Firefox
-            ev.dataTransfer.setData('text/plain', String(folderId));
+            ev.dataTransfer.setData('text/plain', 'folder:' + folderId);
         },
         onFolderDragEnd() {
+            this.resetDragState();
+        },
+        onPhotoDragStart(item, ev) {
+            // Si la photo est dans la selection multi, on drag toute la selection
+            const ids = (this.multiSelect && this.multiSelected.includes(item.id))
+                ? [...this.multiSelected]
+                : [item.id];
+            this.draggedPhotoIds = ids;
             this.draggedFolderId = null;
+            ev.dataTransfer.effectAllowed = 'move';
+            ev.dataTransfer.setData('text/plain', 'photos:' + ids.join(','));
+        },
+        onPhotoDragEnd() {
+            this.resetDragState();
+        },
+        resetDragState() {
+            this.draggedFolderId = null;
+            this.draggedPhotoIds = [];
             this.dragOverFolderId = null;
             this.dragOverRoot = false;
+            this.dragOverUncategorized = false;
         },
-        canDropOn(targetId) {
+        canDropFolderOn(targetId) {
             if (this.draggedFolderId === null) return false;
             if (targetId === this.draggedFolderId) return false;
-            // Empeche de drop dans un descendant (le chain du target contient l'id dragge)
             const target = this.folders.find(f => f.id === targetId);
             if (target && (target.parent_chain || []).includes(this.draggedFolderId)) return false;
             return true;
         },
+        canDropPhotosOn(targetId) {
+            if (this.draggedPhotoIds.length === 0) return false;
+            // Tous les drops sur un dossier reel sont autorises (y compris le dossier courant)
+            return targetId !== null;
+        },
         onFolderDragOver(targetId, ev) {
-            if (!this.canDropOn(targetId)) return;
+            const ok = this.draggedFolderId !== null
+                ? this.canDropFolderOn(targetId)
+                : this.canDropPhotosOn(targetId);
+            if (!ok) return;
             ev.preventDefault();
             ev.dataTransfer.dropEffect = 'move';
             this.dragOverFolderId = targetId;
@@ -861,6 +891,7 @@
             this.dragOverFolderId = null;
         },
         onRootDragOver(ev) {
+            // Drop sur "Tous les dossiers" : uniquement pour les dossiers (= racine)
             if (this.draggedFolderId === null) return;
             const dragged = this.folders.find(f => f.id === this.draggedFolderId);
             if (dragged && dragged.parent_id === null) return; // deja a la racine
@@ -868,12 +899,26 @@
             ev.dataTransfer.dropEffect = 'move';
             this.dragOverRoot = true;
         },
+        onUncategorizedDragOver(ev) {
+            // Drop sur "Sans dossier" : uniquement pour les photos (= decategoriser)
+            if (this.draggedPhotoIds.length === 0) return;
+            ev.preventDefault();
+            ev.dataTransfer.dropEffect = 'move';
+            this.dragOverUncategorized = true;
+        },
+        // Dispatcher : drop sur un dossier reel
+        async dropOnFolder(folderId) {
+            if (this.draggedFolderId !== null) {
+                return this.moveFolderTo(folderId);
+            }
+            if (this.draggedPhotoIds.length > 0) {
+                return this.movePhotosTo(folderId);
+            }
+        },
         async moveFolderTo(targetId) {
             const draggedId = this.draggedFolderId;
             if (draggedId === null) return;
-            this.draggedFolderId = null;
-            this.dragOverFolderId = null;
-            this.dragOverRoot = false;
+            this.resetDragState();
             try {
                 const response = await fetch('/media/folders/' + draggedId, {
                     method: 'PATCH',
@@ -889,6 +934,31 @@
                 } else {
                     const data = await response.json().catch(() => ({}));
                     alert(data.error || 'Impossible de deplacer le dossier.');
+                }
+            } catch (e) {
+                alert('Erreur de connexion.');
+            }
+        },
+        async movePhotosTo(folderId) {
+            const ids = [...this.draggedPhotoIds];
+            if (ids.length === 0) return;
+            this.resetDragState();
+            try {
+                const response = await fetch('{{ route('media.folders.move') }}', {
+                    method: 'POST',
+                    headers: {
+                        'X-CSRF-TOKEN': document.querySelector('meta[name=csrf-token]').getAttribute('content'),
+                        'Content-Type': 'application/json',
+                        'Accept': 'application/json',
+                    },
+                    body: JSON.stringify({ file_ids: ids, folder_id: folderId }),
+                });
+                if (response.ok) {
+                    // Si on est dans un dossier filtre, les photos deplacees disparaissent.
+                    // Reload pour avoir un etat coherent (compteurs + grille).
+                    window.location.reload();
+                } else {
+                    alert('Impossible de deplacer les photos.');
                 }
             } catch (e) {
                 alert('Erreur de connexion.');
@@ -1109,7 +1179,7 @@
         <div class="mb-6 bg-white rounded-2xl border border-gray-100 shadow-sm p-4">
             <div class="border-2 border-dashed rounded-xl p-8 text-center transition-colors"
                  :class="dragOver ? 'border-indigo-400 bg-indigo-50' : 'border-gray-200'"
-                 @dragover.prevent="dragOver = true"
+                 @dragover.prevent="if ($event.dataTransfer.types.includes('Files')) dragOver = true"
                  @dragleave.prevent="dragOver = false"
                  @drop.prevent="handleDrop($event)">
                 <input type="file" x-ref="fileInput" @change="handleFileSelect($event)" multiple accept="image/*,video/*" class="hidden">
@@ -1290,6 +1360,10 @@
                             <span class="text-xs text-gray-400">{{ $totalCount }}</span>
                         </a>
                         <a href="{{ route('media.index', array_filter(['intimacy' => $currentIntimacy ?? null, 'filter' => $filter !== 'all' ? $filter : null, 'folder' => 'uncategorized'])) }}"
+                           @dragover="onUncategorizedDragOver($event)"
+                           @dragleave="dragOverUncategorized = false"
+                           @drop.prevent="movePhotosTo(null)"
+                           :class="dragOverUncategorized ? 'ring-2 ring-indigo-400 bg-indigo-50' : ''"
                            class="flex items-center justify-between px-2 py-1.5 rounded-lg text-sm transition-colors {{ $currentFolder === 'uncategorized' ? 'bg-indigo-50 text-indigo-700 font-medium' : 'text-gray-600 hover:bg-gray-50' }}">
                             <span class="text-gray-500 italic">Sans dossier</span>
                             <span class="text-xs text-gray-400">{{ $uncategorizedCount }}</span>
@@ -1301,7 +1375,7 @@
                                  @dragend="onFolderDragEnd()"
                                  @dragover="onFolderDragOver(f.id, $event)"
                                  @dragleave="onFolderDragLeave()"
-                                 @drop.prevent="moveFolderTo(f.id)"
+                                 @drop.prevent="dropOnFolder(f.id)"
                                  :class="dragOverFolderId === f.id ? 'ring-2 ring-indigo-400 bg-indigo-50' : (draggedFolderId === f.id ? 'opacity-50' : '')"
                                  class="flex items-center group rounded-lg hover:bg-gray-50 cursor-grab active:cursor-grabbing"
                                  :style="`padding-left: ${f.depth * 8}px`">
@@ -1435,11 +1509,15 @@
                 <div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5 gap-3">
                     <template x-for="item in items" :key="item.filename">
                         <div @click="selectItem(item, $event)"
+                             draggable="true"
+                             @dragstart="onPhotoDragStart(item, $event)"
+                             @dragend="onPhotoDragEnd()"
                              class="bg-white rounded-xl border-2 overflow-hidden cursor-pointer transition-all shadow-sm hover:shadow-md"
                              :class="{
                                  'border-indigo-500 ring-2 ring-indigo-200': !multiSelect && selected && selected.filename === item.filename,
                                  'border-amber-400 ring-2 ring-amber-200': multiSelect && isMultiSelected(item),
-                                 'border-gray-100 hover:border-gray-300': !((!multiSelect && selected && selected.filename === item.filename) || (multiSelect && isMultiSelected(item)))
+                                 'border-gray-100 hover:border-gray-300': !((!multiSelect && selected && selected.filename === item.filename) || (multiSelect && isMultiSelected(item))),
+                                 'opacity-50': draggedPhotoIds.includes(item.id)
                              }">
                             {{-- Thumbnail (portrait 4:5) --}}
                             <div class="aspect-[4/5] bg-gray-100 relative overflow-hidden">
