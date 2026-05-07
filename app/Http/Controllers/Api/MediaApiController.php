@@ -488,11 +488,12 @@ class MediaApiController extends Controller
         $limit = (int) $request->query('limit', 50);
         $limit = max(1, min($limit, 500));
 
-        $items = MediaFile::where('pending_analysis', true)
+        $items = MediaFile::with('folder:id,name,slug,parent_id')
+            ->where('pending_analysis', true)
             ->where('mime_type', 'like', 'image/%')
             ->orderBy('id')
             ->limit($limit)
-            ->get(['id', 'filename', 'mime_type', 'source', 'original_name', 'created_at']);
+            ->get(['id', 'filename', 'mime_type', 'source', 'original_name', 'folder_id', 'created_at']);
 
         return response()->json([
             'items' => $items->map(fn ($m) => [
@@ -503,6 +504,9 @@ class MediaApiController extends Controller
                 'original_name' => $m->original_name,
                 'created_at' => $m->created_at?->toIso8601String(),
                 'url_full' => "/media/{$m->filename}",
+                'folder_id' => $m->folder_id,
+                'folder_name' => $m->folder?->name,
+                'folder_path' => $m->folder?->pathLabel(),
             ]),
             'total_pending' => MediaFile::where('pending_analysis', true)
                 ->where('mime_type', 'like', 'image/%')
@@ -582,10 +586,17 @@ class MediaApiController extends Controller
             'ingested_at' => $media->ingested_at ?? now(),
         ]);
 
+        // Recharge la relation folder pour confirmer côté client le placement actuel
+        // (utile en mode --redo : le script vérifie que rien n'a bougé après l'enrich).
+        $media->loadMissing('folder');
+
         return response()->json([
             'id' => $media->id,
             'status' => 'enriched',
             'pending_analysis' => false,
+            'folder_id' => $media->folder_id,
+            'folder_name' => $media->folder?->name,
+            'folder_path' => $media->folder?->pathLabel(),
         ]);
     }
 
