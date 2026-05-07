@@ -423,7 +423,8 @@ class MediaController extends Controller
             'country' => $media->country,
             'event' => $media->event,
             'description_fr' => $media->description_fr,
-            'taken_at' => $media->taken_at?->toIso8601String(),
+            'taken_at' => $media->taken_at?->format('Y-m-d'),
+            'taken_at_label' => $media->taken_at?->locale('fr')->isoFormat('MMMM YYYY'),
         ]);
     }
 

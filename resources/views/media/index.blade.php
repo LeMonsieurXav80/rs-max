@@ -553,6 +553,8 @@
                             if ('region' in data) item.region = data.region;
                             if ('country' in data) item.country = data.country;
                             if ('event' in data) item.event = data.event;
+                            if ('taken_at' in data) item.taken_at = data.taken_at;
+                            if ('taken_at_label' in data) item.taken_at_label = data.taken_at_label;
                         }
                         if (this.selected && this.selected.id === id && item) {
                             // Refresh le panneau de detail si c'est la photo actuellement selectionnee.
