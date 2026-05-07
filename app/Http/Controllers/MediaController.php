@@ -962,7 +962,8 @@ class MediaController extends Controller
         if ($folderId === 'uncategorized') {
             $query->whereNull('folder_id');
         } elseif ($folderId) {
-            $query->where('folder_id', $folderId);
+            $rootFolder = MediaFolder::find($folderId);
+            $query->whereIn('folder_id', $rootFolder ? $rootFolder->descendantIds() : [(int) $folderId]);
         }
 
         $items = $query->get()->map(function (MediaFile $mf) {
@@ -989,16 +990,60 @@ class MediaController extends Controller
             return $item;
         })->values();
 
-        $folders = MediaFolder::ordered()->withCount('files')->get()->map(fn ($f) => [
+        // Hiérarchie complète des dossiers (parent_chain + depth + has_children)
+        // pour pouvoir afficher un arbre côté client (popup bibliothèque dans /posts/create).
+        $folders = MediaFolder::ordered()->withCount('files')->get();
+        $foldersById = $folders->keyBy('id');
+        $childrenByParent = $folders->groupBy('parent_id');
+
+        $depthOf = function (MediaFolder $f) use ($foldersById) {
+            $depth = 0;
+            $cursor = $f->parent_id ? $foldersById->get($f->parent_id) : null;
+            while ($cursor && $depth < 10) {
+                $depth++;
+                $cursor = $cursor->parent_id ? $foldersById->get($cursor->parent_id) : null;
+            }
+            return $depth;
+        };
+        $pathOf = function (MediaFolder $f) use ($foldersById) {
+            $names = [$f->name];
+            $cursor = $f->parent_id ? $foldersById->get($f->parent_id) : null;
+            $depth = 0;
+            while ($cursor && $depth < 10) {
+                array_unshift($names, $cursor->name);
+                $cursor = $cursor->parent_id ? $foldersById->get($cursor->parent_id) : null;
+                $depth++;
+            }
+            return implode(' / ', $names);
+        };
+        $parentChainOf = function (MediaFolder $f) use ($foldersById) {
+            $chain = [];
+            $cursor = $f->parent_id;
+            while ($cursor && count($chain) < 10) {
+                $chain[] = $cursor;
+                $cursor = $foldersById->get($cursor)?->parent_id;
+            }
+            return $chain;
+        };
+
+        $foldersJson = $folders->map(fn (MediaFolder $f) => [
             'id' => $f->id,
             'name' => $f->name,
             'color' => $f->color,
+            'parent_id' => $f->parent_id,
+            'depth' => $depthOf($f),
+            'path' => $pathOf($f),
+            'parent_chain' => $parentChainOf($f),
+            'has_children' => $childrenByParent->has($f->id) && $childrenByParent->get($f->id)->isNotEmpty(),
+            'is_private' => (bool) $f->is_private,
             'files_count' => $f->files_count,
-        ]);
+        ])->sortBy('path')->values();
 
         return response()->json([
             'items' => $items,
-            'folders' => $folders,
+            'folders' => $foldersJson,
+            'totalCount' => MediaFile::count(),
+            'uncategorizedCount' => MediaFile::whereNull('folder_id')->count(),
         ]);
     }
 
