@@ -1003,6 +1003,7 @@ class MediaController extends Controller
                 $depth++;
                 $cursor = $cursor->parent_id ? $foldersById->get($cursor->parent_id) : null;
             }
+
             return $depth;
         };
         $pathOf = function (MediaFolder $f) use ($foldersById) {
@@ -1014,6 +1015,7 @@ class MediaController extends Controller
                 $cursor = $cursor->parent_id ? $foldersById->get($cursor->parent_id) : null;
                 $depth++;
             }
+
             return implode(' / ', $names);
         };
         $parentChainOf = function (MediaFolder $f) use ($foldersById) {
@@ -1023,6 +1025,7 @@ class MediaController extends Controller
                 $chain[] = $cursor;
                 $cursor = $foldersById->get($cursor)?->parent_id;
             }
+
             return $chain;
         };
 
