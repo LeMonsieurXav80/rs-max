@@ -1262,22 +1262,6 @@
                 <span x-text="multiSelected.length"></span> fichier(s) selectionne(s)
             </span>
             <div class="flex items-center gap-2 flex-wrap ml-auto" x-show="multiSelected.length > 0">
-                {{-- Action : déplacer vers un DOSSIER (organisation) --}}
-                <div class="flex items-center gap-1.5 px-2 py-1 bg-white border border-amber-200 rounded-lg">
-                    <span class="text-[11px] font-medium text-gray-500 uppercase tracking-wide">Dossier</span>
-                    <select x-model="bulkMoveFolder" class="text-sm border border-gray-200 rounded px-2 py-1 focus:border-indigo-400 focus:ring-1 focus:ring-indigo-400">
-                        <option value="">— Choisir —</option>
-                        <option value="uncategorized">Non classé</option>
-                        <template x-for="folder in folders" :key="folder.id">
-                            <option :value="folder.id" x-text="folder.path || folder.name"></option>
-                        </template>
-                    </select>
-                    <button @click="bulkMove()" :disabled="bulkMoveFolder === ''"
-                            class="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-medium bg-indigo-600 text-white rounded hover:bg-indigo-700 disabled:opacity-50 transition-colors">
-                        Déplacer
-                    </button>
-                </div>
-
                 {{-- Action : marquer comme jamais publiable (override par photo) --}}
                 <div class="flex items-center gap-1.5 px-2 py-1 bg-white border border-amber-200 rounded-lg">
                     <span class="text-[11px] font-medium text-gray-500 uppercase tracking-wide">Visibilité</span>
