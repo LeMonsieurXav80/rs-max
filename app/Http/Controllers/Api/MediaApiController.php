@@ -102,12 +102,22 @@ class MediaApiController extends Controller
         $filename = $processed['filename']; // peut changer (PNG sans transparence → JPG)
 
         $folderId = null;
+        $folderIsPrivate = false;
         if (! empty($meta['folder_path'])) {
             $folder = MediaFolder::firstOrCreate(
                 ['name' => $meta['folder_path']],
                 ['slug' => Str::slug($meta['folder_path'])]
             );
             $folderId = $folder->id;
+            $folderIsPrivate = (bool) $folder->is_private;
+        }
+
+        // Garde-fou : un dossier privé escalade automatiquement une photo 'public'
+        // (default ou explicite côté client) en 'never_publish'. Un client qui veut
+        // 'prive' (intermédiaire) reste respecté.
+        $intimacyLevel = $meta['intimacy_level'] ?? 'public';
+        if ($folderIsPrivate && $intimacyLevel === 'public') {
+            $intimacyLevel = 'never_publish';
         }
 
         $mediaFile = MediaFile::create([
@@ -123,7 +133,7 @@ class MediaApiController extends Controller
             'thematic_tags' => $this->normalizeTags($meta['thematic_tags'] ?? null),
             'embedding' => $meta['embedding'] ?? null,
             'embedding_model' => $meta['embedding_model'] ?? null,
-            'intimacy_level' => $meta['intimacy_level'] ?? 'public',
+            'intimacy_level' => $intimacyLevel,
             'people_ids' => $meta['people_ids'] ?? null,
             'ai_metadata' => $meta['ai_metadata'] ?? null,
             'source_context' => $meta['source_context'] ?? null,
@@ -174,6 +184,20 @@ class MediaApiController extends Controller
             'folder_id' => $data['folder_id'] ?? null,
             'intimacy_level' => $data['intimacy_level'] ?? null,
         ], fn ($v) => $v !== null);
+
+        // Garde-fou : si la photo atterrit dans un dossier privé et que l'intimacy_level
+        // résultant serait 'public', on escalade en 'never_publish'. Permet au pipeline
+        // Mac (qui n'envoie pas intimacy_level dans /validate) de récupérer la visibilité
+        // correcte quand /ingest a créé la photo dans un dossier intermédiaire public.
+        if (! empty($update['folder_id'])) {
+            $targetFolder = MediaFolder::find($update['folder_id']);
+            if ($targetFolder && $targetFolder->is_private) {
+                $effectiveIntimacy = $update['intimacy_level'] ?? $media->intimacy_level;
+                if ($effectiveIntimacy === 'public') {
+                    $update['intimacy_level'] = 'never_publish';
+                }
+            }
+        }
 
         if (array_key_exists('thematic_tags_override', $data)) {
             $update['thematic_tags'] = $this->normalizeTags($data['thematic_tags_override']);
