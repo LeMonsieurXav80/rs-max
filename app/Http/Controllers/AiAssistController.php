@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Models\MediaFile;
 use App\Models\SocialAccount;
 use App\Services\AiAssistService;
 use Illuminate\Http\JsonResponse;
@@ -102,6 +103,7 @@ class AiAssistController extends Controller
 
             if (! file_exists($filePath)) {
                 Log::warning('AiAssistController: Media file not found', ['url' => $url, 'filename' => $filename, 'path' => $filePath]);
+
                 continue;
             }
 
@@ -157,6 +159,116 @@ class AiAssistController extends Controller
         return response()->json(['platform_contents' => $result]);
     }
 
+    public function generateFromPhotoInfos(Request $request): JsonResponse
+    {
+        $validated = $request->validate([
+            'media_urls' => 'required|array|min:1',
+            'media_urls.*' => 'required|string',
+            'platforms' => 'required|array|min:1',
+            'platforms.*' => 'string|in:facebook,instagram,threads,twitter,telegram,youtube,bluesky',
+            'account_id' => 'required|exists:social_accounts,id',
+            'content' => 'nullable|string|max:10000',
+        ]);
+
+        $account = SocialAccount::with(['platform', 'persona'])->findOrFail($validated['account_id']);
+        $persona = $account->persona;
+
+        if (! $persona) {
+            return response()->json([
+                'error' => 'Aucune persona configurée pour ce compte.',
+            ], 422);
+        }
+
+        $filenames = array_map(fn ($url) => basename($url), $validated['media_urls']);
+        $mediaFiles = MediaFile::whereIn('filename', $filenames)->get();
+
+        $brief = $this->buildPhotoInfosBrief($mediaFiles, $validated['content'] ?? '');
+
+        if ($brief === null) {
+            return response()->json([
+                'error' => 'Aucune des photos sélectionnées n\'a d\'informations enrichies (description, tags, marques, lieu...). Allez dans Médias pour les analyser ou les taguer.',
+            ], 422);
+        }
+
+        $service = new AiAssistService;
+        $result = $service->generateForPlatforms(
+            $brief,
+            $validated['platforms'],
+            $persona,
+            $account
+        );
+
+        if (! $result) {
+            return response()->json([
+                'error' => 'Impossible de générer le contenu. Vérifiez la clé API OpenAI dans les paramètres.',
+            ], 422);
+        }
+
+        return response()->json(['platform_contents' => $result]);
+    }
+
+    /**
+     * Construit un brief textuel à partir des métadonnées de photos.
+     * Retourne null si aucune photo n'a d'informations exploitables.
+     */
+    private function buildPhotoInfosBrief($mediaFiles, string $userNote): ?string
+    {
+        $blocks = [];
+        $index = 1;
+
+        foreach ($mediaFiles as $media) {
+            $lines = [];
+
+            if (! empty($media->description_fr)) {
+                $lines[] = 'Description : '.trim($media->description_fr);
+            }
+
+            $tags = is_array($media->thematic_tags) ? array_filter($media->thematic_tags) : [];
+            if (! empty($tags)) {
+                $lines[] = 'Sujets : '.implode(', ', $tags);
+            }
+
+            $brands = is_array($media->brands) ? array_filter($media->brands) : [];
+            if (! empty($brands)) {
+                $lines[] = 'Marques : '.implode(', ', $brands);
+            }
+
+            $location = array_filter([$media->city, $media->region, $media->country]);
+            if (! empty($location)) {
+                $lines[] = 'Lieu : '.implode(', ', $location);
+            }
+
+            if (! empty($media->event)) {
+                $lines[] = 'Événement : '.$media->event;
+            }
+
+            if ($media->taken_at) {
+                $lines[] = 'Date : '.$media->taken_at->locale('fr')->isoFormat('MMMM YYYY');
+            }
+
+            if (empty($lines)) {
+                continue;
+            }
+
+            $blocks[] = "— Photo {$index} :\n  ".implode("\n  ", $lines);
+            $index++;
+        }
+
+        if (empty($blocks)) {
+            return null;
+        }
+
+        $brief = "Photos sélectionnées avec leurs informations enrichies :\n\n".implode("\n\n", $blocks);
+
+        if (trim($userNote) !== '') {
+            $brief .= "\n\nNote de l'utilisateur : ".trim($userNote);
+        }
+
+        $brief .= "\n\nGénère une publication créative et engageante en t'appuyant sur ces informations (sans inventer de détails non mentionnés).";
+
+        return $brief;
+    }
+
     private function resizeImageForVision(string $filePath): ?string
     {
         $mimeType = mime_content_type($filePath);
@@ -194,7 +306,7 @@ class AiAssistController extends Controller
         $data = ob_get_clean();
         imagedestroy($image);
 
-        return 'data:image/jpeg;base64,' . base64_encode($data);
+        return 'data:image/jpeg;base64,'.base64_encode($data);
     }
 
     private function extractVideoFrames(string $videoPath): array
@@ -250,7 +362,7 @@ class AiAssistController extends Controller
 
             // Extract remaining frames
             foreach ($timestamps as $ts) {
-                $tempPath = tempnam(sys_get_temp_dir(), 'rsmax_frame_') . '.jpg';
+                $tempPath = tempnam(sys_get_temp_dir(), 'rsmax_frame_').'.jpg';
                 $tempFiles[] = $tempPath;
 
                 exec(sprintf(
@@ -262,7 +374,7 @@ class AiAssistController extends Controller
                 ));
 
                 if (file_exists($tempPath) && filesize($tempPath) > 0) {
-                    $dataUrls[] = 'data:image/jpeg;base64,' . base64_encode(file_get_contents($tempPath));
+                    $dataUrls[] = 'data:image/jpeg;base64,'.base64_encode(file_get_contents($tempPath));
                 }
             }
         } finally {

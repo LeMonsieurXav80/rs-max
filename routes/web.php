@@ -68,6 +68,7 @@ Route::middleware(['auth', 'verified', 'throttle:600,1'])->group(function () {
     Route::post('posts/ai-assist', [AiAssistController::class, 'generate'])->name('posts.aiAssist');
     Route::post('posts/ai-assist-platforms', [AiAssistController::class, 'generateForPlatforms'])->name('posts.aiAssistPlatforms');
     Route::post('posts/ai-assist-media', [AiAssistController::class, 'generateFromMedia'])->name('posts.aiAssistMedia');
+    Route::post('posts/ai-assist-photo-infos', [AiAssistController::class, 'generateFromPhotoInfos'])->name('posts.aiAssistPhotoInfos');
 
     // Posts (resource CRUD)
     Route::resource('posts', PostController::class);

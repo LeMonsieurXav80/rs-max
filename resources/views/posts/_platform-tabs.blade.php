@@ -45,11 +45,31 @@
                     </template>
                     <span x-text="aiMultiLoading ? 'Génération...' : 'Générer à partir de texte'"></span>
                 </button>
-                {{-- Generate from media --}}
+                {{-- Generate from photo infos (metadata: tags, marques, lieu...) --}}
+                <button type="button"
+                        x-show="hasPersona && mediaItems && mediaItems.length > 0"
+                        @click="generateFromPhotoInfos()"
+                        :disabled="aiMultiLoading || aiMediaLoading || aiPhotoInfosLoading"
+                        class="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-emerald-600 bg-emerald-50 rounded-lg hover:bg-emerald-100 transition-colors disabled:opacity-50">
+                    <template x-if="!aiPhotoInfosLoading">
+                        <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1.5">
+                            <path stroke-linecap="round" stroke-linejoin="round" d="M9.568 3H5.25A2.25 2.25 0 0 0 3 5.25v4.318c0 .597.237 1.17.659 1.591l9.581 9.581c.699.699 1.78.872 2.607.33a18.095 18.095 0 0 0 5.223-5.223c.542-.827.369-1.908-.33-2.607L11.16 3.66A2.25 2.25 0 0 0 9.568 3Z" />
+                            <path stroke-linecap="round" stroke-linejoin="round" d="M6 6h.008v.008H6V6Z" />
+                        </svg>
+                    </template>
+                    <template x-if="aiPhotoInfosLoading">
+                        <svg class="w-3.5 h-3.5 animate-spin" fill="none" viewBox="0 0 24 24">
+                            <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                            <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path>
+                        </svg>
+                    </template>
+                    <span x-text="aiPhotoInfosLoading ? 'Génération...' : 'Générer depuis infos photos'"></span>
+                </button>
+                {{-- Generate from media (Vision API) --}}
                 <button type="button"
                         x-show="hasPersona && mediaItems && mediaItems.length > 0"
                         @click="generateFromMedia()"
-                        :disabled="aiMultiLoading || aiMediaLoading"
+                        :disabled="aiMultiLoading || aiMediaLoading || aiPhotoInfosLoading"
                         class="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-indigo-600 bg-indigo-50 rounded-lg hover:bg-indigo-100 transition-colors disabled:opacity-50">
                     <template x-if="!aiMediaLoading">
                         <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1.5">
@@ -72,6 +92,7 @@
         {{-- Error messages --}}
         <p x-show="aiMultiError" x-text="aiMultiError" class="mb-3 text-sm text-red-600" x-cloak></p>
         <p x-show="aiMediaError" x-text="aiMediaError" class="mb-3 text-sm text-red-600" x-cloak></p>
+        <p x-show="aiPhotoInfosError" x-text="aiPhotoInfosError" class="mb-3 text-sm text-red-600" x-cloak></p>
 
         {{-- Tab navigation --}}
         <div class="flex gap-1 border-b border-gray-200 mb-4 overflow-x-auto">
@@ -141,6 +162,8 @@ function platformTabs() {
         aiMultiError: '',
         aiMediaLoading: false,
         aiMediaError: '',
+        aiPhotoInfosLoading: false,
+        aiPhotoInfosError: '',
 
         updatePlatforms() {
             const checked = [...document.querySelectorAll('input[name="accounts[]"]:checked')];
@@ -254,6 +277,57 @@ function platformTabs() {
             }
 
             this.aiMediaLoading = false;
+        },
+
+        async generateFromPhotoInfos() {
+            const checkedAccount = document.querySelector('input[name="accounts[]"]:checked');
+            if (!checkedAccount) {
+                this.aiPhotoInfosError = 'Sélectionnez au moins un compte.';
+                setTimeout(() => this.aiPhotoInfosError = '', 3000);
+                return;
+            }
+
+            const items = this.mediaItems || [];
+            if (items.length === 0) {
+                this.aiPhotoInfosError = 'Ajoutez au moins un média.';
+                setTimeout(() => this.aiPhotoInfosError = '', 3000);
+                return;
+            }
+
+            this.aiPhotoInfosLoading = true;
+            this.aiPhotoInfosError = '';
+
+            try {
+                const resp = await fetch('{{ route("posts.aiAssistPhotoInfos") }}', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'X-CSRF-TOKEN': document.querySelector('meta[name=csrf-token]').content,
+                        'Accept': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        media_urls: items.map(item => item.url),
+                        platforms: this.platforms,
+                        account_id: parseInt(checkedAccount.value),
+                        content: document.getElementById('content_fr')?.value || '',
+                    }),
+                });
+
+                const data = await resp.json();
+                if (data.platform_contents) {
+                    Object.entries(data.platform_contents).forEach(([slug, text]) => {
+                        this.platformContents[slug] = text;
+                    });
+                } else if (data.error) {
+                    this.aiPhotoInfosError = data.error;
+                    setTimeout(() => this.aiPhotoInfosError = '', 5000);
+                }
+            } catch(e) {
+                this.aiPhotoInfosError = 'Erreur de connexion';
+                setTimeout(() => this.aiPhotoInfosError = '', 3000);
+            }
+
+            this.aiPhotoInfosLoading = false;
         }
     }
 }
