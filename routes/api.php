@@ -5,6 +5,7 @@ use App\Http\Controllers\Api\GenerateApiController;
 use App\Http\Controllers\Api\MediaApiController;
 use App\Http\Controllers\Api\PersonaApiController;
 use App\Http\Controllers\Api\PostApiController;
+use App\Http\Controllers\Api\ReshareApiController;
 use App\Http\Controllers\Api\StatsApiController;
 use App\Http\Controllers\Api\ThreadApiController;
 use Illuminate\Support\Facades\Route;
@@ -21,6 +22,8 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::put('/posts/{post}', [PostApiController::class, 'update']);
     Route::delete('/posts/{post}', [PostApiController::class, 'destroy']);
     Route::post('/posts/{post}/publish', [PostApiController::class, 'publish']);
+    Route::post('/posts/{post}/reshare', [ReshareApiController::class, 'fromPost']);
+    Route::post('/posts/reshare-url', [ReshareApiController::class, 'fromUrl']);
     Route::post('/bulk-schedule', [ApiController::class, 'bulkSchedule']);
     Route::post('/bulk-cancel', [PostApiController::class, 'bulkCancel']);
 

@@ -15,6 +15,9 @@ class ThreadSegment extends Model
         'platform_contents',
         'translations',
         'media',
+        'is_boost',
+        'boost_source_thread_id',
+        'boost_source_url',
     ];
 
     protected function casts(): array
@@ -23,6 +26,7 @@ class ThreadSegment extends Model
             'platform_contents' => 'array',
             'translations' => 'array',
             'media' => 'array',
+            'is_boost' => 'boolean',
         ];
     }
 
@@ -34,6 +38,11 @@ class ThreadSegment extends Model
     public function segmentPlatforms(): HasMany
     {
         return $this->hasMany(ThreadSegmentPlatform::class);
+    }
+
+    public function boostSourceThread(): BelongsTo
+    {
+        return $this->belongsTo(Thread::class, 'boost_source_thread_id');
     }
 
     public function getContentForPlatform(string $slug): string

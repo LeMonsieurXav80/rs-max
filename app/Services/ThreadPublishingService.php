@@ -110,6 +110,7 @@ class ThreadPublishingService
                     $segmentPlatform->update([
                         'status' => 'published',
                         'external_id' => $result['external_id'],
+                        'platform_url' => PostUrlBuilder::build($account, $result['external_id']),
                         'published_at' => now(),
                     ]);
                     $previousExternalId = $result['external_id'];
@@ -205,6 +206,9 @@ class ThreadPublishingService
                 ->update([
                     'status' => $result['success'] ? 'published' : 'failed',
                     'external_id' => $result['external_id'] ?? null,
+                    'platform_url' => $result['success'] && ! empty($result['external_id'])
+                        ? PostUrlBuilder::build($account, $result['external_id'])
+                        : null,
                     'published_at' => $result['success'] ? now() : null,
                     'error_message' => $result['error'] ?? null,
                 ]);
@@ -458,14 +462,7 @@ class ThreadPublishingService
 
     private function buildPostUrl(SocialAccount $account, string $externalId): ?string
     {
-        $slug = $account->platform->slug;
-
-        return match ($slug) {
-            'twitter' => "https://x.com/{$account->platform_account_id}/status/{$externalId}",
-            'threads' => "https://www.threads.net/@{$account->name}/post/{$externalId}",
-            'bluesky' => BlueskyAdapter::buildPostUrl($account->credentials['handle'] ?? $account->name, $externalId),
-            default => null,
-        };
+        return PostUrlBuilder::build($account, $externalId);
     }
 
     private function getAdapter(string $slug): ?PlatformAdapterInterface

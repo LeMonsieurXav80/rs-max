@@ -16,6 +16,7 @@ use App\Services\Adapters\ThreadsAdapter;
 use App\Services\Adapters\TwitterAdapter;
 use App\Services\Adapters\YouTubeAdapter;
 use App\Services\MediaPublicationTracker;
+use App\Services\PostUrlBuilder;
 use App\Services\PublishingService;
 use App\Services\TelegramNotificationService;
 use Illuminate\Bus\Queueable;
@@ -82,9 +83,13 @@ class PublishToPlatformJob implements ShouldQueue
         $result = $adapter->publish($account, $content, $media);
 
         if ($result['success']) {
+            $externalId = $result['external_id'] ?? null;
+            $platformUrl = $externalId ? PostUrlBuilder::build($account, $externalId) : null;
+
             $postPlatform->update([
                 'status' => 'published',
-                'external_id' => $result['external_id'] ?? null,
+                'external_id' => $externalId,
+                'platform_url' => $platformUrl,
                 'published_at' => now(),
             ]);
 

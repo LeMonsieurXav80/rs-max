@@ -22,6 +22,11 @@ class Post extends Model
         'location_id',
         'status',
         'source_type',
+        'reshare_source_post_platform_id',
+        'reshare_source_platform_id',
+        'reshare_source_external_id',
+        'reshare_source_url',
+        'reshare_mode',
         'scheduled_at',
         'published_at',
     ];
@@ -46,6 +51,31 @@ class Post extends Model
     public function postPlatforms(): HasMany
     {
         return $this->hasMany(PostPlatform::class);
+    }
+
+    public function reshareSourcePostPlatform(): BelongsTo
+    {
+        return $this->belongsTo(PostPlatform::class, 'reshare_source_post_platform_id');
+    }
+
+    public function reshareSourcePlatform(): BelongsTo
+    {
+        return $this->belongsTo(Platform::class, 'reshare_source_platform_id');
+    }
+
+    /**
+     * Tous les posts qui repartagent une publication (post_platform) du post courant.
+     */
+    public function reshares()
+    {
+        return Post::query()
+            ->whereIn('reshare_source_post_platform_id', $this->postPlatforms()->select('id'));
+    }
+
+    public function isReshare(): bool
+    {
+        return $this->reshare_source_post_platform_id !== null
+            || $this->reshare_source_url !== null;
     }
 
     public function wpPost(): \Illuminate\Database\Eloquent\Relations\HasOne

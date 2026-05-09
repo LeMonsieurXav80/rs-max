@@ -6,7 +6,7 @@ use App\Models\SocialAccount;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 
-class BlueskyAdapter implements PlatformAdapterInterface, ThreadableAdapterInterface
+class BlueskyAdapter implements PlatformAdapterInterface, ResharingAdapterInterface, ThreadableAdapterInterface
 {
     private const PDS_BASE = 'https://bsky.social';
 
@@ -119,6 +119,92 @@ class BlueskyAdapter implements PlatformAdapterInterface, ThreadableAdapterInter
             Log::error('BlueskyAdapter: publishReply failed', [
                 'account_id' => $account->id,
                 'reply_to' => $replyToId,
+                'error' => $e->getMessage(),
+            ]);
+
+            return $this->error($e->getMessage());
+        }
+    }
+
+    // ─── ResharingAdapterInterface ───────────────────────────────────
+
+    /**
+     * Repost natif Bluesky : crée un record app.bsky.feed.repost.
+     */
+    public function nativeRepost(SocialAccount $account, string $sourceExternalId): array
+    {
+        try {
+            $auth = $this->ensureAuthenticated($account);
+            if (! $auth) {
+                return $this->error('Impossible de s\'authentifier sur Bluesky.');
+            }
+
+            [$uri, $cid] = $this->parseExternalId($sourceExternalId);
+            if (! $uri || ! $cid) {
+                return $this->error('Bluesky: external_id invalide (format attendu uri|cid).');
+            }
+
+            $record = [
+                '$type' => 'app.bsky.feed.repost',
+                'subject' => ['uri' => $uri, 'cid' => $cid],
+                'createdAt' => now()->toIso8601ZuluString(),
+            ];
+
+            return $this->createRecord($auth['did'], $auth['accessJwt'], $record, 'app.bsky.feed.repost');
+        } catch (\Throwable $e) {
+            Log::error('BlueskyAdapter: nativeRepost failed', [
+                'account_id' => $account->id,
+                'error' => $e->getMessage(),
+            ]);
+
+            return $this->error($e->getMessage());
+        }
+    }
+
+    /**
+     * Quote post Bluesky : record app.bsky.feed.post avec embed app.bsky.embed.record.
+     */
+    public function nativeQuote(SocialAccount $account, string $text, string $sourceExternalId, ?array $media = null): array
+    {
+        try {
+            $auth = $this->ensureAuthenticated($account);
+            if (! $auth) {
+                return $this->error('Impossible de s\'authentifier sur Bluesky.');
+            }
+
+            [$uri, $cid] = $this->parseExternalId($sourceExternalId);
+            if (! $uri || ! $cid) {
+                return $this->error('Bluesky: external_id invalide (format attendu uri|cid).');
+            }
+
+            $text = $this->enforceCharLimit($text);
+            $record = $this->buildRecord($text);
+
+            $quoteRef = ['uri' => $uri, 'cid' => $cid];
+
+            // Si media, on combine avec recordWithMedia ; sinon embed.record simple.
+            if (! empty($media)) {
+                $mediaEmbed = $this->buildMediaEmbed($auth['accessJwt'], $media);
+                if (is_array($mediaEmbed) && isset($mediaEmbed['error'])) {
+                    return $this->error($mediaEmbed['error']);
+                }
+                if ($mediaEmbed) {
+                    $record['embed'] = [
+                        '$type' => 'app.bsky.embed.recordWithMedia',
+                        'record' => ['$type' => 'app.bsky.embed.record', 'record' => $quoteRef],
+                        'media' => $mediaEmbed,
+                    ];
+                } else {
+                    $record['embed'] = ['$type' => 'app.bsky.embed.record', 'record' => $quoteRef];
+                }
+            } else {
+                $record['embed'] = ['$type' => 'app.bsky.embed.record', 'record' => $quoteRef];
+            }
+
+            return $this->createRecord($auth['did'], $auth['accessJwt'], $record);
+        } catch (\Throwable $e) {
+            Log::error('BlueskyAdapter: nativeQuote failed', [
+                'account_id' => $account->id,
                 'error' => $e->getMessage(),
             ]);
 
@@ -259,12 +345,12 @@ class BlueskyAdapter implements PlatformAdapterInterface, ThreadableAdapterInter
         return $record;
     }
 
-    private function createRecord(string $did, string $accessJwt, array $record): array
+    private function createRecord(string $did, string $accessJwt, array $record, string $collection = 'app.bsky.feed.post'): array
     {
         $response = Http::withToken($accessJwt)
             ->post(self::PDS_BASE . '/xrpc/com.atproto.repo.createRecord', [
                 'repo' => $did,
-                'collection' => 'app.bsky.feed.post',
+                'collection' => $collection,
                 'record' => $record,
             ]);
 

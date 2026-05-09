@@ -15,6 +15,7 @@ class ThreadSegmentPlatform extends Model
         'platform_id',
         'status',
         'external_id',
+        'platform_url',
         'error_message',
         'published_at',
     ];

@@ -6,11 +6,13 @@ use App\Models\SocialAccount;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 
-class TwitterAdapter implements PlatformAdapterInterface, ThreadableAdapterInterface
+class TwitterAdapter implements PlatformAdapterInterface, ResharingAdapterInterface, ThreadableAdapterInterface
 {
     private const TWEET_URL = 'https://api.twitter.com/2/tweets';
 
     private const MEDIA_UPLOAD_URL = 'https://upload.twitter.com/1.1/media/upload.json';
+
+    private const RETWEETS_URL = 'https://api.twitter.com/2/users/%s/retweets';
 
     /**
      * OAuth 1.0a credentials populated per-request from the SocialAccount.
@@ -117,6 +119,106 @@ class TwitterAdapter implements PlatformAdapterInterface, ThreadableAdapterInter
                 'error' => $e->getMessage(),
             ];
         }
+    }
+
+    // ─── ResharingAdapterInterface ───────────────────────────────────
+
+    /**
+     * Retweet pur : POST /2/users/{user_id}/retweets body {tweet_id}.
+     * Conserve l'external_id source comme référence (Twitter ne retourne pas un nouvel ID pour le retweet).
+     */
+    public function nativeRepost(SocialAccount $account, string $sourceExternalId): array
+    {
+        try {
+            $credentials = $account->credentials;
+            $this->consumerKey = $credentials['api_key'];
+            $this->consumerSecret = $credentials['api_secret'];
+            $this->accessToken = $credentials['access_token'];
+            $this->accessTokenSecret = $credentials['access_token_secret'];
+
+            $userId = $account->platform_account_id;
+            if (! $userId) {
+                return $this->error('Twitter: platform_account_id manquant sur le compte.');
+            }
+
+            $url = sprintf(self::RETWEETS_URL, $userId);
+            $authHeader = $this->buildOAuthHeader('POST', $url, []);
+
+            $response = Http::withHeaders([
+                'Authorization' => $authHeader,
+                'Content-Type' => 'application/json',
+            ])->post($url, ['tweet_id' => $sourceExternalId]);
+
+            $body = $response->json();
+
+            if ($response->successful() && ($body['data']['retweeted'] ?? false)) {
+                return [
+                    'success' => true,
+                    'external_id' => $sourceExternalId,
+                    'error' => null,
+                ];
+            }
+
+            $apiError = $body['detail'] ?? $body['title'] ?? json_encode($body);
+            Log::error('TwitterAdapter: nativeRepost failed', [
+                'status' => $response->status(),
+                'error' => $apiError,
+            ]);
+
+            return $this->error("Twitter retweet (HTTP {$response->status()}): {$apiError}");
+        } catch (\Throwable $e) {
+            Log::error('TwitterAdapter: nativeRepost exception', [
+                'account_id' => $account->id,
+                'error' => $e->getMessage(),
+            ]);
+
+            return $this->error($e->getMessage());
+        }
+    }
+
+    /**
+     * Quote tweet : POST /2/tweets body {text, quote_tweet_id}.
+     */
+    public function nativeQuote(SocialAccount $account, string $text, string $sourceExternalId, ?array $media = null): array
+    {
+        try {
+            $credentials = $account->credentials;
+            $this->consumerKey = $credentials['api_key'];
+            $this->consumerSecret = $credentials['api_secret'];
+            $this->accessToken = $credentials['access_token'];
+            $this->accessTokenSecret = $credentials['access_token_secret'];
+
+            $payload = [
+                'text' => $text,
+                'quote_tweet_id' => $sourceExternalId,
+            ];
+
+            if (! empty($media)) {
+                $result = $this->uploadAllMedia($media);
+                if ($result['error']) {
+                    return $this->error($result['error']);
+                }
+                $payload['media'] = ['media_ids' => $result['media_ids']];
+            }
+
+            return $this->postTweet($payload);
+        } catch (\Throwable $e) {
+            Log::error('TwitterAdapter: nativeQuote exception', [
+                'account_id' => $account->id,
+                'error' => $e->getMessage(),
+            ]);
+
+            return $this->error($e->getMessage());
+        }
+    }
+
+    private function error(string $message): array
+    {
+        return [
+            'success' => false,
+            'external_id' => null,
+            'error' => $message,
+        ];
     }
 
     // -------------------------------------------------------------------------
