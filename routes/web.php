@@ -30,6 +30,7 @@ use App\Http\Controllers\ProfileController;
 use App\Http\Controllers\PromptGeneratorController;
 use App\Http\Controllers\PublishController;
 use App\Http\Controllers\RedditSourceController;
+use App\Http\Controllers\ReshareController;
 use App\Http\Controllers\RssFeedController;
 use App\Http\Controllers\SettingsController;
 use App\Http\Controllers\SocialAccountController;
@@ -129,6 +130,12 @@ Route::middleware(['auth', 'verified', 'throttle:600,1'])->group(function () {
     Route::post('posts/{post}/publish', [PublishController::class, 'publishAll'])->name('posts.publish');
     Route::post('posts/platform/{postPlatform}/publish', [PublishController::class, 'publishOne'])->name('posts.publishOne');
     Route::post('posts/platform/{postPlatform}/reset', [PublishController::class, 'resetOne'])->name('posts.resetOne');
+
+    // Repartage (reshare) — natif ou par lien, depuis un post interne ou une URL externe
+    Route::get('posts/reshare-url', [ReshareController::class, 'formUrl'])->name('posts.reshareUrl.form');
+    Route::post('posts/reshare-url', [ReshareController::class, 'fromUrl'])->name('posts.reshareUrl');
+    Route::get('posts/{post}/reshare', [ReshareController::class, 'formPost'])->name('posts.reshare.form');
+    Route::post('posts/{post}/reshare', [ReshareController::class, 'fromPost'])->name('posts.reshare');
 
     // Threads (Fils de discussion)
     Route::post('threads/generate-from-url', [ThreadController::class, 'generateFromUrl'])->name('threads.generateFromUrl');

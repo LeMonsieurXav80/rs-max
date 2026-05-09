@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Models\Thread;
 use App\Models\ThreadSegment;
 use App\Models\ThreadSegmentPlatform;
+use App\Services\ThreadBoostService;
 use App\Services\ThreadPublishingService;
 use Carbon\Carbon;
 use Illuminate\Http\JsonResponse;
@@ -74,7 +75,7 @@ class ThreadApiController extends Controller
     /**
      * POST /api/threads — Créer un thread (segments fournis, sans IA).
      */
-    public function store(Request $request): JsonResponse
+    public function store(Request $request, ThreadBoostService $boostService): JsonResponse
     {
         $validated = $request->validate([
             'title' => 'nullable|string|max:255',
@@ -88,6 +89,9 @@ class ThreadApiController extends Controller
             'segments.*.media' => 'nullable|array',
             'status' => 'required|in:draft,scheduled',
             'scheduled_at' => 'required_if:status,scheduled|nullable|date|after_or_equal:now',
+            'boost' => 'nullable|array',
+            'boost.source_thread_id' => 'required_with:boost|integer|exists:threads,id',
+            'boost.promo_text' => 'required_with:boost|string|max:5000',
         ]);
 
         $user = $request->user();
@@ -100,7 +104,7 @@ class ThreadApiController extends Controller
             return response()->json(['error' => 'Un ou plusieurs comptes invalides.'], 422);
         }
 
-        $thread = DB::transaction(function () use ($validated, $user, $validAccounts) {
+        $thread = DB::transaction(function () use ($validated, $user, $validAccounts, $boostService) {
             $thread = Thread::create([
                 'user_id' => $user->id,
                 'title' => $validated['title'] ?? null,
@@ -138,6 +142,15 @@ class ThreadApiController extends Controller
                     'publish_mode' => $publishMode,
                     'status' => 'pending',
                 ]);
+            }
+
+            if (! empty($validated['boost'])) {
+                $boostService->insertBoostSegment(
+                    $thread,
+                    $validAccounts,
+                    (int) $validated['boost']['source_thread_id'],
+                    $validated['boost']['promo_text'],
+                );
             }
 
             return $thread;

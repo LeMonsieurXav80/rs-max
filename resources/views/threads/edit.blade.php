@@ -287,6 +287,9 @@
             </div>
         </div>
 
+        {{-- Section: Boost (promotion d'un autre fil) --}}
+        @include('threads._boost-section', ['boostableThreads' => $boostableThreads ?? collect()])
+
         {{-- Section 4: Status --}}
         <div class="bg-white rounded-2xl shadow-sm border border-gray-100 p-6 lg:p-8">
             <h2 class="text-base font-semibold text-gray-900 mb-4">Statut</h2>

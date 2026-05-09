@@ -101,11 +101,29 @@ class BlueskyAdapter implements PlatformAdapterInterface, ResharingAdapterInterf
                 ],
             ];
 
+            $quoteRef = null;
+            if (! empty($options['quote_to_id'])) {
+                [$qUri, $qCid] = $this->parseExternalId($options['quote_to_id']);
+                if ($qUri && $qCid) {
+                    $quoteRef = ['uri' => $qUri, 'cid' => $qCid];
+                }
+            }
+
             if (! empty($media)) {
                 $embed = $this->buildMediaEmbed($jwt, $media);
-                if ($embed) {
+                if ($quoteRef && $embed) {
+                    $record['embed'] = [
+                        '$type' => 'app.bsky.embed.recordWithMedia',
+                        'record' => ['$type' => 'app.bsky.embed.record', 'record' => $quoteRef],
+                        'media' => $embed,
+                    ];
+                } elseif ($quoteRef) {
+                    $record['embed'] = ['$type' => 'app.bsky.embed.record', 'record' => $quoteRef];
+                } elseif ($embed) {
                     $record['embed'] = $embed;
                 }
+            } elseif ($quoteRef) {
+                $record['embed'] = ['$type' => 'app.bsky.embed.record', 'record' => $quoteRef];
             } else {
                 $externalEmbed = $this->buildExternalEmbed($content, $jwt);
                 if ($externalEmbed) {

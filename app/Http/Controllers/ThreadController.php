@@ -13,6 +13,7 @@ use App\Models\ThreadSegment;
 use App\Models\ThreadSegmentPlatform;
 use App\Models\WpSource;
 use App\Models\YtSource;
+use App\Services\ThreadBoostService;
 use App\Services\ThreadContentGenerationService;
 use App\Services\ThreadPublishingService;
 use Illuminate\Http\JsonResponse;
@@ -80,13 +81,23 @@ class ThreadController extends Controller
 
         $accountGroups = $user->accountGroups()->with('socialAccounts')->get();
 
-        return view('threads.create', compact('accounts', 'platforms', 'personas', 'hookCategories', 'sourceTypeCounts', 'accountGroups'));
+        // Fils publiés pouvant servir de cible de boost (segment 0 publié quelque part).
+        $boostableThreads = Thread::query()
+            ->where('status', 'published')
+            ->when(! $user->isAdmin(), fn ($q) => $q->where('user_id', $user->id))
+            ->whereHas('segments.segmentPlatforms', fn ($q) => $q->where('status', 'published')->whereNotNull('platform_url'))
+            ->with(['segments' => fn ($q) => $q->orderBy('position')->limit(1)])
+            ->orderByDesc('published_at')
+            ->limit(50)
+            ->get();
+
+        return view('threads.create', compact('accounts', 'platforms', 'personas', 'hookCategories', 'sourceTypeCounts', 'accountGroups', 'boostableThreads'));
     }
 
     /**
      * Store a new thread with its segments.
      */
-    public function store(Request $request): RedirectResponse|JsonResponse
+    public function store(Request $request, ThreadBoostService $boostService): RedirectResponse|JsonResponse
     {
         $validated = $request->validate([
             'title' => 'nullable|string|max:255',
@@ -102,12 +113,15 @@ class ThreadController extends Controller
             'status' => 'required|in:draft,scheduled',
             'scheduled_at' => 'nullable|date|after_or_equal:now',
             'publish_now' => 'nullable|boolean',
+            'boost' => 'nullable|array',
+            'boost.source_thread_id' => 'required_with:boost|integer|exists:threads,id',
+            'boost.promo_text' => 'required_with:boost|string|max:5000',
         ]);
 
         $publishNow = $request->boolean('publish_now');
         $user = $request->user();
 
-        $thread = DB::transaction(function () use ($validated, $user, $publishNow) {
+        $thread = DB::transaction(function () use ($validated, $user, $publishNow, $boostService) {
             $thread = Thread::create([
                 'user_id' => $user->id,
                 'title' => $validated['title'] ?? null,
@@ -163,6 +177,17 @@ class ThreadController extends Controller
                         'status' => 'pending',
                     ]);
                 }
+            }
+
+            // Insertion d'un segment de boost au milieu du fil si demandé.
+            if (! empty($validated['boost'])) {
+                $accountModels = SocialAccount::with('platform')->whereIn('id', $validated['accounts'])->get();
+                $boostService->insertBoostSegment(
+                    $thread,
+                    $accountModels,
+                    (int) $validated['boost']['source_thread_id'],
+                    $validated['boost']['promo_text'],
+                );
             }
 
             return $thread;
@@ -236,13 +261,23 @@ class ThreadController extends Controller
         $selectedAccountIds = $thread->socialAccounts->pluck('id')->toArray();
         $accountGroups = $user->accountGroups()->with('socialAccounts')->get();
 
-        return view('threads.edit', compact('thread', 'accounts', 'platforms', 'personas', 'selectedAccountIds', 'accountGroups'));
+        $boostableThreads = Thread::query()
+            ->where('status', 'published')
+            ->where('id', '!=', $thread->id)
+            ->when(! $user->isAdmin(), fn ($q) => $q->where('user_id', $user->id))
+            ->whereHas('segments.segmentPlatforms', fn ($q) => $q->where('status', 'published')->whereNotNull('platform_url'))
+            ->with(['segments' => fn ($q) => $q->orderBy('position')->limit(1)])
+            ->orderByDesc('published_at')
+            ->limit(50)
+            ->get();
+
+        return view('threads.edit', compact('thread', 'accounts', 'platforms', 'personas', 'selectedAccountIds', 'accountGroups', 'boostableThreads'));
     }
 
     /**
      * Update a thread and its segments.
      */
-    public function update(Request $request, Thread $thread): RedirectResponse
+    public function update(Request $request, Thread $thread, ThreadBoostService $boostService): RedirectResponse
     {
         $user = $request->user();
 
@@ -267,9 +302,12 @@ class ThreadController extends Controller
             'segments.*.media_json' => 'nullable|string',
             'status' => 'required|in:draft,scheduled',
             'scheduled_at' => 'nullable|date|after_or_equal:now',
+            'boost' => 'nullable|array',
+            'boost.source_thread_id' => 'required_with:boost|integer|exists:threads,id',
+            'boost.promo_text' => 'required_with:boost|string|max:5000',
         ]);
 
-        DB::transaction(function () use ($thread, $validated) {
+        DB::transaction(function () use ($thread, $validated, $boostService) {
             $thread->update([
                 'title' => $validated['title'] ?? null,
                 'source_url' => $validated['source_url'] ?? null,
@@ -327,6 +365,16 @@ class ThreadController extends Controller
                         'status' => 'pending',
                     ]);
                 }
+            }
+
+            if (! empty($validated['boost'])) {
+                $accountModels = SocialAccount::with('platform')->whereIn('id', $validated['accounts'])->get();
+                $boostService->insertBoostSegment(
+                    $thread,
+                    $accountModels,
+                    (int) $validated['boost']['source_thread_id'],
+                    $validated['boost']['promo_text'],
+                );
             }
         });
 

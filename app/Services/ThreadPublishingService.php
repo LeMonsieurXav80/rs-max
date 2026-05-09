@@ -97,13 +97,23 @@ class ThreadPublishingService
 
             $segmentPlatform->update(['status' => 'publishing']);
 
+            // Pour un segment de boost, on tente un quote natif (X / Bluesky) en plus du reply.
+            $options = null;
+            if ($segment->is_boost && $segment->boost_source_thread_id && $adapter instanceof \App\Services\Adapters\ResharingAdapterInterface) {
+                $source = app(ThreadBoostService::class)
+                    ->findSourceForPlatform($segment->boost_source_thread_id, $account->platform_id);
+                if ($source) {
+                    $options = ['quote_to_id' => $source['external_id']];
+                }
+            }
+
             try {
                 if ($previousExternalId === null) {
                     // First segment: standard publish.
                     $result = $adapter->publish($account, $content, $media);
                 } else {
-                    // Subsequent segments: reply to previous.
-                    $result = $adapter->publishReply($account, $content, $previousExternalId, $media);
+                    // Subsequent segments: reply to previous (+ quote si boost).
+                    $result = $adapter->publishReply($account, $content, $previousExternalId, $media, $options);
                 }
 
                 if ($result['success']) {

@@ -92,6 +92,10 @@ class TwitterAdapter implements PlatformAdapterInterface, ResharingAdapterInterf
                 ],
             ];
 
+            if (! empty($options['quote_to_id'])) {
+                $tweetPayload['quote_tweet_id'] = $options['quote_to_id'];
+            }
+
             if (! empty($media)) {
                 $result = $this->uploadAllMedia($media);
                 if ($result['error']) {
