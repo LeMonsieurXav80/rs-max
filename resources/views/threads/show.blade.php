@@ -149,6 +149,33 @@
                         <div class="p-4">
                             <p class="text-sm text-gray-700 whitespace-pre-wrap">{{ $segment->content_fr }}</p>
 
+                            {{-- Media du segment --}}
+                            @if(!empty($segment->media))
+                                <div class="mt-3 flex flex-wrap gap-2 p-3 bg-gray-50 rounded-xl">
+                                    @foreach($segment->media as $m)
+                                        @php
+                                            $url = $m['url'] ?? null;
+                                            $thumb = $m['thumbnail_url'] ?? $url;
+                                            $mime = $m['mimetype'] ?? '';
+                                            $isVideo = str_starts_with($mime, 'video/');
+                                        @endphp
+                                        @if($url)
+                                            <a href="{{ $url }}" target="_blank" rel="noopener" class="relative group block">
+                                                <img src="{{ $thumb }}" alt=""
+                                                     class="w-24 h-16 object-cover rounded-lg border border-gray-200 group-hover:opacity-80 transition">
+                                                @if($isVideo)
+                                                    <span class="absolute inset-0 flex items-center justify-center">
+                                                        <svg class="w-6 h-6 text-white drop-shadow" fill="currentColor" viewBox="0 0 24 24">
+                                                            <path d="M8 5v14l11-7z"/>
+                                                        </svg>
+                                                    </span>
+                                                @endif
+                                            </a>
+                                        @endif
+                                    @endforeach
+                                </div>
+                            @endif
+
                             {{-- Platform-specific content --}}
                             @if(!empty($segment->platform_contents))
                                 <div class="mt-3 pt-3 border-t border-gray-100 space-y-2">
