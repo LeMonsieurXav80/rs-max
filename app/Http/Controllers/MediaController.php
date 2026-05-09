@@ -34,7 +34,7 @@ class MediaController extends Controller
         $query = MediaFile::with('folder')->latest();
 
         if ($folderId === 'uncategorized') {
-            $query->whereNull('folder_id');
+            $this->scopeUncategorized($query);
         } elseif ($folderId) {
             // Filtrage récursif : inclut le dossier ET tous ses descendants.
             $rootFolder = MediaFolder::find($folderId);
@@ -50,8 +50,8 @@ class MediaController extends Controller
         } elseif ($filter === 'videos') {
             $query->where('mime_type', 'like', 'video/%');
         } elseif ($filter === 'unclassified') {
-            // Alias rétro-compat : photos sans dossier.
-            $query->whereNull('folder_id');
+            // Alias rétro-compat : photos sans dossier ni métadonnées.
+            $this->scopeUncategorized($query);
         }
 
         if ($intimacyFilter === 'never_publish') {
@@ -147,7 +147,7 @@ class MediaController extends Controller
         $imageCount = MediaFile::where('mime_type', 'like', 'image/%')->count();
         $videoCount = MediaFile::where('mime_type', 'like', 'video/%')->count();
         $totalCount = MediaFile::count();
-        $uncategorizedCount = MediaFile::whereNull('folder_id')->count();
+        $uncategorizedCount = $this->scopeUncategorized(MediaFile::query())->count();
         $neverPublishCount = MediaFile::where('mime_type', 'like', 'image/%')
             ->where('intimacy_level', 'never_publish')
             ->count();
@@ -175,7 +175,7 @@ class MediaController extends Controller
         $query = MediaFile::with('folder')->latest();
 
         if ($folderId === 'uncategorized') {
-            $query->whereNull('folder_id');
+            $this->scopeUncategorized($query);
         } elseif ($folderId) {
             $rootFolder = MediaFolder::find($folderId);
             $query->whereIn('folder_id', $rootFolder ? $rootFolder->descendantIds() : [(int) $folderId]);
@@ -214,7 +214,7 @@ class MediaController extends Controller
 
         $folders = MediaFolder::ordered()->withCount('files')->get();
         $totalCount = MediaFile::count();
-        $uncategorizedCount = MediaFile::whereNull('folder_id')->count();
+        $uncategorizedCount = $this->scopeUncategorized(MediaFile::query())->count();
         $neverPublishCount = MediaFile::where('intimacy_level', 'never_publish')->count();
 
         return view('media.manage', [
@@ -1130,6 +1130,25 @@ class MediaController extends Controller
             'Cache-Control' => 'private, max-age=86400',
             'Accept-Ranges' => 'bytes',
         ]);
+    }
+
+    /**
+     * Scope "À classer" : médias sans dossier, OU médias dépourvus à la fois
+     * de description, tags thématiques, et personnes (besoin de classement).
+     * Retourne le builder pour permettre le chaînage (ex. ->count()).
+     */
+    private function scopeUncategorized($query)
+    {
+        $query->where(function ($q) {
+            $q->whereNull('folder_id')
+                ->orWhere(function ($q2) {
+                    $q2->where(fn ($q3) => $q3->whereNull('description_fr')->orWhere('description_fr', ''))
+                        ->where(fn ($q3) => $q3->whereNull('thematic_tags')->orWhereJsonLength('thematic_tags', 0))
+                        ->where(fn ($q3) => $q3->whereNull('people_ids')->orWhereJsonLength('people_ids', 0));
+                });
+        });
+
+        return $query;
     }
 
     /**
