@@ -7,6 +7,7 @@ use App\Models\Setting;
 use App\Models\SocialAccount;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Storage;
 
 class AiAssistService
 {
@@ -470,12 +471,16 @@ TXT;
      * Renvoie un tableau parsable, ou null en cas d'échec/refus, ou la string 'refused'
      * si tous les modèles ont refusé.
      *
-     * @param  string  $imageDataUrl  Data URL "data:image/jpeg;base64,..." de l'image à analyser
+     * Accepte une seule data URL (image) ou un tableau de data URLs (frames d'une
+     * vidéo extraites via {@see extractVideoFramesAsDataUrls()}). Avec plusieurs
+     * frames, le system prompt est ajusté pour faire une lecture d'ensemble.
+     *
+     * @param  string|array<int,string>  $imageDataUrl  Data URL unique ou liste de data URLs
      * @param  string|null  $context  Contexte libre (ex: nom/chemin du dossier rattaché — sert d'orientation)
      * @param  array  $expectedPeople  Ids de personnes attendues (ex: ["caroline", "xavier"])
      */
     public function extractMetadataFromImage(
-        string $imageDataUrl,
+        string|array $imageDataUrl,
         ?string $context = null,
         array $expectedPeople = [],
     ): null|array|string {
@@ -486,20 +491,36 @@ TXT;
             return null;
         }
 
+        $imageUrls = is_array($imageDataUrl) ? array_values(array_filter($imageDataUrl, 'is_string')) : [$imageDataUrl];
+        if (empty($imageUrls)) {
+            Log::warning('AiAssistService: extractMetadataFromImage called with no image data URLs');
+
+            return null;
+        }
+        $isMultiFrame = count($imageUrls) > 1;
+
         $template = Setting::get('ai_prompt_metadata_extraction', self::DEFAULT_PROMPT_METADATA_EXTRACTION);
         $userPrompt = strtr($template, [
             '{contexte}' => $context !== null && trim($context) !== '' ? trim($context) : 'aucun',
             '{personnes_attendues}' => empty($expectedPeople) ? 'aucune' : implode(', ', $expectedPeople),
         ]);
+        if ($isMultiFrame) {
+            $userPrompt = "[Plusieurs images extraites d'une même vidéo te sont fournies. Analyse-les comme un tout pour décrire la scène.]\n\n".$userPrompt;
+        }
 
-        $contentBlocks = [
-            ['type' => 'text', 'text' => $userPrompt],
-            ['type' => 'image_url', 'image_url' => ['url' => $imageDataUrl, 'detail' => 'auto']],
-        ];
+        $contentBlocks = [['type' => 'text', 'text' => $userPrompt]];
+        foreach ($imageUrls as $url) {
+            $contentBlocks[] = ['type' => 'image_url', 'image_url' => ['url' => $url, 'detail' => 'auto']];
+        }
 
-        $systemPrompt = "Tu es un assistant d'analyse d'image pour un catalogue média. "
-            .'Tu observes une photo et extrais des métadonnées factuelles (lieu, marques, ambiance, tags). '
-            .'Tu réponds toujours en JSON valide selon le schéma demandé.';
+        $systemPrompt = $isMultiFrame
+            ? "Tu es un assistant d'analyse média pour un catalogue. "
+                .'Tu observes plusieurs images extraites de la même vidéo et tu en fais une lecture d\'ensemble '
+                .'(description, ambiance, lieu, personnes, marques, tags). '
+                .'Tu réponds toujours en JSON valide selon le schéma demandé.'
+            : "Tu es un assistant d'analyse d'image pour un catalogue média. "
+                .'Tu observes une photo et extrais des métadonnées factuelles (lieu, marques, ambiance, tags). '
+                .'Tu réponds toujours en JSON valide selon le schéma demandé.';
 
         $primaryModel = Setting::get('ai_model_vision', 'gpt-4o');
         $modelsToTry = array_unique([$primaryModel, 'gpt-4.1', 'gpt-4.1-mini', 'gpt-4o-mini']);
@@ -545,6 +566,7 @@ TXT;
                     Log::info('AiAssistService: Metadata extracted', [
                         'model' => $model,
                         'context' => $context,
+                        'frames' => count($imageUrls),
                         'tags_count' => count($parsed['thematic_tags'] ?? []),
                         'has_location' => ! empty($parsed['city']) || ! empty($parsed['country']),
                     ]);
@@ -870,5 +892,100 @@ TXT;
 
             return null;
         }
+    }
+
+    /**
+     * Extrait N frames d'une vidéo via ffmpeg et retourne des data URLs JPEG (base64).
+     *
+     * Réutilise le thumbnail existant (storage/app/private/media/thumbnails/{basename}.jpg)
+     * comme première frame s'il est disponible — économise un appel ffmpeg. Les frames
+     * suivantes sont prélevées à intervalles réguliers sur la durée de la vidéo,
+     * redimensionnées à 1024px de large par ffmpeg pour rester sous le quota Vision.
+     *
+     * Retourne un tableau vide si ffmpeg est introuvable ou si la vidéo est illisible.
+     */
+    public function extractVideoFramesAsDataUrls(string $videoPath, int $frameCount = 5): array
+    {
+        $dataUrls = [];
+        $tempFiles = [];
+
+        try {
+            $ffmpeg = $this->findBinary('ffmpeg');
+            $ffprobe = $this->findBinary('ffprobe');
+
+            if (! $ffmpeg) {
+                Log::warning('AiAssistService: ffmpeg not found, cannot extract video frames');
+
+                return [];
+            }
+
+            $duration = 0.0;
+            if ($ffprobe) {
+                $output = [];
+                exec(sprintf(
+                    '%s -v quiet -show_entries format=duration -of csv=p=0 %s 2>/dev/null',
+                    escapeshellarg($ffprobe),
+                    escapeshellarg($videoPath)
+                ), $output);
+                $duration = (float) trim($output[0] ?? '0');
+            }
+            if ($duration <= 0) {
+                $duration = 30.0; // fallback raisonnable
+            }
+
+            $basename = pathinfo(basename($videoPath), PATHINFO_FILENAME);
+            $thumbPath = Storage::disk('local')->path("media/thumbnails/{$basename}.jpg");
+            $hasThumb = file_exists($thumbPath) && filesize($thumbPath) > 0;
+
+            $remainingFrames = $hasThumb ? max(0, $frameCount - 1) : $frameCount;
+            $timestamps = [];
+            for ($i = 1; $i <= $remainingFrames; $i++) {
+                $timestamps[] = round($duration * $i / ($remainingFrames + 1), 2);
+            }
+
+            if ($hasThumb) {
+                $dataUrls[] = 'data:image/jpeg;base64,'.base64_encode(file_get_contents($thumbPath));
+            }
+
+            foreach ($timestamps as $ts) {
+                $tempPath = tempnam(sys_get_temp_dir(), 'rsmax_frame_').'.jpg';
+                $tempFiles[] = $tempPath;
+
+                exec(sprintf(
+                    '%s -ss %s -i %s -frames:v 1 -q:v 3 -vf "scale=1024:-1" -update 1 %s 2>/dev/null',
+                    escapeshellarg($ffmpeg),
+                    $ts,
+                    escapeshellarg($videoPath),
+                    escapeshellarg($tempPath)
+                ));
+
+                if (file_exists($tempPath) && filesize($tempPath) > 0) {
+                    $dataUrls[] = 'data:image/jpeg;base64,'.base64_encode(file_get_contents($tempPath));
+                }
+            }
+        } finally {
+            foreach ($tempFiles as $tmp) {
+                @unlink($tmp);
+            }
+        }
+
+        return $dataUrls;
+    }
+
+    private function findBinary(string $name): ?string
+    {
+        $output = [];
+        exec("which {$name} 2>/dev/null", $output);
+        if (! empty($output[0]) && is_executable($output[0])) {
+            return $output[0];
+        }
+
+        foreach (["/opt/homebrew/bin/{$name}", "/usr/local/bin/{$name}", "/usr/bin/{$name}"] as $path) {
+            if (is_executable($path)) {
+                return $path;
+            }
+        }
+
+        return null;
     }
 }

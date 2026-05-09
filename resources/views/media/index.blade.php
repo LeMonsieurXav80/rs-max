@@ -520,7 +520,10 @@
         async runAiAnalysis(targetIds) {
             const ids = targetIds || (this.multiSelect && this.multiSelected.length > 0 ? [...this.multiSelected] : (this.selected ? [this.selected.id] : []));
             if (ids.length === 0 || this.aiInProgress) return;
-            if (!confirm(`Analyser ${ids.length} photo(s) avec l'IA ?\n\nLes tags, personnes, lieu et marques seront REMPLACES par ce que l'IA propose.\nCout estime : ~$${(ids.length * 0.005).toFixed(3)}.`)) return;
+            const videoCount = ids.filter(id => { const it = this.items.find(i => i.id === id); return it && it.is_video; }).length;
+            const imageCount = ids.length - videoCount;
+            const costEstimate = (imageCount * 0.005) + (videoCount * 0.025);
+            if (!confirm(`Analyser ${ids.length} media(s) avec l'IA ?\n\nLes tags, personnes, lieu et marques seront REMPLACES par ce que l'IA propose.\nCout estime : ~$${costEstimate.toFixed(3)} (${imageCount} image(s), ${videoCount} video(s)).`)) return;
 
             this.aiInProgress = true;
             this.aiTotal = ids.length;
@@ -1311,9 +1314,9 @@
                                 :disabled="aiInProgress || (!selected && multiSelected.length === 0)"
                                 class="w-full px-2 py-1.5 text-xs bg-violet-600 text-white rounded-lg disabled:opacity-40 hover:bg-violet-700 font-medium flex items-center justify-center gap-1">
                             <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M9.813 15.904 9 18.75l-.813-2.846a4.5 4.5 0 0 0-3.09-3.09L2.25 12l2.846-.813a4.5 4.5 0 0 0 3.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 0 0 3.09 3.09L15.75 12l-2.846.813a4.5 4.5 0 0 0-3.09 3.09Z" /></svg>
-                            <span x-show="!aiInProgress && multiSelect && multiSelected.length > 0">Analyser <span x-text="multiSelected.length"></span> photo(s)</span>
-                            <span x-show="!aiInProgress && (!multiSelect || multiSelected.length === 0) && selected">Analyser cette photo</span>
-                            <span x-show="!aiInProgress && (!multiSelect || multiSelected.length === 0) && !selected" class="text-violet-200">Aucune photo</span>
+                            <span x-show="!aiInProgress && multiSelect && multiSelected.length > 0">Analyser <span x-text="multiSelected.length"></span> media(s)</span>
+                            <span x-show="!aiInProgress && (!multiSelect || multiSelected.length === 0) && selected" x-text="selected && selected.is_video ? 'Analyser cette video' : 'Analyser cette photo'"></span>
+                            <span x-show="!aiInProgress && (!multiSelect || multiSelected.length === 0) && !selected" class="text-violet-200">Aucun media</span>
                             <span x-show="aiInProgress">Analyse en cours...</span>
                         </button>
                         <div x-show="aiInProgress || aiTotal > 0" x-cloak class="text-[10px] text-violet-700">
@@ -1550,8 +1553,8 @@
                                     </div>
                                 </template>
 
-                                {{-- Size badge --}}
-                                <div class="absolute bottom-1.5 left-1.5 px-1.5 py-0.5 bg-black/60 text-white text-[10px] rounded" x-text="item.size_human"></div>
+                                {{-- ID badge --}}
+                                <div class="absolute bottom-1.5 left-1.5 px-1.5 py-0.5 bg-black/60 text-white text-[10px] font-mono rounded" x-text="'#' + item.id"></div>
                             </div>
 
                             {{-- Info below thumbnail --}}

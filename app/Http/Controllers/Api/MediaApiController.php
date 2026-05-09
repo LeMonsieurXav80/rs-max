@@ -645,8 +645,8 @@ class MediaApiController extends Controller
             'apply' => 'nullable|boolean',
         ]);
 
-        if (! $media->is_image) {
-            return response()->json(['error' => 'analyze-vision ne supporte que les images'], 422);
+        if (! $media->is_image && ! $media->is_video) {
+            return response()->json(['error' => 'analyze-vision ne supporte que les images et vidéos'], 422);
         }
 
         // Le disk 'local' pointe sur storage/app/private/ en Laravel 12.
@@ -664,12 +664,19 @@ class MediaApiController extends Controller
             }
         }
         if ($absolutePath === null) {
-            return response()->json(['error' => 'fichier image introuvable sur le storage'], 404);
+            return response()->json(['error' => 'fichier introuvable sur le storage'], 404);
         }
 
-        $dataUrl = $this->resizeImageForVision($absolutePath);
-        if ($dataUrl === null) {
-            return response()->json(['error' => 'impossible de charger l\'image'], 500);
+        if ($media->is_image) {
+            $payload = $this->resizeImageForVision($absolutePath);
+            if ($payload === null) {
+                return response()->json(['error' => 'impossible de charger l\'image'], 500);
+            }
+        } else {
+            $payload = $ai->extractVideoFramesAsDataUrls($absolutePath);
+            if (empty($payload)) {
+                return response()->json(['error' => 'impossible d\'extraire les frames vidéo (ffmpeg requis)'], 500);
+            }
         }
 
         // Si pas de contexte fourni, on prend le nom du dossier rattaché.
@@ -679,7 +686,7 @@ class MediaApiController extends Controller
         }
 
         $result = $ai->extractMetadataFromImage(
-            imageDataUrl: $dataUrl,
+            imageDataUrl: $payload,
             context: $context,
             expectedPeople: $data['expected_people'] ?? [],
         );
