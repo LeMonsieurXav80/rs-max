@@ -18,6 +18,20 @@
                class="w-20 text-sm rounded border-gray-300">
     </label>
 
+    <label class="flex items-center gap-3 p-4 bg-gray-50 rounded-xl">
+        <input type="checkbox" {{ $s['unfollow'] ? 'checked' : '' }}
+               onchange="toggleBskyOption('unfollow', {{ $account->id }}, this.checked)"
+               class="rounded border-gray-300 text-indigo-600">
+        <div class="flex-1">
+            <div class="text-sm font-medium text-gray-900">Defollow les non-followers</div>
+            <div class="text-xs text-gray-500">Defollow les comptes qui ne nous suivent pas en retour (apres un delai de grace).</div>
+        </div>
+        <div class="text-xs text-gray-500">Max / run :</div>
+        <input type="number" min="1" max="100" value="{{ $s['unfollow_max'] }}"
+               onchange="updateBskyNumeric('unfollow_max', {{ $account->id }}, this.value)"
+               class="w-20 text-sm rounded border-gray-300">
+    </label>
+
     <div>
         <h3 class="text-sm font-semibold text-gray-900 mb-2">Mots-cles pour le follow</h3>
         <p class="text-xs text-gray-500 mb-3">Posts matchant ces mots-cles → l'auteur du post sera follow.</p>
