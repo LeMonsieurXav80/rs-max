@@ -15,6 +15,19 @@
             </div>
         @endif
 
+        @if ($errors->any())
+            <div class="rounded-xl bg-red-50 border border-red-200 p-4">
+                <p class="text-sm text-red-800 font-medium mb-2">
+                    Sauvegarde refusee : {{ $errors->count() }} {{ $errors->count() > 1 ? 'champs invalides' : 'champ invalide' }}.
+                </p>
+                <ul class="list-disc list-inside text-xs text-red-700 space-y-0.5">
+                    @foreach ($errors->all() as $msg)
+                        <li>{{ $msg }}</li>
+                    @endforeach
+                </ul>
+            </div>
+        @endif
+
         <form method="POST" action="{{ route('settings.update') }}" class="space-y-6"
               x-data="{ activeTab: '{{ request('tab', 'ia') }}' }">
             @csrf
@@ -238,6 +251,10 @@
                                 Mettre a jour les LLM gratuits
                             </button>
                         </div>
+                        <p class="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-md px-3 py-2 mb-3">
+                            <strong>Important :</strong> ce bouton utilise les cles deja sauvegardees. Si tu viens de coller une cle ci-dessus,
+                            clique d'abord sur <em>« Enregistrer les parametres »</em> en bas de page, puis reviens cliquer ici.
+                        </p>
 
                         @if ($freeLlm['models']->isEmpty())
                             <p class="text-sm text-gray-500 italic">Aucun modele decouvert. Ajoute au moins une cle API ci-dessus, sauvegarde, puis clique sur "Mettre a jour les LLM gratuits".</p>
@@ -975,8 +992,18 @@
         </form>
         <script>
             function refreshFreeLlms(btn) {
+                // Garde-fou : si l'utilisateur a saisi une cle dans l'un des inputs sans avoir
+                // cliqué Enregistrer, le refresh ne verra pas cette cle (elle n'est pas en BDD).
+                const keyInputs = ['groq_api_key', 'openrouter_api_key', 'google_ai_api_key', 'mistral_api_key', 'together_api_key'];
+                const hasUnsavedKey = keyInputs.some(name => {
+                    const el = document.querySelector(`input[name="${name}"]`);
+                    return el && el.value.trim().length > 0;
+                });
+                if (hasUnsavedKey) {
+                    const ok = confirm('Tu viens de saisir une cle API mais elle n\'est pas encore sauvegardee.\n\nClique sur Annuler, puis sur « Enregistrer les parametres » en bas de page, puis reviens cliquer ici.\n\nContinuer quand meme avec les cles deja sauvegardees ?');
+                    if (!ok) return;
+                }
                 btn.disabled = true;
-                const originalHtml = btn.innerHTML;
                 btn.innerHTML = 'Mise a jour en cours...';
                 document.getElementById('refresh-free-llms-form').submit();
             }
