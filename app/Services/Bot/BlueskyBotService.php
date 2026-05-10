@@ -881,6 +881,11 @@ class BlueskyBotService
     {
         $persona = $account->persona;
         if (! $persona || ! $persona->hasBotComments()) {
+            Log::info('BlueskyBotService.comments: skip term — persona/contexts manquants', [
+                'account_id' => $account->id,
+                'term' => $term->term,
+            ]);
+
             return 0;
         }
 
@@ -893,7 +898,25 @@ class BlueskyBotService
         }
 
         $posts = $this->searchPosts($term->term, $limit * 3); // marge pour filtrer
+
+        // Compteurs de diagnostic pour la trace finale
+        $stats = [
+            'found' => count($posts),
+            'skip_self' => 0,
+            'skip_already' => 0,
+            'skip_no_context' => 0,
+            'skip_ai_fail' => 0,
+            'skip_reply_fail' => 0,
+            'posted' => 0,
+        ];
+
         if (empty($posts)) {
+            Log::info('BlueskyBotService.comments: term traite', [
+                'account_id' => $account->id,
+                'term' => $term->term,
+                'stats' => $stats,
+            ]);
+
             return 0;
         }
 
@@ -908,11 +931,15 @@ class BlueskyBotService
             $authorDid = $post['author']['did'] ?? null;
 
             if (! $postUri || ! $postCid || $authorDid === $auth['did']) {
+                $stats['skip_self']++;
+
                 continue;
             }
 
             // Skip si on a deja commente ce post
             if ($this->alreadyActioned($account->id, "comment:{$postUri}")) {
+                $stats['skip_already']++;
+
                 continue;
             }
 
@@ -921,6 +948,8 @@ class BlueskyBotService
 
             // Pas de contexte rempli pour ce type de post -> on skip
             if (! $persona->botContextFor($kind)) {
+                $stats['skip_no_context']++;
+
                 continue;
             }
 
@@ -937,6 +966,7 @@ class BlueskyBotService
             );
 
             if (! $comment) {
+                $stats['skip_ai_fail']++;
                 Log::warning('BlueskyBotService: comment generation failed', [
                     'account_id' => $account->id,
                     'post_uri' => $postUri,
@@ -965,9 +995,19 @@ class BlueskyBotService
 
             if ($success) {
                 $posted++;
+                $stats['posted']++;
                 usleep(800_000); // 800ms entre commentaires
+            } else {
+                $stats['skip_reply_fail']++;
             }
         }
+
+        Log::info('BlueskyBotService.comments: term traite', [
+            'account_id' => $account->id,
+            'term' => $term->term,
+            'limit' => $limit,
+            'stats' => $stats,
+        ]);
 
         return $posted;
     }

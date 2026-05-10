@@ -2,8 +2,9 @@
     $commentTerms = $termsByAccountAndPurpose[$account->id.'_comments'] ?? collect();
     $s = $settings[$account->id];
     $persona = $account->persona;
-    $stats = $commentStats[$account->id] ?? ['last_run' => null, 'posted_24h' => 0, 'failed_24h' => 0];
+    $stats = $commentStats[$account->id] ?? ['last_run' => null, 'posted_24h' => 0, 'failed_24h' => 0, 'llm' => ['mode' => 'none', 'label' => null, 'key_ok' => false]];
     $lastRunHuman = $stats['last_run'] ? \Carbon\Carbon::parse($stats['last_run'])->diffForHumans() : null;
+    $llm = $stats['llm'];
 @endphp
 
 <div class="space-y-5">
@@ -32,6 +33,31 @@
                 Voir les logs commentaires de ce compte →
             </a>
         </div>
+
+        {{-- Bandeau LLM : si rien n'est configure ou cle manquante, le bot ne pourra rien generer --}}
+        @if ($llm['mode'] === 'none')
+            <div class="mb-3 rounded-lg bg-red-50 border border-red-200 px-3 py-2 text-xs text-red-800">
+                <strong>Aucun LLM configure.</strong> Aucun commentaire ne sera genere.
+                <a href="{{ route('settings.index', ['tab' => 'ia_libre']) }}" class="underline font-medium">
+                    Configure un LLM gratuit
+                </a>
+                ou ajoute une cle OpenAI dans l'onglet Contenu IA.
+            </div>
+        @elseif (! $llm['key_ok'])
+            <div class="mb-3 rounded-lg bg-red-50 border border-red-200 px-3 py-2 text-xs text-red-800">
+                <strong>Modele defini :</strong> <code class="bg-white px-1 rounded">{{ $llm['label'] }}</code>
+                — mais la cle API du provider est <strong>manquante en BDD</strong>.
+                <a href="{{ route('settings.index', ['tab' => 'ia_libre']) }}" class="underline font-medium">
+                    Verifie tes cles dans Settings
+                </a>
+                (n'oublie pas de cliquer "Enregistrer les parametres" en bas).
+            </div>
+        @else
+            <div class="mb-3 rounded-lg bg-emerald-50 border border-emerald-200 px-3 py-2 text-xs text-emerald-800">
+                <strong>LLM :</strong> <code class="bg-white px-1 rounded">{{ $llm['label'] }}</code> — cle OK.
+            </div>
+        @endif
+
         <div class="grid grid-cols-1 sm:grid-cols-3 gap-3 text-sm">
             <div class="bg-white rounded-lg p-3 border border-gray-100">
                 <div class="text-xs text-gray-500">Derniere execution du bot</div>

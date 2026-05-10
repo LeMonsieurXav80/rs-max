@@ -62,6 +62,32 @@ class BlueskyBotController extends Controller
             ->groupBy('social_account_id', 'success')
             ->get();
 
+        // Etat de la config LLM : modele texte par defaut + cle API du provider correspondant
+        $defaultTextModel = Setting::get('free_llms_default_text_model') ?: null;
+        $llmStatus = ['mode' => 'none', 'label' => null, 'key_ok' => false];
+        if ($defaultTextModel && str_contains($defaultTextModel, '/')) {
+            [$provider] = explode('/', $defaultTextModel, 2);
+            $providerKeyMap = [
+                'groq' => 'groq_api_key',
+                'openrouter' => 'openrouter_api_key',
+                'google_ai' => 'google_ai_api_key',
+                'mistral' => 'mistral_api_key',
+                'together' => 'together_api_key',
+            ];
+            $keyName = $providerKeyMap[$provider] ?? null;
+            $llmStatus = [
+                'mode' => 'free_llm',
+                'label' => $defaultTextModel,
+                'key_ok' => $keyName ? (bool) Setting::getEncrypted($keyName) : false,
+            ];
+        } elseif (Setting::getEncrypted('openai_api_key')) {
+            $llmStatus = [
+                'mode' => 'openai',
+                'label' => 'OpenAI '.(Setting::get('ai_model_text') ?: 'gpt-4o-mini'),
+                'key_ok' => true,
+            ];
+        }
+
         $commentStats = [];
         foreach ($accounts as $acc) {
             $posted = (int) $commentStatsRaw->where('social_account_id', $acc->id)->where('success', true)->sum('total');
@@ -70,6 +96,7 @@ class BlueskyBotController extends Controller
                 'last_run' => Setting::get("bot_last_run_bluesky_{$acc->id}"),
                 'posted_24h' => $posted,
                 'failed_24h' => $failed,
+                'llm' => $llmStatus,
             ];
         }
 
