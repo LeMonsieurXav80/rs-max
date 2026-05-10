@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Bot;
 
 use App\Http\Controllers\Controller;
+use App\Models\BotActionLog;
 use App\Models\BotSearchTerm;
 use App\Models\BotTargetAccount;
 use App\Models\Setting;
@@ -53,7 +54,26 @@ class BlueskyBotController extends Controller
             ->orderByDesc('created_at')
             ->get();
 
-        return view('bot.bluesky.index', compact('accounts', 'termsByAccountAndPurpose', 'settings', 'targetAccounts'));
+        // Stats 24h des actions de commentaires (pour diagnostic onglet Commentaires)
+        $commentStatsRaw = BotActionLog::whereIn('social_account_id', $accounts->pluck('id'))
+            ->where('action_type', 'comment_keyword')
+            ->where('created_at', '>=', now()->subDay())
+            ->selectRaw('social_account_id, success, count(*) as total')
+            ->groupBy('social_account_id', 'success')
+            ->get();
+
+        $commentStats = [];
+        foreach ($accounts as $acc) {
+            $posted = (int) $commentStatsRaw->where('social_account_id', $acc->id)->where('success', true)->sum('total');
+            $failed = (int) $commentStatsRaw->where('social_account_id', $acc->id)->where('success', false)->sum('total');
+            $commentStats[$acc->id] = [
+                'last_run' => Setting::get("bot_last_run_bluesky_{$acc->id}"),
+                'posted_24h' => $posted,
+                'failed_24h' => $failed,
+            ];
+        }
+
+        return view('bot.bluesky.index', compact('accounts', 'termsByAccountAndPurpose', 'settings', 'targetAccounts', 'commentStats'));
     }
 
     public function addTerm(Request $request, string $purpose): RedirectResponse

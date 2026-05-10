@@ -112,7 +112,7 @@
                             @include('bot.bluesky._likes', ['account' => $account, 'settings' => $settings, 'termsByAccountAndPurpose' => $termsByAccountAndPurpose])
                         </div>
                         <div x-show="tab === 'comments'" x-cloak>
-                            @include('bot.bluesky._comments', ['account' => $account, 'settings' => $settings, 'termsByAccountAndPurpose' => $termsByAccountAndPurpose])
+                            @include('bot.bluesky._comments', ['account' => $account, 'settings' => $settings, 'termsByAccountAndPurpose' => $termsByAccountAndPurpose, 'commentStats' => $commentStats])
                         </div>
                         <div x-show="tab === 'follow'" x-cloak>
                             @include('bot.bluesky._follow', ['account' => $account, 'settings' => $settings, 'termsByAccountAndPurpose' => $termsByAccountAndPurpose])

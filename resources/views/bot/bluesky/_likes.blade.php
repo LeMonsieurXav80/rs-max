@@ -45,9 +45,7 @@
     <div class="border border-gray-100 rounded-xl p-4 bg-white">
         <h3 class="text-sm font-semibold text-gray-900">Liker des posts par mot-cle</h3>
         <p class="text-xs text-gray-500 mt-0.5 mb-3">
-            Le bot recherche ces mots-cles sur Bluesky et like les posts trouves. Pour chaque mot-cle, tu peux
-            choisir d'inclure aussi les <strong>replies sous le post</strong> (commentaires laisses par d'autres
-            comptes sur le post matche).
+            Le bot recherche ces mots-cles sur Bluesky et like les posts trouves.
         </p>
 
         @if ($likeTerms->isEmpty())
@@ -74,28 +72,35 @@
             </div>
         @endif
 
-        <form method="POST" action="{{ route('bot.bluesky.addTerm', 'likes') }}" class="flex flex-wrap gap-3 items-end">
+        <form method="POST" action="{{ route('bot.bluesky.addTerm', 'likes') }}">
             @csrf
             <input type="hidden" name="social_account_id" value="{{ $account->id }}">
-            <div class="flex-1 min-w-40">
-                <label class="block text-[11px] uppercase tracking-wide text-gray-500 mb-1">Mot-cle</label>
-                <input type="text" name="term" placeholder="ex: laravel" required
-                       class="w-full text-sm rounded-md border-gray-300 focus:border-indigo-500 focus:ring-indigo-500">
+            <div class="flex flex-wrap gap-3 items-end">
+                <div class="flex-1 min-w-40">
+                    <label class="block text-[11px] uppercase tracking-wide text-gray-500 mb-1">Mot-cle</label>
+                    <input type="text" name="term" placeholder="ex: laravel" required
+                           class="w-full text-sm rounded-md border-gray-300 focus:border-indigo-500 focus:ring-indigo-500">
+                </div>
+                <div>
+                    <label class="block text-[11px] uppercase tracking-wide text-gray-500 mb-1">Max / run</label>
+                    <input type="number" name="max_per_run" min="1" max="50" value="10"
+                           class="w-20 text-sm rounded-md border-gray-300 focus:border-indigo-500 focus:ring-indigo-500">
+                </div>
+                <button type="submit" class="px-3 py-2 bg-indigo-600 hover:bg-indigo-700 text-white text-sm rounded-md">
+                    Ajouter
+                </button>
             </div>
-            <div>
-                <label class="block text-[11px] uppercase tracking-wide text-gray-500 mb-1">Max / run</label>
-                <input type="number" name="max_per_run" min="1" max="50" value="10"
-                       class="w-20 text-sm rounded-md border-gray-300 focus:border-indigo-500 focus:ring-indigo-500">
-            </div>
-            <label class="inline-flex items-center gap-1.5 text-xs text-gray-600 pb-2"
-                   title="Si coche, le bot like aussi les replies laisses sous chaque post matche par ce mot-cle">
+            <label class="mt-3 flex items-start gap-2 cursor-pointer">
                 <input type="checkbox" name="like_replies" value="1" checked
-                       class="rounded border-gray-300 text-indigo-600 focus:ring-indigo-500">
-                Inclure les replies du post
+                       class="mt-0.5 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500">
+                <span class="flex-1">
+                    <span class="block text-xs font-medium text-gray-700">Inclure aussi les replies sous le post</span>
+                    <span class="block text-[11px] text-gray-500 mt-0.5">
+                        Si coche, le bot like en plus du post les commentaires (replies) laisses par d'autres
+                        comptes sous chaque post trouve avec ce mot-cle.
+                    </span>
+                </span>
             </label>
-            <button type="submit" class="px-3 py-2 bg-indigo-600 hover:bg-indigo-700 text-white text-sm rounded-md">
-                Ajouter
-            </button>
         </form>
     </div>
 

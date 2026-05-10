@@ -2,6 +2,8 @@
     $commentTerms = $termsByAccountAndPurpose[$account->id.'_comments'] ?? collect();
     $s = $settings[$account->id];
     $persona = $account->persona;
+    $stats = $commentStats[$account->id] ?? ['last_run' => null, 'posted_24h' => 0, 'failed_24h' => 0];
+    $lastRunHuman = $stats['last_run'] ? \Carbon\Carbon::parse($stats['last_run'])->diffForHumans() : null;
 @endphp
 
 <div class="space-y-5">
@@ -20,6 +22,50 @@
             <a href="{{ route('personas.edit', $persona) }}" class="underline">Modifier</a>
         </div>
     @endif
+
+    {{-- Diagnostic : est-ce que ca tourne ? --}}
+    <div class="rounded-xl border border-gray-200 bg-gray-50 p-4">
+        <div class="flex items-center justify-between flex-wrap gap-3 mb-2">
+            <h4 class="text-sm font-semibold text-gray-900">Diagnostic</h4>
+            <a href="{{ route('bot.logs', ['account' => $account->id, 'type' => 'comment_keyword']) }}"
+               class="text-xs text-indigo-600 hover:text-indigo-700 underline">
+                Voir les logs commentaires de ce compte →
+            </a>
+        </div>
+        <div class="grid grid-cols-1 sm:grid-cols-3 gap-3 text-sm">
+            <div class="bg-white rounded-lg p-3 border border-gray-100">
+                <div class="text-xs text-gray-500">Derniere execution du bot</div>
+                <div class="font-medium text-gray-900 mt-0.5">
+                    @if ($lastRunHuman)
+                        {{ $lastRunHuman }}
+                    @else
+                        <span class="text-amber-600">jamais</span>
+                    @endif
+                </div>
+            </div>
+            <div class="bg-white rounded-lg p-3 border border-gray-100">
+                <div class="text-xs text-gray-500">Commentaires postes (24h)</div>
+                <div class="font-medium {{ $stats['posted_24h'] > 0 ? 'text-emerald-700' : 'text-gray-400' }} mt-0.5">
+                    {{ $stats['posted_24h'] }}
+                </div>
+            </div>
+            <div class="bg-white rounded-lg p-3 border border-gray-100">
+                <div class="text-xs text-gray-500">Echecs (24h)</div>
+                <div class="font-medium {{ $stats['failed_24h'] > 0 ? 'text-red-600' : 'text-gray-400' }} mt-0.5">
+                    {{ $stats['failed_24h'] }}
+                </div>
+            </div>
+        </div>
+        @if ($lastRunHuman && $stats['posted_24h'] === 0 && $stats['failed_24h'] === 0)
+            <p class="text-xs text-gray-500 mt-3">
+                Le bot a tourne mais n'a poste aucun commentaire sur les 24 dernieres heures.
+                Causes possibles : aucun post trouve pour les mots-cles, posts deja commentes,
+                ou aucun contexte rempli dans le persona pour le type de post (texte/article/image).
+                Verifie aussi <code class="bg-white px-1 rounded">storage/logs/laravel.log</code> pour
+                d'eventuelles erreurs de generation IA.
+            </p>
+        @endif
+    </div>
 
     <label class="flex items-center gap-3 p-4 bg-gray-50 rounded-xl">
         <input type="checkbox" {{ $s['comments_keyword'] ? 'checked' : '' }}
