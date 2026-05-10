@@ -70,6 +70,23 @@ class FacebookBotController extends Controller
         return response()->json([
             'active' => Setting::get("bot_active_facebook_{$accountId}") === '1',
             'running' => Cache::has("bot_running_facebook_{$accountId}"),
+            'last_run' => Setting::get("bot_last_run_facebook_{$accountId}"),
         ]);
+    }
+
+    public function statusBatch(Request $request): JsonResponse
+    {
+        $accounts = $request->input('accounts', []);
+        $results = [];
+
+        foreach ($accounts as $accountId) {
+            $results[(int) $accountId] = [
+                'active' => Setting::get("bot_active_facebook_{$accountId}") === '1',
+                'running' => Cache::has("bot_running_facebook_{$accountId}"),
+                'last_run' => Setting::get("bot_last_run_facebook_{$accountId}"),
+            ];
+        }
+
+        return response()->json($results);
     }
 }

@@ -319,6 +319,7 @@ Route::middleware(['auth', 'verified', 'throttle:600,1'])->group(function () {
         Route::post('bot/facebook/run', [FacebookBotController::class, 'run'])->name('bot.facebook.run');
         Route::post('bot/facebook/stop', [FacebookBotController::class, 'stop'])->name('bot.facebook.stop');
         Route::get('bot/facebook/status', [FacebookBotController::class, 'status'])->name('bot.facebook.status');
+        Route::post('bot/facebook/status-batch', [FacebookBotController::class, 'statusBatch'])->name('bot.facebook.statusBatch');
 
         // Cross-post (temporary tool)
         Route::get('tools/crosspost', [CrossPostController::class, 'index'])->name('crosspost.index');

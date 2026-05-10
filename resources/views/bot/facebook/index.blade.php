@@ -3,13 +3,22 @@
 @section('title', 'Bot Facebook')
 
 @section('actions')
-    <a href="{{ route('bot.index') }}"
-       class="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium text-gray-600 bg-white border border-gray-200 rounded-xl hover:bg-gray-50 transition-colors">
-        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1.5">
-            <path stroke-linecap="round" stroke-linejoin="round" d="M9 15 3 9m0 0 6-6M3 9h12a6 6 0 0 1 0 12h-3" />
-        </svg>
-        Retour
-    </a>
+    <div class="flex items-center gap-2">
+        <a href="{{ route('bot.logs') }}"
+           class="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium text-gray-600 bg-white border border-gray-200 rounded-xl hover:bg-gray-50 transition-colors">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1.5">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M9 12h3.75M9 15h3.75M9 18h3.75m3 .75H18a2.25 2.25 0 0 0 2.25-2.25V6.108c0-1.135-.845-2.098-1.976-2.192a48.424 48.424 0 0 0-1.123-.08m-5.801 0c-.065.21-.1.433-.1.664 0 .414.336.75.75.75h4.5a.75.75 0 0 0 .75-.75 2.25 2.25 0 0 0-.1-.664m-5.8 0A2.251 2.251 0 0 1 13.5 2.25H15c1.012 0 1.867.668 2.15 1.586m-5.8 0c-.376.023-.75.05-1.124.08C9.095 4.01 8.25 4.973 8.25 6.108V8.25m0 0H4.875c-.621 0-1.125.504-1.125 1.125v11.25c0 .621.504 1.125 1.125 1.125h9.75c.621 0 1.125-.504 1.125-1.125V9.375c0-.621-.504-1.125-1.125-1.125H8.25Z" />
+            </svg>
+            Voir les logs
+        </a>
+        <a href="{{ route('bot.index') }}"
+           class="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium text-gray-600 bg-white border border-gray-200 rounded-xl hover:bg-gray-50 transition-colors">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1.5">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M9 15 3 9m0 0 6-6M3 9h12a6 6 0 0 1 0 12h-3" />
+            </svg>
+            Retour
+        </a>
+    </div>
 @endsection
 
 @section('content')
@@ -35,7 +44,13 @@
                             <div class="font-medium text-gray-900">{{ $acc->name }}</div>
                             <div class="text-xs text-gray-500">{{ $acc->platform_account_id }}</div>
                         </div>
-                        <div class="flex items-center gap-3">
+                        <div class="flex items-center gap-3 flex-wrap">
+                            <span data-fb-status="{{ $acc->id }}"
+                                  class="inline-flex items-center gap-1.5 text-xs px-2 py-1 rounded-full bg-gray-100 text-gray-500">
+                                <span class="w-1.5 h-1.5 rounded-full bg-gray-400" data-dot></span>
+                                <span data-label>—</span>
+                                <span data-last class="text-gray-400"></span>
+                            </span>
                             <select onchange="updateFbFrequency({{ $acc->id }}, this.value)"
                                     class="text-sm rounded-md border-gray-300">
                                 <option value="disabled" @selected($settings[$acc->id]['frequency'] === 'disabled')>Desactive</option>
@@ -66,6 +81,8 @@
 
     <script>
         const csrfFb = '{{ csrf_token() }}';
+        const fbAccountIds = @json($accounts->pluck('id')->all());
+
         function updateFbFrequency(accountId, frequency) {
             fetch('{{ route("bot.facebook.updateFrequency") }}', {
                 method: 'POST',
@@ -74,18 +91,76 @@
             });
         }
         function runFb(accountId) {
+            setFbBadge(accountId, {active: true, running: true, last_run: null}, 'Demarrage…');
             fetch('{{ route("bot.facebook.run") }}', {
                 method: 'POST',
                 headers: {'Content-Type': 'application/json', 'X-CSRF-TOKEN': csrfFb, 'Accept': 'application/json'},
                 body: JSON.stringify({social_account_id: accountId}),
-            });
+            }).finally(() => setTimeout(refreshFbStatuses, 1500));
         }
         function stopFb(accountId) {
+            setFbBadge(accountId, {active: false, running: false, last_run: null}, 'Arret demande…');
             fetch('{{ route("bot.facebook.stop") }}', {
                 method: 'POST',
                 headers: {'Content-Type': 'application/json', 'X-CSRF-TOKEN': csrfFb, 'Accept': 'application/json'},
                 body: JSON.stringify({account_id: accountId}),
-            });
+            }).finally(() => setTimeout(refreshFbStatuses, 1500));
         }
+
+        function fbTimeAgo(iso) {
+            if (!iso) return '';
+            const diff = (Date.now() - new Date(iso).getTime()) / 1000;
+            if (diff < 60) return 'il y a ' + Math.floor(diff) + 's';
+            if (diff < 3600) return 'il y a ' + Math.floor(diff / 60) + ' min';
+            if (diff < 86400) return 'il y a ' + Math.floor(diff / 3600) + ' h';
+            return 'il y a ' + Math.floor(diff / 86400) + ' j';
+        }
+        function setFbBadge(accountId, status, overrideLabel) {
+            const el = document.querySelector(`[data-fb-status="${accountId}"]`);
+            if (!el) return;
+            const dot = el.querySelector('[data-dot]');
+            const label = el.querySelector('[data-label]');
+            const last = el.querySelector('[data-last]');
+            el.classList.remove('bg-gray-100', 'text-gray-500', 'bg-blue-100', 'text-blue-700', 'bg-emerald-100', 'text-emerald-700', 'bg-amber-100', 'text-amber-700');
+            dot.classList.remove('bg-gray-400', 'bg-blue-500', 'bg-emerald-500', 'bg-amber-500', 'animate-pulse');
+            if (overrideLabel) {
+                el.classList.add('bg-amber-100', 'text-amber-700');
+                dot.classList.add('bg-amber-500', 'animate-pulse');
+                label.textContent = overrideLabel;
+                last.textContent = '';
+                return;
+            }
+            if (status.running) {
+                el.classList.add('bg-blue-100', 'text-blue-700');
+                dot.classList.add('bg-blue-500', 'animate-pulse');
+                label.textContent = 'En cours';
+            } else if (status.active) {
+                el.classList.add('bg-emerald-100', 'text-emerald-700');
+                dot.classList.add('bg-emerald-500');
+                label.textContent = 'Active';
+            } else {
+                el.classList.add('bg-gray-100', 'text-gray-500');
+                dot.classList.add('bg-gray-400');
+                label.textContent = 'Arrete';
+            }
+            const ago = fbTimeAgo(status.last_run);
+            last.textContent = ago ? '· ' + ago : '';
+        }
+        async function refreshFbStatuses() {
+            if (!fbAccountIds.length) return;
+            try {
+                const r = await fetch('{{ route("bot.facebook.statusBatch") }}', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json', 'X-CSRF-TOKEN': csrfFb, 'Accept': 'application/json'},
+                    body: JSON.stringify({accounts: fbAccountIds}),
+                });
+                const data = await r.json();
+                Object.entries(data).forEach(([id, st]) => setFbBadge(id, st));
+            } catch (e) { /* network blip — ignore */ }
+        }
+        document.addEventListener('DOMContentLoaded', () => {
+            refreshFbStatuses();
+            setInterval(refreshFbStatuses, 10000);
+        });
     </script>
 @endsection
