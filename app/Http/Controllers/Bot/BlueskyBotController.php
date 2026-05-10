@@ -174,6 +174,7 @@ class BlueskyBotController extends Controller
         return response()->json([
             'active' => Setting::get("bot_active_bluesky_{$accountId}") === '1',
             'running' => Cache::has("bot_running_bluesky_{$accountId}"),
+            'last_run' => Setting::get("bot_last_run_bluesky_{$accountId}"),
         ]);
     }
 
@@ -186,6 +187,7 @@ class BlueskyBotController extends Controller
             $results[(int) $accountId] = [
                 'active' => Setting::get("bot_active_bluesky_{$accountId}") === '1',
                 'running' => Cache::has("bot_running_bluesky_{$accountId}"),
+                'last_run' => Setting::get("bot_last_run_bluesky_{$accountId}"),
             ];
         }
 
@@ -221,7 +223,7 @@ class BlueskyBotController extends Controller
         return back()->with('success', 'Compte cible supprime.');
     }
 
-    public function runTarget(BotTargetAccount $target): JsonResponse
+    public function runTarget(BotTargetAccount $target): RedirectResponse
     {
         if (in_array($target->status, ['completed', 'paused'])) {
             $update = ['status' => 'pending'];
@@ -237,14 +239,14 @@ class BlueskyBotController extends Controller
              .' >> '.storage_path('logs/prospect.log').' 2>&1 &';
         exec($cmd);
 
-        return response()->json(['started' => true]);
+        return back()->with('success', "Prospection lancee pour @{$target->handle}.");
     }
 
-    public function stopTarget(BotTargetAccount $target): JsonResponse
+    public function stopTarget(BotTargetAccount $target): RedirectResponse
     {
         Cache::put("bot_stop_prospect_{$target->id}", true, 3600);
 
-        return response()->json(['stopped' => true]);
+        return back()->with('success', "Arret demande pour @{$target->handle}.");
     }
 
     public function targetStatus(BotTargetAccount $target): JsonResponse

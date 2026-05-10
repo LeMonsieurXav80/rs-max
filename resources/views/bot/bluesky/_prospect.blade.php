@@ -38,7 +38,7 @@
                 <tbody class="divide-y divide-gray-100">
                     @foreach ($myTargets as $t)
                         <tr>
-                            <td class="px-3 py-2 font-medium text-gray-700">@{{ $t->handle }}</td>
+                            <td class="px-3 py-2 font-medium text-gray-700">{{ '@'.$t->handle }}</td>
                             <td class="px-3 py-2">
                                 <span class="inline-flex text-xs px-2 py-0.5 rounded-full
                                     @if ($t->status === 'running') bg-blue-100 text-blue-700
