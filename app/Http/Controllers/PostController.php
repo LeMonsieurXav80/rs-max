@@ -83,13 +83,13 @@ class PostController extends Controller
             }
             match ($request->input('media_type')) {
                 'photo' => $q->whereNotNull('media')
-                    ->whereRaw("JSON_LENGTH(media) = 1")
+                    ->whereRaw('JSON_LENGTH(media) = 1')
                     ->whereRaw("JSON_EXTRACT(media, '$[0].mimetype') LIKE 'image/%'"),
                 'video' => $q->whereNotNull('media')
-                    ->whereRaw("JSON_LENGTH(media) = 1")
+                    ->whereRaw('JSON_LENGTH(media) = 1')
                     ->whereRaw("JSON_EXTRACT(media, '$[0].mimetype') LIKE 'video/%'"),
                 'carousel' => $q->whereNotNull('media')
-                    ->whereRaw("JSON_LENGTH(media) > 1"),
+                    ->whereRaw('JSON_LENGTH(media) > 1'),
                 default => null,
             };
         };
@@ -131,7 +131,7 @@ class PostController extends Controller
         $calendarPosts = $calendarQuery
             ->where(function ($q) use ($startOfMonth, $endOfMonth) {
                 $q->whereBetween('scheduled_at', [$startOfMonth, $endOfMonth])
-                  ->orWhereBetween('published_at', [$startOfMonth, $endOfMonth]);
+                    ->orWhereBetween('published_at', [$startOfMonth, $endOfMonth]);
             })
             ->orderByRaw('COALESCE(scheduled_at, published_at) ASC')
             ->get()
@@ -173,22 +173,22 @@ class PostController extends Controller
     public function store(Request $request): RedirectResponse|JsonResponse
     {
         $validated = $request->validate([
-            'content_fr'            => 'required|string|max:10000',
-            'content_en'            => 'nullable|string|max:10000',
-            'platform_contents'     => 'nullable|array',
-            'platform_contents.*'   => 'nullable|string|max:10000',
-            'hashtags'              => 'nullable|string|max:1000',
-            'auto_translate'    => 'nullable|boolean',
-            'media'             => 'nullable|array',
-            'media.*'           => 'nullable|string|max:2000',
-            'link_url'          => 'nullable|url|max:2048',
-            'location_name'     => 'nullable|string|max:255',
-            'location_id'       => 'nullable|string|max:255',
-            'status'            => 'required|in:draft,scheduled',
-            'publish_now'       => 'nullable|boolean',
-            'scheduled_at'      => [$request->boolean('publish_now') ? 'nullable' : 'required_if:status,scheduled', 'nullable', 'date', 'after_or_equal:now'],
-            'accounts'          => 'required|array|min:1',
-            'accounts.*'        => 'integer|exists:social_accounts,id',
+            'content_fr' => 'required|string|max:10000',
+            'content_en' => 'nullable|string|max:10000',
+            'platform_contents' => 'nullable|array',
+            'platform_contents.*' => 'nullable|string|max:10000',
+            'hashtags' => 'nullable|string|max:1000',
+            'auto_translate' => 'nullable|boolean',
+            'media' => 'nullable|array',
+            'media.*' => 'nullable|string|max:2000',
+            'link_url' => 'nullable|url|max:2048',
+            'location_name' => 'nullable|string|max:255',
+            'location_id' => 'nullable|string|max:255',
+            'status' => 'required|in:draft,scheduled',
+            'publish_now' => 'nullable|boolean',
+            'scheduled_at' => [$request->boolean('publish_now') ? 'nullable' : 'required_if:status,scheduled', 'nullable', 'date', 'after_or_equal:now'],
+            'accounts' => 'required|array|min:1',
+            'accounts.*' => 'integer|exists:social_accounts,id',
         ]);
 
         $user = $request->user();
@@ -202,6 +202,7 @@ class PostController extends Controller
             if ($request->expectsJson()) {
                 return response()->json(['errors' => ['accounts' => ['One or more selected accounts are invalid.']]], 422);
             }
+
             return back()->withErrors(['accounts' => 'One or more selected accounts are invalid.'])->withInput();
         }
 
@@ -228,26 +229,26 @@ class PostController extends Controller
             }
 
             $post = Post::create([
-                'user_id'            => $user->id,
-                'content_fr'         => $validated['content_fr'],
-                'content_en'         => $validated['content_en'] ?? null,
-                'platform_contents'  => $this->filterPlatformContents($validated['platform_contents'] ?? null),
-                'hashtags'           => $validated['hashtags'] ?? null,
-                'auto_translate'     => true,
-                'media'              => $media,
-                'link_url'           => $validated['link_url'] ?? null,
-                'location_name'      => $validated['location_name'] ?? null,
-                'location_id'        => $validated['location_id'] ?? null,
-                'status'             => $status,
-                'scheduled_at'       => $scheduledAt,
+                'user_id' => $user->id,
+                'content_fr' => $validated['content_fr'],
+                'content_en' => $validated['content_en'] ?? null,
+                'platform_contents' => $this->filterPlatformContents($validated['platform_contents'] ?? null),
+                'hashtags' => $validated['hashtags'] ?? null,
+                'auto_translate' => true,
+                'media' => $media,
+                'link_url' => $validated['link_url'] ?? null,
+                'location_name' => $validated['location_name'] ?? null,
+                'location_id' => $validated['location_id'] ?? null,
+                'status' => $status,
+                'scheduled_at' => $scheduledAt,
             ]);
 
             foreach ($validAccounts as $account) {
                 PostPlatform::create([
-                    'post_id'           => $post->id,
+                    'post_id' => $post->id,
                     'social_account_id' => $account->id,
-                    'platform_id'       => $account->platform_id,
-                    'status'            => 'pending',
+                    'platform_id' => $account->platform_id,
+                    'status' => 'pending',
                 ]);
             }
 
@@ -357,22 +358,22 @@ class PostController extends Controller
         }
 
         $validated = $request->validate([
-            'content_fr'            => 'required|string|max:10000',
-            'content_en'            => 'nullable|string|max:10000',
-            'platform_contents'     => 'nullable|array',
-            'platform_contents.*'   => 'nullable|string|max:10000',
-            'hashtags'              => 'nullable|string|max:1000',
-            'auto_translate'        => 'nullable|boolean',
-            'media'                 => 'nullable|array',
-            'media.*'               => 'nullable|string|max:2000',
-            'link_url'              => 'nullable|url|max:2048',
-            'location_name'         => 'nullable|string|max:255',
-            'location_id'           => 'nullable|string|max:255',
-            'status'                => 'required|in:draft,scheduled',
-            'publish_now'           => 'nullable|boolean',
-            'scheduled_at'          => [$request->boolean('publish_now') ? 'nullable' : 'required_if:status,scheduled', 'nullable', 'date', 'after_or_equal:now'],
-            'accounts'              => 'required|array|min:1',
-            'accounts.*'            => 'integer|exists:social_accounts,id',
+            'content_fr' => 'required|string|max:10000',
+            'content_en' => 'nullable|string|max:10000',
+            'platform_contents' => 'nullable|array',
+            'platform_contents.*' => 'nullable|string|max:10000',
+            'hashtags' => 'nullable|string|max:1000',
+            'auto_translate' => 'nullable|boolean',
+            'media' => 'nullable|array',
+            'media.*' => 'nullable|string|max:2000',
+            'link_url' => 'nullable|url|max:2048',
+            'location_name' => 'nullable|string|max:255',
+            'location_id' => 'nullable|string|max:255',
+            'status' => 'required|in:draft,scheduled',
+            'publish_now' => 'nullable|boolean',
+            'scheduled_at' => [$request->boolean('publish_now') ? 'nullable' : 'required_if:status,scheduled', 'nullable', 'date', 'after_or_equal:now'],
+            'accounts' => 'required|array|min:1',
+            'accounts.*' => 'integer|exists:social_accounts,id',
         ]);
 
         $user = $request->user();
@@ -411,18 +412,18 @@ class PostController extends Controller
 
             // Update the post (clear translations cache when platform contents change)
             $post->update([
-                'content_fr'         => $validated['content_fr'],
-                'content_en'         => $validated['content_en'] ?? null,
-                'platform_contents'  => $this->filterPlatformContents($validated['platform_contents'] ?? null),
-                'translations'       => null,
-                'hashtags'           => $validated['hashtags'] ?? null,
-                'auto_translate'     => true,
-                'media'              => $media,
-                'link_url'           => $validated['link_url'] ?? null,
-                'location_name'      => $validated['location_name'] ?? null,
-                'location_id'        => $validated['location_id'] ?? null,
-                'status'             => $status,
-                'scheduled_at'       => $scheduledAt,
+                'content_fr' => $validated['content_fr'],
+                'content_en' => $validated['content_en'] ?? null,
+                'platform_contents' => $this->filterPlatformContents($validated['platform_contents'] ?? null),
+                'translations' => null,
+                'hashtags' => $validated['hashtags'] ?? null,
+                'auto_translate' => true,
+                'media' => $media,
+                'link_url' => $validated['link_url'] ?? null,
+                'location_name' => $validated['location_name'] ?? null,
+                'location_id' => $validated['location_id'] ?? null,
+                'status' => $status,
+                'scheduled_at' => $scheduledAt,
             ]);
 
             // Sync PostPlatform entries: remove old ones and create new ones
@@ -430,10 +431,10 @@ class PostController extends Controller
 
             foreach ($validAccounts as $account) {
                 PostPlatform::create([
-                    'post_id'           => $post->id,
+                    'post_id' => $post->id,
                     'social_account_id' => $account->id,
-                    'platform_id'       => $account->platform_id,
-                    'status'            => 'pending',
+                    'platform_id' => $account->platform_id,
+                    'status' => 'pending',
                 ]);
             }
         });
@@ -553,6 +554,7 @@ class PostController extends Controller
         $defaults = [
             'twitter' => 280, 'facebook' => 63206, 'instagram' => 2200,
             'threads' => 500, 'youtube' => 5000, 'telegram' => 4096,
+            'bluesky' => 300, 'linkedin' => 3000, 'pinterest' => 500, 'reddit' => 40000,
         ];
 
         $limits = [];

@@ -130,7 +130,7 @@ class GenerateApiController extends Controller
             'account_id' => 'nullable|integer|exists:social_accounts,id',
             'persona_id' => 'nullable|integer|exists:personas,id',
             'platforms' => 'nullable|array',
-            'platforms.*' => 'string|in:facebook,instagram,threads,twitter,telegram,youtube,bluesky',
+            'platforms.*' => 'string|in:facebook,instagram,threads,twitter,telegram,youtube,bluesky,linkedin,pinterest,reddit',
             'folder' => 'nullable|string|exists:media_folders,slug',
         ]);
 

@@ -228,6 +228,9 @@ TXT;
                 'telegram' => 'Telegram',
                 'youtube' => 'YouTube',
                 'bluesky' => 'Bluesky',
+                'linkedin' => 'LinkedIn',
+                'pinterest' => 'Pinterest',
+                'reddit' => 'Reddit',
                 default => ucfirst($slug),
             };
             $platformDescriptions[] = "{$label} (max {$charLimit} caractères)";
@@ -348,6 +351,9 @@ TXT;
                 'telegram' => 'Telegram',
                 'youtube' => 'YouTube',
                 'bluesky' => 'Bluesky',
+                'linkedin' => 'LinkedIn',
+                'pinterest' => 'Pinterest',
+                'reddit' => 'Reddit',
                 default => ucfirst($slug),
             };
             $platformDescriptions[] = "{$label} (max {$charLimit} caractères)";
@@ -639,6 +645,9 @@ TXT;
             'youtube' => 5000,
             'telegram' => 4096,
             'bluesky' => 300,
+            'linkedin' => 3000,
+            'pinterest' => 500,
+            'reddit' => 40000,
             default => 0,
         };
     }
