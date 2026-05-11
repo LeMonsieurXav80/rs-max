@@ -41,6 +41,29 @@
         </label>
     </div>
 
+    {{-- Bloc 2bis : follow auto des auteurs de replies actifs --}}
+    <div class="border border-gray-100 rounded-xl p-4 bg-white">
+        <label class="flex items-start gap-3">
+            <input type="checkbox" {{ $s['follow_active'] ? 'checked' : '' }}
+                   onchange="toggleBskyOption('follow_active', {{ $account->id }}, this.checked)"
+                   class="mt-1 rounded border-gray-300 text-indigo-600">
+            <div class="flex-1">
+                <div class="text-sm font-semibold text-gray-900">Suivre les auteurs de replies actifs</div>
+                <p class="text-xs text-gray-500 mt-0.5">
+                    Quand le bot like un reply sur un post mot-cle, il suit aussi son auteur si celui-ci suit deja
+                    plus de 500 personnes (probabilite de follow-back). <strong>A surveiller :</strong> un volume eleve
+                    peut declencher un rate-limit Bluesky.
+                </p>
+                <div class="mt-2 inline-flex items-center gap-2 text-xs text-gray-600">
+                    <span>Max par execution :</span>
+                    <input type="number" min="0" max="20" value="{{ $s['follow_active_max'] }}"
+                           onchange="updateBskyNumeric('follow_active_max', {{ $account->id }}, this.value)"
+                           class="w-20 text-xs rounded border-gray-300">
+                </div>
+            </div>
+        </label>
+    </div>
+
     {{-- Bloc 3 : likes par mots-cles --}}
     <div class="border border-gray-100 rounded-xl p-4 bg-white">
         <h3 class="text-sm font-semibold text-gray-900">Liker des posts par mot-cle</h3>

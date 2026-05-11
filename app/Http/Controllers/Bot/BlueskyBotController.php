@@ -49,6 +49,8 @@ class BlueskyBotController extends Controller
                 'comments_end_hour' => (int) Setting::get("bot_comments_end_hour_bluesky_{$acc->id}", 22),
                 'follow_keyword' => Setting::get("bot_follow_keyword_bluesky_{$acc->id}") === '1',
                 'follow_max' => (int) Setting::get("bot_follow_max_bluesky_{$acc->id}", 5),
+                'follow_active' => Setting::get("bot_follow_active_bluesky_{$acc->id}", '1') !== '0',
+                'follow_active_max' => (int) Setting::get("bot_follow_active_max_bluesky_{$acc->id}", 2),
             ];
         }
 
@@ -151,7 +153,7 @@ class BlueskyBotController extends Controller
     public function updateOption(Request $request): JsonResponse
     {
         $validated = $request->validate([
-            'feature' => 'required|string|in:like_comments,feed_likes,unfollow,comments_keyword,follow_keyword',
+            'feature' => 'required|string|in:like_comments,feed_likes,unfollow,comments_keyword,follow_keyword,follow_active',
             'account_id' => 'required|integer|exists:social_accounts,id',
             'enabled' => 'required|boolean',
         ]);
@@ -167,7 +169,7 @@ class BlueskyBotController extends Controller
     public function updateNumeric(Request $request): JsonResponse
     {
         $validated = $request->validate([
-            'key' => 'required|string|in:unfollow_max,comments_max,comments_max_total,comments_start_hour,comments_end_hour,follow_max,feed_likes_max',
+            'key' => 'required|string|in:unfollow_max,comments_max,comments_max_total,comments_start_hour,comments_end_hour,follow_max,follow_active_max,feed_likes_max',
             'account_id' => 'required|integer|exists:social_accounts,id',
             'value' => 'required|integer|min:0|max:100',
         ]);
@@ -184,6 +186,7 @@ class BlueskyBotController extends Controller
             'comments_start_hour' => "bot_comments_start_hour_bluesky_{$validated['account_id']}",
             'comments_end_hour' => "bot_comments_end_hour_bluesky_{$validated['account_id']}",
             'follow_max' => "bot_follow_max_bluesky_{$validated['account_id']}",
+            'follow_active_max' => "bot_follow_active_max_bluesky_{$validated['account_id']}",
             'feed_likes_max' => "bot_feed_likes_max_bluesky_{$validated['account_id']}",
         };
 

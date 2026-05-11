@@ -20,6 +20,14 @@ class BlueskyBotService
 
     private ?int $currentAccountId = null;
 
+    // Compteurs cumulatifs sur la duree d'un run, partages entre les phases
+    // (les follows declenches par like_replies sont caps par run).
+    private int $followActiveCount = 0;
+
+    private int $followActiveMax = 0;
+
+    private bool $followActiveEnabled = true;
+
     public function __construct(private ?AiAssistService $ai = null)
     {
         $this->ai ??= app(AiAssistService::class);
@@ -28,6 +36,11 @@ class BlueskyBotService
     public function runForAccount(SocialAccount $account): array
     {
         $this->currentAccountId = $account->id;
+
+        // Init des compteurs cumulatifs et de la config follow actif
+        $this->followActiveCount = 0;
+        $this->followActiveMax = (int) Setting::get("bot_follow_active_max_bluesky_{$account->id}", 2);
+        $this->followActiveEnabled = Setting::get("bot_follow_active_bluesky_{$account->id}", '1') !== '0';
 
         $auth = $this->getAuth($account);
         if (! $auth) {
@@ -275,8 +288,13 @@ class BlueskyBotService
                 $likesCount++;
             }
 
-            // Follow reply author if they follow > 500 people (likely to follow back)
-            if ($authorDid && ! $this->alreadyActioned($account->id, "follow:{$authorDid}")) {
+            // Follow reply author if they follow > 500 people (likely to follow back).
+            // Cap par run pour eviter de spammer Bluesky et risquer le ban.
+            if ($authorDid
+                && $this->followActiveEnabled
+                && $this->followActiveCount < $this->followActiveMax
+                && ! $this->alreadyActioned($account->id, "follow:{$authorDid}")
+            ) {
                 $this->followIfHighFollowing($account, $auth, $authorDid, $replyPost['author']['handle'] ?? $authorDid);
             }
 
@@ -288,9 +306,15 @@ class BlueskyBotService
 
     private function followIfHighFollowing(SocialAccount $account, array $auth, string $did, string $handle): void
     {
-        $response = Http::get(self::PUBLIC_API.'/xrpc/app.bsky.actor.getProfile', [
-            'actor' => $did,
-        ]);
+        // Cap par run : on s'arrete si on a deja atteint le quota (defense en
+        // profondeur, le caller fait deja le check).
+        if (! $this->followActiveEnabled || $this->followActiveCount >= $this->followActiveMax) {
+            return;
+        }
+
+        // Profile via PDS authentifie (plus fiable, l'API publique 403 sur certains endpoints)
+        $response = Http::withToken($auth['accessJwt'])
+            ->get(self::PDS_BASE.'/xrpc/app.bsky.actor.getProfile', ['actor' => $did]);
 
         if (! $response->successful()) {
             return;
@@ -319,7 +343,11 @@ class BlueskyBotService
             'success' => $success,
         ]);
 
-        usleep(300_000);
+        if ($success) {
+            $this->followActiveCount++;
+            // Delai aleatoire 5-15s entre follows pour rester sous le radar
+            usleep(random_int(5_000_000, 15_000_000));
+        }
     }
 
     private function followActor(array $auth, string $did): bool
