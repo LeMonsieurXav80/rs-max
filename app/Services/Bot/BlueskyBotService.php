@@ -135,7 +135,7 @@ class BlueskyBotService
 
     private function processSearchTerm(SocialAccount $account, array $auth, BotSearchTerm $term): int
     {
-        $posts = $this->searchPosts($term->term, $term->max_likes_per_run);
+        $posts = $this->searchPosts($auth, $term->term, $term->max_likes_per_run);
         if (empty($posts)) {
             return 0;
         }
@@ -183,18 +183,25 @@ class BlueskyBotService
         return $likesCount;
     }
 
-    private function searchPosts(string $query, int $limit = 10): array
+    /**
+     * Recherche de posts via le PDS authentifié (bsky.social).
+     * L'endpoint public app.bsky.feed.searchPosts renvoie 403 depuis les IPs
+     * serveurs ; le PDS authentifié reste accessible avec le JWT du compte.
+     */
+    private function searchPosts(array $auth, string $query, int $limit = 10): array
     {
-        $response = Http::get(self::PUBLIC_API.'/xrpc/app.bsky.feed.searchPosts', [
-            'q' => $query,
-            'sort' => 'top',
-            'limit' => min($limit, 50),
-        ]);
+        $response = Http::withToken($auth['accessJwt'])
+            ->get(self::PDS_BASE.'/xrpc/app.bsky.feed.searchPosts', [
+                'q' => $query,
+                'sort' => 'top',
+                'limit' => min($limit, 50),
+            ]);
 
         if (! $response->successful()) {
             Log::warning('BlueskyBotService: searchPosts failed', [
                 'query' => $query,
                 'status' => $response->status(),
+                'error' => $response->json('message'),
             ]);
 
             return [];
@@ -897,7 +904,7 @@ class BlueskyBotService
             return 0;
         }
 
-        $posts = $this->searchPosts($term->term, $limit * 3); // marge pour filtrer
+        $posts = $this->searchPosts($auth, $term->term, $limit * 3); // marge pour filtrer
 
         // Compteurs de diagnostic pour la trace finale
         $stats = [
@@ -1028,7 +1035,7 @@ class BlueskyBotService
             return 0;
         }
 
-        $posts = $this->searchPosts($term->term, $limit * 4);
+        $posts = $this->searchPosts($auth, $term->term, $limit * 4);
         if (empty($posts)) {
             return 0;
         }
