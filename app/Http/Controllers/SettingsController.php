@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use App\Models\FreeLlmModel;
 use App\Models\Setting;
 use App\Services\Llm\FreeLlmDiscoveryService;
+use App\Services\Llm\FreeLlmTestService;
 use App\Services\TelegramNotificationService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
@@ -388,5 +389,18 @@ class SettingsController extends Controller
         return redirect()
             ->route('settings.index', ['tab' => 'ia_libre'])
             ->with('status', "free-llms-refreshed: {$total} ({$detail})");
+    }
+
+    public function testFreeLlms(Request $request, FreeLlmTestService $tester): RedirectResponse
+    {
+        if (! $request->user()->isManager()) {
+            abort(403);
+        }
+
+        $summary = $tester->testAll();
+
+        return redirect()
+            ->route('settings.index', ['tab' => 'ia_libre'])
+            ->with('status', "free-llms-tested: {$summary['ok']}/{$summary['tested']} OK");
     }
 }

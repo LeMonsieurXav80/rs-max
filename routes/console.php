@@ -2,14 +2,13 @@
 
 use App\Models\BotTargetAccount;
 use App\Models\Setting;
-use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Schedule;
 
 // Health heartbeats
 Schedule::call(fn () => Cache::put('health:scheduler', true, now()->addMinutes(5)))->everyMinute();
 Schedule::call(function () {
-    \Illuminate\Support\Facades\Queue::push(new \App\Jobs\HealthQueueHeartbeat());
+    \Illuminate\Support\Facades\Queue::push(new \App\Jobs\HealthQueueHeartbeat);
 })->everyMinute();
 
 // Publish scheduled posts every minute
@@ -68,8 +67,8 @@ Schedule::call(function () {
         // No active worker for this target — reset and requeue
         if (! Cache::has("bot_running_prospect_{$target->id}")) {
             $target->update(['status' => 'pending']);
-            $cmd = 'nohup php ' . base_path('artisan') . ' bot:prospect --target=' . (int) $target->id
-                 . ' >> ' . storage_path('logs/prospect.log') . ' 2>&1 &';
+            $cmd = 'nohup php '.base_path('artisan').' bot:prospect --target='.(int) $target->id
+                 .' >> '.storage_path('logs/prospect.log').' 2>&1 &';
             exec($cmd);
         }
     }
@@ -82,3 +81,7 @@ Schedule::call(function () {
 
 // Downsample follower snapshots (1st of each month at 3 AM)
 Schedule::command('snapshots:downsample')->monthlyOn(1, '03:00');
+
+// Healthcheck quotidien des modeles LLM gratuits (detecte les quotas a 0,
+// les modeles renommes, les cles API revoquees). Resultat visible dans Settings → IA Gratuite.
+Schedule::command('free-llms:test')->dailyAt('04:30')->withoutOverlapping(15);

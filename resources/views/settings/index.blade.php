@@ -243,13 +243,22 @@
                                     @endif
                                 </p>
                             </div>
-                            <button type="button" onclick="refreshFreeLlms(this)"
-                                    class="inline-flex items-center gap-2 px-3 py-2 bg-emerald-600 hover:bg-emerald-700 disabled:bg-emerald-400 text-white text-sm font-medium rounded-md">
-                                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2">
-                                    <path stroke-linecap="round" stroke-linejoin="round" d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0 3.181 3.183a8.25 8.25 0 0 0 13.803-3.7M4.031 9.865a8.25 8.25 0 0 1 13.803-3.7l3.181 3.182m0-4.991v4.99" />
-                                </svg>
-                                Mettre a jour les LLM gratuits
-                            </button>
+                            <div class="flex items-center gap-2">
+                                <button type="button" onclick="testFreeLlms(this)"
+                                        class="inline-flex items-center gap-2 px-3 py-2 bg-indigo-600 hover:bg-indigo-700 disabled:bg-indigo-400 text-white text-sm font-medium rounded-md">
+                                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2">
+                                        <path stroke-linecap="round" stroke-linejoin="round" d="M9 12.75 11.25 15 15 9.75M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z" />
+                                    </svg>
+                                    Tester les modeles
+                                </button>
+                                <button type="button" onclick="refreshFreeLlms(this)"
+                                        class="inline-flex items-center gap-2 px-3 py-2 bg-emerald-600 hover:bg-emerald-700 disabled:bg-emerald-400 text-white text-sm font-medium rounded-md">
+                                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2">
+                                        <path stroke-linecap="round" stroke-linejoin="round" d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0 3.181 3.183a8.25 8.25 0 0 0 13.803-3.7M4.031 9.865a8.25 8.25 0 0 1 13.803-3.7l3.181 3.182m0-4.991v4.99" />
+                                    </svg>
+                                    Mettre a jour les LLM gratuits
+                                </button>
+                            </div>
                         </div>
                         <p class="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-md px-3 py-2 mb-3">
                             <strong>Important :</strong> ce bouton utilise les cles deja sauvegardees. Si tu viens de coller une cle ci-dessus,
@@ -259,6 +268,19 @@
                         @if ($freeLlm['models']->isEmpty())
                             <p class="text-sm text-gray-500 italic">Aucun modele decouvert. Ajoute au moins une cle API ci-dessus, sauvegarde, puis clique sur "Mettre a jour les LLM gratuits".</p>
                         @else
+                            @php
+                                $statusBadge = function (?string $status): array {
+                                    return match ($status) {
+                                        'ok' => ['bg-emerald-100 text-emerald-800', 'OK', 'Repond correctement'],
+                                        'quota_exceeded' => ['bg-amber-100 text-amber-800', 'Quota', 'Quota gratuit epuise ou nul'],
+                                        'auth_error' => ['bg-red-100 text-red-800', 'Auth', 'Cle API invalide ou manquante'],
+                                        'refused' => ['bg-orange-100 text-orange-800', 'Refus', 'Le modele a refuse la requete'],
+                                        'timeout' => ['bg-gray-100 text-gray-700', 'Timeout', 'Pas de reponse dans le delai'],
+                                        'error' => ['bg-red-100 text-red-800', 'Erreur', 'Erreur HTTP non classee'],
+                                        default => ['bg-gray-100 text-gray-500', 'Non teste', 'Clique sur "Tester les modeles"'],
+                                    };
+                                };
+                            @endphp
                             <div class="overflow-x-auto rounded-md border border-gray-200">
                                 <table class="min-w-full text-sm">
                                     <thead class="bg-gray-50 text-xs text-gray-600 uppercase">
@@ -266,12 +288,15 @@
                                             <th class="px-3 py-2 text-left">Provider</th>
                                             <th class="px-3 py-2 text-left">Modele</th>
                                             <th class="px-3 py-2 text-center">Vision</th>
+                                            <th class="px-3 py-2 text-center">Statut</th>
+                                            <th class="px-3 py-2 text-right">Latence</th>
                                             <th class="px-3 py-2 text-right">Contexte</th>
                                             <th class="px-3 py-2 text-left">Identifiant</th>
                                         </tr>
                                     </thead>
                                     <tbody class="divide-y divide-gray-100">
                                         @foreach ($freeLlm['models'] as $m)
+                                            @php([$cls, $label, $tip] = $statusBadge($m->last_test_status))
                                             <tr>
                                                 <td class="px-3 py-2 font-medium text-gray-700">{{ $m->provider }}</td>
                                                 <td class="px-3 py-2 text-gray-800">{{ $m->display_name }}</td>
@@ -281,6 +306,15 @@
                                                     @else
                                                         <span class="text-gray-400">non</span>
                                                     @endif
+                                                </td>
+                                                <td class="px-3 py-2 text-center">
+                                                    <span class="inline-block px-2 py-0.5 rounded text-xs font-medium {{ $cls }}"
+                                                          title="{{ $tip }}{{ $m->last_test_error ? "\n\n".$m->last_test_error : '' }}">
+                                                        {{ $label }}
+                                                    </span>
+                                                </td>
+                                                <td class="px-3 py-2 text-right text-gray-600 font-mono text-xs">
+                                                    {{ $m->last_test_latency_ms !== null ? $m->last_test_latency_ms.' ms' : '—' }}
                                                 </td>
                                                 <td class="px-3 py-2 text-right text-gray-600">
                                                     {{ $m->context_length ? number_format($m->context_length) : '—' }}
@@ -295,14 +329,37 @@
                     </div>
 
                     <div class="border-t border-gray-100 pt-6 grid grid-cols-1 md:grid-cols-2 gap-4">
+                        @php
+                            // OK testes en premier, puis non testes, puis KO — pour eviter qu'un modele casse soit choisi par defaut.
+                            $sortByHealth = fn ($collection) => $collection->sortBy(fn ($m) => match ($m->last_test_status) {
+                                'ok' => 0,
+                                null => 1,
+                                default => 2,
+                            })->values();
+                            $textModels = $sortByHealth($freeLlm['models']->where('supports_text', true));
+                            $visionModels = $sortByHealth($freeLlm['models']->where('supports_vision', true));
+                            $optionLabel = function ($m) {
+                                $prefix = match ($m->last_test_status) {
+                                    'ok' => '✅ ',
+                                    'quota_exceeded' => '⚠️ ',
+                                    'auth_error', 'refused', 'error', 'timeout' => '❌ ',
+                                    default => '○ ',
+                                };
+                                $suffix = $m->last_test_latency_ms !== null && $m->last_test_status === 'ok'
+                                    ? ' ('.$m->last_test_latency_ms.' ms)'
+                                    : '';
+
+                                return $prefix.$m->qualified_name.$suffix;
+                            };
+                        @endphp
                         <div>
                             <label class="block text-sm font-medium text-gray-700">Modele texte par defaut</label>
                             <select name="free_llms_default_text_model"
                                     class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 text-sm">
                                 <option value="">— OpenAI (configure dans "Contenu IA") —</option>
-                                @foreach ($freeLlm['models']->where('supports_text', true) as $m)
+                                @foreach ($textModels as $m)
                                     <option value="{{ $m->qualified_name }}" @selected($settings['free_llms_default_text_model'] === $m->qualified_name)>
-                                        {{ $m->qualified_name }}
+                                        {{ $optionLabel($m) }}
                                     </option>
                                 @endforeach
                             </select>
@@ -313,9 +370,9 @@
                             <select name="free_llms_default_vision_model"
                                     class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 text-sm">
                                 <option value="">— OpenAI (configure dans "Contenu IA") —</option>
-                                @foreach ($freeLlm['models']->where('supports_vision', true) as $m)
+                                @foreach ($visionModels as $m)
                                     <option value="{{ $m->qualified_name }}" @selected($settings['free_llms_default_vision_model'] === $m->qualified_name)>
-                                        {{ $m->qualified_name }}
+                                        {{ $optionLabel($m) }}
                                     </option>
                                 @endforeach
                             </select>
@@ -990,7 +1047,15 @@
         <form id="refresh-free-llms-form" method="POST" action="{{ route('settings.refreshFreeLlms') }}" class="hidden">
             @csrf
         </form>
+        <form id="test-free-llms-form" method="POST" action="{{ route('settings.testFreeLlms') }}" class="hidden">
+            @csrf
+        </form>
         <script>
+            function testFreeLlms(btn) {
+                btn.disabled = true;
+                btn.innerHTML = 'Test en cours (peut prendre 30s)...';
+                document.getElementById('test-free-llms-form').submit();
+            }
             function refreshFreeLlms(btn) {
                 // Garde-fou : si l'utilisateur a saisi une cle dans l'un des inputs sans avoir
                 // cliqué Enregistrer, le refresh ne verra pas cette cle (elle n'est pas en BDD).

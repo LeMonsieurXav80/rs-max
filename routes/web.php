@@ -354,6 +354,7 @@ Route::middleware(['auth', 'verified', 'throttle:600,1'])->group(function () {
         Route::patch('settings', [SettingsController::class, 'update'])->name('settings.update');
         Route::post('settings/test-notification', [SettingsController::class, 'testNotification'])->name('settings.testNotification');
         Route::post('settings/refresh-free-llms', [SettingsController::class, 'refreshFreeLlms'])->name('settings.refreshFreeLlms');
+        Route::post('settings/test-free-llms', [SettingsController::class, 'testFreeLlms'])->name('settings.testFreeLlms');
 
         // Source items API (for thread creation source browser)
         Route::get('api/source-items/sources', [SourceItemController::class, 'sources'])->name('sourceItems.sources');

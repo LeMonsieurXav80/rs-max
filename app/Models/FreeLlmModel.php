@@ -7,6 +7,18 @@ use Illuminate\Database\Eloquent\Model;
 
 class FreeLlmModel extends Model
 {
+    public const TEST_STATUS_OK = 'ok';
+
+    public const TEST_STATUS_QUOTA = 'quota_exceeded';
+
+    public const TEST_STATUS_AUTH = 'auth_error';
+
+    public const TEST_STATUS_REFUSED = 'refused';
+
+    public const TEST_STATUS_TIMEOUT = 'timeout';
+
+    public const TEST_STATUS_ERROR = 'error';
+
     protected $fillable = [
         'provider',
         'model_id',
@@ -19,6 +31,10 @@ class FreeLlmModel extends Model
         'metadata',
         'is_available',
         'last_seen_at',
+        'last_test_status',
+        'last_test_error',
+        'last_test_latency_ms',
+        'last_tested_at',
     ];
 
     protected function casts(): array
@@ -32,6 +48,8 @@ class FreeLlmModel extends Model
             'metadata' => 'array',
             'is_available' => 'boolean',
             'last_seen_at' => 'datetime',
+            'last_test_latency_ms' => 'integer',
+            'last_tested_at' => 'datetime',
         ];
     }
 
@@ -48,6 +66,11 @@ class FreeLlmModel extends Model
     public function scopeProvider(Builder $query, string $provider): Builder
     {
         return $query->where('provider', $provider);
+    }
+
+    public function scopeTestPassed(Builder $query): Builder
+    {
+        return $query->where('last_test_status', self::TEST_STATUS_OK);
     }
 
     public function getQualifiedNameAttribute(): string
