@@ -844,11 +844,31 @@ class MediaController extends Controller
         $brands = array_values($brandSet);
         sort($brands, SORT_NATURAL | SORT_FLAG_CASE);
 
+        // Tags thematiques : meme approche que les marques.
+        $tagSet = [];
+        MediaFile::whereNotNull('thematic_tags')->select('thematic_tags')->chunk(500, function ($rows) use (&$tagSet) {
+            foreach ($rows as $row) {
+                foreach ($row->thematic_tags ?? [] as $t) {
+                    $clean = trim((string) $t);
+                    if ($clean === '') {
+                        continue;
+                    }
+                    $key = mb_strtolower($clean);
+                    if (! isset($tagSet[$key])) {
+                        $tagSet[$key] = $clean;
+                    }
+                }
+            }
+        });
+        $tags = array_values($tagSet);
+        sort($tags, SORT_NATURAL | SORT_FLAG_CASE);
+
         return response()->json([
             'cities' => $cities,
             'regions' => $regions,
             'countries' => $countries,
             'brands' => $brands,
+            'tags' => $tags,
         ]);
     }
 

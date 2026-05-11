@@ -151,7 +151,8 @@
         aiDone: 0,
         aiErrors: 0,
         aiCurrentName: '',
-        autocomplete: { cities: [], regions: [], countries: [], brands: [] },
+        autocomplete: { cities: [], regions: [], countries: [], brands: [], tags: [] },
+        lightboxUrl: null,
         editingFolder: null,
         editFolderName: '',
         editFolderColor: '',
@@ -348,6 +349,11 @@
                 this.selected.thematic_tags = result.thematic_tags;
                 const idx = this.items.findIndex(i => i.id === id);
                 if (idx !== -1) this.items[idx].thematic_tags = result.thematic_tags;
+                for (const t of (result.thematic_tags || [])) {
+                    if (!this.autocomplete.tags.some(x => x.toLowerCase() === t.toLowerCase())) {
+                        this.autocomplete.tags.push(t);
+                    }
+                }
             } catch(e) {
                 alert('Erreur tags : ' + e.message);
             }
@@ -617,6 +623,11 @@
                 });
                 if (!res.ok) throw new Error('HTTP ' + res.status);
                 this.applyToMultiSelected('thematic_tags', existing => [...new Set([...existing, ...tags])]);
+                for (const t of tags) {
+                    if (!this.autocomplete.tags.some(x => x.toLowerCase() === t.toLowerCase())) {
+                        this.autocomplete.tags.push(t);
+                    }
+                }
                 this.bulkTagInput = '';
             } catch(e) { alert('Erreur : ' + e.message); }
         },
@@ -638,6 +649,11 @@
                     for (const b of brands) if (!seen.has(b.toLowerCase())) seen.set(b.toLowerCase(), b);
                     return [...seen.values()];
                 });
+                for (const b of brands) {
+                    if (!this.autocomplete.brands.some(x => x.toLowerCase() === b.toLowerCase())) {
+                        this.autocomplete.brands.push(b);
+                    }
+                }
                 this.bulkBrandInput = '';
             } catch(e) { alert('Erreur : ' + e.message); }
         },
@@ -1179,6 +1195,9 @@
         <datalist id="brands-autocomplete-list">
             <template x-for="v in autocomplete.brands" :key="v"><option :value="v"></option></template>
         </datalist>
+        <datalist id="tags-autocomplete-list">
+            <template x-for="v in autocomplete.tags" :key="v"><option :value="v"></option></template>
+        </datalist>
 
         {{-- Upload zone (drag & drop) --}}
         <div class="mb-6 bg-white rounded-2xl border border-gray-100 shadow-sm p-4">
@@ -1217,42 +1236,6 @@
                         <p class="text-xs text-gray-500 mt-2" x-show="uploadPhase === 'processing'">Veuillez patienter, cela peut prendre quelques minutes...</p>
                     </div>
                 </template>
-            </div>
-        </div>
-
-        {{-- Filters + multi-select --}}
-        <div class="flex flex-wrap items-center justify-between gap-4 mb-6">
-            <div class="flex items-center gap-2">
-                <a href="{{ route('media.index', array_filter(['folder' => $currentFolder, 'intimacy' => $currentIntimacy ?? null])) }}"
-                   class="px-3 py-1.5 text-sm font-medium rounded-lg transition-colors {{ $filter === 'all' ? 'bg-indigo-600 text-white' : 'bg-white text-gray-600 border border-gray-200 hover:bg-gray-50' }}">
-                    Tous
-                </a>
-                <a href="{{ route('media.index', array_filter(['filter' => 'images', 'folder' => $currentFolder, 'intimacy' => $currentIntimacy ?? null])) }}"
-                   class="px-3 py-1.5 text-sm font-medium rounded-lg transition-colors {{ $filter === 'images' ? 'bg-indigo-600 text-white' : 'bg-white text-gray-600 border border-gray-200 hover:bg-gray-50' }}">
-                    Images
-                </a>
-                <a href="{{ route('media.index', array_filter(['filter' => 'videos', 'folder' => $currentFolder, 'intimacy' => $currentIntimacy ?? null])) }}"
-                   class="px-3 py-1.5 text-sm font-medium rounded-lg transition-colors {{ $filter === 'videos' ? 'bg-indigo-600 text-white' : 'bg-white text-gray-600 border border-gray-200 hover:bg-gray-50' }}">
-                    Videos
-                </a>
-            </div>
-            <div class="flex items-center gap-2">
-                {{-- Toggle multi-select --}}
-                <button type="button" @click="multiSelect ? exitMultiSelect() : (multiSelect = true, selected = null)"
-                    class="inline-flex items-center gap-1.5 px-3 py-2 text-sm font-medium rounded-xl transition-colors"
-                    :class="multiSelect ? 'bg-amber-100 text-amber-700 border border-amber-300' : 'bg-white text-gray-600 border border-gray-200 hover:bg-gray-50'">
-                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1.5">
-                        <path stroke-linecap="round" stroke-linejoin="round" d="M9 12.75 11.25 15 15 9.75M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z" />
-                    </svg>
-                    <span x-text="multiSelect ? 'Annuler' : 'Selectionner'"></span>
-                </button>
-                <button type="button" @click="$refs.fileInput.click()"
-                    class="inline-flex items-center gap-2 px-4 py-2 bg-indigo-600 text-white text-sm font-medium rounded-xl hover:bg-indigo-700 transition-colors shadow-sm">
-                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2">
-                        <path stroke-linecap="round" stroke-linejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
-                    </svg>
-                    Ajouter des medias
-                </button>
             </div>
         </div>
 
@@ -1305,6 +1288,22 @@
             {{-- Left sidebar : Dossiers (arbre) + Pools --}}
             <aside class="w-60 flex-shrink-0 hidden md:block">
                 <div class="sticky top-20 max-h-[calc(100vh-6rem)] overflow-y-auto space-y-4 pr-1">
+                    {{-- Filtres type de media --}}
+                    <div class="flex items-center gap-2">
+                        <a href="{{ route('media.index', array_filter(['folder' => $currentFolder, 'intimacy' => $currentIntimacy ?? null])) }}"
+                           class="px-3 py-1.5 text-sm font-medium rounded-lg transition-colors {{ $filter === 'all' ? 'bg-indigo-600 text-white' : 'bg-white text-gray-600 border border-gray-200 hover:bg-gray-50' }}">
+                            Tous
+                        </a>
+                        <a href="{{ route('media.index', array_filter(['filter' => 'images', 'folder' => $currentFolder, 'intimacy' => $currentIntimacy ?? null])) }}"
+                           class="px-3 py-1.5 text-sm font-medium rounded-lg transition-colors {{ $filter === 'images' ? 'bg-indigo-600 text-white' : 'bg-white text-gray-600 border border-gray-200 hover:bg-gray-50' }}">
+                            Images
+                        </a>
+                        <a href="{{ route('media.index', array_filter(['filter' => 'videos', 'folder' => $currentFolder, 'intimacy' => $currentIntimacy ?? null])) }}"
+                           class="px-3 py-1.5 text-sm font-medium rounded-lg transition-colors {{ $filter === 'videos' ? 'bg-indigo-600 text-white' : 'bg-white text-gray-600 border border-gray-200 hover:bg-gray-50' }}">
+                            Videos
+                        </a>
+                    </div>
+
                     {{-- IA Vision (contexte + bouton). Cible : la photo selectionnee (mono) ou la selection multi. --}}
                     <div class="bg-gradient-to-br from-violet-50 to-indigo-50 rounded-2xl border border-violet-200 shadow-sm p-3 space-y-2">
                         <h3 class="text-[10px] font-semibold uppercase tracking-widest text-violet-900 px-1">IA Vision</h3>
@@ -1574,7 +1573,26 @@
 
             {{-- Right: detail panel (sticky, scroll indépendant de la grille) --}}
             <div class="hidden lg:block w-[440px] flex-shrink-0">
-                <div class="sticky top-20 max-h-[calc(100vh-6rem)] overflow-y-auto">
+                <div class="sticky top-20 max-h-[calc(100vh-6rem)] overflow-y-auto space-y-4">
+                    {{-- Actions multi-select / upload --}}
+                    <div class="flex items-center gap-2">
+                        <button type="button" @click="multiSelect ? exitMultiSelect() : (multiSelect = true, selected = null)"
+                            class="inline-flex items-center gap-1.5 px-3 py-2 text-sm font-medium rounded-xl transition-colors"
+                            :class="multiSelect ? 'bg-amber-100 text-amber-700 border border-amber-300' : 'bg-white text-gray-600 border border-gray-200 hover:bg-gray-50'">
+                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1.5">
+                                <path stroke-linecap="round" stroke-linejoin="round" d="M9 12.75 11.25 15 15 9.75M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z" />
+                            </svg>
+                            <span x-text="multiSelect ? 'Annuler' : 'Selectionner'"></span>
+                        </button>
+                        <button type="button" @click="$refs.fileInput.click()"
+                            class="inline-flex items-center gap-2 px-4 py-2 bg-indigo-600 text-white text-sm font-medium rounded-xl hover:bg-indigo-700 transition-colors shadow-sm">
+                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2">
+                                <path stroke-linecap="round" stroke-linejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
+                            </svg>
+                            Ajouter des medias
+                        </button>
+                    </div>
+
                     <div class="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
                         {{-- No selection (et pas de multi-select actif) --}}
                         <template x-if="!selected && (!multiSelect || multiSelected.length === 0)">
@@ -1600,7 +1618,7 @@
                                 <div class="bg-white rounded-xl border border-gray-100 p-2.5">
                                     <h4 class="text-[11px] font-semibold text-gray-700 uppercase tracking-wider mb-1.5">Tags</h4>
                                     <div class="flex gap-1.5">
-                                        <input type="text" x-model="bulkTagInput" @keyup.enter="bulkAddTags()" placeholder="Ajouter (plage, mer...)" class="flex-1 text-xs rounded-lg border-gray-200 focus:border-indigo-400 focus:ring-1 focus:ring-indigo-400 px-2 py-1.5">
+                                        <input type="text" x-model="bulkTagInput" @keyup.enter="bulkAddTags()" list="tags-autocomplete-list" placeholder="Ajouter (plage, mer...)" class="flex-1 text-xs rounded-lg border-gray-200 focus:border-indigo-400 focus:ring-1 focus:ring-indigo-400 px-2 py-1.5">
                                         <button @click="bulkAddTags()" :disabled="!bulkTagInput.trim()" class="px-3 py-1.5 text-xs bg-indigo-600 text-white rounded-lg disabled:opacity-50">+</button>
                                     </div>
                                     <template x-if="bulkTagChips.length > 0">
@@ -1620,7 +1638,7 @@
                                 <div class="bg-white rounded-xl border border-gray-100 p-2.5">
                                     <h4 class="text-[11px] font-semibold text-gray-700 uppercase tracking-wider mb-1.5">Marques</h4>
                                     <div class="flex gap-1.5">
-                                        <input type="text" x-model="bulkBrandInput" @keyup.enter="bulkAddBrands()" placeholder="Ajouter (Decathlon...)" class="flex-1 text-xs rounded-lg border-gray-200 focus:border-indigo-400 focus:ring-1 focus:ring-indigo-400 px-2 py-1.5">
+                                        <input type="text" x-model="bulkBrandInput" @keyup.enter="bulkAddBrands()" list="brands-autocomplete-list" placeholder="Ajouter (Decathlon...)" class="flex-1 text-xs rounded-lg border-gray-200 focus:border-indigo-400 focus:ring-1 focus:ring-indigo-400 px-2 py-1.5">
                                         <button @click="bulkAddBrands()" :disabled="!bulkBrandInput.trim()" class="px-3 py-1.5 text-xs bg-indigo-600 text-white rounded-lg disabled:opacity-50">+</button>
                                     </div>
                                     <template x-if="bulkBrandChips.length > 0">
@@ -1686,7 +1704,7 @@
                         <template x-if="selected">
                             <div>
                                 {{-- Preview --}}
-                                <div class="bg-gray-950 flex items-center justify-center" style="min-height: 160px; max-height: 220px;">
+                                <div class="bg-gray-950 flex items-center justify-center relative group" style="min-height: 160px; max-height: 220px;">
                                     <template x-if="selected.is_image">
                                         <img :src="selected.url" :alt="selected.filename" class="max-w-full max-h-[220px] object-contain">
                                     </template>
@@ -1695,6 +1713,15 @@
                                                class="max-w-full max-h-[220px] object-contain"
                                                :key="selected.filename">
                                         </video>
+                                    </template>
+                                    <template x-if="selected.is_image">
+                                        <button type="button" @click="lightboxUrl = selected.url"
+                                                title="Voir en plein ecran"
+                                                class="absolute top-2 right-2 inline-flex items-center justify-center w-8 h-8 rounded-lg bg-black/40 text-white hover:bg-black/70 opacity-0 group-hover:opacity-100 transition-opacity">
+                                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2">
+                                                <path stroke-linecap="round" stroke-linejoin="round" d="M3.75 3.75v4.5m0-4.5h4.5m-4.5 0L9 9M3.75 20.25v-4.5m0 4.5h4.5m-4.5 0L9 15M20.25 3.75h-4.5m4.5 0v4.5m0-4.5L15 9m5.25 11.25h-4.5m4.5 0v-4.5m0 4.5L15 15" />
+                                            </svg>
+                                        </button>
                                     </template>
                                 </div>
 
@@ -1773,6 +1800,7 @@
                                                 </div>
                                                 <div class="flex items-center gap-1">
                                                     <input type="text" x-model="newTagInput" placeholder="ajouter un tag…"
+                                                           list="tags-autocomplete-list"
                                                            class="flex-1 text-xs border border-gray-200 rounded px-2 py-1 focus:border-indigo-400 focus:ring-1 focus:ring-indigo-400"
                                                            @keydown.enter.prevent="addTag()">
                                                     <button @click="addTag()" :disabled="!newTagInput.trim()"
@@ -2125,6 +2153,21 @@
                     </div>
                 </template>
             </div>
+        </div>
+
+        {{-- Lightbox plein ecran pour l'image selectionnee --}}
+        <div x-show="lightboxUrl" x-cloak
+             @keydown.escape.window="lightboxUrl = null"
+             @click.self="lightboxUrl = null"
+             class="fixed inset-0 z-[100] bg-black/90 flex items-center justify-center p-4 cursor-zoom-out">
+            <button type="button" @click="lightboxUrl = null"
+                    title="Fermer (Echap)"
+                    class="absolute top-4 right-4 inline-flex items-center justify-center w-10 h-10 rounded-full bg-white/10 text-white hover:bg-white/20">
+                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M6 18 18 6M6 6l12 12" />
+                </svg>
+            </button>
+            <img :src="lightboxUrl" alt="" class="max-w-full max-h-full object-contain cursor-default" @click.stop>
         </div>
     </div>
 
