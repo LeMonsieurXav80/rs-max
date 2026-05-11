@@ -93,19 +93,48 @@
         @endif
     </div>
 
-    <label class="flex items-center gap-3 p-4 bg-gray-50 rounded-xl">
-        <input type="checkbox" {{ $s['comments_keyword'] ? 'checked' : '' }}
-               onchange="toggleBskyOption('comments_keyword', {{ $account->id }}, this.checked)"
-               class="rounded border-gray-300 text-indigo-600">
-        <div class="flex-1">
-            <div class="text-sm font-medium text-gray-900">Activer les commentaires automatiques par mot-cle</div>
-            <div class="text-xs text-gray-500">Le bot recherche les mots-cles ci-dessous et poste un commentaire IA adapte au type de post.</div>
+    <div class="p-4 bg-gray-50 rounded-xl space-y-3">
+        <label class="flex items-center gap-3">
+            <input type="checkbox" {{ $s['comments_keyword'] ? 'checked' : '' }}
+                   onchange="toggleBskyOption('comments_keyword', {{ $account->id }}, this.checked)"
+                   class="rounded border-gray-300 text-indigo-600">
+            <div class="flex-1">
+                <div class="text-sm font-medium text-gray-900">Activer les commentaires automatiques par mot-cle</div>
+                <div class="text-xs text-gray-500">Le bot recherche les mots-cles ci-dessous et poste un commentaire IA adapte au type de post.</div>
+            </div>
+        </label>
+
+        <div class="grid grid-cols-2 sm:grid-cols-4 gap-3 pt-2 border-t border-gray-200">
+            <label class="text-xs text-gray-600">
+                <span class="block mb-1">Max / terme</span>
+                <input type="number" min="1" max="20" value="{{ $s['comments_max'] }}"
+                       onchange="updateBskyNumeric('comments_max', {{ $account->id }}, this.value)"
+                       class="w-full text-sm rounded border-gray-300">
+            </label>
+            <label class="text-xs text-gray-600">
+                <span class="block mb-1">Max total / run</span>
+                <input type="number" min="1" max="50" value="{{ $s['comments_max_total'] }}"
+                       onchange="updateBskyNumeric('comments_max_total', {{ $account->id }}, this.value)"
+                       class="w-full text-sm rounded border-gray-300">
+            </label>
+            <label class="text-xs text-gray-600">
+                <span class="block mb-1">Heure debut (0-23)</span>
+                <input type="number" min="0" max="23" value="{{ $s['comments_start_hour'] }}"
+                       onchange="updateBskyNumeric('comments_start_hour', {{ $account->id }}, this.value)"
+                       class="w-full text-sm rounded border-gray-300">
+            </label>
+            <label class="text-xs text-gray-600">
+                <span class="block mb-1">Heure fin (0-23)</span>
+                <input type="number" min="0" max="23" value="{{ $s['comments_end_hour'] }}"
+                       onchange="updateBskyNumeric('comments_end_hour', {{ $account->id }}, this.value)"
+                       class="w-full text-sm rounded border-gray-300">
+            </label>
         </div>
-        <div class="text-xs text-gray-500">Max / run :</div>
-        <input type="number" min="1" max="20" value="{{ $s['comments_max'] }}"
-               onchange="updateBskyNumeric('comments_max', {{ $account->id }}, this.value)"
-               class="w-20 text-sm rounded border-gray-300">
-    </label>
+        <p class="text-xs text-gray-500">
+            <strong>Max total / run</strong> plafonne le nombre de commentaires par execution, tous mots-cles confondus.
+            La <strong>plage horaire</strong> (timezone serveur) empeche les commentaires en dehors de cette fenetre.
+        </p>
+    </div>
 
     <div>
         <h3 class="text-sm font-semibold text-gray-900 mb-2">Mots-cles a commenter</h3>

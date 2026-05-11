@@ -87,16 +87,41 @@ class BlueskyBotService
         if (! $this->shouldStop() && Setting::get("bot_comments_keyword_bluesky_{$account->id}") === '1') {
             $persona = $account->persona;
             if ($persona && $persona->hasBotComments()) {
-                $commentTerms = BotSearchTerm::where('social_account_id', $account->id)
-                    ->purpose(BotSearchTerm::PURPOSE_COMMENTS)
-                    ->where('is_active', true)
-                    ->get();
-                foreach ($commentTerms as $term) {
-                    if ($this->shouldStop()) {
-                        break;
+                // Plage horaire active (timezone APP_TIMEZONE). Defaut 7h-22h.
+                $startHour = (int) Setting::get("bot_comments_start_hour_bluesky_{$account->id}", 7);
+                $endHour = (int) Setting::get("bot_comments_end_hour_bluesky_{$account->id}", 22);
+                $hour = now()->hour;
+                $insideWindow = $startHour <= $endHour
+                    ? ($hour >= $startHour && $hour < $endHour)
+                    : ($hour >= $startHour || $hour < $endHour); // fenetre qui passe minuit
+
+                if (! $insideWindow) {
+                    Log::info('BlueskyBotService: comments skipped — outside active window', [
+                        'account_id' => $account->id,
+                        'current_hour' => $hour,
+                        'window' => "{$startHour}h-{$endHour}h",
+                    ]);
+                } else {
+                    // Cap global au run, tous termes confondus (defaut: 6).
+                    $globalMax = (int) Setting::get("bot_comments_max_total_bluesky_{$account->id}", 6);
+                    $remaining = $globalMax;
+
+                    // Shuffle pour ne pas toujours commencer par le meme terme
+                    $commentTerms = BotSearchTerm::where('social_account_id', $account->id)
+                        ->purpose(BotSearchTerm::PURPOSE_COMMENTS)
+                        ->where('is_active', true)
+                        ->get()
+                        ->shuffle();
+
+                    foreach ($commentTerms as $term) {
+                        if ($this->shouldStop() || $remaining <= 0) {
+                            break;
+                        }
+                        $posted = $this->processCommentSearchTerm($account, $auth, $term, $remaining);
+                        $commentsPosted += $posted;
+                        $remaining -= $posted;
+                        $term->update(['last_run_at' => now()]);
                     }
-                    $commentsPosted += $this->processCommentSearchTerm($account, $auth, $term);
-                    $term->update(['last_run_at' => now()]);
                 }
             } else {
                 Log::info('BlueskyBotService: comments skipped — persona missing or no bot_comment_context_* filled', ['account_id' => $account->id]);
@@ -883,8 +908,10 @@ class BlueskyBotService
      * Pour un terme de recherche (purpose=comments), poste un commentaire IA
      * adapte au type de post (article / texte / image) en utilisant le persona
      * du compte (avec ses bot_comment_context_*).
+     *
+     * @param  int  $maxAcrossTerms  Cap restant sur le run global (tous termes confondus).
      */
-    private function processCommentSearchTerm(SocialAccount $account, array $auth, BotSearchTerm $term): int
+    private function processCommentSearchTerm(SocialAccount $account, array $auth, BotSearchTerm $term, int $maxAcrossTerms = PHP_INT_MAX): int
     {
         $persona = $account->persona;
         if (! $persona || ! $persona->hasBotComments()) {
@@ -898,7 +925,7 @@ class BlueskyBotService
 
         $maxPerRun = $term->effectiveMaxPerRun();
         $globalCap = (int) Setting::get("bot_comments_max_per_run_bluesky_{$account->id}", 3);
-        $limit = min($maxPerRun, $globalCap);
+        $limit = min($maxPerRun, $globalCap, $maxAcrossTerms);
 
         if ($limit <= 0) {
             return 0;
@@ -963,13 +990,15 @@ class BlueskyBotService
             $imageUrl = $kind === 'image' ? $this->extractImageUrl($post) : null;
             $postText = $record['text'] ?? '';
             $authorHandle = $post['author']['handle'] ?? null;
+            $postLang = $record['langs'][0] ?? null;
 
             $comment = $this->ai->generateBotComment(
                 $persona,
                 $kind,
                 $postText,
                 $imageUrl,
-                $authorHandle
+                $authorHandle,
+                $postLang
             );
 
             if (! $comment) {
@@ -1003,7 +1032,8 @@ class BlueskyBotService
             if ($success) {
                 $posted++;
                 $stats['posted']++;
-                usleep(800_000); // 800ms entre commentaires
+                // Delai aleatoire 5-20s entre commentaires pour ne pas poster en rafale
+                usleep(random_int(5_000_000, 20_000_000));
             } else {
                 $stats['skip_reply_fail']++;
             }

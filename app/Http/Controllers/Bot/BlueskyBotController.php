@@ -44,6 +44,9 @@ class BlueskyBotController extends Controller
                 'unfollow_max' => (int) Setting::get("bot_unfollow_max_bluesky_{$acc->id}", 10),
                 'comments_keyword' => Setting::get("bot_comments_keyword_bluesky_{$acc->id}") === '1',
                 'comments_max' => (int) Setting::get("bot_comments_max_per_run_bluesky_{$acc->id}", 3),
+                'comments_max_total' => (int) Setting::get("bot_comments_max_total_bluesky_{$acc->id}", 6),
+                'comments_start_hour' => (int) Setting::get("bot_comments_start_hour_bluesky_{$acc->id}", 7),
+                'comments_end_hour' => (int) Setting::get("bot_comments_end_hour_bluesky_{$acc->id}", 22),
                 'follow_keyword' => Setting::get("bot_follow_keyword_bluesky_{$acc->id}") === '1',
                 'follow_max' => (int) Setting::get("bot_follow_max_bluesky_{$acc->id}", 5),
             ];
@@ -164,14 +167,22 @@ class BlueskyBotController extends Controller
     public function updateNumeric(Request $request): JsonResponse
     {
         $validated = $request->validate([
-            'key' => 'required|string|in:unfollow_max,comments_max,follow_max,feed_likes_max',
+            'key' => 'required|string|in:unfollow_max,comments_max,comments_max_total,comments_start_hour,comments_end_hour,follow_max,feed_likes_max',
             'account_id' => 'required|integer|exists:social_accounts,id',
-            'value' => 'required|integer|min:1|max:100',
+            'value' => 'required|integer|min:0|max:100',
         ]);
+
+        // Plage horaire : 0-23 uniquement
+        if (in_array($validated['key'], ['comments_start_hour', 'comments_end_hour'], true) && $validated['value'] > 23) {
+            return response()->json(['error' => 'Hour must be 0-23'], 422);
+        }
 
         $settingKey = match ($validated['key']) {
             'unfollow_max' => "bot_unfollow_max_bluesky_{$validated['account_id']}",
             'comments_max' => "bot_comments_max_per_run_bluesky_{$validated['account_id']}",
+            'comments_max_total' => "bot_comments_max_total_bluesky_{$validated['account_id']}",
+            'comments_start_hour' => "bot_comments_start_hour_bluesky_{$validated['account_id']}",
+            'comments_end_hour' => "bot_comments_end_hour_bluesky_{$validated['account_id']}",
             'follow_max' => "bot_follow_max_bluesky_{$validated['account_id']}",
             'feed_likes_max' => "bot_feed_likes_max_bluesky_{$validated['account_id']}",
         };

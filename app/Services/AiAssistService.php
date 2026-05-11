@@ -662,6 +662,7 @@ TXT;
      * @param  string  $postContent  Texte du post a commenter
      * @param  string|null  $imageUrl  URL d'une image visible dans le post (declenche vision)
      * @param  string|null  $authorName  Nom de l'auteur (pour personnalisation)
+     * @param  string|null  $postLang  Code ISO de la langue du post (ex: 'fr', 'en'). Si null, le LLM doit detecter et matcher.
      */
     public function generateBotComment(
         Persona $persona,
@@ -669,6 +670,7 @@ TXT;
         string $postContent,
         ?string $imageUrl = null,
         ?string $authorName = null,
+        ?string $postLang = null,
     ): ?string {
         $context = match ($postKind) {
             'article' => $persona->bot_comment_context_article,
@@ -682,8 +684,12 @@ TXT;
 
         $maxLength = (int) ($persona->bot_comment_max_length ?: 280);
 
+        $langConstraint = $postLang
+            ? "reponds dans la langue de code ISO « {$postLang} » (la meme que le post)"
+            : 'reponds dans la MEME langue que le post (detecte-la automatiquement a partir du contenu)';
+
         $systemPrompt = trim($persona->system_prompt)."\n\n".trim($context)
-            ."\n\nContraintes : reponse en {$maxLength} caracteres maximum, pas de hashtags, ton naturel, pas de formule de politesse generique.";
+            ."\n\nContraintes : {$langConstraint}, reponse en {$maxLength} caracteres maximum, pas de hashtags, ton naturel, pas de formule de politesse generique.";
 
         $authorBlock = $authorName ? "Auteur : {$authorName}\n" : '';
         $userText = "{$authorBlock}Type de post : {$postKind}\n\nContenu du post :\n{$postContent}";
