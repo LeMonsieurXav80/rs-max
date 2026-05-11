@@ -691,6 +691,16 @@ TXT;
         $systemPrompt = trim($persona->system_prompt)."\n\n".trim($context)
             ."\n\nContraintes : {$langConstraint}, reponse en {$maxLength} caracteres maximum, pas de hashtags, ton naturel, pas de formule de politesse generique.";
 
+        // Anti-description : pour les posts media, on veut une reaction au post,
+        // pas une description audio-guide de l'image. L'image est un contexte, pas un sujet.
+        if ($postKind === 'image') {
+            $systemPrompt .= "\n\nIMPORTANT : tu repondras a un post qui contient une image ou video. "
+                ."L'image/video est un CONTEXTE pour ta reaction, pas un sujet a decrire ou resumer. "
+                ."Ne dis pas « cette image montre… », « on voit… », « ce plafond… », « ces fleurs… » : "
+                ."reagis comme un commentateur engage, comme si tu parlais a l'auteur. "
+                ."Tu peux mentionner un detail SI ca sert ta reaction, mais ne fais jamais de description en soi.";
+        }
+
         $authorBlock = $authorName ? "Auteur : {$authorName}\n" : '';
         $userText = "{$authorBlock}Type de post : {$postKind}\n\nContenu du post :\n{$postContent}";
 

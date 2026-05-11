@@ -979,6 +979,14 @@ class BlueskyBotService
 
             $record = $post['record'] ?? [];
             $kind = $this->detectPostKind($post);
+            $imageUrl = $kind === 'image' ? $this->extractImageUrl($post) : null;
+
+            // Fallback : si on a detecte une "image" mais qu'on ne peut pas l'extraire
+            // (ex: video sans thumbnail accessible), on bascule en mode texte pour ne
+            // pas laisser le LLM inventer une description sans vision.
+            if ($kind === 'image' && ! $imageUrl) {
+                $kind = 'text';
+            }
 
             // Pas de contexte rempli pour ce type de post -> on skip
             if (! $persona->botContextFor($kind)) {
@@ -987,7 +995,6 @@ class BlueskyBotService
                 continue;
             }
 
-            $imageUrl = $kind === 'image' ? $this->extractImageUrl($post) : null;
             $postText = $record['text'] ?? '';
             $authorHandle = $post['author']['handle'] ?? null;
             $postLang = $record['langs'][0] ?? null;
@@ -1153,6 +1160,7 @@ class BlueskyBotService
 
     /**
      * Extrait la premiere URL d'image visible d'un post (utilisee pour vision).
+     * Couvre : images, video (via thumbnail), recordWithMedia (images ou video).
      */
     public function extractImageUrl(array $post): ?string
     {
@@ -1169,9 +1177,22 @@ class BlueskyBotService
             return $embed['images'][0]['thumb'];
         }
 
-        // recordWithMedia
+        // Vidéo : thumbnail dans embed.thumbnail (app.bsky.embed.video#view)
+        if (isset($embed['thumbnail']) && is_string($embed['thumbnail'])) {
+            return $embed['thumbnail'];
+        }
+
+        // recordWithMedia : images
         if (isset($embed['media']['images'][0]['fullsize'])) {
             return $embed['media']['images'][0]['fullsize'];
+        }
+        if (isset($embed['media']['images'][0]['thumb'])) {
+            return $embed['media']['images'][0]['thumb'];
+        }
+
+        // recordWithMedia : video
+        if (isset($embed['media']['thumbnail']) && is_string($embed['media']['thumbnail'])) {
+            return $embed['media']['thumbnail'];
         }
 
         return null;
