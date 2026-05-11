@@ -296,7 +296,9 @@
                                     </thead>
                                     <tbody class="divide-y divide-gray-100">
                                         @foreach ($freeLlm['models'] as $m)
-                                            @php([$cls, $label, $tip] = $statusBadge($m->last_test_status))
+                                            @php
+                                                [$cls, $label, $tip] = $statusBadge($m->last_test_status);
+                                            @endphp
                                             <tr>
                                                 <td class="px-3 py-2 font-medium text-gray-700">{{ $m->provider }}</td>
                                                 <td class="px-3 py-2 text-gray-800">{{ $m->display_name }}</td>
