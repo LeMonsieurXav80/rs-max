@@ -305,6 +305,33 @@ class ThreadPublishingService
         $thread->socialAccounts()->updateExistingPivot($account->id, ['status' => 'pending']);
     }
 
+    /**
+     * Detache completement un compte du thread : supprime les thread_segment_platform
+     * associes puis detache le pivot. Les posts deja publies sur la plateforme ne
+     * sont PAS supprimes (a faire manuellement par l'utilisateur).
+     */
+    public function removeAccount(Thread $thread, SocialAccount $account): void
+    {
+        foreach ($thread->segments as $segment) {
+            $segment->segmentPlatforms()
+                ->where('social_account_id', $account->id)
+                ->delete();
+        }
+
+        $thread->socialAccounts()->detach($account->id);
+
+        // Recalcule le statut global. Si tous les pivots restants sont en attente
+        // (ou s'il n'y a plus de compte), le thread retombe en draft.
+        $thread->refresh();
+        $pivotStatuses = $thread->socialAccounts->pluck('pivot.status');
+
+        if ($pivotStatuses->isEmpty() || $pivotStatuses->every(fn ($s) => $s === 'pending')) {
+            $thread->update(['status' => 'draft', 'published_at' => null]);
+        } else {
+            $this->updateThreadStatus($thread);
+        }
+    }
+
     // -------------------------------------------------------------------------
     //  Translation
     // -------------------------------------------------------------------------

@@ -110,6 +110,13 @@
                                     Reset
                                 </button>
                             @endif
+
+                            <button type="button"
+                                    @click="removeAccount({{ $thread->id }}, {{ $account->id }}, '{{ $account->name }}')"
+                                    class="inline-flex items-center gap-1 px-3 py-1.5 text-xs font-medium rounded-lg text-red-600 hover:bg-red-50 transition-colors"
+                                    title="Retirer ce compte du fil">
+                                Retirer
+                            </button>
                         </div>
                     </div>
                 @endforeach
@@ -291,6 +298,25 @@
                     try {
                         await fetch(`/threads/${threadId}/reset/${accountId}`, {
                             method: 'POST',
+                            headers: {
+                                'Content-Type': 'application/json',
+                                'X-CSRF-TOKEN': document.querySelector('meta[name=csrf-token]').getAttribute('content'),
+                                'Accept': 'application/json',
+                            },
+                        });
+                        location.reload();
+                    } catch (err) {
+                        alert('Erreur de connexion');
+                    }
+                },
+
+                async removeAccount(threadId, accountId, accountName) {
+                    if (!confirm(`Retirer le compte « ${accountName} » de ce fil ?\n\nLes publications déjà postées sur la plateforme ne seront PAS supprimées (à faire manuellement si besoin).`)) {
+                        return;
+                    }
+                    try {
+                        await fetch(`/threads/${threadId}/accounts/${accountId}`, {
+                            method: 'DELETE',
                             headers: {
                                 'Content-Type': 'application/json',
                                 'X-CSRF-TOKEN': document.querySelector('meta[name=csrf-token]').getAttribute('content'),

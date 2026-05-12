@@ -568,4 +568,23 @@ class ThreadController extends Controller
 
         return response()->json(['success' => true, 'message' => 'Remis en attente.']);
     }
+
+    /**
+     * AJAX: Retire completement un compte d'un fil (detach + suppression des
+     * thread_segment_platform). Les posts deja publies cote plateforme ne sont
+     * pas supprimes — c'est a l'utilisateur de le faire si necessaire.
+     */
+    public function removeAccount(Request $request, Thread $thread, SocialAccount $socialAccount): JsonResponse
+    {
+        $user = $request->user();
+
+        if (! $user->isAdmin() && $thread->user_id !== $user->id) {
+            return response()->json(['success' => false, 'error' => 'Non autorisé.'], 403);
+        }
+
+        $service = app(ThreadPublishingService::class);
+        $service->removeAccount($thread, $socialAccount);
+
+        return response()->json(['success' => true, 'message' => 'Compte retiré du fil.']);
+    }
 }
