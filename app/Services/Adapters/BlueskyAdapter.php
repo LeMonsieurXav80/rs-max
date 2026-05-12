@@ -89,6 +89,7 @@ class BlueskyAdapter implements PlatformAdapterInterface, ResharingAdapterInterf
                 $this->rootCid = $parentCid;
             }
 
+            $content = $this->enforceCharLimit($content);
             $record = $this->buildRecord($content);
             $record['reply'] = [
                 'root' => [
@@ -295,7 +296,7 @@ class BlueskyAdapter implements PlatformAdapterInterface, ResharingAdapterInterf
 
     private function createSession(string $identifier, string $password): ?array
     {
-        $response = Http::post(self::PDS_BASE . '/xrpc/com.atproto.server.createSession', [
+        $response = Http::post(self::PDS_BASE.'/xrpc/com.atproto.server.createSession', [
             'identifier' => $identifier,
             'password' => $password,
         ]);
@@ -315,7 +316,7 @@ class BlueskyAdapter implements PlatformAdapterInterface, ResharingAdapterInterf
     private function refreshSession(string $refreshJwt): ?array
     {
         $response = Http::withToken($refreshJwt)
-            ->post(self::PDS_BASE . '/xrpc/com.atproto.server.refreshSession');
+            ->post(self::PDS_BASE.'/xrpc/com.atproto.server.refreshSession');
 
         if ($response->successful()) {
             return $response->json();
@@ -366,7 +367,7 @@ class BlueskyAdapter implements PlatformAdapterInterface, ResharingAdapterInterf
     private function createRecord(string $did, string $accessJwt, array $record, string $collection = 'app.bsky.feed.post'): array
     {
         $response = Http::withToken($accessJwt)
-            ->post(self::PDS_BASE . '/xrpc/com.atproto.repo.createRecord', [
+            ->post(self::PDS_BASE.'/xrpc/com.atproto.repo.createRecord', [
                 'repo' => $did,
                 'collection' => $collection,
                 'record' => $record,
@@ -375,7 +376,7 @@ class BlueskyAdapter implements PlatformAdapterInterface, ResharingAdapterInterf
         $body = $response->json();
 
         if ($response->successful() && isset($body['uri'], $body['cid'])) {
-            $externalId = $body['uri'] . '|' . $body['cid'];
+            $externalId = $body['uri'].'|'.$body['cid'];
 
             return [
                 'success' => true,
@@ -449,13 +450,26 @@ class BlueskyAdapter implements PlatformAdapterInterface, ResharingAdapterInterf
                 }
 
                 $mimeType = mime_content_type($tempFile) ?: 'image/jpeg';
+
+                // Dimensions a passer dans aspectRatio sinon les clients Bluesky
+                // affichent l'image dans un conteneur fixe avec letterboxing (contour gris).
+                $aspectRatio = null;
+                $size = @getimagesize($tempFile);
+                if (is_array($size) && ! empty($size[0]) && ! empty($size[1])) {
+                    $aspectRatio = ['width' => (int) $size[0], 'height' => (int) $size[1]];
+                }
+
                 $blob = $this->uploadBlob($accessJwt, $tempFile, $mimeType);
 
                 if ($blob) {
-                    $embedImages[] = [
+                    $embedImage = [
                         'alt' => $item['title'] ?? '',
                         'image' => $blob,
                     ];
+                    if ($aspectRatio) {
+                        $embedImage['aspectRatio'] = $aspectRatio;
+                    }
+                    $embedImages[] = $embedImage;
                 }
             } finally {
                 if (file_exists($tempFile)) {
@@ -484,7 +498,7 @@ class BlueskyAdapter implements PlatformAdapterInterface, ResharingAdapterInterf
             if (! $downloaded->successful()) {
                 Log::warning('BlueskyAdapter: failed to download video', ['url' => $url]);
 
-                return ['error' => 'Bluesky: impossible de télécharger la vidéo (HTTP ' . $downloaded->status() . ')'];
+                return ['error' => 'Bluesky: impossible de télécharger la vidéo (HTTP '.$downloaded->status().')'];
             }
 
             $fileSize = filesize($tempFile);
@@ -505,6 +519,10 @@ class BlueskyAdapter implements PlatformAdapterInterface, ResharingAdapterInterf
                 return ['error' => 'Bluesky: impossible d\'extraire le DID pour l\'upload vidéo'];
             }
 
+            // Dimensions de la video — sans ca, le client Bluesky ajoute des bandes
+            // (letterboxing/pillarboxing) pour caler la video dans un ratio par defaut.
+            $aspectRatio = $this->probeVideoAspectRatio($tempFile);
+
             // Upload via Bluesky video service (not uploadBlob)
             $result = $this->uploadVideo($accessJwt, $did, $tempFile, $mimeType);
 
@@ -516,10 +534,15 @@ class BlueskyAdapter implements PlatformAdapterInterface, ResharingAdapterInterf
                 return ['error' => 'Bluesky: échec de l\'upload vidéo (raison inconnue)'];
             }
 
-            return [
+            $embed = [
                 '$type' => 'app.bsky.embed.video',
                 'video' => $result,
             ];
+            if ($aspectRatio) {
+                $embed['aspectRatio'] = $aspectRatio;
+            }
+
+            return $embed;
         } finally {
             if (file_exists($tempFile)) {
                 @unlink($tempFile);
@@ -542,7 +565,7 @@ class BlueskyAdapter implements PlatformAdapterInterface, ResharingAdapterInterf
     /**
      * Upload a video to Bluesky's video service.
      *
-     * @return array|string|null  Blob array on success, error string on failure, null for unknown failure.
+     * @return array|string|null Blob array on success, error string on failure, null for unknown failure.
      */
     private function uploadVideo(string $accessJwt, string $did, string $filePath, string $mimeType): array|string|null
     {
@@ -556,7 +579,7 @@ class BlueskyAdapter implements PlatformAdapterInterface, ResharingAdapterInterf
 
         // Step 2: Get a service auth token scoped to the PDS
         $serviceAuth = Http::withToken($accessJwt)
-            ->get(self::PDS_BASE . '/xrpc/com.atproto.server.getServiceAuth', [
+            ->get(self::PDS_BASE.'/xrpc/com.atproto.server.getServiceAuth', [
                 'aud' => $pdsDid,
                 'lxm' => 'com.atproto.repo.uploadBlob',
                 'exp' => time() + 300,
@@ -575,9 +598,9 @@ class BlueskyAdapter implements PlatformAdapterInterface, ResharingAdapterInterf
 
         // Step 3: Upload to video service with service token and query params
         $fileContents = file_get_contents($filePath);
-        $uploadUrl = self::VIDEO_API . '/xrpc/app.bsky.video.uploadVideo'
-            . '?did=' . urlencode($did)
-            . '&name=video_' . time() . '.mp4';
+        $uploadUrl = self::VIDEO_API.'/xrpc/app.bsky.video.uploadVideo'
+            .'?did='.urlencode($did)
+            .'&name=video_'.time().'.mp4';
 
         $response = Http::withToken($serviceToken)
             ->withHeaders(['Content-Type' => $mimeType])
@@ -614,7 +637,7 @@ class BlueskyAdapter implements PlatformAdapterInterface, ResharingAdapterInterf
             sleep(10);
 
             $status = Http::withToken($accessJwt)
-                ->get(self::VIDEO_API . '/xrpc/app.bsky.video.getJobStatus', [
+                ->get(self::VIDEO_API.'/xrpc/app.bsky.video.getJobStatus', [
                     'jobId' => $jobId,
                 ]);
 
@@ -697,7 +720,7 @@ class BlueskyAdapter implements PlatformAdapterInterface, ResharingAdapterInterf
         $response = Http::withToken($accessJwt)
             ->withHeaders(['Content-Type' => $mimeType])
             ->withBody($fileContents, $mimeType)
-            ->post(self::PDS_BASE . '/xrpc/com.atproto.repo.uploadBlob');
+            ->post(self::PDS_BASE.'/xrpc/com.atproto.repo.uploadBlob');
 
         if ($response->successful() && $response->json('blob')) {
             return $response->json('blob');
@@ -749,7 +772,7 @@ class BlueskyAdapter implements PlatformAdapterInterface, ResharingAdapterInterf
         }
 
         // Iteratively reduce quality to get under 1MB.
-        $outputPath = tempnam(sys_get_temp_dir(), 'bsky_cmp_') . '.jpg';
+        $outputPath = tempnam(sys_get_temp_dir(), 'bsky_cmp_').'.jpg';
         for ($quality = 80; $quality >= 30; $quality -= 10) {
             imagejpeg($image, $outputPath, $quality);
             if (filesize($outputPath) <= 1_000_000) {
@@ -781,7 +804,7 @@ class BlueskyAdapter implements PlatformAdapterInterface, ResharingAdapterInterf
 
         $url = $match[0];
         if (! str_starts_with($url, 'http')) {
-            $url = 'https://' . $url;
+            $url = 'https://'.$url;
         }
 
         try {
@@ -817,7 +840,7 @@ class BlueskyAdapter implements PlatformAdapterInterface, ResharingAdapterInterf
             if ($imageUrl) {
                 if (! str_starts_with($imageUrl, 'http')) {
                     $parsed = parse_url($url);
-                    $imageUrl = ($parsed['scheme'] ?? 'https') . '://' . ($parsed['host'] ?? '') . $imageUrl;
+                    $imageUrl = ($parsed['scheme'] ?? 'https').'://'.($parsed['host'] ?? '').$imageUrl;
                 }
 
                 $thumbBlob = $this->uploadBlobFromUrl($accessJwt, $imageUrl);
@@ -838,15 +861,15 @@ class BlueskyAdapter implements PlatformAdapterInterface, ResharingAdapterInterf
     private function extractMeta(string $html, string $property): ?string
     {
         // Try og: property
-        if (preg_match('/<meta[^>]+property=["\']' . preg_quote($property, '/') . '["\'][^>]+content=["\']([^"\']*)["\']/', $html, $m)) {
+        if (preg_match('/<meta[^>]+property=["\']'.preg_quote($property, '/').'["\'][^>]+content=["\']([^"\']*)["\']/', $html, $m)) {
             return html_entity_decode($m[1], ENT_QUOTES, 'UTF-8');
         }
         // Try name= (for description)
-        if (preg_match('/<meta[^>]+name=["\']' . preg_quote($property, '/') . '["\'][^>]+content=["\']([^"\']*)["\']/', $html, $m)) {
+        if (preg_match('/<meta[^>]+name=["\']'.preg_quote($property, '/').'["\'][^>]+content=["\']([^"\']*)["\']/', $html, $m)) {
             return html_entity_decode($m[1], ENT_QUOTES, 'UTF-8');
         }
         // Try reversed attribute order (content before property/name)
-        if (preg_match('/<meta[^>]+content=["\']([^"\']*)["\'][^>]+(?:property|name)=["\']' . preg_quote($property, '/') . '["\']/', $html, $m)) {
+        if (preg_match('/<meta[^>]+content=["\']([^"\']*)["\'][^>]+(?:property|name)=["\']'.preg_quote($property, '/').'["\']/', $html, $m)) {
             return html_entity_decode($m[1], ENT_QUOTES, 'UTF-8');
         }
 
@@ -881,7 +904,7 @@ class BlueskyAdapter implements PlatformAdapterInterface, ResharingAdapterInterf
             $blobResponse = Http::withToken($accessJwt)
                 ->withHeaders(['Content-Type' => $mimetype])
                 ->withBody($imageData, $mimetype)
-                ->post(self::PDS_BASE . '/xrpc/com.atproto.repo.uploadBlob');
+                ->post(self::PDS_BASE.'/xrpc/com.atproto.repo.uploadBlob');
 
             if ($blobResponse->successful()) {
                 return $blobResponse->json('blob');
@@ -913,7 +936,7 @@ class BlueskyAdapter implements PlatformAdapterInterface, ResharingAdapterInterf
                 $byteEnd = $byteStart + strlen($url);
 
                 // Ensure URL has protocol for the facet URI
-                $uri = str_starts_with($url, 'http') ? $url : 'https://' . $url;
+                $uri = str_starts_with($url, 'http') ? $url : 'https://'.$url;
 
                 $facets[] = [
                     'index' => [
@@ -986,32 +1009,91 @@ class BlueskyAdapter implements PlatformAdapterInterface, ResharingAdapterInterf
 
     /**
      * Ensure content stays within Bluesky's 300-grapheme limit.
+     * Bluesky compte en graphemes (clusters), pas en codepoints — un emoji compose
+     * (ex: 👨‍👩‍👧) = 1 grapheme mais plusieurs mb_strlen. On utilise intl si dispo.
      * Tries to preserve any URL found in the content (usually the article link).
      */
     private function enforceCharLimit(string $content, int $limit = 300): string
     {
-        if (mb_strlen($content) <= $limit) {
+        if ($this->graphemeLen($content) <= $limit) {
             return $content;
         }
 
         Log::warning('BlueskyAdapter: content exceeds limit, truncating', [
-            'length' => mb_strlen($content),
+            'length' => $this->graphemeLen($content),
             'limit' => $limit,
         ]);
 
         // Try to extract the last URL so we can preserve it
         if (preg_match_all('/(https?:\/\/\S+)/u', $content, $matches)) {
             $lastUrl = end($matches[1]);
-            $urlLen = mb_strlen($lastUrl);
+            $urlLen = $this->graphemeLen($lastUrl);
             $availableForText = $limit - $urlLen - 2; // -2 for "\n\n"
 
             if ($availableForText > 20) {
-                $textOnly = trim(mb_substr(str_replace($lastUrl, '', $content), 0, $availableForText - 3));
-                return rtrim($textOnly) . '...' . "\n\n" . $lastUrl;
+                $textOnly = trim($this->graphemeSubstr(str_replace($lastUrl, '', $content), 0, $availableForText - 3));
+
+                return rtrim($textOnly).'...'."\n\n".$lastUrl;
             }
         }
 
-        return mb_substr($content, 0, $limit - 3) . '...';
+        return $this->graphemeSubstr($content, 0, $limit - 3).'...';
+    }
+
+    private function graphemeLen(string $s): int
+    {
+        if (function_exists('grapheme_strlen')) {
+            $len = grapheme_strlen($s);
+            if ($len !== false) {
+                return $len;
+            }
+        }
+
+        return mb_strlen($s);
+    }
+
+    /**
+     * Probe les dimensions d'une video via ffprobe. Renvoie null si ffprobe absent
+     * ou si la sonde echoue — on poste alors sans aspectRatio (comportement actuel).
+     */
+    private function probeVideoAspectRatio(string $filePath): ?array
+    {
+        $cmd = sprintf(
+            'ffprobe -v error -select_streams v:0 -show_entries stream=width,height -of csv=s=x:p=0 %s 2>/dev/null',
+            escapeshellarg($filePath)
+        );
+
+        $output = @shell_exec($cmd);
+        if (! is_string($output)) {
+            return null;
+        }
+
+        $output = trim($output);
+        if ($output === '' || ! str_contains($output, 'x')) {
+            return null;
+        }
+
+        [$w, $h] = array_pad(explode('x', $output, 2), 2, null);
+        $w = (int) $w;
+        $h = (int) $h;
+
+        if ($w <= 0 || $h <= 0) {
+            return null;
+        }
+
+        return ['width' => $w, 'height' => $h];
+    }
+
+    private function graphemeSubstr(string $s, int $start, int $length): string
+    {
+        if (function_exists('grapheme_substr')) {
+            $out = grapheme_substr($s, $start, $length);
+            if ($out !== false) {
+                return $out;
+            }
+        }
+
+        return mb_substr($s, $start, $length);
     }
 
     private function error(string $message): array
@@ -1030,7 +1112,7 @@ class BlueskyAdapter implements PlatformAdapterInterface, ResharingAdapterInterf
      */
     public static function fetchProfile(string $actor): ?array
     {
-        $response = Http::get(self::PUBLIC_API . '/xrpc/app.bsky.actor.getProfile', [
+        $response = Http::get(self::PUBLIC_API.'/xrpc/app.bsky.actor.getProfile', [
             'actor' => $actor,
         ]);
 
@@ -1042,7 +1124,7 @@ class BlueskyAdapter implements PlatformAdapterInterface, ResharingAdapterInterf
      */
     public static function fetchPostMetrics(string $uri): ?array
     {
-        $response = Http::get(self::PUBLIC_API . '/xrpc/app.bsky.feed.getPostThread', [
+        $response = Http::get(self::PUBLIC_API.'/xrpc/app.bsky.feed.getPostThread', [
             'uri' => $uri,
             'depth' => 0,
             'parentHeight' => 0,

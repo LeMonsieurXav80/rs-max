@@ -1053,7 +1053,13 @@ class BlueskyBotService
                 $comment = mb_substr($comment, 0, $platformLimit - 1).'…';
             }
 
-            $success = $this->replyToPost($auth, $postUri, $postCid, $comment);
+            // Si le post cible est lui-meme une reponse, on doit reutiliser
+            // son root pour rattacher notre reply au bon fil. Sinon le client
+            // Bluesky n'affiche pas la reponse dans la discussion.
+            $rootUri = $record['reply']['root']['uri'] ?? $postUri;
+            $rootCid = $record['reply']['root']['cid'] ?? $postCid;
+
+            $success = $this->replyToPost($auth, $postUri, $postCid, $rootUri, $rootCid, $comment);
             $this->logAction(
                 $account,
                 'comment_keyword',
@@ -1227,10 +1233,10 @@ class BlueskyBotService
     }
 
     /**
-     * Poste un reply sur un post existant. Le post racine est le post commente
-     * (suffisant pour les top-level replies, qui couvrent notre cas d'usage).
+     * Poste un reply sur un post existant. Pour respecter le threading AT Protocol,
+     * root doit pointer vers le post racine du fil entier (pas vers le parent immediat).
      */
-    private function replyToPost(array $auth, string $parentUri, string $parentCid, string $text): bool
+    private function replyToPost(array $auth, string $parentUri, string $parentCid, string $rootUri, string $rootCid, string $text): bool
     {
         $response = Http::withToken($auth['accessJwt'])
             ->post(self::PDS_BASE.'/xrpc/com.atproto.repo.createRecord', [
@@ -1241,7 +1247,7 @@ class BlueskyBotService
                     'text' => $text,
                     'createdAt' => now()->toIso8601ZuluString(),
                     'reply' => [
-                        'root' => ['uri' => $parentUri, 'cid' => $parentCid],
+                        'root' => ['uri' => $rootUri, 'cid' => $rootCid],
                         'parent' => ['uri' => $parentUri, 'cid' => $parentCid],
                     ],
                 ],
