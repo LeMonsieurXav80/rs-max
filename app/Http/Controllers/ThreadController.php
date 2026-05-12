@@ -243,9 +243,9 @@ class ThreadController extends Controller
             abort(403);
         }
 
-        if (in_array($thread->status, ['publishing', 'published'])) {
+        if (in_array($thread->status, ['publishing', 'published']) || $thread->hasPublishedSegments()) {
             return redirect()->route('threads.show', $thread)
-                ->with('error', 'Impossible de modifier un fil déjà publié.');
+                ->with('error', 'Ce fil contient déjà des publications. Pour le modifier, cliquez d\'abord « Reset » sur chaque compte concerné (les posts existants sur les plateformes devront être supprimés manuellement).');
         }
 
         $thread->load(['segments', 'socialAccounts.platform']);
@@ -285,9 +285,9 @@ class ThreadController extends Controller
             abort(403);
         }
 
-        if (in_array($thread->status, ['publishing', 'published'])) {
+        if (in_array($thread->status, ['publishing', 'published']) || $thread->hasPublishedSegments()) {
             return redirect()->route('threads.show', $thread)
-                ->with('error', 'Impossible de modifier un fil déjà publié.');
+                ->with('error', 'Ce fil contient déjà des publications. Pour le modifier, cliquez d\'abord « Reset » sur chaque compte concerné.');
         }
 
         $validated = $request->validate([

@@ -80,6 +80,17 @@ class Thread extends Model
         return $this->segments->count();
     }
 
+    /**
+     * Au moins un segment a deja ete publie sur une plateforme (external_id non nul).
+     * Sert a empecher l'edition destructive d'un fil partiellement publie.
+     */
+    public function hasPublishedSegments(): bool
+    {
+        return $this->segments()
+            ->whereHas('segmentPlatforms', fn ($q) => $q->whereNotNull('external_id'))
+            ->exists();
+    }
+
     public function getStatusColorAttribute(): string
     {
         return match ($this->status) {

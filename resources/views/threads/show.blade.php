@@ -31,7 +31,7 @@
                 </div>
             </div>
             <div class="flex items-center gap-2">
-                @if(in_array($thread->status, ['draft', 'failed', 'partial']))
+                @if(in_array($thread->status, ['draft', 'failed', 'partial']) && ! $thread->hasPublishedSegments())
                     <a href="{{ route('threads.edit', $thread) }}"
                        class="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-xl hover:bg-gray-50 transition-colors">
                         Modifier

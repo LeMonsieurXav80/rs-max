@@ -122,7 +122,7 @@
 
                         {{-- Actions --}}
                         <div class="flex items-center gap-1 flex-shrink-0">
-                            @if(in_array($thread->status, ['draft', 'failed', 'partial']))
+                            @if(in_array($thread->status, ['draft', 'failed', 'partial']) && ! $thread->hasPublishedSegments())
                                 <a href="{{ route('threads.edit', $thread) }}"
                                    class="p-2 text-gray-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg transition-colors"
                                    title="Modifier">
