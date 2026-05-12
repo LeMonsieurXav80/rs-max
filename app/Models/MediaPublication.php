@@ -12,6 +12,7 @@ class MediaPublication extends Model
         'post_id',
         'thread_segment_id',
         'post_platform_id',
+        'social_account_id',
         'external_url',
         'published_at',
         'context',
@@ -39,5 +40,10 @@ class MediaPublication extends Model
     public function postPlatform(): BelongsTo
     {
         return $this->belongsTo(PostPlatform::class);
+    }
+
+    public function socialAccount(): BelongsTo
+    {
+        return $this->belongsTo(SocialAccount::class);
     }
 }

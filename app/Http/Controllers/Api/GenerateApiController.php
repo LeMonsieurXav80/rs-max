@@ -161,6 +161,8 @@ class GenerateApiController extends Controller
         $folderSlug = $validated['folder'] ?? null;
         $threadService = app(ThreadContentGenerationService::class);
 
+        $accountIds = $account ? [$account->id] : null;
+
         if (! empty($validated['source_url'])) {
             $result = $threadService->generate(
                 $validated['source_url'],
@@ -168,7 +170,8 @@ class GenerateApiController extends Controller
                 $platformSlugs,
                 null,
                 $validated['instructions'] ?? null,
-                $folderSlug
+                $folderSlug,
+                $accountIds,
             );
         } else {
             $result = $threadService->generateFromInstructions(
@@ -177,7 +180,8 @@ class GenerateApiController extends Controller
                 $platformSlugs,
                 1,
                 1,
-                $folderSlug
+                $folderSlug,
+                $accountIds,
             );
         }
 

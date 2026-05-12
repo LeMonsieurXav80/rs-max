@@ -333,7 +333,9 @@ class ApiController extends Controller
                     $persona,
                     $platformSlugs,
                     $i + 1,
-                    $count
+                    $count,
+                    null,
+                    $accounts->pluck('id')->all(),
                 );
 
                 if (! $generated || empty($generated['segments'])) {

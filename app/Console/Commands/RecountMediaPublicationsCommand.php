@@ -13,7 +13,7 @@ class RecountMediaPublicationsCommand extends Command
         {--dry-run : Affiche ce qui serait fait sans rien écrire}
         {--reset : Vide media_publications avant rebuild (perd le contexte des entrées créées par le tracker)}';
 
-    protected $description = 'Reconstruit media_publications depuis posts.media + thread_segments.media et resynchronise media_files.publication_count.';
+    protected $description = 'Reconstruit media_publications depuis posts.media + thread_segments.media (1 entrée par média × compte) et resynchronise media_files.publication_count.';
 
     public function handle(): int
     {
@@ -34,7 +34,7 @@ class RecountMediaPublicationsCommand extends Command
         $skipped = 0;
         $unknown = 0;
 
-        // 1) Posts publiés
+        // 1) Posts publiés — on crée 1 entrée par (média × post_platform) pour capturer le compte.
         DB::table('posts')
             ->where('status', 'published')
             ->whereNotNull('media')
@@ -46,22 +46,36 @@ class RecountMediaPublicationsCommand extends Command
                     if (! is_array($media)) {
                         continue;
                     }
-                    $publishedAt = $post->published_at ?? $post->updated_at;
-                    foreach ($media as $item) {
-                        [$status] = $this->backfillOne(
-                            url: $item['url'] ?? null,
-                            publishedAt: $publishedAt,
-                            postId: $post->id,
-                            threadSegmentId: null,
-                            context: 'backfill:post',
-                            dry: $dry,
-                        );
-                        $$status++;
+                    $platforms = DB::table('post_platform')
+                        ->where('post_id', $post->id)
+                        ->where('status', 'published')
+                        ->get(['id', 'social_account_id', 'published_at']);
+
+                    if ($platforms->isEmpty()) {
+                        // Pas de plateforme publiée : on ne peut pas attribuer à un compte.
+                        continue;
+                    }
+
+                    foreach ($platforms as $pp) {
+                        $publishedAt = $pp->published_at ?? $post->published_at ?? $post->updated_at;
+                        foreach ($media as $item) {
+                            [$status] = $this->backfillOne(
+                                url: $item['url'] ?? null,
+                                publishedAt: $publishedAt,
+                                postId: $post->id,
+                                threadSegmentId: null,
+                                postPlatformId: $pp->id,
+                                socialAccountId: $pp->social_account_id,
+                                context: 'backfill:post',
+                                dry: $dry,
+                            );
+                            $$status++;
+                        }
                     }
                 }
             });
 
-        // 2) Thread segments dont le parent thread est publié
+        // 2) Thread segments dont le parent thread est publié — 1 entrée par (média × thread_segment_platform).
         DB::table('thread_segments as ts')
             ->join('threads as t', 't.id', '=', 'ts.thread_id')
             ->where('t.status', 'published')
@@ -75,17 +89,31 @@ class RecountMediaPublicationsCommand extends Command
                     if (! is_array($media)) {
                         continue;
                     }
-                    $publishedAt = $seg->thread_published_at ?? $seg->updated_at;
-                    foreach ($media as $item) {
-                        [$status] = $this->backfillOne(
-                            url: $item['url'] ?? null,
-                            publishedAt: $publishedAt,
-                            postId: null,
-                            threadSegmentId: $seg->id,
-                            context: 'backfill:thread_segment',
-                            dry: $dry,
-                        );
-                        $$status++;
+
+                    $segPlatforms = DB::table('thread_segment_platform')
+                        ->where('thread_segment_id', $seg->id)
+                        ->where('status', 'published')
+                        ->get(['social_account_id', 'published_at']);
+
+                    if ($segPlatforms->isEmpty()) {
+                        continue;
+                    }
+
+                    foreach ($segPlatforms as $sp) {
+                        $publishedAt = $sp->published_at ?? $seg->thread_published_at ?? $seg->updated_at;
+                        foreach ($media as $item) {
+                            [$status] = $this->backfillOne(
+                                url: $item['url'] ?? null,
+                                publishedAt: $publishedAt,
+                                postId: null,
+                                threadSegmentId: $seg->id,
+                                postPlatformId: null,
+                                socialAccountId: $sp->social_account_id,
+                                context: 'backfill:thread_segment',
+                                dry: $dry,
+                            );
+                            $$status++;
+                        }
                     }
                 }
             });
@@ -120,13 +148,15 @@ class RecountMediaPublicationsCommand extends Command
     }
 
     /**
-     * @return array{0: 'created'|'skipped'|'unknown', 1: ?int}  Statut + id MediaPublication créé/existant
+     * @return array{0: 'created'|'skipped'|'unknown', 1: ?int} Statut + id MediaPublication créé/existant
      */
     private function backfillOne(
         ?string $url,
         $publishedAt,
         ?int $postId,
         ?int $threadSegmentId,
+        ?int $postPlatformId,
+        ?int $socialAccountId,
         string $context,
         bool $dry,
     ): array {
@@ -142,8 +172,10 @@ class RecountMediaPublicationsCommand extends Command
             return ['unknown', null];
         }
 
-        // Idempotence : (media_file_id, post_id) ou (media_file_id, thread_segment_id)
-        $existsQuery = MediaPublication::where('media_file_id', $mediaFile->id);
+        // Idempotence : (media_file_id, post_id|thread_segment_id, social_account_id).
+        // Permet 1 entrée par compte cible pour un même post/segment.
+        $existsQuery = MediaPublication::where('media_file_id', $mediaFile->id)
+            ->where('social_account_id', $socialAccountId);
         if ($postId !== null) {
             $existsQuery->where('post_id', $postId);
         } else {
@@ -161,6 +193,8 @@ class RecountMediaPublicationsCommand extends Command
             'media_file_id' => $mediaFile->id,
             'post_id' => $postId,
             'thread_segment_id' => $threadSegmentId,
+            'post_platform_id' => $postPlatformId,
+            'social_account_id' => $socialAccountId,
             'published_at' => $publishedAt ?? now(),
             'context' => $context,
         ]);

@@ -429,7 +429,7 @@ class ThreadController extends Controller
         $hookCategoryId = $validated['hook_category_id'] ?? null;
         $contextInstructions = $validated['context_instructions'] ?? null;
         $folderSlug = $validated['folder'] ?? null;
-        $result = $service->generate($validated['source_url'], $persona, $platformSlugs, $hookCategoryId, $contextInstructions, $folderSlug);
+        $result = $service->generate($validated['source_url'], $persona, $platformSlugs, $hookCategoryId, $contextInstructions, $folderSlug, $validated['accounts']);
 
         if (! $result) {
             return response()->json([

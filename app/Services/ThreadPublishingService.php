@@ -131,6 +131,7 @@ class ThreadPublishingService
                     app(MediaPublicationTracker::class)->track(
                         media: $segment->media,
                         threadSegmentId: $segment->id,
+                        socialAccountId: $account->id,
                         externalUrl: $result['permalink'] ?? null,
                         context: $account->platform->slug.':thread',
                     );
@@ -233,6 +234,7 @@ class ThreadPublishingService
                 app(MediaPublicationTracker::class)->track(
                     media: $allMedia ?: null,
                     threadSegmentId: $firstSegment->id,
+                    socialAccountId: $account->id,
                     externalUrl: $result['permalink'] ?? null,
                     context: $account->platform->slug.':compiled',
                 );

@@ -21,6 +21,7 @@ class MediaPublicationTracker
         ?int $postId = null,
         ?int $threadSegmentId = null,
         ?int $postPlatformId = null,
+        ?int $socialAccountId = null,
         ?string $externalUrl = null,
         ?string $context = null,
     ): int {
@@ -52,6 +53,7 @@ class MediaPublicationTracker
                     'post_id' => $postId,
                     'thread_segment_id' => $threadSegmentId,
                     'post_platform_id' => $postPlatformId,
+                    'social_account_id' => $socialAccountId,
                     'external_url' => $externalUrl,
                     'published_at' => now(),
                     'context' => $context,

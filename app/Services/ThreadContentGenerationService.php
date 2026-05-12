@@ -28,7 +28,7 @@ class ThreadContentGenerationService
      *   - 'compiled' => ['facebook' => '...', 'telegram' => '...']
      *   - 'title' => '...'
      */
-    public function generate(string $sourceUrl, Persona $persona, array $platformSlugs, ?int $hookCategoryId = null, ?string $contextInstructions = null, ?string $folderSlug = null): ?array
+    public function generate(string $sourceUrl, Persona $persona, array $platformSlugs, ?int $hookCategoryId = null, ?string $contextInstructions = null, ?string $folderSlug = null, ?array $accountIds = null): ?array
     {
         $apiKey = Setting::getEncrypted('openai_api_key');
         if (! $apiKey) {
@@ -206,7 +206,7 @@ class ThreadContentGenerationService
             }
 
             // Auto-attache une photo par segment selon photo_keywords (si dossier fourni).
-            $this->attachPhotosByKeywords($normalized['segments'], $folderSlug);
+            $this->attachPhotosByKeywords($normalized['segments'], $folderSlug, $accountIds);
 
             return $normalized;
 
@@ -221,7 +221,7 @@ class ThreadContentGenerationService
      * Generate a thread from free-form instructions (no source URL).
      * Used by the API for bulk thread scheduling.
      */
-    public function generateFromInstructions(string $instructions, Persona $persona, array $platformSlugs, int $threadNumber = 1, int $totalThreads = 1, ?string $folderSlug = null): ?array
+    public function generateFromInstructions(string $instructions, Persona $persona, array $platformSlugs, int $threadNumber = 1, int $totalThreads = 1, ?string $folderSlug = null, ?array $accountIds = null): ?array
     {
         $apiKey = Setting::getEncrypted('openai_api_key');
         if (! $apiKey) {
@@ -353,7 +353,7 @@ class ThreadContentGenerationService
             }
 
             $normalized = $this->normalizeResponse($parsed, $platformSlugs);
-            $this->attachPhotosByKeywords($normalized['segments'], $folderSlug);
+            $this->attachPhotosByKeywords($normalized['segments'], $folderSlug, $accountIds);
 
             return $normalized;
 
@@ -440,10 +440,11 @@ class ThreadContentGenerationService
      *  4) Évite les photos publiées dans les 30 derniers jours (cohérent avec le défaut /search).
      *  5) Les dossiers privés sont exclus (et coupent la descente sur leur branche).
      */
-    private function attachPhotosByKeywords(array &$segments, ?string $folderSlug): void
+    private function attachPhotosByKeywords(array &$segments, ?string $folderSlug, ?array $accountIds = null): void
     {
         Log::info('attachPhotosByKeywords called', [
             'folder' => $folderSlug,
+            'account_ids' => $accountIds,
             'segment_count' => count($segments),
             'segments_summary' => array_map(fn ($s) => [
                 'pos' => $s['position'] ?? null,
@@ -494,17 +495,33 @@ class ThreadContentGenerationService
                 ->whereIn('folder_id', $folderIds)
                 ->where('intimacy_level', 'public')
                 ->where('mime_type', 'like', 'image/%')
-                ->whereDoesntHave('publications', function ($q) {
+                ->whereDoesntHave('publications', function ($q) use ($accountIds) {
                     $q->where('published_at', '>=', now()->subDays(30));
+                    // Exclusion 30 jours scoped aux comptes ciblés : une photo publiée sur PDC
+                    // reste éligible pour WeAreAlgarve même si récente.
+                    if ($accountIds) {
+                        $q->whereIn('social_account_id', $accountIds);
+                    }
                 });
 
             if (! empty($alreadyAttached)) {
                 $base->whereNotIn('id', $alreadyAttached);
             }
 
+            // Tri par count : si on a des comptes ciblés, on trie par count_scoped (alias
+            // account_publication_count via withCount). Sinon : count global.
+            if ($accountIds) {
+                $base->withCount(['publications as account_publication_count' => function ($q) use ($accountIds) {
+                    $q->whereIn('social_account_id', $accountIds);
+                }]);
+                $orderCol = 'account_publication_count';
+            } else {
+                $orderCol = 'publication_count';
+            }
+
             // 1) Match strict : toutes les keywords doivent être trouvées dans les tags.
-            // Tri : photos peu publiées d'abord, random au sein du même publication_count
-            // pour varier sans favoriser systématiquement la même photo "neuve".
+            // Tri : photos peu publiées d'abord (sur les comptes ciblés si fourni),
+            // random au sein du même count pour varier sans favoriser systématiquement la même photo.
             $strict = (clone $base);
             foreach ($kw as $tag) {
                 $strict->whereRaw(
@@ -512,7 +529,7 @@ class ThreadContentGenerationService
                     ['%'.strtolower($tag).'%']
                 );
             }
-            $photo = $strict->orderBy('publication_count')->inRandomOrder()->first();
+            $photo = $strict->orderBy($orderCol)->inRandomOrder()->first();
 
             // 2) Fallback large : au moins UNE keyword matche.
             if (! $photo) {
@@ -525,7 +542,7 @@ class ThreadContentGenerationService
                         );
                     }
                 });
-                $photo = $loose->orderBy('publication_count')->inRandomOrder()->first();
+                $photo = $loose->orderBy($orderCol)->inRandomOrder()->first();
             }
 
             if ($photo) {

@@ -107,6 +107,7 @@ class PublishToPlatformJob implements ShouldQueue
                 media: $post->media,
                 postId: $post->id,
                 postPlatformId: $postPlatform->id,
+                socialAccountId: $account->id,
                 externalUrl: $result['permalink'] ?? null,
                 context: $platform->slug,
             );

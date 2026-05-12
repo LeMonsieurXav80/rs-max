@@ -249,6 +249,10 @@ class MediaApiController extends Controller
             'people.*' => 'string',
             'exclude_recently_published_days' => 'nullable|integer|min:0|max:3650',
             'limit' => 'nullable|integer|min:1|max:200',
+            // Restreint le compteur "fois publiée" + l'exclusion récente à ces comptes.
+            // Sans ce param, on garde le comportement global (compteur sur toutes plateformes).
+            'social_account_ids' => 'nullable|array',
+            'social_account_ids.*' => 'integer|exists:social_accounts,id',
         ]);
 
         $folder = MediaFolder::where('slug', $params['folder'])->firstOrFail();
@@ -266,10 +270,20 @@ class MediaApiController extends Controller
         $limit = $params['limit'] ?? 20;
         $excludeDays = $params['exclude_recently_published_days'] ?? 0;
         $hasEmbedding = ! empty($params['query_embedding']);
+        $accountIds = $params['social_account_ids'] ?? [];
 
         $query = MediaFile::query()
             ->whereIn('folder_id', $folderIds)
             ->whereIn('intimacy_level', self::SAFE_INTIMACY);
+
+        // Compte les publications scopé aux comptes ciblés (sinon : count global déjà dans la colonne).
+        // Alias `account_publication_count` utilisé en sortie + tri ci-dessous.
+        // Filtre direct sur media_publications.social_account_id (rempli depuis la migration de mai 2026).
+        if ($accountIds) {
+            $query->withCount(['publications as account_publication_count' => function ($q) use ($accountIds) {
+                $q->whereIn('social_account_id', $accountIds);
+            }]);
+        }
 
         // L'embedding n'est requis que si on veut faire un tri sémantique.
         // En mode "match par mots-clés", il est facultatif.
@@ -295,8 +309,13 @@ class MediaApiController extends Controller
         }
         if ($excludeDays > 0) {
             $cutoff = now()->subDays($excludeDays);
-            $query->whereDoesntHave('publications', function ($q) use ($cutoff) {
+            $query->whereDoesntHave('publications', function ($q) use ($cutoff, $accountIds) {
                 $q->where('published_at', '>=', $cutoff);
+                // Si des comptes sont spécifiés, on n'exclut que les photos récemment publiées
+                // SUR CES COMPTES (une photo publiée sur PDC reste éligible pour WeAreAlgarve).
+                if ($accountIds) {
+                    $q->whereIn('social_account_id', $accountIds);
+                }
             });
         }
 
@@ -328,6 +347,8 @@ class MediaApiController extends Controller
             'taken_at' => $row->taken_at?->toIso8601String(),
             'folder_id' => $row->folder_id,
             'publication_count' => $row->publication_count,
+            // null si pas de filtre par compte, sinon count restreint aux comptes ciblés.
+            'account_publication_count' => $row->account_publication_count ?? null,
         ];
 
         if ($hasEmbedding) {
@@ -343,9 +364,11 @@ class MediaApiController extends Controller
             }
             usort($results, fn ($a, $b) => $b['similarity'] <=> $a['similarity']);
         } else {
-            // Mode mots-clés : photos peu publiées d'abord, random au sein du même publication_count.
-            // Évite de toujours servir les mêmes photos quand l'auto-attach tape souvent la même requête.
-            $candidates = $query->orderBy('publication_count')->inRandomOrder()
+            // Mode mots-clés : photos peu publiées d'abord, random au sein du même count.
+            // Si on a un compte cible, on trie par count_compte (une photo souvent publiée sur PDC
+            // mais jamais sur WeAreAlgarve sortira en premier pour WeAreAlgarve).
+            $orderCol = $accountIds ? 'account_publication_count' : 'publication_count';
+            $candidates = $query->orderBy($orderCol)->inRandomOrder()
                 ->limit($limit)
                 ->get($cols);
             foreach ($candidates as $row) {
@@ -363,6 +386,7 @@ class MediaApiController extends Controller
                 'tags' => $params['tags'] ?? [],
                 'people' => $params['people'] ?? [],
                 'exclude_days' => $excludeDays,
+                'social_account_ids' => $accountIds,
                 'returned_ids' => array_column($results, 'id'),
                 'candidates_count' => count($candidates),
             ]);
@@ -374,6 +398,7 @@ class MediaApiController extends Controller
                 'folder_ids' => $folderIds,
                 'intimacy' => implode('|', self::SAFE_INTIMACY),
                 'exclude_recently_published_days' => $excludeDays,
+                'social_account_ids' => $accountIds,
             ],
         ]);
     }
