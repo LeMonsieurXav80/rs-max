@@ -78,7 +78,14 @@ Le "Contexte de la session" ci-dessus n'est PAS décoratif. Tu DOIS l'exploiter 
 RÈGLES :
 - description_fr : 1-2 phrases factuelles décrivant la scène, pas de copywriting. **Sert de contexte à une IA pour la rédaction de publications, doit être informative.**
   Convention de nommage : si une femme adulte est visible, désigne-la par "Caroline" ; si un homme adulte est visible, désigne-le par "Xavier". Évite "une femme", "un homme", "une personne", "elle", "il" en début de phrase. Si la photo ne montre clairement personne ou seulement des inconnus de fond, ignore cette règle.
-- thematic_tags : MAXIMUM 10, en français minuscules sans accents sur concepts simples, pas de doublons singulier/pluriel, pas de générique ("photo", "image"). Privilégie ce qui rend la photo unique. **Sert aussi de contexte pour la génération de contenu.**
+- thematic_tags : MAXIMUM 10. Règles STRICTES (à respecter à la lettre, sinon le tag est rejeté côté serveur) :
+  1. Français, minuscules.
+  2. JAMAIS d'accents : écris "ete" (pas "été"), "interieur" (pas "intérieur"), "lumiere naturelle" (pas "lumière naturelle"), "decolette" (pas "décolleté"), "ecosse" (pas "écosse"), "marche" (pas "marché"). Aucune exception, même sur les expressions composées.
+  3. Séparateur entre mots = ESPACE uniquement. Jamais de tiret "-", jamais d'underscore "_". Écris "lumiere naturelle" (pas "lumiere-naturelle" ni "lumiere_naturelle"), "centre ville" (pas "centre-ville"), "corps entier" (pas "corps-entier").
+  4. Toujours au SINGULIER (ex: "fleur", "rocher", "plante") sauf si la photo montre clairement plusieurs instances distinctes ET que le pluriel est essentiel ("azulejos", "remparts" quand c'est l'élément principal).
+  5. Pas de générique ("photo", "image", "vue", "moment"). Privilégie ce qui rend la photo unique vs d'autres du même dossier.
+  6. Pas de doublons singulier/pluriel dans le même tableau.
+  **Sert aussi de contexte pour la génération de contenu.**
 - people_ids : ids normalisés. **Heuristique automatique** : si un homme adulte est visible → ajoute "xavier". Si une femme adulte est visible → ajoute "caroline". Si plusieurs personnes du même genre, garde "xavier" (resp. "caroline") une seule fois. Si la photo ne montre clairement personne ou seulement des inconnus, laisse le tableau vide.
 - city/region/country : null si non identifiable visuellement (pas deviner). Cf. règle d'utilisation du contexte ci-dessus si le contexte aide à confirmer.
 - brands : tableau de marques visibles (logos, packaging). Vide si aucune.

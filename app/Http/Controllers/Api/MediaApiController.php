@@ -9,6 +9,7 @@ use App\Models\MediaFolder;
 use App\Models\MediaPublication;
 use App\Services\AiAssistService;
 use App\Services\StockPhotoService;
+use App\Support\TagNormalizer;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
@@ -854,41 +855,7 @@ class MediaApiController extends Controller
      */
     private function normalizeTags(?array $tags): ?array
     {
-        if ($tags === null) {
-            return null;
-        }
-
-        $seen = [];
-        $out = [];
-        $push = function (string $s) use (&$seen, &$out) {
-            $clean = trim(strtolower($s));
-            $clean = trim($clean, "\"'.- ");
-            if ($clean === '' || mb_strlen($clean) > 60 || isset($seen[$clean])) {
-                return;
-            }
-            $seen[$clean] = true;
-            $out[] = $clean;
-        };
-
-        foreach ($tags as $t) {
-            if (! is_string($t)) {
-                continue;
-            }
-            // Si présence de ':', on jette la clé et on garde la valeur.
-            if (str_contains($t, ':')) {
-                $t = explode(':', $t, 2)[1];
-            }
-            // Si virgule, on splitte.
-            if (str_contains($t, ',')) {
-                foreach (explode(',', $t) as $part) {
-                    $push($part);
-                }
-            } else {
-                $push($t);
-            }
-        }
-
-        return $out;
+        return TagNormalizer::normalize($tags);
     }
 
     /**
