@@ -501,8 +501,12 @@
         // ───── Description (textarea avec save sur blur) ─────
         async saveDescription() {
             if (!this.selected || !this.selected.id) return;
+            // On capture l'item edite AVANT l'await : si l'utilisateur change de photo
+            // pendant la sauvegarde, this.selected pointera deja vers la nouvelle photo
+            // et on ecraserait sa description avec celle qu'on vient de sauvegarder.
             const id = this.selected.id;
-            const value = (this.selected.description_fr || '').trim();
+            const editedItem = this.items.find(i => i.id === id);
+            const value = ((editedItem ? editedItem.description_fr : this.selected.description_fr) || '').trim();
             try {
                 const res = await fetch(`/media/${id}/details`, {
                     method: 'PATCH',
@@ -515,9 +519,7 @@
                 });
                 if (!res.ok) throw new Error('HTTP ' + res.status);
                 const result = await res.json();
-                this.selected.description_fr = result.description_fr;
-                const idx = this.items.findIndex(i => i.id === id);
-                if (idx !== -1) this.items[idx].description_fr = result.description_fr;
+                if (editedItem) editedItem.description_fr = result.description_fr;
             } catch(e) {
                 alert('Erreur description : ' + e.message);
             }
