@@ -19,6 +19,7 @@ class Thread extends Model
         'status',
         'scheduled_at',
         'published_at',
+        'instagram_compiled_content',
     ];
 
     protected function casts(): array
@@ -26,6 +27,7 @@ class Thread extends Model
         return [
             'scheduled_at' => 'datetime',
             'published_at' => 'datetime',
+            'instagram_compiled_content' => 'array',
         ];
     }
 

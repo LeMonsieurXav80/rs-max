@@ -100,8 +100,9 @@
                             'twitter' => 'Twitter / X',
                             'bluesky' => 'Bluesky',
                             'telegram' => 'Telegram',
+                            'instagram' => 'Instagram',
                         ];
-                        $platformOrder = ['twitter', 'threads', 'bluesky', 'facebook', 'telegram'];
+                        $platformOrder = ['twitter', 'threads', 'bluesky', 'facebook', 'telegram', 'instagram'];
                         $threadPlatforms = ['twitter', 'threads', 'bluesky'];
                     @endphp
 
@@ -122,8 +123,10 @@
                                                 type="checkbox"
                                                 name="accounts[]"
                                                 value="{{ $account->id }}"
+                                                data-platform="{{ $slug }}"
+                                                @change="updateSelectedAccounts && updateSelectedAccounts()"
                                                 {{ in_array($account->id, old('accounts', $selectedAccountIds)) ? 'checked' : '' }}
-                                                class="rounded border-gray-300 text-indigo-600 focus:ring-indigo-500 transition-colors"
+                                                class="rounded border-gray-300 text-indigo-600 focus:ring-indigo-500 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                                             >
                                             @if($account->profile_picture_url)
                                                 <img src="{{ $account->profile_picture_url }}" alt="" class="w-6 h-6 rounded-full object-cover flex-shrink-0">
@@ -289,6 +292,61 @@
 
         {{-- Section: Boost (promotion d'un autre fil) --}}
         @include('threads._boost-section', ['boostableThreads' => $boostableThreads ?? collect()])
+
+        {{-- Section: Instagram compile (post unique / carrousel) --}}
+        <template x-if="hasInstagramAccount">
+            <div class="bg-white rounded-2xl shadow-sm border border-gray-100 p-6 lg:p-8">
+                <div class="flex items-center justify-between mb-3">
+                    <h2 class="text-base font-semibold text-gray-900 flex items-center gap-2">
+                        <x-platform-icon platform="instagram" size="sm" />
+                        Publication Instagram (post unique)
+                    </h2>
+                    <span class="text-xs text-gray-500">
+                        Photos du fil &rarr; carrousel (max 10)
+                    </span>
+                </div>
+
+                <template x-if="!hasAnyMedia">
+                    <div class="rounded-xl bg-amber-50 border border-amber-200 p-3 text-sm text-amber-800 mb-3">
+                        Instagram exige au moins une photo ou video. Ajoute des medias dans tes segments pour pouvoir publier sur Instagram.
+                    </div>
+                </template>
+
+                <p class="text-xs text-gray-500 mb-3">
+                    Limite : 2200 caracteres. Clique « Reecrire pour Instagram » pour que l'IA fusionne tes segments en un texte fluide, ou edite directement le texte ci-dessous.
+                </p>
+
+                <div class="flex items-center gap-3 mb-3">
+                    <button type="button" @click="generateInstagram()"
+                            :disabled="instagramGenerating"
+                            class="inline-flex items-center gap-2 px-3 py-1.5 text-xs font-medium text-white bg-pink-600 rounded-lg hover:bg-pink-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed">
+                        <svg x-show="!instagramGenerating" class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2">
+                            <path stroke-linecap="round" stroke-linejoin="round" d="M9.813 15.904 9 18.75l-.813-2.846a4.5 4.5 0 0 0-3.09-3.09L2.25 12l2.846-.813a4.5 4.5 0 0 0 3.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 0 0 3.09 3.09L15.75 12l-2.846.813a4.5 4.5 0 0 0-3.09 3.09ZM18.259 8.715 18 9.75l-.259-1.035a3.375 3.375 0 0 0-2.455-2.456L14.25 6l1.036-.259a3.375 3.375 0 0 0 2.455-2.456L18 2.25l.259 1.035a3.375 3.375 0 0 0 2.456 2.456L21.75 6l-1.035.259a3.375 3.375 0 0 0-2.456 2.456Z" />
+                        </svg>
+                        <svg x-show="instagramGenerating" class="w-3.5 h-3.5 animate-spin" fill="none" viewBox="0 0 24 24">
+                            <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                            <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path>
+                        </svg>
+                        <span x-text="instagramGenerating ? 'Generation en cours...' : 'Reecrire pour Instagram'"></span>
+                    </button>
+                </div>
+
+                <template x-if="instagramError">
+                    <div class="rounded-xl bg-red-50 border border-red-200 p-3 text-sm text-red-700 mb-3" x-text="instagramError"></div>
+                </template>
+
+                <textarea name="instagram_compiled_fr" rows="8"
+                          x-model="instagramCompiledFr"
+                          maxlength="2200"
+                          placeholder="Laisse vide pour utiliser la concatenation brute des segments (peut depasser 2200 caracteres et etre refusee par Instagram)."
+                          class="w-full rounded-xl border-gray-300 shadow-sm focus:border-pink-500 focus:ring-pink-500 text-sm"></textarea>
+
+                <div class="mt-2 flex items-center justify-between text-xs">
+                    <span :class="instagramCompiledFr.length > 2200 ? 'text-red-600 font-semibold' : 'text-gray-400'"
+                          x-text="instagramCompiledFr.length + ' / 2200 caracteres'"></span>
+                </div>
+            </div>
+        </template>
 
         {{-- Section 4: Status --}}
         <div class="bg-white rounded-2xl shadow-sm border border-gray-100 p-6 lg:p-8">
@@ -529,6 +587,69 @@
         function threadEditForm() {
             return {
                 segments: @json($segmentsJson),
+                selectedAccounts: [],
+                instagramCompiledFr: @json(old('instagram_compiled_fr', $thread->instagram_compiled_content['fr'] ?? '')),
+                instagramGenerating: false,
+                instagramError: '',
+
+                init() {
+                    this.updateSelectedAccounts();
+                    this.$watch('segments', () => {
+                        this.refreshInstagramAccountsAvailability();
+                    }, { deep: true });
+                    this.refreshInstagramAccountsAvailability();
+                },
+
+                get hasInstagramAccount() {
+                    return this.selectedAccounts.some(el => el.dataset.platform === 'instagram');
+                },
+
+                get hasAnyMedia() {
+                    return this.segments.some(s => Array.isArray(s.media) && s.media.length > 0);
+                },
+
+                updateSelectedAccounts() {
+                    this.selectedAccounts = [...document.querySelectorAll('input[name="accounts[]"]:checked')];
+                    this.refreshInstagramAccountsAvailability();
+                },
+
+                refreshInstagramAccountsAvailability() {
+                    const noMedia = !this.hasAnyMedia;
+                    document.querySelectorAll('input[name="accounts[]"][data-platform="instagram"]').forEach(el => {
+                        el.disabled = noMedia;
+                        if (noMedia && el.checked) {
+                            el.checked = false;
+                        }
+                    });
+                    if (noMedia) {
+                        this.selectedAccounts = [...document.querySelectorAll('input[name="accounts[]"]:checked')];
+                    }
+                },
+
+                async generateInstagram() {
+                    this.instagramGenerating = true;
+                    this.instagramError = '';
+                    try {
+                        const resp = await fetch('{{ route("threads.compileInstagram", $thread) }}', {
+                            method: 'POST',
+                            headers: {
+                                'Accept': 'application/json',
+                                'Content-Type': 'application/json',
+                                'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').content,
+                            },
+                            body: JSON.stringify({ lang: 'fr' }),
+                        });
+                        const data = await resp.json();
+                        if (!resp.ok || !data.success) {
+                            this.instagramError = data.error || 'Erreur lors de la generation.';
+                        } else {
+                            this.instagramCompiledFr = data.data.content;
+                        }
+                    } catch (err) {
+                        this.instagramError = 'Erreur reseau : ' + (err.message || err);
+                    }
+                    this.instagramGenerating = false;
+                },
 
                 // Media picker state
                 showMediaLibrary: false,

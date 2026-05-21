@@ -5,6 +5,7 @@ namespace App\Services;
 use App\Models\Persona;
 use App\Models\Setting;
 use App\Models\SocialAccount;
+use App\Models\Thread;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Storage;
@@ -703,9 +704,9 @@ TXT;
         if ($postKind === 'image') {
             $systemPrompt .= "\n\nIMPORTANT : tu repondras a un post qui contient une image ou video. "
                 ."L'image/video est un CONTEXTE pour ta reaction, pas un sujet a decrire ou resumer. "
-                ."Ne dis pas « cette image montre… », « on voit… », « ce plafond… », « ces fleurs… » : "
+                .'Ne dis pas « cette image montre… », « on voit… », « ce plafond… », « ces fleurs… » : '
                 ."reagis comme un commentateur engage, comme si tu parlais a l'auteur. "
-                ."Tu peux mentionner un detail SI ca sert ta reaction, mais ne fais jamais de description en soi.";
+                .'Tu peux mentionner un detail SI ca sert ta reaction, mais ne fais jamais de description en soi.';
         }
 
         $authorBlock = $authorName ? "Auteur : {$authorName}\n" : '';
@@ -1019,5 +1020,113 @@ TXT;
         }
 
         return null;
+    }
+
+    /**
+     * Compile tous les segments d'un fil en UN seul texte de publication Instagram
+     * tenant dans la limite de caracteres (par defaut 2200). Retourne le texte
+     * ou null en cas d'echec.
+     */
+    public function compileForInstagram(Thread $thread, string $lang = 'fr'): ?string
+    {
+        $apiKey = Setting::getEncrypted('openai_api_key');
+        if (! $apiKey) {
+            Log::warning('AiAssistService: No OpenAI API key configured (compileForInstagram)');
+
+            return null;
+        }
+
+        $charLimit = (int) Setting::get(
+            'platform_char_limit_instagram',
+            $this->getDefaultCharLimit('instagram')
+        );
+
+        $languageLabel = match ($lang) {
+            'fr' => 'francais',
+            'en' => 'anglais',
+            'pt' => 'portugais',
+            'es' => 'espagnol',
+            'de' => 'allemand',
+            'it' => 'italien',
+            default => $lang,
+        };
+
+        $segments = $thread->segments()->orderBy('position')->get();
+        if ($segments->isEmpty()) {
+            return null;
+        }
+
+        $segmentTexts = [];
+        foreach ($segments as $i => $segment) {
+            $pos = $i + 1;
+            $text = trim((string) ($segment->content_fr ?? ''));
+            if ($text !== '') {
+                $segmentTexts[] = "Segment {$pos} :\n{$text}";
+            }
+        }
+
+        if (empty($segmentTexts)) {
+            return null;
+        }
+
+        $segmentsBlock = implode("\n\n---\n\n", $segmentTexts);
+
+        $userPrompt = "Voici les segments d'un fil de discussion. Compile-les en UN SEUL texte de publication Instagram coherent en {$languageLabel}, fluide et engageant.\n\n";
+        $userPrompt .= "Contraintes strictes :\n";
+        $userPrompt .= "- Maximum {$charLimit} caracteres au total.\n";
+        $userPrompt .= "- Pas de mentions \"Segment X\", \"partie 1\", etc.\n";
+        $userPrompt .= "- Pas de hashtags (geres separement).\n";
+        $userPrompt .= "- Garde l'essentiel et le ton ; reformule et raccourcis si besoin.\n";
+        $userPrompt .= "- Adapte au format Instagram (accroche, lisible visuellement, retours a la ligne aeres).\n\n";
+        $userPrompt .= "Segments :\n\n{$segmentsBlock}\n\n";
+        $userPrompt .= 'Reponds UNIQUEMENT avec le texte compile, sans preambule ni explication.';
+
+        try {
+            $response = Http::withHeaders([
+                'Authorization' => "Bearer {$apiKey}",
+                'Content-Type' => 'application/json',
+            ])->timeout(90)->post('https://api.openai.com/v1/chat/completions', [
+                'model' => Setting::get('ai_model_text', 'gpt-4o-mini'),
+                'messages' => [
+                    ['role' => 'system', 'content' => 'Tu es un redacteur de contenu pour les reseaux sociaux. Tu sais condenser un fil en un seul post Instagram impactant.'],
+                    ['role' => 'user', 'content' => $userPrompt],
+                ],
+                'temperature' => 0.7,
+                'max_tokens' => 2000,
+            ]);
+
+            if (! $response->successful()) {
+                Log::error('AiAssistService: compileForInstagram API error', [
+                    'status' => $response->status(),
+                    'body' => $response->body(),
+                ]);
+
+                return null;
+            }
+
+            $compiled = trim((string) $response->json('choices.0.message.content', ''));
+
+            if ($compiled === '') {
+                return null;
+            }
+
+            // Garde-fou : tronque proprement si l'IA depasse malgre les consignes.
+            if (mb_strlen($compiled) > $charLimit) {
+                $compiled = mb_substr($compiled, 0, $charLimit - 1).'…';
+            }
+
+            Log::info('AiAssistService: Instagram compiled caption generated', [
+                'thread_id' => $thread->id,
+                'lang' => $lang,
+                'length' => mb_strlen($compiled),
+            ]);
+
+            return $compiled;
+
+        } catch (\Exception $e) {
+            Log::error('AiAssistService: compileForInstagram exception', ['error' => $e->getMessage()]);
+
+            return null;
+        }
     }
 }

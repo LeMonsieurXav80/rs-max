@@ -141,6 +141,7 @@ Route::middleware(['auth', 'verified', 'throttle:600,1'])->group(function () {
     Route::post('threads/generate-from-url', [ThreadController::class, 'generateFromUrl'])->name('threads.generateFromUrl');
     Route::post('threads/regenerate-segment', [ThreadController::class, 'regenerateSegment'])->name('threads.regenerateSegment');
     Route::resource('threads', ThreadController::class);
+    Route::post('threads/{thread}/compile-instagram', [ThreadController::class, 'compileInstagram'])->name('threads.compileInstagram');
     Route::post('threads/{thread}/publish', [ThreadController::class, 'publishAll'])->name('threads.publish');
     Route::post('threads/{thread}/publish/{socialAccount}', [ThreadController::class, 'publishOne'])->name('threads.publishOne');
     Route::post('threads/{thread}/reset/{socialAccount}', [ThreadController::class, 'resetAccount'])->name('threads.resetAccount');

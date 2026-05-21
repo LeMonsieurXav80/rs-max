@@ -285,8 +285,9 @@
                             'twitter' => 'Twitter / X',
                             'bluesky' => 'Bluesky',
                             'telegram' => 'Telegram',
+                            'instagram' => 'Instagram',
                         ];
-                        $platformOrder = ['twitter', 'threads', 'bluesky', 'facebook', 'telegram'];
+                        $platformOrder = ['twitter', 'threads', 'bluesky', 'facebook', 'telegram', 'instagram'];
                         $threadPlatforms = ['twitter', 'threads', 'bluesky'];
                     @endphp
 
@@ -309,7 +310,7 @@
                                                 value="{{ $account->id }}"
                                                 data-platform="{{ $slug }}"
                                                 @change="updateSelectedAccounts()"
-                                                class="rounded border-gray-300 text-indigo-600 focus:ring-indigo-500 transition-colors"
+                                                class="rounded border-gray-300 text-indigo-600 focus:ring-indigo-500 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                                             >
                                             @if($account->profile_picture_url)
                                                 <img src="{{ $account->profile_picture_url }}" alt="" class="w-6 h-6 rounded-full object-cover flex-shrink-0">
@@ -542,6 +543,42 @@
                     <div class="bg-gray-50 rounded-xl p-4 text-sm text-gray-700 whitespace-pre-wrap"
                          x-text="compiledPreview"></div>
                     <p class="mt-2 text-xs text-gray-400" x-text="compiledPreview.length + ' caracteres'"></p>
+                </div>
+            </div>
+        </template>
+
+        {{-- Section 4b: Instagram compile (post unique / carrousel) --}}
+        <template x-if="segments.length > 0 && hasInstagramAccount">
+            <div class="bg-white rounded-2xl shadow-sm border border-gray-100 p-6 lg:p-8">
+                <div class="flex items-center justify-between mb-3">
+                    <h2 class="text-base font-semibold text-gray-900 flex items-center gap-2">
+                        <x-platform-icon platform="instagram" size="sm" />
+                        Publication Instagram (post unique)
+                    </h2>
+                    <span class="text-xs text-gray-500">
+                        Photos du fil &rarr; carrousel (max 10)
+                    </span>
+                </div>
+
+                <template x-if="!hasAnyMedia">
+                    <div class="rounded-xl bg-amber-50 border border-amber-200 p-3 text-sm text-amber-800 mb-3">
+                        Instagram exige au moins une photo ou video. Ajoute des medias dans tes segments pour pouvoir publier sur Instagram.
+                    </div>
+                </template>
+
+                <p class="text-xs text-gray-500 mb-2">
+                    Limite : 2200 caracteres. La concatenation des segments depasse souvent cette limite — apres creation du fil, utilise le bouton « Reecrire pour Instagram » dans l'edition pour generer un texte compile par l'IA. Tu peux aussi saisir directement le texte ci-dessous.
+                </p>
+
+                <textarea name="instagram_compiled_fr" rows="6"
+                          x-model="instagramCompiledFr"
+                          maxlength="2200"
+                          placeholder="Laisse vide pour utiliser la concatenation brute des segments (peut etre tronquee par Instagram). Tu pourras generer un texte optimise apres avoir cree le fil."
+                          class="w-full rounded-xl border-gray-300 shadow-sm focus:border-pink-500 focus:ring-pink-500 text-sm"></textarea>
+
+                <div class="mt-2 flex items-center justify-between text-xs">
+                    <span :class="instagramCompiledFr.length > 2200 ? 'text-red-600 font-semibold' : 'text-gray-400'"
+                          x-text="instagramCompiledFr.length + ' / 2200 caracteres'"></span>
                 </div>
             </div>
         </template>
@@ -854,6 +891,14 @@
                 publishAccounts: [],
                 publishErrors: [],
                 selectedAccounts: [],
+                instagramCompiledFr: '',
+
+                init() {
+                    this.$watch('segments', () => {
+                        this.refreshInstagramAccountsAvailability();
+                    }, { deep: true });
+                    this.refreshInstagramAccountsAvailability();
+                },
 
                 // Source browser
                 sourceMode: 'url',
@@ -886,8 +931,16 @@
                 stockProviders: { pexels: false, pixabay: false, unsplash: false },
 
                 get hasCompiledPlatforms() {
-                    const compiledSlugs = ['facebook', 'telegram'];
+                    const compiledSlugs = ['facebook', 'telegram', 'instagram'];
                     return this.selectedAccounts.some(el => compiledSlugs.includes(el.dataset.platform));
+                },
+
+                get hasInstagramAccount() {
+                    return this.selectedAccounts.some(el => el.dataset.platform === 'instagram');
+                },
+
+                get hasAnyMedia() {
+                    return this.segments.some(s => Array.isArray(s.media) && s.media.length > 0);
                 },
 
                 get compiledPreview() {
@@ -896,6 +949,21 @@
 
                 updateSelectedAccounts() {
                     this.selectedAccounts = [...document.querySelectorAll('input[name="accounts[]"]:checked')];
+                    this.refreshInstagramAccountsAvailability();
+                },
+
+                // Desactive les checkboxes Instagram si aucun segment n'a de media (IG l'exige).
+                refreshInstagramAccountsAvailability() {
+                    const noMedia = !this.hasAnyMedia;
+                    document.querySelectorAll('input[name="accounts[]"][data-platform="instagram"]').forEach(el => {
+                        el.disabled = noMedia;
+                        if (noMedia && el.checked) {
+                            el.checked = false;
+                        }
+                    });
+                    if (noMedia) {
+                        this.selectedAccounts = [...document.querySelectorAll('input[name="accounts[]"]:checked')];
+                    }
                 },
 
                 // --- Source browser methods ---

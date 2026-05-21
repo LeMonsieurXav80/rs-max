@@ -13,6 +13,7 @@ use App\Models\ThreadSegment;
 use App\Models\ThreadSegmentPlatform;
 use App\Models\WpSource;
 use App\Models\YtSource;
+use App\Services\AiAssistService;
 use App\Services\ThreadBoostService;
 use App\Services\ThreadContentGenerationService;
 use App\Services\ThreadPublishingService;
@@ -26,7 +27,7 @@ class ThreadController extends Controller
 {
     private const THREAD_PLATFORM_SLUGS = ['twitter', 'threads', 'bluesky'];
 
-    private const COMPILED_PLATFORM_SLUGS = ['facebook', 'telegram'];
+    private const COMPILED_PLATFORM_SLUGS = ['facebook', 'telegram', 'instagram'];
 
     /**
      * Display a list of threads.
@@ -113,6 +114,7 @@ class ThreadController extends Controller
             'status' => 'required|in:draft,scheduled',
             'scheduled_at' => 'nullable|date|after_or_equal:now',
             'publish_now' => 'nullable|boolean',
+            'instagram_compiled_fr' => 'nullable|string|max:2200',
             'boost' => 'nullable|array',
             'boost.source_thread_id' => 'required_with:boost|integer|exists:threads,id',
             'boost.promo_text' => 'required_with:boost|string|max:5000',
@@ -122,6 +124,9 @@ class ThreadController extends Controller
         $user = $request->user();
 
         $thread = DB::transaction(function () use ($validated, $user, $publishNow, $boostService) {
+            $igCompiledFr = isset($validated['instagram_compiled_fr']) ? trim((string) $validated['instagram_compiled_fr']) : '';
+            $instagramCompiled = $igCompiledFr !== '' ? ['fr' => $igCompiledFr] : null;
+
             $thread = Thread::create([
                 'user_id' => $user->id,
                 'title' => $validated['title'] ?? null,
@@ -129,6 +134,7 @@ class ThreadController extends Controller
                 'source_type' => $validated['source_type'] ?? 'manual',
                 'status' => $publishNow ? 'draft' : ($validated['status'] ?? 'draft'),
                 'scheduled_at' => $publishNow ? null : ($validated['scheduled_at'] ?? null),
+                'instagram_compiled_content' => $instagramCompiled,
             ]);
 
             // Create segments.
@@ -302,17 +308,27 @@ class ThreadController extends Controller
             'segments.*.media_json' => 'nullable|string',
             'status' => 'required|in:draft,scheduled',
             'scheduled_at' => 'nullable|date|after_or_equal:now',
+            'instagram_compiled_fr' => 'nullable|string|max:2200',
             'boost' => 'nullable|array',
             'boost.source_thread_id' => 'required_with:boost|integer|exists:threads,id',
             'boost.promo_text' => 'required_with:boost|string|max:5000',
         ]);
 
         DB::transaction(function () use ($thread, $validated, $boostService) {
+            $igCompiled = $thread->instagram_compiled_content ?? [];
+            $igCompiledFr = isset($validated['instagram_compiled_fr']) ? trim((string) $validated['instagram_compiled_fr']) : '';
+            if ($igCompiledFr !== '') {
+                $igCompiled['fr'] = $igCompiledFr;
+            } else {
+                unset($igCompiled['fr']);
+            }
+
             $thread->update([
                 'title' => $validated['title'] ?? null,
                 'source_url' => $validated['source_url'] ?? null,
                 'status' => $validated['status'],
                 'scheduled_at' => $validated['scheduled_at'] ?? null,
+                'instagram_compiled_content' => ! empty($igCompiled) ? $igCompiled : null,
             ]);
 
             // Delete old segments (cascade deletes segment platforms).
@@ -441,6 +457,45 @@ class ThreadController extends Controller
         return response()->json([
             'success' => true,
             'data' => $result,
+        ]);
+    }
+
+    /**
+     * AJAX: Compile all segments into a single Instagram caption via AI.
+     */
+    public function compileInstagram(Request $request, Thread $thread, AiAssistService $ai): JsonResponse
+    {
+        $user = $request->user();
+
+        if (! $user->isAdmin() && $thread->user_id !== $user->id) {
+            abort(403);
+        }
+
+        $validated = $request->validate([
+            'lang' => 'nullable|string|in:fr,en,pt,es,de,it',
+        ]);
+        $lang = $validated['lang'] ?? 'fr';
+
+        $compiled = $ai->compileForInstagram($thread, $lang);
+
+        if ($compiled === null) {
+            return response()->json([
+                'success' => false,
+                'error' => 'Impossible de generer le texte Instagram. Verifie la cle OpenAI et reessaie.',
+            ], 422);
+        }
+
+        $current = $thread->instagram_compiled_content ?? [];
+        $current[$lang] = $compiled;
+        $thread->update(['instagram_compiled_content' => $current]);
+
+        return response()->json([
+            'success' => true,
+            'data' => [
+                'lang' => $lang,
+                'content' => $compiled,
+                'length' => mb_strlen($compiled),
+            ],
         ]);
     }
 

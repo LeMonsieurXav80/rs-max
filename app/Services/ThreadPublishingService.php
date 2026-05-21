@@ -196,7 +196,7 @@ class ThreadPublishingService
         $thread->socialAccounts()->updateExistingPivot($account->id, ['status' => 'publishing']);
 
         // Compile all segments, grouped by language.
-        $compiledContent = $this->compileSegmentsForAccount($segments, $account);
+        $compiledContent = $this->compileSegmentsForAccount($segments, $account, $thread);
 
         // Collect all media from all segments.
         $allMedia = [];
@@ -204,6 +204,11 @@ class ThreadPublishingService
             if (! empty($segment->media)) {
                 $allMedia = array_merge($allMedia, $segment->media);
             }
+        }
+
+        // Instagram limite un carrousel a 10 medias.
+        if ($account->platform->slug === 'instagram' && count($allMedia) > 10) {
+            $allMedia = array_slice($allMedia, 0, 10);
         }
 
         $media = $this->resolveMediaUrls(! empty($allMedia) ? $allMedia : null);
@@ -368,18 +373,42 @@ class ThreadPublishingService
     }
 
     /**
-     * Compile all segments grouped by language for compiled mode (Facebook, Telegram).
+     * Compile all segments grouped by language for compiled mode (Facebook, Telegram, Instagram).
      * Result: 🇫🇷 Seg1 FR\n\nSeg2 FR\n\n🇬🇧 Seg1 EN\n\nSeg2 EN
+     *
+     * Pour Instagram : si le thread a un instagram_compiled_content (genere par IA
+     * ou edite manuellement), on l'utilise comme source au lieu de concatener les
+     * segments — la concatenation brute depasse souvent les 2200 caracteres.
      */
-    private function compileSegmentsForAccount($segments, SocialAccount $account): string
+    private function compileSegmentsForAccount($segments, SocialAccount $account, ?Thread $thread = null): string
     {
         $languages = $account->languages ?? ['fr'];
         $platformSlug = $account->platform->slug;
         $multiLang = count($languages) > 1;
 
+        $igCompiled = ($platformSlug === 'instagram' && $thread)
+            ? ($thread->instagram_compiled_content ?? [])
+            : [];
+
         $languageBlocks = [];
 
         foreach ($languages as $lang) {
+            // Pour Instagram, on privilegie le texte compile (FR ou langue cible) si dispo.
+            if ($platformSlug === 'instagram' && ! empty($igCompiled[$lang])) {
+                $block = $igCompiled[$lang];
+
+                if ($multiLang) {
+                    $flag = self::LANGUAGE_FLAGS[$lang] ?? '';
+                    if ($flag) {
+                        $block = "{$flag} {$block}";
+                    }
+                }
+
+                $languageBlocks[] = $block;
+
+                continue;
+            }
+
             $segmentTexts = [];
 
             foreach ($segments as $segment) {
