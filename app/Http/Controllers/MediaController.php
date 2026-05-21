@@ -1009,10 +1009,55 @@ class MediaController extends Controller
                 'date' => $mf->created_at->format('d/m/Y H:i'),
                 'folder_id' => $mf->folder_id,
                 'folder_name' => $mf->folder?->name,
+                'publication_count' => (int) $mf->publication_count,
             ];
 
             if ($isVideo) {
                 $item['thumbnail_url'] = route('media.thumbnail', $mf->filename);
+            }
+
+            return $item;
+        })->values();
+
+        // Statut de publication par filename, calcule sur l'ensemble des posts
+        // (meme logique que la page /media : published > publishing > scheduled > failed > brouillon).
+        $filenames = $items->pluck('filename')->all();
+        $statusesByFilename = [];
+        if (! empty($filenames)) {
+            Post::whereNotNull('media')->get()->each(function (Post $post) use (&$statusesByFilename, $filenames) {
+                if (! is_array($post->media)) {
+                    return;
+                }
+                foreach ($post->media as $mediaItem) {
+                    $url = is_string($mediaItem) ? $mediaItem : ($mediaItem['url'] ?? '');
+                    $fname = basename($url);
+                    if ($fname && in_array($fname, $filenames, true)) {
+                        $statusesByFilename[$fname][] = $post->status;
+                    }
+                }
+            });
+        }
+
+        $items = $items->map(function ($item) use ($statusesByFilename) {
+            $statuses = $statusesByFilename[$item['filename']] ?? [];
+            if (in_array('published', $statuses, true)) {
+                $item['status_label'] = 'Publie';
+                $item['status_class'] = 'bg-green-500 text-white';
+            } elseif (in_array('publishing', $statuses, true)) {
+                $item['status_label'] = 'En cours';
+                $item['status_class'] = 'bg-yellow-400 text-yellow-900';
+            } elseif (in_array('scheduled', $statuses, true)) {
+                $item['status_label'] = 'Planifie';
+                $item['status_class'] = 'bg-blue-500 text-white';
+            } elseif (in_array('failed', $statuses, true)) {
+                $item['status_label'] = 'Echoue';
+                $item['status_class'] = 'bg-red-500 text-white';
+            } elseif (count($statuses) > 0) {
+                $item['status_label'] = 'Brouillon';
+                $item['status_class'] = 'bg-gray-500 text-white';
+            } else {
+                $item['status_label'] = null;
+                $item['status_class'] = '';
             }
 
             return $item;

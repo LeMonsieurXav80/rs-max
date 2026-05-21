@@ -387,6 +387,11 @@
                                     <path stroke-linecap="round" stroke-linejoin="round" d="M12 4.5v15m7.5-7.5h-15"/>
                                 </svg>
                             </div>
+                            {{-- Badge statut publication (deja publie / planifie / etc.) --}}
+                            <template x-if="item.status_label">
+                                <div class="absolute top-1 left-1 px-1.5 py-0.5 text-[10px] font-semibold rounded-full leading-tight"
+                                     :class="item.status_class" x-text="item.status_label"></div>
+                            </template>
                         </button>
                     </template>
                 </div>
