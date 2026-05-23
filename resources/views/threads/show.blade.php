@@ -122,6 +122,39 @@
                 @endforeach
             </div>
 
+            {{-- Add account --}}
+            @if($availableAccounts->isNotEmpty())
+                <div class="mt-4 pt-4 border-t border-gray-100">
+                    <label class="block text-xs font-medium text-gray-500 mb-2">Ajouter un compte</label>
+                    <div class="flex items-center gap-2">
+                        <select x-model="newAccountId"
+                                class="flex-1 rounded-xl border-gray-300 text-sm focus:border-indigo-500 focus:ring-indigo-500">
+                            <option value="">Sélectionner un compte…</option>
+                            @foreach($availableAccounts as $account)
+                                <option value="{{ $account->id }}">
+                                    {{ ucfirst($account->platform->slug) }} — {{ $account->name }}
+                                </option>
+                            @endforeach
+                        </select>
+                        <button type="button"
+                                @click="addAccount({{ $thread->id }})"
+                                :disabled="!newAccountId || adding"
+                                class="inline-flex items-center gap-1 px-4 py-2 text-sm font-medium rounded-xl bg-gray-900 text-white hover:bg-gray-800 disabled:opacity-50 transition-colors">
+                            <template x-if="adding">
+                                <svg class="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24">
+                                    <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                                    <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path>
+                                </svg>
+                            </template>
+                            Ajouter
+                        </button>
+                    </div>
+                    <p class="mt-1.5 text-xs text-gray-400">
+                        Les publications déjà postées sur les autres comptes ne seront pas touchées.
+                    </p>
+                </div>
+            @endif
+
             {{-- Publish all button --}}
             @if($thread->socialAccounts->contains(fn ($a) => in_array($a->pivot->status, ['pending', 'failed', 'partial'])))
                 <div class="mt-4 pt-4 border-t border-gray-100">
@@ -245,6 +278,8 @@
             return {
                 publishingAccount: null,
                 publishingAll: false,
+                newAccountId: '',
+                adding: false,
 
                 async publishAccount(threadId, accountId, accountName) {
                     this.publishingAccount = accountId;
@@ -307,6 +342,33 @@
                         location.reload();
                     } catch (err) {
                         alert('Erreur de connexion');
+                    }
+                },
+
+                async addAccount(threadId) {
+                    if (!this.newAccountId) {
+                        return;
+                    }
+                    this.adding = true;
+                    try {
+                        const resp = await fetch(`/threads/${threadId}/accounts/${this.newAccountId}`, {
+                            method: 'POST',
+                            headers: {
+                                'Content-Type': 'application/json',
+                                'X-CSRF-TOKEN': document.querySelector('meta[name=csrf-token]').getAttribute('content'),
+                                'Accept': 'application/json',
+                            },
+                        });
+                        const data = await resp.json();
+                        if (data.success) {
+                            location.reload();
+                        } else {
+                            alert('Erreur: ' + (data.error || 'Impossible d\'ajouter le compte.'));
+                            this.adding = false;
+                        }
+                    } catch (err) {
+                        alert('Erreur de connexion');
+                        this.adding = false;
                     }
                 },
 

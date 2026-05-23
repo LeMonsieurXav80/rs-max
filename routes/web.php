@@ -145,6 +145,7 @@ Route::middleware(['auth', 'verified', 'throttle:600,1'])->group(function () {
     Route::post('threads/{thread}/publish', [ThreadController::class, 'publishAll'])->name('threads.publish');
     Route::post('threads/{thread}/publish/{socialAccount}', [ThreadController::class, 'publishOne'])->name('threads.publishOne');
     Route::post('threads/{thread}/reset/{socialAccount}', [ThreadController::class, 'resetAccount'])->name('threads.resetAccount');
+    Route::post('threads/{thread}/accounts/{socialAccount}', [ThreadController::class, 'addAccount'])->name('threads.addAccount');
     Route::delete('threads/{thread}/accounts/{socialAccount}', [ThreadController::class, 'removeAccount'])->name('threads.removeAccount');
 
     // Location search (Facebook Places API)

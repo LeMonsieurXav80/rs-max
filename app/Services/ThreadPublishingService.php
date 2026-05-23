@@ -313,6 +313,30 @@ class ThreadPublishingService
     }
 
     /**
+     * Attache un compte a un thread existant : determine le publish_mode selon
+     * la plateforme, cree le pivot en pending, et cree un thread_segment_platform
+     * par segment existant (pending aussi). Les publications deja faites sur
+     * d'autres comptes ne sont pas touchees — le thread reste unifie pour les stats.
+     */
+    public function addAccount(Thread $thread, SocialAccount $account, string $publishMode): void
+    {
+        $thread->socialAccounts()->attach($account->id, [
+            'platform_id' => $account->platform_id,
+            'publish_mode' => $publishMode,
+            'status' => 'pending',
+        ]);
+
+        foreach ($thread->segments as $segment) {
+            ThreadSegmentPlatform::create([
+                'thread_segment_id' => $segment->id,
+                'social_account_id' => $account->id,
+                'platform_id' => $account->platform_id,
+                'status' => 'pending',
+            ]);
+        }
+    }
+
+    /**
      * Detache completement un compte du thread : supprime les thread_segment_platform
      * associes puis detache le pivot. Les posts deja publies sur la plateforme ne
      * sont PAS supprimes (a faire manuellement par l'utilisateur).

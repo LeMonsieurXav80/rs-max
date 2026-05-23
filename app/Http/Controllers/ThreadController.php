@@ -235,7 +235,15 @@ class ThreadController extends Controller
             'user',
         ]);
 
-        return view('threads.show', compact('thread'));
+        $attachedIds = $thread->socialAccounts->pluck('id')->all();
+
+        $availableAccounts = $user->activeSocialAccounts()
+            ->with('platform')
+            ->whereNotIn('social_accounts.id', $attachedIds)
+            ->orderBy('name')
+            ->get();
+
+        return view('threads.show', compact('thread', 'availableAccounts'));
     }
 
     /**
@@ -622,6 +630,57 @@ class ThreadController extends Controller
         }
 
         return response()->json(['success' => true, 'message' => 'Remis en attente.']);
+    }
+
+    /**
+     * AJAX: Ajoute un compte social a un fil deja cree (eventuellement deja
+     * publie sur d'autres comptes). Le compte est attache en pending, avec un
+     * thread_segment_platform par segment. Les publications existantes sur les
+     * autres comptes ne sont pas touchees — le tracking reste unifie.
+     */
+    public function addAccount(Request $request, Thread $thread, SocialAccount $socialAccount): JsonResponse
+    {
+        $user = $request->user();
+
+        if (! $user->isAdmin() && $thread->user_id !== $user->id) {
+            return response()->json(['success' => false, 'error' => 'Non autorisé.'], 403);
+        }
+
+        // Le compte doit etre lie au user (pivot social_account_user actif).
+        $isLinked = $socialAccount->users()
+            ->where('users.id', $user->id)
+            ->wherePivot('is_active', true)
+            ->exists();
+
+        if (! $user->isAdmin() && ! $isLinked) {
+            return response()->json(['success' => false, 'error' => 'Ce compte ne vous est pas accessible.'], 403);
+        }
+
+        // Pas de doublon.
+        $alreadyAttached = $thread->socialAccounts()
+            ->where('social_account_id', $socialAccount->id)
+            ->exists();
+
+        if ($alreadyAttached) {
+            return response()->json(['success' => false, 'error' => 'Ce compte est déjà sur ce fil.'], 422);
+        }
+
+        $socialAccount->loadMissing('platform');
+        $publishMode = in_array($socialAccount->platform->slug, self::THREAD_PLATFORM_SLUGS)
+            ? 'thread'
+            : 'compiled';
+
+        $thread->loadMissing('segments');
+
+        DB::transaction(function () use ($thread, $socialAccount, $publishMode) {
+            app(ThreadPublishingService::class)->addAccount($thread, $socialAccount, $publishMode);
+        });
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Compte ajouté au fil.',
+            'publish_mode' => $publishMode,
+        ]);
     }
 
     /**
