@@ -22,6 +22,14 @@ class InstagramAdapter implements PlatformAdapterInterface
     private const VIDEO_POLL_INTERVAL = 10;
 
     /**
+     * Token used for GET requests on container objects (poll, error fetch).
+     * Meta accepte le page access_token pour POST /media mais le rejette pour
+     * GET /{container_id} (Authorization Error code=100 subcode=33). Seul le
+     * user_access_token a les droits de lecture sur ces objets temporaires.
+     */
+    private ?string $readToken = null;
+
+    /**
      * Publish content to Instagram via the Container-based Graph API.
      *
      * @param  SocialAccount  $account  Credentials: account_id, access_token.
@@ -35,6 +43,7 @@ class InstagramAdapter implements PlatformAdapterInterface
             $credentials = $account->credentials;
             $accountId = $credentials['account_id'];
             $accessToken = $credentials['access_token'];
+            $this->readToken = $credentials['user_access_token'] ?? $accessToken;
             $locationId = $options['location_id'] ?? null;
 
             // Instagram requires at least one media item.
@@ -421,15 +430,27 @@ class InstagramAdapter implements PlatformAdapterInterface
 
             $response = Http::get(self::API_BASE."/{$containerId}", [
                 'fields' => 'status_code,status',
-                'access_token' => $accessToken,
+                'access_token' => $this->readToken ?? $accessToken,
             ]);
 
             if (! $response->successful()) {
+                $body = $response->json();
+                $code = $body['error']['code'] ?? null;
+                $subcode = $body['error']['error_subcode'] ?? null;
+
                 Log::warning('InstagramAdapter: status check HTTP error', [
                     'container_id' => $containerId,
                     'http_status' => $response->status(),
+                    'code' => $code,
+                    'subcode' => $subcode,
                     'attempt' => $attempt + 1,
                 ]);
+
+                // Fail fast sur erreurs d'auth/permission fatales (code 100, 190, 200)
+                // — re-essayer 60x serait inutile et bloquerait 10 minutes.
+                if (in_array($code, [100, 190, 200], true)) {
+                    return "Instagram container unreadable (code={$code}".($subcode ? ", subcode={$subcode}" : '').')';
+                }
 
                 continue;
             }
@@ -474,7 +495,7 @@ class InstagramAdapter implements PlatformAdapterInterface
     {
         $response = Http::get(self::API_BASE."/{$containerId}", [
             'fields' => 'status_code,status,id',
-            'access_token' => $accessToken,
+            'access_token' => $this->readToken ?? $accessToken,
         ]);
 
         if (! $response->successful()) {
