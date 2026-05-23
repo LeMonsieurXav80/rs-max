@@ -8,8 +8,10 @@ use App\Models\MediaFolder;
 use App\Models\Post;
 use App\Models\Setting;
 use App\Services\AiAssistService;
+use App\Services\Media\VideoNormalizer;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 use Illuminate\View\View;
@@ -1249,79 +1251,58 @@ class MediaController extends Controller
     }
 
     /**
-     * Compress video to MP4 H.264/AAC using ffmpeg and app settings.
+     * Normalise une video pour qu'elle soit acceptee par toutes les plateformes
+     * (Meta/IG exige pix_fmt yuv420p 8-bit, Bluesky/Telegram plafonnent a ~50 MB).
+     *
+     * Skip si la source est deja compatible ET sous le seuil de taille : on
+     * preserve alors la qualite originale. Sinon, transcode via VideoNormalizer
+     * en H.264 high / yuv420p / CRF 20 (qualite max + cap taille).
      */
     private function compressVideo(string $filename): ?array
     {
-        $ffmpeg = $this->findBinary('ffmpeg');
-        if (! $ffmpeg) {
+        $normalizer = app(VideoNormalizer::class);
+        $originalPath = Storage::disk('local')->path("media/{$filename}");
+        $originalSize = filesize($originalPath);
+
+        $meta = $normalizer->analyze($originalPath);
+        if (empty($meta)) {
             return null;
         }
 
-        $originalPath = Storage::disk('local')->path("media/{$filename}");
-        $originalSize = filesize($originalPath);
+        $maxSizeMb = (int) Setting::get('video_target_size_mb', 50);
+        $reasons = $normalizer->needsNormalization($meta, $maxSizeMb);
+
+        if (empty($reasons)) {
+            return null;
+        }
+
         $mp4Filename = pathinfo($filename, PATHINFO_FILENAME).'.mp4';
-
-        // Read compression settings.
-        $bitrate1080 = (int) Setting::get('video_bitrate_1080p', 6000);
-        $bitrate720 = (int) Setting::get('video_bitrate_720p', 2500);
-        $audioBitrate = (int) Setting::get('video_audio_bitrate', 128);
-
-        // Choose bitrate based on resolution.
-        $resolution = $this->getVideoResolution($originalPath);
-        $videoBitrate = $resolution['height'] >= 1080 ? $bitrate1080 : $bitrate720;
-        $maxRate = (int) ($videoBitrate * 1.5);
-        $bufSize = $videoBitrate * 2;
-
-        // Use temp file if input is already .mp4.
         $sameFile = strtolower(pathinfo($filename, PATHINFO_EXTENSION)) === 'mp4';
         $outputPath = $sameFile
             ? Storage::disk('local')->path("media/{$mp4Filename}.tmp.mp4")
             : Storage::disk('local')->path("media/{$mp4Filename}");
 
-        // Cap longest side to 1920 (Meta/IG Reels max). Preserves aspect ratio,
-        // never upscales, forces even dimensions required by libx264.
-        $scaleFilter = "scale='if(gt(iw,ih),min(1920,iw),-2)':'if(gt(iw,ih),-2,min(1920,ih))'";
+        $audioKbps = (int) Setting::get('video_audio_bitrate', 128);
 
-        exec(sprintf(
-            '%s -i %s -vf %s -c:v libx264 -preset fast -b:v %dk -maxrate %dk -bufsize %dk -c:a aac -b:a %dk -movflags +faststart -y %s 2>&1',
-            escapeshellarg($ffmpeg),
-            escapeshellarg($originalPath),
-            escapeshellarg($scaleFilter),
-            $videoBitrate,
-            $maxRate,
-            $bufSize,
-            $audioBitrate,
-            escapeshellarg($outputPath)
-        ), $output, $returnCode);
-
-        if ($returnCode === 0 && file_exists($outputPath) && filesize($outputPath) > 0) {
-            $compressedSize = filesize($outputPath);
-
-            // If source was already ≤1080p (Meta-compatible) AND compression didn't shrink it,
-            // keep original — no downscale happened, just a re-encode that didn't help.
-            $wasMetaCompatible = max($resolution['width'], $resolution['height']) <= 1920;
-
-            if ($wasMetaCompatible && $compressedSize >= $originalSize && strtolower(pathinfo($filename, PATHINFO_EXTENSION)) === 'mp4') {
-                @unlink($outputPath);
-
-                return null;
-            }
-
-            if ($sameFile) {
-                @unlink($originalPath);
-                rename($outputPath, Storage::disk('local')->path("media/{$mp4Filename}"));
-            } else {
-                @unlink($originalPath);
-            }
-
-            return ['filename' => $mp4Filename];
+        if (! $normalizer->normalize($originalPath, $outputPath, $maxSizeMb, $audioKbps)) {
+            return null;
         }
 
-        // Compression failed — keep original.
-        @unlink($outputPath);
+        if ($sameFile) {
+            @unlink($originalPath);
+            rename($outputPath, Storage::disk('local')->path("media/{$mp4Filename}"));
+        } else {
+            @unlink($originalPath);
+        }
 
-        return null;
+        Log::info('MediaController: video normalized', [
+            'filename' => $mp4Filename,
+            'reasons' => $reasons,
+            'original_size_mb' => round($originalSize / 1048576, 1),
+            'new_size_mb' => round(filesize(Storage::disk('local')->path("media/{$mp4Filename}")) / 1048576, 1),
+        ]);
+
+        return ['filename' => $mp4Filename];
     }
 
     /**
