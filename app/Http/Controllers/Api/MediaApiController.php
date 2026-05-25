@@ -254,6 +254,11 @@ class MediaApiController extends Controller
             // Sans ce param, on garde le comportement global (compteur sur toutes plateformes).
             'social_account_ids' => 'nullable|array',
             'social_account_ids.*' => 'integer|exists:social_accounts,id',
+            // Filtres géographiques : match exact (case-insensitive) sur les colonnes dédiées.
+            // Distincts des tags, qui sont à valeur sémantique et souvent incomplets.
+            'country' => 'nullable|string|max:120',
+            'city' => 'nullable|string|max:120',
+            'region' => 'nullable|string|max:120',
         ]);
 
         $folder = MediaFolder::where('slug', $params['folder'])->firstOrFail();
@@ -306,6 +311,12 @@ class MediaApiController extends Controller
         if (! empty($params['people'])) {
             foreach ($params['people'] as $person) {
                 $query->whereJsonContains('people_ids', strtolower($person));
+            }
+        }
+        // Filtres géographiques : match exact case-insensitive sur la colonne dédiée.
+        foreach (['country', 'city', 'region'] as $geoField) {
+            if (! empty($params[$geoField])) {
+                $query->whereRaw("LOWER({$geoField}) = ?", [strtolower(trim($params[$geoField]))]);
             }
         }
         if ($excludeDays > 0) {
@@ -386,6 +397,9 @@ class MediaApiController extends Controller
                 'folder_ids' => $folderIds,
                 'tags' => $params['tags'] ?? [],
                 'people' => $params['people'] ?? [],
+                'country' => $params['country'] ?? null,
+                'city' => $params['city'] ?? null,
+                'region' => $params['region'] ?? null,
                 'exclude_days' => $excludeDays,
                 'social_account_ids' => $accountIds,
                 'returned_ids' => array_column($results, 'id'),
@@ -400,6 +414,9 @@ class MediaApiController extends Controller
                 'intimacy' => implode('|', self::SAFE_INTIMACY),
                 'exclude_recently_published_days' => $excludeDays,
                 'social_account_ids' => $accountIds,
+                'country' => $params['country'] ?? null,
+                'city' => $params['city'] ?? null,
+                'region' => $params['region'] ?? null,
             ],
         ]);
     }
