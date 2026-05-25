@@ -97,13 +97,18 @@ class ThreadPublishingService
 
             $segmentPlatform->update(['status' => 'publishing']);
 
-            // Pour un segment de boost, on tente un quote natif (X / Bluesky) en plus du reply.
+            // Segment de boost : on resolve l'URL du fil source SPECIFIQUE a la plateforme
+            // cible et on l'append au contenu. Pour X / Bluesky on tente en plus un quote natif.
             $options = null;
-            if ($segment->is_boost && $segment->boost_source_thread_id && $adapter instanceof \App\Services\Adapters\ResharingAdapterInterface) {
-                $source = app(ThreadBoostService::class)
+            if ($segment->is_boost && $segment->boost_source_thread_id) {
+                $boostSource = app(ThreadBoostService::class)
                     ->findSourceForPlatform($segment->boost_source_thread_id, $account->platform_id);
-                if ($source) {
-                    $options = ['quote_to_id' => $source['external_id']];
+                $platformUrl = ! empty($boostSource['url']) ? $boostSource['url'] : $segment->boost_source_url;
+                if ($platformUrl) {
+                    $content = rtrim($content)."\n\n".$platformUrl;
+                }
+                if ($boostSource && $adapter instanceof \App\Services\Adapters\ResharingAdapterInterface) {
+                    $options = ['quote_to_id' => $boostSource['external_id']];
                 }
             }
 
@@ -443,6 +448,15 @@ class ThreadPublishingService
                 }
 
                 if ($text) {
+                    // Pour un segment de boost, append l'URL specifique a la plateforme cible.
+                    if ($segment->is_boost && $segment->boost_source_thread_id) {
+                        $boostSource = app(ThreadBoostService::class)
+                            ->findSourceForPlatform($segment->boost_source_thread_id, $account->platform_id);
+                        $platformUrl = ! empty($boostSource['url']) ? $boostSource['url'] : $segment->boost_source_url;
+                        if ($platformUrl) {
+                            $text = rtrim($text)."\n\n".$platformUrl;
+                        }
+                    }
                     $segmentTexts[] = $text;
                 }
             }

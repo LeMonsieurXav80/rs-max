@@ -59,14 +59,15 @@ class ThreadBoostService
             ->get()
             ->each(fn ($s) => $s->update(['position' => $s->position + 1]));
 
-        // Construit le contenu : le texte de promo + URL (l'URL sera embedée nativement
-        // sur X et Bluesky au moment de la publication, sinon affichée comme lien).
-        $content = trim($promoText)."\n\n".$sourceUrl;
-
+        // content_fr ne contient que le texte de promo : l'URL spécifique à la
+        // plateforme cible est ajoutée au moment de la publication (sinon, en stockant
+        // une URL fixe ici, le segment publié sur Threads se retrouvait avec l'URL X
+        // si X était la 1re plateforme publiée du fil source).
+        // boost_source_url reste stocké comme fallback si aucune URL plateforme n'existe.
         $segment = ThreadSegment::create([
             'thread_id' => $thread->id,
             'position' => $boostPosition,
-            'content_fr' => $content,
+            'content_fr' => trim($promoText),
             'is_boost' => true,
             'boost_source_thread_id' => $sourceThread->id,
             'boost_source_url' => $sourceUrl,
