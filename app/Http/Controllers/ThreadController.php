@@ -83,11 +83,13 @@ class ThreadController extends Controller
         $accountGroups = $user->accountGroups()->with('socialAccounts')->get();
 
         // Fils publiés pouvant servir de cible de boost (segment 0 publié quelque part).
+        // socialAccounts est chargé pour permettre au composant de filtrer côté JS
+        // selon les comptes cochés dans le formulaire.
         $boostableThreads = Thread::query()
             ->where('status', 'published')
             ->when(! $user->isAdmin(), fn ($q) => $q->where('user_id', $user->id))
             ->whereHas('segments.segmentPlatforms', fn ($q) => $q->where('status', 'published')->whereNotNull('platform_url'))
-            ->with(['segments' => fn ($q) => $q->orderBy('position')->limit(1)])
+            ->with(['segments' => fn ($q) => $q->orderBy('position')->limit(1), 'socialAccounts:id'])
             ->orderByDesc('published_at')
             ->limit(50)
             ->get();
@@ -280,7 +282,7 @@ class ThreadController extends Controller
             ->where('id', '!=', $thread->id)
             ->when(! $user->isAdmin(), fn ($q) => $q->where('user_id', $user->id))
             ->whereHas('segments.segmentPlatforms', fn ($q) => $q->where('status', 'published')->whereNotNull('platform_url'))
-            ->with(['segments' => fn ($q) => $q->orderBy('position')->limit(1)])
+            ->with(['segments' => fn ($q) => $q->orderBy('position')->limit(1), 'socialAccounts:id'])
             ->orderByDesc('published_at')
             ->limit(50)
             ->get();

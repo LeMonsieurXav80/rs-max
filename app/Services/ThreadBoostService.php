@@ -50,15 +50,18 @@ class ThreadBoostService
         $boostPosition = (int) floor($count / 2) + 1;
 
         // Décale les segments existants en position ≥ boostPosition de +1.
+        // reorder() écrase l'ORDER BY ASC par défaut de la relation Thread::segments() :
+        // sans ça, le shift se ferait en ASC et la 1re update créerait un duplicate
+        // sur l'index unique (thread_id, position).
         $thread->segments()
             ->where('position', '>=', $boostPosition)
-            ->orderByDesc('position')
+            ->reorder('position', 'desc')
             ->get()
             ->each(fn ($s) => $s->update(['position' => $s->position + 1]));
 
         // Construit le contenu : le texte de promo + URL (l'URL sera embedée nativement
         // sur X et Bluesky au moment de la publication, sinon affichée comme lien).
-        $content = trim($promoText) . "\n\n" . $sourceUrl;
+        $content = trim($promoText)."\n\n".$sourceUrl;
 
         $segment = ThreadSegment::create([
             'thread_id' => $thread->id,
