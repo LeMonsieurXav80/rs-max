@@ -332,79 +332,15 @@
     </div>
 
     {{-- ═══ Library Modal ═══ --}}
-    <div x-show="showLibrary" x-transition.opacity class="fixed inset-0 z-50 flex items-center justify-center p-4" style="display:none">
-        <div class="absolute inset-0 bg-black/50" @click="showLibrary = false"></div>
-        <div class="relative bg-white rounded-2xl shadow-xl w-full max-w-3xl max-h-[80vh] flex flex-col">
-            {{-- Header --}}
-            <div class="flex items-center justify-between px-6 py-4 border-b border-gray-200">
-                <h3 class="text-lg font-semibold text-gray-900">Bibliotheque media</h3>
-                <button type="button" @click="showLibrary = false" class="text-gray-400 hover:text-gray-600">
-                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2">
-                        <path stroke-linecap="round" stroke-linejoin="round" d="M6 18 18 6M6 6l12 12"/>
-                    </svg>
-                </button>
-            </div>
-
-            {{-- Folders --}}
-            <div class="px-6 py-3 border-b border-gray-100 flex items-center gap-2 flex-wrap" x-show="libraryFolders.length > 0 || libraryFolder">
-                <button type="button" @click="libraryFolder = null; fetchLibrary()"
-                    class="px-3 py-1 rounded-lg text-xs font-medium transition-colors"
-                    :class="!libraryFolder ? 'bg-indigo-100 text-indigo-700' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'">
-                    Tout
-                </button>
-                <template x-for="folder in libraryFolders" :key="folder.id">
-                    <button type="button" @click="libraryFolder = folder.id; fetchLibrary(folder.id)"
-                        class="px-3 py-1 rounded-lg text-xs font-medium transition-colors"
-                        :class="libraryFolder === folder.id ? 'bg-indigo-100 text-indigo-700' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'"
-                        x-text="folder.name"></button>
-                </template>
-            </div>
-
-            {{-- Grid --}}
-            <div class="flex-1 overflow-y-auto p-6">
-                <div x-show="libraryLoading" class="flex items-center justify-center py-12">
-                    <svg class="w-6 h-6 animate-spin text-indigo-500" fill="none" viewBox="0 0 24 24">
-                        <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
-                        <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path>
-                    </svg>
-                </div>
-                <div x-show="!libraryLoading" class="grid grid-cols-4 sm:grid-cols-5 md:grid-cols-6 gap-3">
-                    <template x-for="item in libraryItems" :key="item.url">
-                        <button type="button" @click="selectLibraryItem(item)"
-                            class="relative aspect-square rounded-lg overflow-hidden border-2 border-transparent hover:border-indigo-400 transition-colors group cursor-pointer">
-                            <template x-if="item.mimetype && item.mimetype.startsWith('image/')">
-                                <img :src="item.url" class="w-full h-full object-cover" alt="">
-                            </template>
-                            <template x-if="item.mimetype && item.mimetype.startsWith('video/')">
-                                <div class="w-full h-full bg-gray-800 flex items-center justify-center">
-                                    <svg class="w-8 h-8 text-white/70" fill="currentColor" viewBox="0 0 24 24">
-                                        <path d="M8 5v14l11-7z"/>
-                                    </svg>
-                                </div>
-                            </template>
-                            <div class="absolute inset-0 bg-indigo-600/0 group-hover:bg-indigo-600/20 transition-colors flex items-center justify-center">
-                                <svg class="w-6 h-6 text-white opacity-0 group-hover:opacity-100 transition-opacity drop-shadow" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2">
-                                    <path stroke-linecap="round" stroke-linejoin="round" d="M12 4.5v15m7.5-7.5h-15"/>
-                                </svg>
-                            </div>
-                            {{-- Badge statut publication (deja publie / planifie / etc.) --}}
-                            <template x-if="item.status_label">
-                                <div class="absolute top-1 left-1 px-1.5 py-0.5 text-[10px] font-semibold rounded-full leading-tight"
-                                     :class="item.status_class" x-text="item.status_label"></div>
-                            </template>
-                        </button>
-                    </template>
-                </div>
-                <p x-show="!libraryLoading && libraryItems.length === 0" class="text-center text-gray-400 py-8">Aucun media dans la bibliotheque</p>
-            </div>
-        </div>
-    </div>
+    @include('posts._media-library')
 </div>
 
 @push('scripts')
 <script>
 function bulkEditor() {
     return {
+        // États et méthodes communs de la bibliothèque média (voir _media-library.blade.php).
+        ...mediaLibraryData(),
         step: 1,
         numPosts: 5,
         frequencyDays: 1,
@@ -418,12 +354,7 @@ function bulkEditor() {
         rows: [],
         _keyCounter: 0,
 
-        // Library modal
-        showLibrary: false,
-        libraryItems: [],
-        libraryFolders: [],
-        libraryFolder: null,
-        libraryLoading: false,
+        // Bibliothèque : index de la row qui recevra l'item sélectionné.
         libraryTargetRow: null,
 
         // Account data from server
@@ -536,6 +467,7 @@ function bulkEditor() {
             });
         },
 
+        // Override de openLibrary() de mediaLibraryData() : mémorise la row cible avant d'ouvrir.
         async openLibrary(rowIndex) {
             this.libraryTargetRow = rowIndex;
             this.showLibrary = true;
@@ -543,22 +475,14 @@ function bulkEditor() {
             await this.fetchLibrary();
         },
 
-        async fetchLibrary(folderId) {
-            this.libraryLoading = true;
-            try {
-                let url = '{{ route("media.list") }}';
-                if (folderId) url += '?folder=' + folderId;
-                const resp = await fetch(url, { headers: { 'Accept': 'application/json' } });
-                const data = await resp.json();
-                this.libraryItems = data.items || [];
-                this.libraryFolders = data.folders || [];
-            } catch(e) {
-                this.libraryItems = [];
-            }
-            this.libraryLoading = false;
+        // Indique si un item est déjà présent dans la row cible (affichage de la coche).
+        isInMedia(item) {
+            const idx = this.libraryTargetRow;
+            if (idx === null || !this.rows[idx]) return false;
+            return this.rows[idx].media.some(m => m.url === item.url);
         },
 
-        selectLibraryItem(item) {
+        selectFromLibrary(item) {
             const idx = this.libraryTargetRow;
             if (idx === null || !this.rows[idx]) return;
 
