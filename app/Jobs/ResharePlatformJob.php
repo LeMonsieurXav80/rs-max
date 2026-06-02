@@ -2,6 +2,7 @@
 
 namespace App\Jobs;
 
+use App\Models\MediaFile;
 use App\Models\Post;
 use App\Models\PostLog;
 use App\Models\PostPlatform;
@@ -134,6 +135,20 @@ class ResharePlatformJob implements ShouldQueue
             if (str_starts_with($url, '/media/')) {
                 $filename = basename($url);
                 $item['local_path'] = storage_path("app/private/media/{$filename}");
+
+                if (empty($item['mimetype']) || empty($item['size'])) {
+                    $mediaFile = MediaFile::where('filename', $filename)->first();
+                    if ($mediaFile) {
+                        $item['mimetype'] = $item['mimetype'] ?? $mediaFile->mime_type;
+                        $item['size'] = $item['size'] ?? $mediaFile->size;
+                        $item['title'] = $item['title'] ?? $mediaFile->original_name;
+                    }
+                }
+
+                if (empty($item['mimetype'])) {
+                    $item['mimetype'] = $this->guessMimetypeFromFilename($filename);
+                }
+
                 $item['url'] = URL::temporarySignedRoute(
                     'media.show',
                     now()->addHours(4),
@@ -141,8 +156,26 @@ class ResharePlatformJob implements ShouldQueue
                 );
             }
 
+            if (empty($item['mimetype'])) {
+                $item['mimetype'] = ($item['type'] ?? 'image') === 'video' ? 'video/mp4' : 'image/jpeg';
+            }
+
             return $item;
         }, $media);
+    }
+
+    private function guessMimetypeFromFilename(string $filename): string
+    {
+        return match (strtolower(pathinfo($filename, PATHINFO_EXTENSION))) {
+            'jpg', 'jpeg' => 'image/jpeg',
+            'png' => 'image/png',
+            'gif' => 'image/gif',
+            'webp' => 'image/webp',
+            'mp4', 'm4v' => 'video/mp4',
+            'mov' => 'video/quicktime',
+            'webm' => 'video/webm',
+            default => 'application/octet-stream',
+        };
     }
 
     private function markFailed(PostPlatform $postPlatform, string $error): void
@@ -199,7 +232,7 @@ class ResharePlatformJob implements ShouldQueue
     {
         $postPlatform = PostPlatform::find($this->postPlatformId);
         if ($postPlatform) {
-            $this->markFailed($postPlatform, 'Job exception: ' . $exception->getMessage());
+            $this->markFailed($postPlatform, 'Job exception: '.$exception->getMessage());
         }
     }
 }
