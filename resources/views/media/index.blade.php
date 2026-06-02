@@ -1309,8 +1309,8 @@
                     {{-- IA Vision (contexte + bouton). Cible : la photo selectionnee (mono) ou la selection multi. --}}
                     <div class="bg-gradient-to-br from-violet-50 to-indigo-50 rounded-2xl border border-violet-200 shadow-sm p-3 space-y-2">
                         <h3 class="text-[10px] font-semibold uppercase tracking-widest text-violet-900 px-1">IA Vision</h3>
-                        <textarea x-model="aiContext" rows="2" placeholder="Contexte (ex: voyage Portugal 2024)"
-                                  class="w-full text-xs rounded-lg border-violet-200 focus:border-violet-400 focus:ring-1 focus:ring-violet-400 px-2 py-1 bg-white resize-none"></textarea>
+                        <textarea x-model="aiContext" rows="4" placeholder="Contexte (ex: voyage Portugal 2024)"
+                                  class="w-full text-xs rounded-lg border-violet-200 focus:border-violet-400 focus:ring-1 focus:ring-violet-400 px-2 py-1 bg-white resize-y min-h-[3rem]"></textarea>
                         <button @click="runAiAnalysis()"
                                 :disabled="aiInProgress || (!selected && multiSelected.length === 0)"
                                 class="w-full px-2 py-1.5 text-xs bg-violet-600 text-white rounded-lg disabled:opacity-40 hover:bg-violet-700 font-medium flex items-center justify-center gap-1">
