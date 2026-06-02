@@ -48,9 +48,29 @@ class ThreadController extends Controller
             $query->where('status', $request->input('status'));
         }
 
+        // Groupes et comptes pour les filtres (mêmes données que le formulaire de création)
+        $accountGroups = $user->accountGroups()->with('socialAccounts:id')->orderBy('sort_order')->get();
+        $accounts = $user->activeSocialAccounts()
+            ->with('platform')
+            ->orderBy('name')
+            ->get()
+            ->groupBy(fn (SocialAccount $account) => $account->platform->slug);
+
+        // Filtre par groupe : on restreint aux fils liés à au moins un compte du groupe
+        if ($request->filled('group_id')) {
+            $group = $accountGroups->firstWhere('id', (int) $request->input('group_id'));
+            $accountIds = $group ? $group->socialAccounts->pluck('id')->all() : [];
+            $query->whereHas('socialAccounts', fn ($q) => $q->whereIn('social_accounts.id', $accountIds));
+        }
+
+        // Filtre par compte individuel
+        if ($request->filled('account_id')) {
+            $query->whereHas('socialAccounts', fn ($q) => $q->where('social_accounts.id', (int) $request->input('account_id')));
+        }
+
         $threads = $query->orderByDesc('created_at')->paginate(15)->withQueryString();
 
-        return view('threads.index', compact('threads'));
+        return view('threads.index', compact('threads', 'accountGroups', 'accounts'));
     }
 
     /**
