@@ -64,6 +64,11 @@ class ThreadsAdapter implements PlatformAdapterInterface, ThreadableAdapterInter
             $userId = $credentials['user_id'];
             $accessToken = $credentials['access_token'];
 
+            // Multiple media reply — carousel (chained to the previous post).
+            if (! empty($media) && count($media) > 1) {
+                return $this->publishCarousel($userId, $accessToken, $content, $media, $options, $replyToId);
+            }
+
             $params = [
                 'text' => $content,
                 'media_type' => 'TEXT',
@@ -218,7 +223,7 @@ class ThreadsAdapter implements PlatformAdapterInterface, ThreadableAdapterInter
     //  Carousel
     // -------------------------------------------------------------------------
 
-    private function publishCarousel(string $userId, string $accessToken, string $text, array $media, ?array $options): array
+    private function publishCarousel(string $userId, string $accessToken, string $text, array $media, ?array $options, ?string $replyToId = null): array
     {
         $childIds = [];
 
@@ -271,6 +276,11 @@ class ThreadsAdapter implements PlatformAdapterInterface, ThreadableAdapterInter
             'text' => $text,
             'access_token' => $accessToken,
         ];
+
+        // Reply carousel: chain the container to the previous post.
+        if ($replyToId !== null) {
+            $carouselParams['reply_to_id'] = $replyToId;
+        }
 
         $this->addLocationParams($carouselParams, $options);
 
