@@ -510,6 +510,75 @@
                     @endforelse
                 </div>
             </div>
+
+            {{-- ==================== ADD PLATFORMS CARD ==================== --}}
+            @if($availableAccounts->isNotEmpty())
+                @php
+                    $addPlatformLabels = [
+                        'facebook' => 'Facebook', 'instagram' => 'Instagram',
+                        'threads' => 'Threads', 'twitter' => 'Twitter / X',
+                        'bluesky' => 'Bluesky', 'telegram' => 'Telegram',
+                        'youtube' => 'YouTube', 'linkedin' => 'LinkedIn',
+                        'pinterest' => 'Pinterest', 'reddit' => 'Reddit',
+                    ];
+                    $addPlatformOrder = ['facebook', 'instagram', 'threads', 'twitter', 'bluesky', 'telegram', 'youtube', 'linkedin', 'pinterest', 'reddit'];
+                @endphp
+                <div class="bg-white rounded-2xl shadow-sm border border-gray-100" x-data="{ count: 0 }">
+                    <div class="px-6 lg:px-8 py-5 border-b border-gray-100">
+                        <h2 class="text-base font-semibold text-gray-900">Ajouter des plateformes</h2>
+                        <p class="text-xs text-gray-500 mt-1">Diffusez cette publication sur d'autres comptes, sans toucher aux plateformes déjà publiées.</p>
+                    </div>
+
+                    <form method="POST" action="{{ route('posts.addPlatforms', $post) }}" class="p-6 lg:p-8">
+                        @csrf
+                        <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                            @foreach($addPlatformOrder as $slug)
+                                @if(isset($availableAccounts[$slug]))
+                                    <div class="border border-gray-200 rounded-xl overflow-hidden">
+                                        <div class="flex items-center gap-2.5 px-4 py-3 bg-gray-50 border-b border-gray-200">
+                                            <x-platform-icon :platform="$slug" size="sm" />
+                                            <span class="text-sm font-medium text-gray-900">{{ $addPlatformLabels[$slug] ?? ucfirst($slug) }}</span>
+                                            <span class="text-xs text-gray-400 ml-auto">{{ $availableAccounts[$slug]->count() }}</span>
+                                        </div>
+                                        <div class="p-3 space-y-1.5">
+                                            @foreach($availableAccounts[$slug] as $account)
+                                                <label class="flex items-center gap-3 px-3 py-2 rounded-lg hover:bg-indigo-50/50 transition-colors cursor-pointer">
+                                                    <input
+                                                        type="checkbox"
+                                                        name="accounts[]"
+                                                        value="{{ $account->id }}"
+                                                        @change="count += $el.checked ? 1 : -1"
+                                                        class="rounded border-gray-300 text-indigo-600 focus:ring-indigo-500 transition-colors"
+                                                    >
+                                                    @if($account->profile_picture_url)
+                                                        <img src="{{ $account->profile_picture_url }}" alt="" class="w-6 h-6 rounded-full object-cover flex-shrink-0">
+                                                    @endif
+                                                    <span class="text-sm text-gray-700 truncate">{{ $account->name }}</span>
+                                                </label>
+                                            @endforeach
+                                        </div>
+                                    </div>
+                                @endif
+                            @endforeach
+                        </div>
+
+                        @error('accounts')
+                            <p class="mt-3 text-sm text-red-600">{{ $message }}</p>
+                        @enderror
+
+                        <div class="mt-5 flex items-center justify-end">
+                            <button type="submit"
+                                    :disabled="count === 0"
+                                    class="inline-flex items-center gap-2 px-4 py-2 bg-indigo-600 text-white text-sm font-medium rounded-xl hover:bg-indigo-700 transition-colors shadow-sm disabled:opacity-50 disabled:cursor-not-allowed">
+                                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1.5">
+                                    <path stroke-linecap="round" stroke-linejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
+                                </svg>
+                                <span x-text="count > 0 ? `Ajouter ${count} plateforme(s)` : 'Ajouter des plateformes'"></span>
+                            </button>
+                        </div>
+                    </form>
+                </div>
+            @endif
         </div>
 
         {{-- RIGHT: Media preview --}}

@@ -126,6 +126,9 @@ Route::middleware(['auth', 'verified', 'throttle:600,1'])->group(function () {
     Route::get('stats/publications', [StatsController::class, 'publications'])->name('stats.publications');
     Route::get('stats/platforms', [StatsController::class, 'platforms'])->name('stats.platforms');
 
+    // Ajout de plateformes à un post existant (non destructif)
+    Route::post('posts/{post}/add-platforms', [PostController::class, 'addPlatforms'])->name('posts.addPlatforms');
+
     // Manual publishing
     Route::post('posts/{post}/publish', [PublishController::class, 'publishAll'])->name('posts.publish');
     Route::post('posts/platform/{postPlatform}/publish', [PublishController::class, 'publishOne'])->name('posts.publishOne');

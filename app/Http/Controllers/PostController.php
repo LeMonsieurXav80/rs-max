@@ -306,7 +306,66 @@ class PostController extends Controller
             abort(403, 'Unauthorized.');
         }
 
-        return view('posts.show', compact('post'));
+        // Accounts the user can still add to this post (active, not already attached)
+        $attachedAccountIds = $post->postPlatforms->pluck('social_account_id')->all();
+        $availableAccounts = $user->activeSocialAccounts()
+            ->with('platform')
+            ->whereNotIn('social_accounts.id', $attachedAccountIds)
+            ->orderBy('name')
+            ->get()
+            ->groupBy(fn (SocialAccount $account) => $account->platform->slug);
+
+        return view('posts.show', compact('post', 'availableAccounts'));
+    }
+
+    /**
+     * Attach additional publishing platforms to an existing post without
+     * disturbing the platforms that are already attached/published.
+     */
+    public function addPlatforms(Request $request, int $id): RedirectResponse
+    {
+        $post = Post::with('postPlatforms')->findOrFail($id);
+
+        // Regular users can only modify their own posts
+        if (! $request->user()->isAdmin() && $post->user_id !== $request->user()->id) {
+            abort(403, 'Unauthorized.');
+        }
+
+        $validated = $request->validate([
+            'accounts' => 'required|array|min:1',
+            'accounts.*' => 'integer|exists:social_accounts,id',
+        ]);
+
+        $user = $request->user();
+
+        // Only keep accounts that are active for this user
+        $validAccounts = $user->activeSocialAccounts()
+            ->whereIn('social_accounts.id', $validated['accounts'])
+            ->get();
+
+        // Skip accounts already attached to this post (no duplicates, no reset)
+        $existingAccountIds = $post->postPlatforms->pluck('social_account_id')->all();
+
+        $added = 0;
+        foreach ($validAccounts as $account) {
+            if (in_array($account->id, $existingAccountIds, true)) {
+                continue;
+            }
+
+            PostPlatform::create([
+                'post_id' => $post->id,
+                'social_account_id' => $account->id,
+                'platform_id' => $account->platform_id,
+                'status' => 'pending',
+            ]);
+            $added++;
+        }
+
+        $message = $added > 0
+            ? "{$added} plateforme(s) ajoutée(s). Cliquez sur « Publier » pour les diffuser."
+            : 'Aucune nouvelle plateforme à ajouter.';
+
+        return redirect()->route('posts.show', $post->id)->with('success', $message);
     }
 
     /**
