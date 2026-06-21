@@ -173,6 +173,50 @@
             '#a3e635', '#34d399', '#10b981', '#22d3ee', '#60a5fa',
             '#818cf8', '#a78bfa', '#c084fc', '#f472b6', '#fb7185'
         ],
+        // Redimensionnement des colonnes (gauche / centre / droite). Largeurs en px, persistees en localStorage.
+        leftWidth: 240,   // defaut = w-60 (15rem)
+        rightWidth: 440,  // defaut = w-[440px]
+        resizing: null,   // 'left' | 'right' | null pendant un glisser
+        initResize() {
+            try {
+                const l = parseInt(localStorage.getItem('mediaLeftWidth'));
+                const r = parseInt(localStorage.getItem('mediaRightWidth'));
+                if (!isNaN(l)) this.leftWidth = Math.min(Math.max(l, 180), 520);
+                if (!isNaN(r)) this.rightWidth = Math.min(Math.max(r, 300), 800);
+            } catch (e) {}
+        },
+        startResize(which, event) {
+            event.preventDefault();
+            this.resizing = which;
+            const startX = event.clientX;
+            const startLeft = this.leftWidth;
+            const startRight = this.rightWidth;
+            const onMove = (e) => {
+                const dx = e.clientX - startX;
+                if (this.resizing === 'left') {
+                    // poignee a droite de la colonne gauche : vers la droite = plus large
+                    this.leftWidth = Math.min(Math.max(startLeft + dx, 180), 520);
+                } else if (this.resizing === 'right') {
+                    // poignee a gauche de la colonne droite : vers la gauche = plus large
+                    this.rightWidth = Math.min(Math.max(startRight - dx, 300), 800);
+                }
+            };
+            const onUp = () => {
+                this.resizing = null;
+                document.removeEventListener('mousemove', onMove);
+                document.removeEventListener('mouseup', onUp);
+                document.body.style.userSelect = '';
+                document.body.style.cursor = '';
+                try {
+                    localStorage.setItem('mediaLeftWidth', this.leftWidth);
+                    localStorage.setItem('mediaRightWidth', this.rightWidth);
+                } catch (e) {}
+            };
+            document.body.style.userSelect = 'none';
+            document.body.style.cursor = 'col-resize';
+            document.addEventListener('mousemove', onMove);
+            document.addEventListener('mouseup', onUp);
+        },
         get currentFolderId() {
             if (!this.currentFolder || this.currentFolder === 'uncategorized') return null;
             const n = parseInt(this.currentFolder);
@@ -996,22 +1040,44 @@
             this.createFolder();
         },
 
+        // Recupere un jeton CSRF frais depuis le serveur et met a jour la balise meta.
+        // Utile quand le jeton de la page a expire/desynchronise (reponse 419).
+        async refreshCsrfToken() {
+            try {
+                const r = await fetch('{{ route('csrf.token') }}', { headers: { 'Accept': 'application/json' } });
+                if (!r.ok) return null;
+                const d = await r.json();
+                if (d.token) {
+                    const meta = document.querySelector('meta[name=csrf-token]');
+                    if (meta) meta.setAttribute('content', d.token);
+                    return d.token;
+                }
+            } catch (e) {}
+            return null;
+        },
         async createFolder() {
             if (!this.newFolderName.trim()) return;
             const parentId = this.newFolderParentId;
+            const doRequest = (token) => fetch('{{ route('media.folders.store') }}', {
+                method: 'POST',
+                headers: {
+                    'X-CSRF-TOKEN': token,
+                    'Content-Type': 'application/json',
+                    'Accept': 'application/json',
+                },
+                body: JSON.stringify({
+                    name: this.newFolderName.trim(),
+                    parent_id: parentId,
+                }),
+            });
             try {
-                const response = await fetch('{{ route('media.folders.store') }}', {
-                    method: 'POST',
-                    headers: {
-                        'X-CSRF-TOKEN': document.querySelector('meta[name=csrf-token]').getAttribute('content'),
-                        'Content-Type': 'application/json',
-                        'Accept': 'application/json',
-                    },
-                    body: JSON.stringify({
-                        name: this.newFolderName.trim(),
-                        parent_id: parentId,
-                    }),
-                });
+                let token = document.querySelector('meta[name=csrf-token]').getAttribute('content');
+                let response = await doRequest(token);
+                // 419 = jeton CSRF expire/desynchronise : on en recupere un frais et on reessaie une fois.
+                if (response.status === 419) {
+                    token = await this.refreshCsrfToken();
+                    if (token) response = await doRequest(token);
+                }
                 if (response.ok) {
                     // Si on a créé un sous-dossier d'un parent où on n'est pas, naviguer vers ce parent
                     // pour que l'utilisateur voie son nouveau dossier après reload.
@@ -1021,8 +1087,8 @@
                         window.location.reload();
                     }
                 } else {
-                    const data = await response.json();
-                    alert(data.message || 'Erreur.');
+                    const data = await response.json().catch(() => ({}));
+                    alert(data.message || 'Erreur lors de la creation du dossier.');
                 }
             } catch(e) {
                 alert('Erreur de connexion.');
@@ -1183,7 +1249,7 @@
             if (statuses.length > 0) return 'bg-gray-100 text-gray-600';
             return 'bg-gray-100 text-gray-500';
         }
-    }" x-init="fetchAutocomplete()">
+    }" x-init="initResize(); fetchAutocomplete()">
         {{-- Datalists pour autocomplete des champs structurés --}}
         <datalist id="cities-autocomplete-list">
             <template x-for="v in autocomplete.cities" :key="v"><option :value="v"></option></template>
@@ -1285,10 +1351,10 @@
             </div>
         </div>
 
-        {{-- Main layout: sidebar + grid + detail panel --}}
-        <div class="flex gap-5">
+        {{-- Main layout: sidebar + grid + detail panel (colonnes redimensionnables) --}}
+        <div class="flex items-stretch" :class="{ 'select-none': resizing }">
             {{-- Left sidebar : Dossiers (arbre) + Pools --}}
-            <aside class="w-60 flex-shrink-0 hidden md:block">
+            <aside class="flex-shrink-0 hidden md:block" :style="'width: ' + leftWidth + 'px'">
                 <div class="sticky top-20 max-h-[calc(100vh-6rem)] overflow-y-auto space-y-4 pr-1">
                     {{-- Filtres type de media --}}
                     <div class="flex items-center gap-2">
@@ -1484,8 +1550,15 @@
                 </div>
             </aside>
 
+            {{-- Poignee de redimensionnement gauche/centre --}}
+            <div class="hidden md:flex flex-shrink-0 items-stretch px-1.5 cursor-col-resize group"
+                 @mousedown.prevent="startResize('left', $event)" title="Glisser pour redimensionner">
+                <div class="sticky top-20 h-[calc(100vh-6rem)] w-1 rounded-full bg-gray-200 group-hover:bg-indigo-400 transition-colors"
+                     :class="{ '!bg-indigo-500': resizing === 'left' }"></div>
+            </div>
+
             {{-- Center: media grid --}}
-            <div class="min-w-0 flex-1">
+            <div class="min-w-0 flex-1 px-1">
                 <template x-if="items.length === 0">
                     <div class="bg-white rounded-2xl border border-gray-100 shadow-sm p-16 text-center">
                         <svg class="w-12 h-12 text-gray-300 mx-auto mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1">
@@ -1573,8 +1646,15 @@
                 </div>
             </div>
 
+            {{-- Poignee de redimensionnement centre/droite --}}
+            <div class="hidden lg:flex flex-shrink-0 items-stretch px-1.5 cursor-col-resize group"
+                 @mousedown.prevent="startResize('right', $event)" title="Glisser pour redimensionner">
+                <div class="sticky top-20 h-[calc(100vh-6rem)] w-1 rounded-full bg-gray-200 group-hover:bg-indigo-400 transition-colors"
+                     :class="{ '!bg-indigo-500': resizing === 'right' }"></div>
+            </div>
+
             {{-- Right: detail panel (sticky, scroll indépendant de la grille) --}}
-            <div class="hidden lg:block w-[440px] flex-shrink-0">
+            <div class="hidden lg:block flex-shrink-0" :style="'width: ' + rightWidth + 'px'">
                 <div class="sticky top-20 max-h-[calc(100vh-6rem)] overflow-y-auto space-y-4">
                     {{-- Actions multi-select / upload --}}
                     <div class="flex items-center gap-2">

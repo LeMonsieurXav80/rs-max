@@ -151,6 +151,9 @@ Route::middleware(['auth', 'verified', 'throttle:600,1'])->group(function () {
     Route::post('threads/{thread}/accounts/{socialAccount}', [ThreadController::class, 'addAccount'])->name('threads.addAccount');
     Route::delete('threads/{thread}/accounts/{socialAccount}', [ThreadController::class, 'removeAccount'])->name('threads.removeAccount');
 
+    // Jeton CSRF frais (pour re-essayer une requete fetch apres une expiration 419)
+    Route::get('csrf-token', fn () => response()->json(['token' => csrf_token()]))->name('csrf.token');
+
     // Location search (Facebook Places API)
     Route::get('api/locations/search', [LocationController::class, 'search'])->name('locations.search');
 
