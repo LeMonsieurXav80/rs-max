@@ -44,6 +44,12 @@ trait ProcessesImages
             return ['success' => false, 'error' => 'Format image non supporté.'];
         }
 
+        // Corrige l'orientation EXIF (photos portrait des smartphones stockees en paysage + tag Orientation).
+        // GD ne lit pas l'EXIF et imagejpeg() ne le represerve pas : sans cette correction l'image reste couchee.
+        if ($mimeType === 'image/jpeg' && function_exists('exif_read_data')) {
+            $image = $this->applyExifOrientation($image, $sourcePath);
+        }
+
         $origWidth = imagesx($image);
         $origHeight = imagesy($image);
         $newWidth = $origWidth;
@@ -159,6 +165,59 @@ trait ProcessesImages
             'width' => $newWidth,
             'height' => $newHeight,
         ];
+    }
+
+    /**
+     * Redresse une image GD selon le tag EXIF Orientation du fichier source.
+     * Necessaire car GD ignore l'EXIF a la lecture et ne le represerve pas a l'ecriture.
+     */
+    private function applyExifOrientation(\GdImage $image, string $sourcePath): \GdImage
+    {
+        $exif = @exif_read_data($sourcePath);
+        $orientation = (int) ($exif['Orientation'] ?? 1);
+
+        switch ($orientation) {
+            case 2:
+                imageflip($image, IMG_FLIP_HORIZONTAL);
+                break;
+            case 3:
+                $image = $this->rotateGd($image, 180);
+                break;
+            case 4:
+                imageflip($image, IMG_FLIP_VERTICAL);
+                break;
+            case 5:
+                $image = $this->rotateGd($image, -90);
+                imageflip($image, IMG_FLIP_HORIZONTAL);
+                break;
+            case 6:
+                $image = $this->rotateGd($image, -90);
+                break;
+            case 7:
+                $image = $this->rotateGd($image, 90);
+                imageflip($image, IMG_FLIP_HORIZONTAL);
+                break;
+            case 8:
+                $image = $this->rotateGd($image, 90);
+                break;
+        }
+
+        return $image;
+    }
+
+    /**
+     * Rotation GD (angle horaire negatif, conformement a imagerotate qui tourne dans le sens anti-horaire).
+     */
+    private function rotateGd(\GdImage $image, int $angle): \GdImage
+    {
+        $rotated = imagerotate($image, $angle, 0);
+        if ($rotated instanceof \GdImage) {
+            imagedestroy($image);
+
+            return $rotated;
+        }
+
+        return $image;
     }
 
     /**
