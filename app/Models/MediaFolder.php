@@ -67,6 +67,26 @@ class MediaFolder extends Model
     }
 
     /**
+     * Vrai si ce dossier OU l'un de ses ancêtres est privé.
+     * Mirroir de la sémantique de descente publique de l'API (`collectPublicDescendantIds`) :
+     * un ancêtre privé rend toute sa branche inaccessible côté API publique.
+     */
+    public function isEffectivelyPrivate(): bool
+    {
+        $cursor = $this;
+        $depth = 0;
+        while ($cursor && $depth < 10) {
+            if ($cursor->is_private) {
+                return true;
+            }
+            $cursor = $cursor->parent;
+            $depth++;
+        }
+
+        return false;
+    }
+
+    /**
      * Construit le chemin lisible du dossier (`Parent / Sous / Petit-fils`).
      */
     public function pathLabel(string $separator = ' / '): string

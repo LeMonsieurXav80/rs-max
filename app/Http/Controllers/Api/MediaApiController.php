@@ -668,6 +668,57 @@ class MediaApiController extends Controller
     }
 
     /**
+     * PATCH /api/media/{id} — corrige UNIQUEMENT la description et/ou les tags.
+     *
+     * Pensé pour l'enrichissement éditorial depuis le vault (Phase 2) : relire les
+     * descriptions générées par Vision et les réécrire avec le contexte d'une fiche,
+     * sans toucher au reste.
+     *
+     * Sécurité : ne touche NI à la visibilité (intimacy_level) NI au dossier — il ne
+     * peut donc pas rendre une photo publiable. Refuse les dossiers privés (403, même
+     * posture que /search) pour garder une surface API cohérente côté privés.
+     */
+    public function updateDescription(Request $request, MediaFile $media): JsonResponse
+    {
+        $data = $request->validate([
+            'description_fr' => 'nullable|string|max:5000',
+            'thematic_tags' => 'nullable|array',
+            'thematic_tags.*' => 'string',
+        ]);
+
+        if ($media->folder && $media->folder->isEffectivelyPrivate()) {
+            return response()->json([
+                'error' => 'media is in a private folder and not editable via API',
+                'media_id' => $media->id,
+            ], 403);
+        }
+
+        if (! array_key_exists('description_fr', $data) && ! array_key_exists('thematic_tags', $data)) {
+            return response()->json([
+                'error' => 'rien à mettre à jour : fournir description_fr et/ou thematic_tags',
+            ], 422);
+        }
+
+        $update = [];
+        if (array_key_exists('description_fr', $data)) {
+            $update['description_fr'] = $this->cleanString($data['description_fr'], 5000);
+        }
+        if (array_key_exists('thematic_tags', $data)) {
+            $update['thematic_tags'] = $this->normalizeTags($data['thematic_tags']);
+        }
+
+        $media->update($update);
+        $media->refresh();
+
+        return response()->json([
+            'id' => $media->id,
+            'status' => 'updated',
+            'description_fr' => $media->description_fr,
+            'thematic_tags' => $media->thematic_tags,
+        ]);
+    }
+
+    /**
      * POST /api/media/{id}/analyze-vision — analyse la photo via Vision API serveur
      * et remplit les champs structurés (description_fr, thematic_tags, people_ids,
      * city, region, country, brands, event). Pas de file en input : on lit depuis le storage.

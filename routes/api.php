@@ -60,6 +60,7 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::get('/media/folders', [MediaApiController::class, 'folders']);
     Route::get('/media/pending-analysis', [MediaApiController::class, 'pendingAnalysis']);
     Route::get('/media/{media}', [MediaApiController::class, 'show']); // après /search, /folders et /pending-analysis pour ne pas les capturer
+    Route::patch('/media/{media}', [MediaApiController::class, 'updateDescription']); // édition description/tags only (refuse dossiers privés)
     Route::post('/media/{media}/validate', [MediaApiController::class, 'validateMedia']);
     Route::post('/media/{media}/enrich', [MediaApiController::class, 'enrich']);
     Route::post('/media/{media}/mark-published', [MediaApiController::class, 'markPublished']);
