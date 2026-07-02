@@ -15,6 +15,17 @@ class ThreadsAdapter implements PlatformAdapterInterface, ThreadableAdapterInter
 
     private const VIDEO_POLL_INTERVAL = 10;
 
+    // Threads' carousel/container endpoints are intermittently flaky: they return
+    // HTTP 5xx with a generic `code=1` "An unknown error occurred", or reject a
+    // freshly-created carousel child as expired (subcode 4279004). We retry those.
+    private const TRANSIENT_MAX_ATTEMPTS = 3;
+
+    private const TRANSIENT_BACKOFF = 3;
+
+    private const CAROUSEL_ASSEMBLY_MAX_ATTEMPTS = 2;
+
+    private const INVALID_CHILDREN_SUBCODE = 4279004;
+
     public function publish(SocialAccount $account, string $content, ?array $media = null, ?array $options = null): array
     {
         try {
@@ -90,7 +101,7 @@ class ThreadsAdapter implements PlatformAdapterInterface, ThreadableAdapterInter
 
             $this->addLocationParams($params, $options);
 
-            $container = Http::post(self::API_BASE."/{$userId}/threads", $params);
+            $container = $this->postWithRetry(self::API_BASE."/{$userId}/threads", $params);
             $containerId = $this->extractId($container, 'reply container creation');
 
             if ($containerId === null) {
@@ -148,7 +159,7 @@ class ThreadsAdapter implements PlatformAdapterInterface, ThreadableAdapterInter
             'media_type' => $params['media_type'],
         ]);
 
-        $container = Http::post(self::API_BASE."/{$userId}/threads", $params);
+        $container = $this->postWithRetry(self::API_BASE."/{$userId}/threads", $params);
         $containerId = $this->extractId($container, 'text container creation');
 
         if ($containerId === null) {
@@ -173,7 +184,7 @@ class ThreadsAdapter implements PlatformAdapterInterface, ThreadableAdapterInter
 
         $this->addLocationParams($params, $options);
 
-        $container = Http::post(self::API_BASE."/{$userId}/threads", $params);
+        $container = $this->postWithRetry(self::API_BASE."/{$userId}/threads", $params);
         $containerId = $this->extractId($container, 'image container creation');
 
         if ($containerId === null) {
@@ -198,7 +209,7 @@ class ThreadsAdapter implements PlatformAdapterInterface, ThreadableAdapterInter
 
         $this->addLocationParams($params, $options);
 
-        $container = Http::post(self::API_BASE."/{$userId}/threads", $params);
+        $container = $this->postWithRetry(self::API_BASE."/{$userId}/threads", $params);
         $containerId = $this->extractId($container, 'video container creation');
 
         if ($containerId === null) {
@@ -225,73 +236,143 @@ class ThreadsAdapter implements PlatformAdapterInterface, ThreadableAdapterInter
 
     private function publishCarousel(string $userId, string $accessToken, string $text, array $media, ?array $options, ?string $replyToId = null): array
     {
-        $childIds = [];
+        // Threads sometimes invalidates a carousel child between its creation and the
+        // parent assembly (subcode 4279004, "children invalid/expired"). We rebuild the
+        // children and retry the assembly a bounded number of times before giving up.
+        $lastError = null;
 
-        // Create child containers.
-        foreach ($media as $item) {
-            $params = [
-                'is_carousel_item' => 'true',
+        for ($attempt = 1; $attempt <= self::CAROUSEL_ASSEMBLY_MAX_ATTEMPTS; $attempt++) {
+            $childIds = [];
+            $childError = null;
+
+            foreach ($media as $item) {
+                $child = $this->createCarouselChild($userId, $accessToken, $item);
+
+                if (! $child['success']) {
+                    $childError = $child;
+                    break;
+                }
+
+                $childIds[] = $child['child_id'];
+            }
+
+            if ($childError !== null) {
+                return $childError;
+            }
+
+            // Re-verify every child is still FINISHED immediately before assembling the
+            // parent — this shrinks the window in which a child can silently expire.
+            $staleChild = false;
+            foreach ($childIds as $childId) {
+                if ($this->waitUntilReady($childId, $accessToken, 5, 1) !== null) {
+                    $staleChild = true;
+                    break;
+                }
+            }
+
+            if ($staleChild) {
+                Log::warning('ThreadsAdapter: carousel child not ready at assembly time', [
+                    'attempt' => $attempt,
+                    'child_ids' => $childIds,
+                ]);
+                $lastError = [
+                    'success' => false,
+                    'external_id' => null,
+                    'error' => 'Threads carousel: child containers not ready for assembly',
+                ];
+
+                continue;
+            }
+
+            // Create the carousel container.
+            $carouselParams = [
+                'media_type' => 'CAROUSEL',
+                'children' => implode(',', $childIds),
+                'text' => $text,
                 'access_token' => $accessToken,
             ];
 
-            $isVideo = $this->isVideo($item['mimetype']);
-
-            if ($isVideo) {
-                $params['video_url'] = $item['url'];
-                $params['media_type'] = 'VIDEO';
-            } else {
-                $params['image_url'] = $this->resolveImageUrl($item['url']);
-                $params['media_type'] = 'IMAGE';
+            // Reply carousel: chain the container to the previous post.
+            if ($replyToId !== null) {
+                $carouselParams['reply_to_id'] = $replyToId;
             }
 
-            $response = Http::post(self::API_BASE."/{$userId}/threads", $params);
-            $childId = $this->extractId($response, 'carousel child creation');
+            $this->addLocationParams($carouselParams, $options);
 
-            if ($childId === null) {
-                return $this->errorFromResponse($response, 'Failed to create carousel child container');
+            $carouselResponse = $this->postWithRetry(self::API_BASE."/{$userId}/threads", $carouselParams);
+            $carouselId = $this->extractId($carouselResponse, 'carousel container creation');
+
+            if ($carouselId !== null) {
+                return $this->publishContainer($userId, $accessToken, $carouselId);
             }
 
-            // Wait for child container to be FINISHED (required for all types, not just videos)
-            if ($isVideo) {
-                $processingError = $this->waitForProcessing($childId, $accessToken);
-            } else {
-                $processingError = $this->waitUntilReady($childId, $accessToken);
+            $lastError = $this->errorFromResponse($carouselResponse, 'Failed to create carousel container');
+
+            // If Threads rejected the children as invalid/expired, rebuild them and retry.
+            if ($this->isInvalidChildrenError($carouselResponse) && $attempt < self::CAROUSEL_ASSEMBLY_MAX_ATTEMPTS) {
+                Log::warning('ThreadsAdapter: carousel children invalid/expired, rebuilding', [
+                    'attempt' => $attempt,
+                    'child_ids' => $childIds,
+                ]);
+
+                continue;
             }
 
-            if ($processingError !== null) {
-                return [
-                    'success' => false,
-                    'external_id' => null,
-                    'error' => "Carousel child {$childId}: {$processingError}",
-                ];
-            }
-
-            $childIds[] = $childId;
+            return $lastError;
         }
 
-        // Create the carousel container.
-        $carouselParams = [
-            'media_type' => 'CAROUSEL',
-            'children' => implode(',', $childIds),
-            'text' => $text,
+        return $lastError ?? [
+            'success' => false,
+            'external_id' => null,
+            'error' => 'Threads carousel: failed after retries',
+        ];
+    }
+
+    /**
+     * Create a single carousel item container and wait until it is FINISHED.
+     *
+     * @return array{success: true, child_id: string}|array{success: false, external_id: null, error: string}
+     */
+    private function createCarouselChild(string $userId, string $accessToken, array $item): array
+    {
+        $params = [
+            'is_carousel_item' => 'true',
             'access_token' => $accessToken,
         ];
 
-        // Reply carousel: chain the container to the previous post.
-        if ($replyToId !== null) {
-            $carouselParams['reply_to_id'] = $replyToId;
+        $isVideo = $this->isVideo($item['mimetype']);
+
+        if ($isVideo) {
+            $params['video_url'] = $item['url'];
+            $params['media_type'] = 'VIDEO';
+        } else {
+            $params['image_url'] = $this->resolveImageUrl($item['url']);
+            $params['media_type'] = 'IMAGE';
         }
 
-        $this->addLocationParams($carouselParams, $options);
+        $response = $this->postWithRetry(self::API_BASE."/{$userId}/threads", $params);
+        $childId = $this->extractId($response, 'carousel child creation');
 
-        $carouselResponse = Http::post(self::API_BASE."/{$userId}/threads", $carouselParams);
-        $carouselId = $this->extractId($carouselResponse, 'carousel container creation');
-
-        if ($carouselId === null) {
-            return $this->errorFromResponse($carouselResponse, 'Failed to create carousel container');
+        if ($childId === null) {
+            return $this->errorFromResponse($response, 'Failed to create carousel child container');
         }
 
-        return $this->publishContainer($userId, $accessToken, $carouselId);
+        // Wait for child container to be FINISHED (required for all types, not just videos)
+        if ($isVideo) {
+            $processingError = $this->waitForProcessing($childId, $accessToken);
+        } else {
+            $processingError = $this->waitUntilReady($childId, $accessToken);
+        }
+
+        if ($processingError !== null) {
+            return [
+                'success' => false,
+                'external_id' => null,
+                'error' => "Carousel child {$childId}: {$processingError}",
+            ];
+        }
+
+        return ['success' => true, 'child_id' => $childId];
     }
 
     // -------------------------------------------------------------------------
@@ -312,7 +393,7 @@ class ThreadsAdapter implements PlatformAdapterInterface, ThreadableAdapterInter
             ];
         }
 
-        $response = Http::post(self::API_BASE."/{$userId}/threads_publish", [
+        $response = $this->postWithRetry(self::API_BASE."/{$userId}/threads_publish", [
             'creation_id' => $creationId,
             'access_token' => $accessToken,
         ]);
@@ -541,6 +622,52 @@ class ThreadsAdapter implements PlatformAdapterInterface, ThreadableAdapterInter
             'external_id' => null,
             'error' => $detail,
         ];
+    }
+
+    /**
+     * POST to the Threads API, retrying transient failures (HTTP 5xx or the generic
+     * `code=1` "unknown error") with a linear backoff. Non-transient errors and
+     * successes are returned as-is on the first response.
+     */
+    private function postWithRetry(string $url, array $params): \Illuminate\Http\Client\Response
+    {
+        $response = Http::post($url, $params);
+
+        for ($attempt = 1; $attempt < self::TRANSIENT_MAX_ATTEMPTS && $this->isTransientError($response); $attempt++) {
+            Log::warning('ThreadsAdapter: transient error, retrying', [
+                'url' => $url,
+                'attempt' => $attempt,
+                'http_status' => $response->status(),
+                'error_code' => $response->json('error.code'),
+                'error_message' => $response->json('error.message'),
+            ]);
+
+            sleep(self::TRANSIENT_BACKOFF * $attempt);
+
+            $response = Http::post($url, $params);
+        }
+
+        return $response;
+    }
+
+    private function isTransientError(\Illuminate\Http\Client\Response $response): bool
+    {
+        if ($response->successful()) {
+            return false;
+        }
+
+        // HTTP 5xx from Threads is always worth retrying.
+        if ($response->serverError()) {
+            return true;
+        }
+
+        // Threads surfaces intermittent glitches as a generic `code=1`.
+        return (int) $response->json('error.code') === 1;
+    }
+
+    private function isInvalidChildrenError(\Illuminate\Http\Client\Response $response): bool
+    {
+        return (int) $response->json('error.error_subcode') === self::INVALID_CHILDREN_SUBCODE;
     }
 
     private function isImage(string $mimetype): bool
