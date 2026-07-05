@@ -271,6 +271,9 @@ Recherche dans la médiathèque locale.
 - `people[]` : match exact (les ids sont normalisés `caroline`, `xavier`)
 - `exclude_recently_published_days` : exclut les photos publiées récemment. Défaut : 30 pour `pdc_vantour`, 0 pour `wildycaro`.
 - `limit` : 1-200 (défaut 20)
+- `used` : `0|1` — **OPTIONNEL**, filtre d'usage **global**. `used=1` → photos ayant au moins une publication (sociale **ou** WP). `used=0` → jamais publiées nulle part. Absent → pas de filtre.
+- `used_on` : `<wp_source_id>` — **OPTIONNEL**, photos déjà publiées **sur ce site WP**. L'usage est par-site : une photo publiée sur PDC mais pas sur Vantour n'apparaît pas avec `used_on=<vantour>`.
+- `unused_on` : `<wp_source_id>` — **OPTIONNEL**, photos **jamais** publiées sur ce site WP (candidates idéales pour ce site).
 
 **Filtres hardcodés non-contournables** :
 - `allow_<pool> = TRUE`

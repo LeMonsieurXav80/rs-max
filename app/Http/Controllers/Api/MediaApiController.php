@@ -259,6 +259,11 @@ class MediaApiController extends Controller
             'country' => 'nullable|string|max:120',
             'city' => 'nullable|string|max:120',
             'region' => 'nullable|string|max:120',
+            // Filtres d'usage. `used` est global (publiée n'importe où, social ou WP).
+            // `used_on`/`unused_on` sont par-site WP : "utilisé" est par-site, pas global.
+            'used' => 'nullable|boolean',
+            'used_on' => 'nullable|integer|exists:wp_sources,id',
+            'unused_on' => 'nullable|integer|exists:wp_sources,id',
         ]);
 
         $folder = MediaFolder::where('slug', $params['folder'])->firstOrFail();
@@ -318,6 +323,21 @@ class MediaApiController extends Controller
             if (! empty($params[$geoField])) {
                 $query->whereRaw("LOWER({$geoField}) = ?", [strtolower(trim($params[$geoField]))]);
             }
+        }
+        // Usage global : used=1 → au moins une publication (social OU WP) ; used=0 → jamais publiée.
+        // whereHas plutôt que publication_count (le compteur est un cache dénormalisé).
+        if ($request->has('used')) {
+            $request->boolean('used')
+                ? $query->whereHas('publications')
+                : $query->whereDoesntHave('publications');
+        }
+        // Usage par-site WP : "utilisé" est par wp_source, pas global. Une photo publiée
+        // sur PDC reste "unused_on" Vantour tant qu'elle n'a pas de ligne wp_source=Vantour.
+        if (! empty($params['used_on'])) {
+            $query->whereHas('publications', fn ($q) => $q->where('wp_source_id', $params['used_on']));
+        }
+        if (! empty($params['unused_on'])) {
+            $query->whereDoesntHave('publications', fn ($q) => $q->where('wp_source_id', $params['unused_on']));
         }
         if ($excludeDays > 0) {
             $cutoff = now()->subDays($excludeDays);
@@ -402,6 +422,9 @@ class MediaApiController extends Controller
                 'region' => $params['region'] ?? null,
                 'exclude_days' => $excludeDays,
                 'social_account_ids' => $accountIds,
+                'used' => $request->has('used') ? $request->boolean('used') : null,
+                'used_on' => $params['used_on'] ?? null,
+                'unused_on' => $params['unused_on'] ?? null,
                 'returned_ids' => array_column($results, 'id'),
                 'candidates_count' => count($candidates),
             ]);
@@ -417,6 +440,9 @@ class MediaApiController extends Controller
                 'country' => $params['country'] ?? null,
                 'city' => $params['city'] ?? null,
                 'region' => $params['region'] ?? null,
+                'used' => $request->has('used') ? $request->boolean('used') : null,
+                'used_on' => $params['used_on'] ?? null,
+                'unused_on' => $params['unused_on'] ?? null,
             ],
         ]);
     }
