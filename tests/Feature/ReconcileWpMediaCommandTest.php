@@ -115,6 +115,25 @@ class ReconcileWpMediaCommandTest extends TestCase
         $this->assertSame(1, $media->fresh()->publication_count);
     }
 
+    public function test_ne_plante_pas_si_auth_password_illisible(): void
+    {
+        [$source, $media] = $this->seedData();
+        // Simule un mot de passe chiffré sous une ancienne APP_KEY (déchiffrement impossible).
+        \Illuminate\Support\Facades\DB::table('wp_sources')->where('id', $source->id)
+            ->update(['auth_username' => 'xavier', 'auth_password' => 'ciphertext-invalide']);
+        $this->fakeHttp();
+        $this->fakePhash(self::PHASH);
+
+        // La commande bascule sans auth et se termine normalement.
+        $this->artisan('media:reconcile-wp', ['site' => (string) $source->id, '--python' => PHP_BINARY, '--commit' => true])
+            ->assertSuccessful();
+
+        $this->assertDatabaseHas('media_publications', [
+            'media_file_id' => $media->id,
+            'match_method' => 'phash',
+        ]);
+    }
+
     public function test_sans_match_sous_le_seuil_n_ecrit_rien(): void
     {
         [$source, $media] = $this->seedData();

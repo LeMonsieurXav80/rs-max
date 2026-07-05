@@ -73,7 +73,7 @@ class ReconcileWpMediaCommand extends Command
 
         $this->baseUrl = rtrim($source->url, '/');
         $this->authUser = $source->auth_username;
-        $this->authPass = $source->auth_password; // déchiffré via le cast encrypted
+        $this->authPass = $this->safeAuthPassword($source); // tolérant si chiffré sous une ancienne APP_KEY
         $this->userAgent = (string) config('services.media_reconcile.user_agent');
 
         $this->info(sprintf(
@@ -233,6 +233,22 @@ class ReconcileWpMediaCommand extends Command
         }
 
         return $matches->first();
+    }
+
+    /**
+     * Déchiffre auth_password en tolérant un chiffrement sous une ancienne APP_KEY.
+     * La lecture de /wp/v2/media est publique par défaut : sans mot de passe
+     * valide, on continue sans auth plutôt que de planter.
+     */
+    private function safeAuthPassword(WpSource $source): ?string
+    {
+        try {
+            return $source->auth_password;
+        } catch (\Throwable $e) {
+            $this->warn('auth_password illisible (chiffré sous une autre APP_KEY ?) → appels WP sans authentification.');
+
+            return null;
+        }
     }
 
     // ── Python / phash ──────────────────────────────────────────────────────
