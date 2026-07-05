@@ -5,10 +5,10 @@ namespace App\Console\Commands;
 use App\Models\MediaFile;
 use App\Models\MediaPublication;
 use App\Models\WpSource;
+use App\Services\Media\PhashComputer;
 use App\Services\Media\PhashMatcher;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\Http;
-use Illuminate\Support\Facades\Process;
 
 /**
  * Réconciliation rétroactive des images publiées sur un site WordPress AVANT la
@@ -47,6 +47,8 @@ class ReconcileWpMediaCommand extends Command
 
     private string $userAgent = '';
 
+    private PhashComputer $phash;
+
     public function handle(): int
     {
         $threshold = (int) $this->option('threshold');
@@ -58,9 +60,10 @@ class ReconcileWpMediaCommand extends Command
             return self::FAILURE;
         }
 
-        $python = $this->option('python') ?: config('services.media_reconcile.python');
-        $helper = base_path('scripts/wp_phash.py');
-        if (! $this->checkPython($python, $helper)) {
+        $this->phash = PhashComputer::fromConfig($this->option('python'));
+        if ($reason = $this->phash->unavailableReason()) {
+            $this->error($reason);
+
             return self::FAILURE;
         }
 
@@ -122,7 +125,7 @@ class ReconcileWpMediaCommand extends Command
             }
 
             // 2) Calcule tous les phash de la page en un seul appel Python.
-            $phashes = $this->computePhashes($python, $helper, $tmpDir, array_values($tmpByAtt));
+            $phashes = $this->phash->compute($tmpDir.'/manifest.json', array_values($tmpByAtt));
 
             // 3) Rapproche chaque attachment du catalogue.
             $byId = collect($attachments)->keyBy('id');
@@ -249,63 +252,6 @@ class ReconcileWpMediaCommand extends Command
 
             return null;
         }
-    }
-
-    // ── Python / phash ──────────────────────────────────────────────────────
-
-    private function checkPython(string $python, string $helper): bool
-    {
-        if (! is_file($helper)) {
-            $this->error("Helper Python introuvable : {$helper}");
-
-            return false;
-        }
-        if (! is_file($python) && ! $this->which($python)) {
-            $this->error("Binaire Python introuvable : {$python} (configure services.media_reconcile.python / MEDIA_PHASH_PYTHON, ou --python=).");
-
-            return false;
-        }
-
-        $result = Process::run([$python, $helper, '--selfcheck']);
-        if (! $result->successful() || ! str_contains($result->output(), 'ok')) {
-            $this->error('Le venv Python ne fournit pas imagehash+PIL. Utilise le venv du pipeline d\'ingest Mac.');
-            $this->line(trim($result->errorOutput()));
-
-            return false;
-        }
-
-        return true;
-    }
-
-    private function which(string $bin): bool
-    {
-        return Process::run(['/usr/bin/env', 'which', $bin])->successful();
-    }
-
-    /**
-     * Calcule le phash de chaque fichier via un seul appel au helper Python.
-     *
-     * @param  list<string>  $paths
-     * @return array<string, string|null> chemin => phash 16-hex (ou null si illisible)
-     */
-    private function computePhashes(string $python, string $helper, string $tmpDir, array $paths): array
-    {
-        if (empty($paths)) {
-            return [];
-        }
-        $manifest = $tmpDir.'/manifest.json';
-        file_put_contents($manifest, json_encode(array_values($paths)));
-
-        $result = Process::timeout(600)->run([$python, $helper, $manifest]);
-        if (! $result->successful()) {
-            $this->warn('Calcul phash échoué sur cette page : '.trim($result->errorOutput()));
-
-            return [];
-        }
-
-        $decoded = json_decode($result->output(), true);
-
-        return is_array($decoded) ? $decoded : [];
     }
 
     // ── Catalogue ───────────────────────────────────────────────────────────
