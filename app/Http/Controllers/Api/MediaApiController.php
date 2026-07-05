@@ -623,6 +623,27 @@ class MediaApiController extends Controller
             'publication_count' => $media->publication_count,
             'created_at' => $media->created_at?->toIso8601String(),
             'updated_at' => $media->updated_at?->toIso8601String(),
+
+            // Historique d'usage : où cette image a été publiée (WP + social).
+            // wp_source est null pour les publications sociales.
+            'publications' => $media->publications()
+                ->with('wpSource:id,name,url')
+                ->orderByDesc('published_at')
+                ->get()
+                ->map(fn ($pub) => [
+                    'id' => $pub->id,
+                    'wp_site' => $pub->wpSource ? [
+                        'id' => $pub->wpSource->id,
+                        'name' => $pub->wpSource->name,
+                    ] : null,
+                    'wp_post_id' => $pub->wp_post_id,
+                    'wp_attachment_id' => $pub->wp_attachment_id,
+                    'match_method' => $pub->match_method,
+                    'match_confidence' => $pub->match_confidence,
+                    'context' => $pub->context,
+                    'published_at' => $pub->published_at?->toIso8601String(),
+                ])
+                ->all(),
         ];
 
         if ($request->boolean('include_embedding')) {

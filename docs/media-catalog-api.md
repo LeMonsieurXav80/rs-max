@@ -139,7 +139,22 @@ Retourne **tous les champs** d'une photo : techniques (mime, size, dimensions, u
   "ingested_at": "2026-04-25T09:35:39+00:00",
   "publication_count": 3,
   "created_at": "2026-04-25T09:35:39+00:00",
-  "updated_at": "2026-04-25T09:35:39+00:00"
+  "updated_at": "2026-04-25T09:35:39+00:00",
+
+  // Historique d'usage (WP + social), trié du plus récent au plus ancien.
+  // wp_site est null pour une publication sociale.
+  "publications": [
+    {
+      "id": 42,
+      "wp_site": { "id": 3, "name": "Planète de Caro" },
+      "wp_post_id": 1284,
+      "wp_attachment_id": 5567,
+      "match_method": "manual",       // "manual" | "phash"
+      "match_confidence": 100,
+      "context": "article:plages-algarve",
+      "published_at": "2026-07-05T14:30:00+00:00"
+    }
+  ]
 
   // "embedding": [...] présent uniquement si ?include_embedding=1
 }
