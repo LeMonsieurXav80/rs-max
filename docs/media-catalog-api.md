@@ -518,6 +518,30 @@ Trace l'usage d'une photo sur un **site WordPress**. L'usage WP est **par-site**
 
 ---
 
+### `media:reconcile-wp` (commande artisan, pas HTTP)
+
+Rattrape l'historique des images publiées sur un site WordPress **avant** la mise en place du tracking. Le rapprochement par nom de fichier est impossible (WP compresse + renomme) → on matche par **phash perceptuel**.
+
+> ⚠️ **Algo identique obligatoire** : le phash des images WP est recalculé avec `imagehash.phash` **via le venv du pipeline d'ingest Mac** (`scripts/wp_phash.py`), sinon les distances de Hamming n'auraient aucun sens. Le binaire Python se configure via `services.media_reconcile.python` (env `MEDIA_PHASH_PYTHON`) ou `--python=`. En prod (conteneur Coolify), il faut ajouter Python + `imagehash`/`Pillow` à l'image, ou lancer la commande depuis le Mac.
+
+```bash
+# Dry-run (défaut) : affiche les matchs sans rien écrire
+php artisan media:reconcile-wp pdc
+php artisan media:reconcile-wp 3            # par id wp_sources
+php artisan media:reconcile-wp vantour      # WPML : source canonique auto (override --wp-source-id=)
+
+# Écriture réelle
+php artisan media:reconcile-wp pdc --commit --threshold=8
+```
+
+**Options** : `--threshold=10` (distance de Hamming max), `--commit` (écrit ; sinon dry-run), `--wp-source-id=<id>` (désambiguïse si le nom matche plusieurs lignes), `--limit=<n>` (debug), `--python=<bin>`.
+
+**Fonctionnement** : pagine `GET /wp/v2/media?media_type=image` (Basic App Password + User-Agent obligatoire), télécharge la taille **medium** de chaque image, calcule le phash, cherche le `media_file` le plus proche sous le seuil. Résout l'article via `post_parent`, puis `featured_media`, puis référence de l'URL/ID dans le `content`. Écrit via la même sémantique idempotente que `mark-wp-used`, avec `match_method: "phash"` et `match_confidence = 100 - distance*8`.
+
+**Sécurité** : les cas **ambigus** (≥ 2 candidats sous le seuil) et **sans match** ne sont jamais écrits, seulement listés. Résumé final : *X scannés · Y matchés · Z ambigus · W sans match*.
+
+---
+
 ## Endpoints web (session-auth, pas Sanctum)
 
 ### `PATCH /media/{id}/details`
