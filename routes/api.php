@@ -64,6 +64,7 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::post('/media/{media}/validate', [MediaApiController::class, 'validateMedia']);
     Route::post('/media/{media}/enrich', [MediaApiController::class, 'enrich']);
     Route::post('/media/{media}/mark-published', [MediaApiController::class, 'markPublished']);
+    Route::post('/media/{media}/mark-wp-used', [MediaApiController::class, 'markWpUsed']); // trace l'usage sur un site WordPress (idempotent par-site)
     Route::post('/media/{media}/analyze-vision', [MediaApiController::class, 'analyzeVision']);
 
     // ── Banques d'images externes (Pexels, Pixabay, Unsplash) ──

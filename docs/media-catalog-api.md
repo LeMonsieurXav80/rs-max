@@ -458,6 +458,48 @@ L'appel incrémente `media_files.publication_count` (cache dénormalisé aliment
 
 ---
 
+### `POST /api/media/{id}/mark-wp-used`
+
+Trace l'usage d'une photo sur un **site WordPress**. L'usage WP est **par-site** : la même image publiée sur PDC et sur Vantour = deux lignes distinctes (une par `wp_source_id`).
+
+**Idempotent** sur `(media_file_id, wp_source_id, wp_attachment_id)` : ré-appeler avec les mêmes ids met à jour la ligne existante sans créer de doublon, sans re-toucher `publication_count` ni `published_at`.
+
+**Body** :
+```json
+{
+  "wp_source_id": 3,
+  "wp_post_id": 1284,
+  "wp_attachment_id": 5567,
+  "wp_url": "https://planetedecaro.com/.../plage-tavira.jpg",
+  "context": "article:plages-algarve"
+}
+```
+- `wp_source_id` (requis) : la ligne `wp_sources` du site — pas une string.
+- `wp_post_id` (requis) : ID de l'article WP qui utilise l'image.
+- `wp_attachment_id` (requis) : ID du média WP.
+- `wp_url` (optionnel) : URL du fichier WP, stockée dans `external_url`.
+- `context` (optionnel).
+
+> **Vantour (WPML)** : EN et DE partagent la même média-library (même `wp_attachment_id`, jamais ré-uploadé). Toujours passer le **même `wp_source_id` canonique Vantour**, quelle que soit la langue de l'article, pour ne pas dupliquer la publication.
+
+**Réponse `201` (création) / `200` (déjà tracé)** :
+```json
+{
+  "id": 42,
+  "media_file_id": 142,
+  "wp_source_id": 3,
+  "wp_post_id": 1284,
+  "wp_attachment_id": 5567,
+  "created": true,
+  "published_at": "2026-07-05T14:30:00+00:00",
+  "publication_count": 4
+}
+```
+
+`publication_count` n'est incrémenté qu'à la **vraie création** (`created: true`). Ces lignes portent `match_method: "manual"` et `match_confidence: 100`. La réconciliation rétroactive par phash (commande `media:reconcile-wp`) écrit les mêmes lignes avec `match_method: "phash"`.
+
+---
+
 ## Endpoints web (session-auth, pas Sanctum)
 
 ### `PATCH /media/{id}/details`

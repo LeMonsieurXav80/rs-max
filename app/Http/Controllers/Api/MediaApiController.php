@@ -482,6 +482,66 @@ class MediaApiController extends Controller
     }
 
     /**
+     * POST /api/media/{id}/mark-wp-used — trace l'usage d'une photo sur un site WordPress.
+     *
+     * Idempotent sur (media_file_id, wp_source_id, wp_attachment_id) : ré-appeler avec
+     * les mêmes ids ne crée pas de doublon et ne re-touche pas publication_count ni
+     * published_at. L'usage est par-site : la même image sur deux sites = deux lignes.
+     *
+     * NB Vantour (WPML) : EN et DE partagent la même média-library (même attachment,
+     * jamais ré-uploadé) → toujours passer le MÊME wp_source_id canonique Vantour,
+     * peu importe la langue de l'article, pour ne pas dupliquer la publication.
+     */
+    public function markWpUsed(Request $request, MediaFile $media): JsonResponse
+    {
+        $data = $request->validate([
+            'wp_source_id' => 'required|exists:wp_sources,id',
+            'wp_post_id' => 'required|integer',
+            'wp_attachment_id' => 'required|integer',
+            'wp_url' => 'nullable|string|max:1000',
+            'context' => 'nullable|string|max:255',
+        ]);
+
+        $publication = MediaPublication::firstOrNew([
+            'media_file_id' => $media->id,
+            'wp_source_id' => $data['wp_source_id'],
+            'wp_attachment_id' => $data['wp_attachment_id'],
+        ]);
+        $isNew = ! $publication->exists;
+
+        $publication->wp_post_id = $data['wp_post_id'];
+        $publication->match_method = 'manual';
+        $publication->match_confidence = 100;
+        if (isset($data['wp_url'])) {
+            $publication->external_url = $data['wp_url'];
+        }
+        if (isset($data['context'])) {
+            $publication->context = $data['context'];
+        }
+        // published_at figé à la première trace pour rester idempotent.
+        if ($isNew) {
+            $publication->published_at = now();
+        }
+        $publication->save();
+
+        // publication_count : compteur dénormalisé, incrémenté uniquement à la vraie création.
+        if ($isNew) {
+            $media->increment('publication_count');
+        }
+
+        return response()->json([
+            'id' => $publication->id,
+            'media_file_id' => $media->id,
+            'wp_source_id' => $publication->wp_source_id,
+            'wp_post_id' => $publication->wp_post_id,
+            'wp_attachment_id' => $publication->wp_attachment_id,
+            'created' => $isNew,
+            'published_at' => $publication->published_at->toIso8601String(),
+            'publication_count' => $media->publication_count,
+        ], $isNew ? 201 : 200);
+    }
+
+    /**
      * GET /api/media/{id} — retourne tous les champs d'une photo.
      * Pas de restriction de visibilité : si on a l'id, on a déjà été autorisé en amont.
      * `?include_embedding=1` ajoute le vecteur (~512 floats), omis par défaut pour rester léger.
