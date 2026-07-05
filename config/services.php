@@ -78,4 +78,14 @@ return [
         'git_branch' => env('DEPLOY_GIT_BRANCH', 'main'),
     ],
 
+    // Réconciliation rétroactive média WordPress (commande media:reconcile-wp).
+    'media_reconcile' => [
+        // Binaire Python du MÊME venv que le pipeline d'ingest Mac : garantit un
+        // imagehash.phash identique (mêmes versions imagehash/PIL) → distances de
+        // Hamming exploitables. Sans ce venv exact, les hashes divergent.
+        'python' => env('MEDIA_PHASH_PYTHON', '/Volumes/Samsung_T5/DEV/Scripts/.venv/bin/python'),
+        // User-Agent obligatoire sur tous les appels WP (sinon Cloudflare 1010/302).
+        'user_agent' => env('WP_RECONCILE_USER_AGENT', 'RS-Max-Reconcile/1.0 (+https://lemonsieurxav.com)'),
+    ],
+
 ];
