@@ -13,6 +13,11 @@ class MediaPublication extends Model
         'thread_segment_id',
         'post_platform_id',
         'social_account_id',
+        'wp_source_id',
+        'wp_post_id',
+        'wp_attachment_id',
+        'match_method',
+        'match_confidence',
         'external_url',
         'published_at',
         'context',
@@ -20,6 +25,9 @@ class MediaPublication extends Model
 
     protected $casts = [
         'published_at' => 'datetime',
+        'wp_post_id' => 'integer',
+        'wp_attachment_id' => 'integer',
+        'match_confidence' => 'integer',
     ];
 
     public function mediaFile(): BelongsTo
@@ -45,5 +53,10 @@ class MediaPublication extends Model
     public function socialAccount(): BelongsTo
     {
         return $this->belongsTo(SocialAccount::class);
+    }
+
+    public function wpSource(): BelongsTo
+    {
+        return $this->belongsTo(WpSource::class);
     }
 }
