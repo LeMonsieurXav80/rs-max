@@ -375,6 +375,8 @@ Le filtre `exclude_recently_published_days` (par défaut 30 jours pour `pdc_vant
 | `2026_04_25_110000_add_mamawette_pool_and_simplify_intimacy` | Ajoute `allow_mamawette`. Supprime `semi_prive` de l'enum (les photos `semi_prive` migrent vers `public`). Refait l'index pool avec mamawette. |
 | `2026_04_25_144421_add_parent_id_to_media_folders_table` | Ajoute `parent_id` (FK self) sur `media_folders` pour la hiérarchie de dossiers. |
 | `2026_04_25_160000_add_location_brands_to_media_files` | Ajoute `city`, `region`, `country`, `brands` (JSON), `event`, `taken_at`, `publication_count` sur `media_files`. 4 index. Backfill `publication_count` depuis `media_publications`. |
+| `2026_05_12_161032_add_social_account_id_to_media_publications` | Ajoute `social_account_id` (FK) sur `media_publications` pour scoper le compteur "fois publiée" par compte social. |
+| `2026_07_05_120000_add_wp_tracking_to_media_publications` | Tracking d'usage WordPress **par-site** : `wp_source_id` (FK), `wp_post_id`, `wp_attachment_id`, `match_method` (manual\|phash), `match_confidence`. Index (wp_source_id, wp_attachment_id) + unique (media_file_id, wp_source_id, wp_attachment_id). Alimente `mark-wp-used`, les filtres `used`/`used_on`/`unused_on` et `media:reconcile-wp`. |
 
 Toutes les migrations gèrent SQLite + MySQL (les `MODIFY COLUMN` MySQL-specific sont gardés derrière un `if (DB::connection()->getDriverName() === 'mysql')` pour ne pas casser les tests in-memory).
 

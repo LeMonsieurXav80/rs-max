@@ -280,18 +280,20 @@ Tous les champs sont optionnels. Les champs structurés (city/region/country/eve
 Recherche dans la médiathèque locale.
 
 **Query params** :
-- `pool` : **OBLIGATOIRE**, `wildycaro` ou `pdc_vantour` (mamawette est **rejeté** par cet endpoint)
+- `folder` : **OBLIGATOIRE**, slug d'un dossier (`media_folders`). Le dossier doit être **public** (un dossier privé → 403). La recherche couvre le dossier **et ses sous-dossiers publics** (un sous-dossier privé arrête la descente sur sa branche).
 - `query_embedding[]` : tableau de floats — **OPTIONNEL**. Si fourni, tri par similarité cosine. Sinon, ordre random parmi les matches.
 - `tags[]` : sous-chaînes recherchées via JSON_SEARCH+LIKE (case-insensitive). Match tolérant : `"plage"` trouve `"plage paradisiaque"`, `"chaise longue"` trouve `"chaise longue bleue"`.
 - `people[]` : match exact (les ids sont normalisés `caroline`, `xavier`)
-- `exclude_recently_published_days` : exclut les photos publiées récemment. Défaut : 30 pour `pdc_vantour`, 0 pour `wildycaro`.
+- `country` / `city` / `region` : match exact case-insensitive sur la colonne dédiée (distinct des tags).
+- `social_account_ids[]` : restreint le compteur "fois publiée" et l'exclusion récente à ces comptes (sinon global). Ajoute `account_publication_count` en sortie et trie dessus.
+- `exclude_recently_published_days` : exclut les photos publiées récemment (0-3650). Défaut : 0.
 - `limit` : 1-200 (défaut 20)
 - `used` : `0|1` — **OPTIONNEL**, filtre d'usage **global**. `used=1` → photos ayant au moins une publication (sociale **ou** WP). `used=0` → jamais publiées nulle part. Absent → pas de filtre.
 - `used_on` : `<wp_source_id>` — **OPTIONNEL**, photos déjà publiées **sur ce site WP**. L'usage est par-site : une photo publiée sur PDC mais pas sur Vantour n'apparaît pas avec `used_on=<vantour>`.
 - `unused_on` : `<wp_source_id>` — **OPTIONNEL**, photos **jamais** publiées sur ce site WP (candidates idéales pour ce site).
 
 **Filtres hardcodés non-contournables** :
-- `allow_<pool> = TRUE`
+- Dossier **public** uniquement (403 si privé) ; descente limitée aux sous-dossiers publics
 - `intimacy_level = 'public'` (jamais `prive` ni `never_publish` via ce endpoint)
 - Si `query_embedding` fourni : `embedding IS NOT NULL`
 
@@ -321,14 +323,18 @@ Recherche dans la médiathèque locale.
     }
   ],
   "filters_applied": {
-    "pool": "pdc_vantour",
+    "folder": "espagne-2025",
+    "folder_ids": [7, 12],
     "intimacy": "public",
-    "exclude_recently_published_days": 30
+    "exclude_recently_published_days": 0,
+    "used": null,
+    "used_on": null,
+    "unused_on": 2
   }
 }
 ```
 
-`similarity` n'est présent que si `query_embedding` était fourni. Pour le payload **complet** d'une photo (folder, ai_metadata, source, allow_*, intimacy, phash, ingested_at, etc.), faire ensuite `GET /api/media/{id}`.
+`similarity` n'est présent que si `query_embedding` était fourni. Pour le payload **complet** d'une photo (folder, ai_metadata, source, intimacy, phash, publications, ingested_at, etc.), faire ensuite `GET /api/media/{id}`.
 
 **Tri par moins-publiées d'abord** (depuis Avr 2026) : en mode mots-clés (sans embedding), les résultats sont triés par `publication_count` croissant puis aléatoirement à publication_count égal. Évite de servir toujours les mêmes photos en auto-attach. En mode embedding, le tri reste par similarité cosine.
 
@@ -518,9 +524,27 @@ Trace l'usage d'une photo sur un **site WordPress**. L'usage WP est **par-site**
 
 ---
 
+### `media:backfill-phash` (commande artisan, pas HTTP)
+
+**Prérequis de `media:reconcile-wp`.** Calcule le phash perceptuel des `media_files` **images qui n'en ont pas encore**, à partir du fichier stocké localement. Sans phash au catalogue, `reconcile-wp` ne peut rapprocher aucune image WP.
+
+> Utilise le même helper Python (venv du pipeline d'ingest) que `reconcile-wp` → algo identique. Le fichier local est la version compressée : les phash obtenus sont cohérents avec ceux calculés sur les tailles "medium" WP (deux dérivés compressés). Même dépendance Python que `reconcile-wp` (voir l'encadré ci-dessous).
+
+```bash
+# Dry-run (défaut) : combien seraient hashées, sans rien écrire
+php artisan media:backfill-phash
+
+# Écriture réelle
+php artisan media:backfill-phash --commit
+```
+
+**Options** : `--commit` (écrit ; sinon dry-run), `--force` (recalcule aussi les phash déjà présents), `--limit=<n>`, `--python=<bin>`. Ignore les fichiers absents du disque. Résumé final : *X phash écrits · Y fichier(s) manquant(s) · Z illisible(s)*.
+
+---
+
 ### `media:reconcile-wp` (commande artisan, pas HTTP)
 
-Rattrape l'historique des images publiées sur un site WordPress **avant** la mise en place du tracking. Le rapprochement par nom de fichier est impossible (WP compresse + renomme) → on matche par **phash perceptuel**.
+Rattrape l'historique des images publiées sur un site WordPress **avant** la mise en place du tracking. Le rapprochement par nom de fichier est impossible (WP compresse + renomme) → on matche par **phash perceptuel**. Lancer d'abord `media:backfill-phash --commit` pour que le catalogue ait des phash à comparer.
 
 > ⚠️ **Algo identique obligatoire** : le phash des images WP est recalculé avec `imagehash.phash` **via le venv du pipeline d'ingest Mac** (`scripts/wp_phash.py`), sinon les distances de Hamming n'auraient aucun sens. Le binaire Python se configure via `services.media_reconcile.python` (env `MEDIA_PHASH_PYTHON`) ou `--python=`. En prod (conteneur Coolify), il faut ajouter Python + `imagehash`/`Pillow` à l'image, ou lancer la commande depuis le Mac.
 
