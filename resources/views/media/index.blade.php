@@ -1249,6 +1249,19 @@
             if (statuses.includes('failed')) return 'bg-red-100 text-red-700';
             if (statuses.length > 0) return 'bg-gray-100 text-gray-600';
             return 'bg-gray-100 text-gray-500';
+        },
+        // Usage WordPress (articles) — une pastille PAR site où la photo est utilisée.
+        get wpUsageBySite() {
+            if (!this.selected) return [];
+            const bySite = {};
+            (this.selected.wp_usage || []).forEach(x => {
+                const site = x.site || 'Site ?';
+                (bySite[site] ??= new Set()).add(x.wp_post_id);
+            });
+            return Object.entries(bySite).map(([site, ids]) => ({
+                site,
+                label: ids.size === 1 ? site + ' · article #' + ([...ids][0] || '?') : site + ' · ' + ids.size + ' articles',
+            }));
         }
     }" x-init="initResize(); fetchAutocomplete()">
         {{-- Datalists pour autocomplete des champs structurés --}}
@@ -1810,8 +1823,16 @@
 
                                 {{-- Info --}}
                                 <div class="p-5 space-y-4">
-                                    {{-- Status --}}
-                                    <span class="inline-flex items-center px-2.5 py-1 text-xs font-semibold rounded-full" :class="statusColor" x-text="statusLabel"></span>
+                                    {{-- Status : publication sociale + une pastille par site WP où la photo est utilisee --}}
+                                    <div class="flex flex-wrap items-center gap-1.5">
+                                        <span class="inline-flex items-center px-2.5 py-1 text-xs font-semibold rounded-full" :class="statusColor" x-text="statusLabel"></span>
+                                        <template x-for="wp in wpUsageBySite" :key="wp.site">
+                                            <span class="inline-flex items-center px-2.5 py-1 text-xs font-semibold rounded-full bg-emerald-100 text-emerald-700" x-text="wp.label"></span>
+                                        </template>
+                                        <template x-if="wpUsageBySite.length === 0">
+                                            <span class="inline-flex items-center px-2.5 py-1 text-xs font-semibold rounded-full bg-gray-100 text-gray-400">Pas dans un article</span>
+                                        </template>
+                                    </div>
 
                                     {{-- Filename --}}
                                     <h3 class="text-sm font-semibold text-gray-900 break-all" x-text="selected.filename"></h3>
@@ -2225,7 +2246,15 @@
                             </template>
                         </div>
                         <div class="p-4 space-y-4">
-                            <span class="inline-flex items-center px-2.5 py-1 text-xs font-semibold rounded-full" :class="statusColor" x-text="statusLabel"></span>
+                            <div class="flex flex-wrap items-center gap-1.5">
+                                <span class="inline-flex items-center px-2.5 py-1 text-xs font-semibold rounded-full" :class="statusColor" x-text="statusLabel"></span>
+                                <template x-for="wp in wpUsageBySite" :key="wp.site">
+                                    <span class="inline-flex items-center px-2.5 py-1 text-xs font-semibold rounded-full bg-emerald-100 text-emerald-700" x-text="wp.label"></span>
+                                </template>
+                                <template x-if="wpUsageBySite.length === 0">
+                                    <span class="inline-flex items-center px-2.5 py-1 text-xs font-semibold rounded-full bg-gray-100 text-gray-400">Pas dans un article</span>
+                                </template>
+                            </div>
 
                             {{-- Mobile folder selector --}}
                             <div>
