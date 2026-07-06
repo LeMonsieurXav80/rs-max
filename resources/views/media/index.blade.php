@@ -21,8 +21,9 @@
             '#9ca3af', '#f87171', '#fb923c', '#fbbf24', '#facc15', '#a3e635', '#34d399', '#10b981',
             '#2dd4bf', '#22d3ee', '#60a5fa', '#818cf8', '#a78bfa', '#c084fc', '#f472b6', '#fb7185',
         ];
-        $itemsJson = $items->map(function ($item) use ($mediaPostMap) {
+        $itemsJson = $items->map(function ($item) use ($mediaPostMap, $mediaWpUsageMap) {
             $item['posts'] = $mediaPostMap[$item['filename']] ?? [];
+            $item['wp_usage'] = $mediaWpUsageMap[$item['id']] ?? [];
             $statuses = collect($item['posts'])->pluck('status')->unique();
             if ($statuses->contains('published')) {
                 $item['status_label'] = 'Publie';
@@ -2066,6 +2067,34 @@
                                         </template>
                                     </div>
 
+                                    {{-- Usage WordPress (articles) --}}
+                                    <div>
+                                        <h4 class="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">Articles WordPress</h4>
+                                        <template x-if="selected.wp_usage && selected.wp_usage.length > 0">
+                                            <div class="space-y-2">
+                                                <template x-for="wp in selected.wp_usage" :key="wp.site + '-' + wp.wp_attachment_id">
+                                                    <a :href="wp.article_url || '#'" :target="wp.article_url ? '_blank' : '_self'" rel="noopener"
+                                                       class="block p-2.5 rounded-lg bg-gray-50 hover:bg-emerald-50 transition-colors group">
+                                                        <div class="flex items-center gap-2 flex-wrap">
+                                                            <span class="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-semibold bg-emerald-100 text-emerald-700" x-text="wp.site"></span>
+                                                            <span class="text-xs text-gray-700 group-hover:text-emerald-700 transition-colors">Article <span x-text="'#' + (wp.wp_post_id || '?')"></span></span>
+                                                            <span class="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium"
+                                                                  :class="wp.match_method === 'phash' ? 'bg-amber-100 text-amber-700' : 'bg-gray-100 text-gray-500'"
+                                                                  x-text="wp.match_method === 'phash' ? 'auto (phash)' : 'manuel'"></span>
+                                                        </div>
+                                                        <div class="flex items-center gap-2 mt-1 text-[10px] text-gray-400">
+                                                            <span x-text="'attachment #' + wp.wp_attachment_id"></span>
+                                                            <template x-if="wp.published_at"><span x-text="'· ' + wp.published_at"></span></template>
+                                                        </div>
+                                                    </a>
+                                                </template>
+                                            </div>
+                                        </template>
+                                        <template x-if="!selected.wp_usage || selected.wp_usage.length === 0">
+                                            <p class="text-xs text-gray-400 italic">Cette photo n'est utilisee sur aucun article WordPress.</p>
+                                        </template>
+                                    </div>
+
                                     {{-- Actions --}}
                                     <div class="flex items-center gap-2 pt-2 border-t border-gray-100">
                                         <a :href="selected.url" download
@@ -2222,6 +2251,19 @@
                                             <div class="flex items-center gap-2">
                                                 <span class="w-2 h-2 rounded-full flex-shrink-0" :class="post.status_dot"></span>
                                                 <span class="truncate" x-text="post.preview"></span>
+                                            </div>
+                                        </a>
+                                    </template>
+                                </div>
+                            </template>
+                            <template x-if="selected.wp_usage && selected.wp_usage.length > 0">
+                                <div class="space-y-2">
+                                    <h4 class="text-xs font-semibold text-gray-500 uppercase">Articles WordPress</h4>
+                                    <template x-for="wp in selected.wp_usage" :key="wp.site + '-' + wp.wp_attachment_id">
+                                        <a :href="wp.article_url || '#'" :target="wp.article_url ? '_blank' : '_self'" rel="noopener" class="block p-2 rounded-lg bg-gray-50 text-xs text-gray-700">
+                                            <div class="flex items-center gap-2 flex-wrap">
+                                                <span class="px-1.5 py-0.5 rounded text-[10px] font-semibold bg-emerald-100 text-emerald-700" x-text="wp.site"></span>
+                                                <span x-text="'Article #' + (wp.wp_post_id || '?')"></span>
                                             </div>
                                         </a>
                                     </template>

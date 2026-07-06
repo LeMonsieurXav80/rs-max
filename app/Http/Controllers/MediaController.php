@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use App\Concerns\ProcessesImages;
 use App\Models\MediaFile;
 use App\Models\MediaFolder;
+use App\Models\MediaPublication;
 use App\Models\Post;
 use App\Models\Setting;
 use App\Services\AiAssistService;
@@ -145,6 +146,26 @@ class MediaController extends Controller
             }
         }
 
+        // Usage WordPress par photo : quels articles WP utilisent chaque média (tracking par-site).
+        // Distinct des posts sociaux ci-dessus ; alimenté par mark-wp-used / media:reconcile-wp.
+        $mediaWpUsageMap = [];
+        MediaPublication::whereNotNull('wp_source_id')
+            ->whereIn('media_file_id', $mediaFiles->pluck('id'))
+            ->with('wpSource:id,name,url')
+            ->orderByDesc('published_at')
+            ->get()
+            ->each(function (MediaPublication $pub) use (&$mediaWpUsageMap) {
+                $siteUrl = $pub->wpSource ? rtrim($pub->wpSource->url, '/') : null;
+                $mediaWpUsageMap[$pub->media_file_id][] = [
+                    'site' => $pub->wpSource?->name,
+                    'wp_post_id' => $pub->wp_post_id,
+                    'wp_attachment_id' => $pub->wp_attachment_id,
+                    'article_url' => ($siteUrl && $pub->wp_post_id) ? "{$siteUrl}/?p={$pub->wp_post_id}" : ($pub->external_url ?: null),
+                    'match_method' => $pub->match_method,
+                    'published_at' => $pub->published_at?->format('d/m/Y'),
+                ];
+            });
+
         $folders = MediaFolder::ordered()->withCount('files')->get();
         $imageCount = MediaFile::where('mime_type', 'like', 'image/%')->count();
         $videoCount = MediaFile::where('mime_type', 'like', 'video/%')->count();
@@ -158,7 +179,7 @@ class MediaController extends Controller
         $currentIntimacy = $intimacyFilter;
 
         return view('media.index', compact(
-            'items', 'mediaPostMap', 'filter', 'imageCount', 'videoCount',
+            'items', 'mediaPostMap', 'mediaWpUsageMap', 'filter', 'imageCount', 'videoCount',
             'folders', 'totalCount', 'uncategorizedCount', 'neverPublishCount',
             'currentFolder', 'currentIntimacy'
         ));
