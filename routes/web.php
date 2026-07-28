@@ -5,6 +5,7 @@ use App\Http\Controllers\AiAssistController;
 use App\Http\Controllers\Bot\BlueskyBotController;
 use App\Http\Controllers\Bot\FacebookBotController;
 use App\Http\Controllers\BotHubController;
+use App\Http\Controllers\BulkLibraryController;
 use App\Http\Controllers\BulkPostController;
 use App\Http\Controllers\CrossPostController;
 use App\Http\Controllers\DashboardController;
@@ -64,6 +65,10 @@ Route::middleware(['auth', 'verified', 'throttle:600,1'])->group(function () {
     Route::get('posts/bulk', [BulkPostController::class, 'create'])->name('posts.bulk.create');
     Route::post('posts/bulk/save-row', [BulkPostController::class, 'saveRow'])->name('posts.bulk.saveRow');
     Route::post('posts/bulk/delete-row', [BulkPostController::class, 'deleteRow'])->name('posts.bulk.deleteRow');
+
+    // Bulk post creation V2 — depuis la bibliothèque (réutilise save-row / delete-row ci-dessus)
+    Route::get('posts/bulk-library', [BulkLibraryController::class, 'create'])->name('posts.bulk.library.create');
+    Route::post('posts/bulk-library/pick', [BulkLibraryController::class, 'pick'])->name('posts.bulk.library.pick');
 
     // AI Assist (must be before posts resource to avoid route conflict)
     Route::post('posts/ai-assist', [AiAssistController::class, 'generate'])->name('posts.aiAssist');
