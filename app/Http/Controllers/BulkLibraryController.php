@@ -89,7 +89,7 @@ class BulkLibraryController extends Controller
         // là où JSON_SEARCH ne l'est pas.
         $eligible = MediaFile::query()
             ->whereIn('folder_id', $folderIds)
-            ->where('intimacy_level', '!=', self::NEVER_PUBLISH)
+            ->tap(fn ($q) => $this->scopePublishableIntimacy($q))
             ->where('mime_type', 'like', 'image/%')
             ->when(! empty($usedFilenames), fn ($q) => $q->whereNotIn('filename', $usedFilenames))
             ->when(! empty($keywords), fn ($q) => $q->where(function ($outer) use ($keywords) {
@@ -131,6 +131,19 @@ class BulkLibraryController extends Controller
             'available' => count($rows),
             'shortfall' => count($rows) < $numPosts,
         ]);
+    }
+
+    /**
+     * Restreint une requête aux médias publiables : tout sauf `never_publish`.
+     * `orWhereNull` est indispensable car en SQL `intimacy_level != 'x'` écarte
+     * silencieusement les lignes à NULL (un média non classé serait alors invisible).
+     */
+    private function scopePublishableIntimacy($query): void
+    {
+        $query->where(function ($q) {
+            $q->where('intimacy_level', '!=', self::NEVER_PUBLISH)
+                ->orWhereNull('intimacy_level');
+        });
     }
 
     /**
@@ -208,8 +221,9 @@ class BulkLibraryController extends Controller
     {
         $all = MediaFolder::orderBy('sort_order')->orderBy('name')->get();
 
-        // Compte des images publiables par dossier (non récursif).
-        $imageCounts = MediaFile::where('intimacy_level', '!=', self::NEVER_PUBLISH)
+        // Compte des images publiables par dossier (direct, non récursif).
+        $imageCounts = MediaFile::query()
+            ->tap(fn ($q) => $this->scopePublishableIntimacy($q))
             ->where('mime_type', 'like', 'image/%')
             ->selectRaw('folder_id, count(*) as c')
             ->groupBy('folder_id')

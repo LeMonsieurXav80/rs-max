@@ -97,8 +97,8 @@
 
                 <p class="mt-4 text-xs text-gray-500 border-t border-gray-100 pt-3">
                     <span class="font-medium text-gray-700" x-text="selectedFolderIds().length"></span> dossier(s) coché(s) ·
-                    <span class="font-medium text-gray-700" x-text="totalSelectedImages()"></span> image(s) au total
-                    <span class="text-gray-400">(avant filtre mots-clés et exclusions)</span>
+                    <span class="font-medium text-gray-700" x-text="totalSelectedImages()"></span> image(s) publiables
+                    <span class="text-gray-400">— hors vidéos, images « à classer » (sans dossier), filtre mots-clés et déjà planifiées/publiées</span>
                 </p>
             </div>
 
