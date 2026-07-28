@@ -17,17 +17,18 @@ use Illuminate\View\View;
  * automatiquement dans les dossiers cochés de la médiathèque au lieu d'être
  * uploadés à la main.
  *
- * Garde-fous imposés CÔTÉ SERVEUR (indépendamment de l'UI) :
- *  - seuls les médias `intimacy_level = public` sont tirables ;
- *  - les dossiers effectivement privés (privés ou sous un ancêtre privé) sont
- *    exclus, même si leur id est passé explicitement à `pick()` ;
+ * Garde-fous :
+ *  - route WEB authentifiée à usage interne : les médias intimes/privés SONT
+ *    tirables ici. La protection « public only » vit sur l'API publique à token
+ *    ({@see \App\Http\Controllers\Api\MediaApiController}), pas sur cet outil ;
+ *  - les médias marqués `never_publish` ne sont jamais tirés ;
  *  - une image déjà référencée par un post `scheduled|publishing|published`
  *    n'est jamais re-tirée.
  */
 class BulkLibraryController extends Controller
 {
-    /** Seul niveau d'intimité tirable en masse (aligné sur MediaApiController::SAFE_INTIMACY). */
-    private const SAFE_INTIMACY = ['public'];
+    /** Niveau d'intimité explicitement exclu de toute publication. */
+    private const NEVER_PUBLISH = 'never_publish';
 
     /** Statuts d'un post qui « consomment » définitivement une image. */
     private const USED_STATUSES = ['scheduled', 'publishing', 'published'];
@@ -63,38 +64,46 @@ class BulkLibraryController extends Controller
             'folder_ids.*' => 'integer|exists:media_folders,id',
             'num_posts' => 'required|integer|min:1|max:100',
             'images_per_post' => 'required|integer|min:1|max:10',
+            'keywords' => 'nullable|array',
+            'keywords.*' => 'string|max:100',
         ]);
 
         $numPosts = (int) $validated['num_posts'];
         $imagesPerPost = (int) $validated['images_per_post'];
+        $folderIds = $validated['folder_ids'];
 
-        // Garde-fou : ne garder que les dossiers effectivement PUBLICS, quelle que
-        // soit la liste reçue (protège contre un id de dossier privé forgé en API).
-        $folders = MediaFolder::whereIn('id', $validated['folder_ids'])->get();
-        $publicFolderIds = $folders
-            ->reject(fn (MediaFolder $f) => $f->isEffectivelyPrivate())
-            ->pluck('id')
-            ->all();
-
-        if (empty($publicFolderIds)) {
-            return response()->json([
-                'rows' => [],
-                'requested' => $numPosts,
-                'available' => 0,
-                'shortfall' => true,
-                'message' => 'Aucun dossier public sélectionné.',
-            ]);
-        }
+        // Mots-clés normalisés (trim + non vides). Une image est retenue si elle
+        // matche AU MOINS UN mot-clé (OR).
+        $keywords = array_values(array_filter(
+            array_map(fn ($k) => trim((string) $k), $validated['keywords'] ?? []),
+            fn ($k) => $k !== ''
+        ));
 
         // Ensemble des filenames déjà consommés (planifiés OU publiés).
         $usedFilenames = $this->usedFilenames();
 
-        // Images éligibles : public + type image + pas déjà utilisées.
+        // Images éligibles : dans les dossiers cochés, type image, non « never_publish »,
+        // pas déjà planifiées/publiées, et — si des mots-clés sont fournis — matchant au
+        // moins un mot-clé sur tags / description / lieu (ville, région, pays).
+        // LIKE sur le texte brut de thematic_tags (JSON) : portable SQLite (dev) + MySQL (prod),
+        // là où JSON_SEARCH ne l'est pas.
         $eligible = MediaFile::query()
-            ->whereIn('folder_id', $publicFolderIds)
-            ->whereIn('intimacy_level', self::SAFE_INTIMACY)
+            ->whereIn('folder_id', $folderIds)
+            ->where('intimacy_level', '!=', self::NEVER_PUBLISH)
             ->where('mime_type', 'like', 'image/%')
             ->when(! empty($usedFilenames), fn ($q) => $q->whereNotIn('filename', $usedFilenames))
+            ->when(! empty($keywords), fn ($q) => $q->where(function ($outer) use ($keywords) {
+                foreach ($keywords as $kw) {
+                    $like = '%'.strtolower($kw).'%';
+                    $outer->orWhere(function ($w) use ($like) {
+                        $w->whereRaw('LOWER(thematic_tags) LIKE ?', [$like])
+                            ->orWhereRaw('LOWER(description_fr) LIKE ?', [$like])
+                            ->orWhereRaw('LOWER(city) LIKE ?', [$like])
+                            ->orWhereRaw('LOWER(region) LIKE ?', [$like])
+                            ->orWhereRaw('LOWER(country) LIKE ?', [$like]);
+                    });
+                }
+            }))
             ->get(['id', 'filename', 'mime_type', 'folder_id']);
 
         // Tirage round-robin entre dossiers pour maximiser la variété.
@@ -188,9 +197,10 @@ class BulkLibraryController extends Controller
     }
 
     /**
-     * Construit l'arbre des dossiers PUBLICS (à plat, avec depth/path), avec le
-     * nombre d'images publiques dans chaque dossier. Les dossiers privés (ou sous
-     * un ancêtre privé) sont totalement omis.
+     * Construit l'arbre COMPLET des dossiers (à plat, avec depth/path), y compris
+     * les dossiers privés/intimes — cet outil est interne. Le flag `is_private`
+     * permet à l'UI d'afficher un cadenas. `files_count` = images publiables du
+     * dossier (tout sauf `never_publish`), non récursif.
      *
      * @return array<int,array<string,mixed>>
      */
@@ -198,8 +208,8 @@ class BulkLibraryController extends Controller
     {
         $all = MediaFolder::orderBy('sort_order')->orderBy('name')->get();
 
-        // Compte des images publiques par dossier (non récursif).
-        $imageCounts = MediaFile::whereIn('intimacy_level', self::SAFE_INTIMACY)
+        // Compte des images publiables par dossier (non récursif).
+        $imageCounts = MediaFile::where('intimacy_level', '!=', self::NEVER_PUBLISH)
             ->where('mime_type', 'like', 'image/%')
             ->selectRaw('folder_id, count(*) as c')
             ->groupBy('folder_id')
@@ -210,9 +220,6 @@ class BulkLibraryController extends Controller
         $tree = [];
         $walk = function ($parentId, int $depth, string $prefix) use (&$walk, &$tree, $byParent, $imageCounts) {
             foreach ($byParent->get($parentId, collect()) as $folder) {
-                if ($folder->is_private) {
-                    continue; // coupe toute la branche privée
-                }
                 $path = $prefix === '' ? $folder->name : $prefix.' / '.$folder->name;
                 $tree[] = [
                     'id' => $folder->id,
@@ -221,6 +228,7 @@ class BulkLibraryController extends Controller
                     'depth' => $depth,
                     'path' => $path,
                     'color' => $folder->color,
+                    'is_private' => (bool) $folder->is_private,
                     'files_count' => (int) ($imageCounts[$folder->id] ?? 0),
                 ];
                 $walk($folder->id, $depth + 1, $path);

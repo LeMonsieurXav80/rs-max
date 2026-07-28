@@ -57,16 +57,33 @@
                                    x-effect="$el.indeterminate = boxIndeterminate(f.id)"
                                    class="rounded border-gray-300 text-indigo-600 focus:ring-indigo-500 h-4 w-4">
                             <span class="w-2.5 h-2.5 rounded-full flex-shrink-0" :style="'background:' + (f.color || '#cbd5e1')"></span>
+                            <svg x-show="f.is_private" class="w-3.5 h-3.5 text-amber-500 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1.8" title="Dossier privé / intime">
+                                <path stroke-linecap="round" stroke-linejoin="round" d="M16.5 10.5V6.75a4.5 4.5 0 1 0-9 0v3.75m-.75 11.25h10.5a2.25 2.25 0 0 0 2.25-2.25v-6.75a2.25 2.25 0 0 0-2.25-2.25H6.75a2.25 2.25 0 0 0-2.25 2.25v6.75a2.25 2.25 0 0 0 2.25 2.25Z"/>
+                            </svg>
                             <span class="text-sm text-gray-700 truncate" x-text="f.name"></span>
                             <span class="text-xs text-gray-400 ml-auto flex-shrink-0" x-text="f.files_count + ' img'"></span>
                         </label>
                     </template>
                 </div>
 
+                {{-- Filtre par mots-clés --}}
+                <div class="mt-4 border-t border-gray-100 pt-4">
+                    <label class="block text-sm font-medium text-gray-700 mb-1">
+                        Filtrer par mots-clés <span class="text-gray-400 font-normal">(optionnel)</span>
+                    </label>
+                    <input type="text" x-model="keywordsInput"
+                        placeholder="ex : plage, coucher de soleil, algarve"
+                        class="w-full rounded-lg border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 text-sm">
+                    <p class="mt-1 text-xs text-gray-400">
+                        Séparez par des virgules. Dans les dossiers cochés, une image est retenue si elle contient
+                        <span class="font-medium">au moins un</span> des mots-clés (tags, description ou lieu).
+                    </p>
+                </div>
+
                 <p class="mt-4 text-xs text-gray-500 border-t border-gray-100 pt-3">
                     <span class="font-medium text-gray-700" x-text="selectedFolderIds().length"></span> dossier(s) coché(s) ·
                     <span class="font-medium text-gray-700" x-text="totalSelectedImages()"></span> image(s) au total
-                    <span class="text-gray-400">(hors exclusions)</span>
+                    <span class="text-gray-400">(avant filtre mots-clés et exclusions)</span>
                 </p>
             </div>
 
@@ -408,6 +425,7 @@ function bulkLibraryEditor() {
         // Arbre de dossiers (aplati, avec depth/path/files_count).
         folders: @json($folders),
         checked: {},
+        keywordsInput: '',
         picking: false,
         pickError: null,
         shortfallMsg: null,
@@ -466,6 +484,9 @@ function bulkLibraryEditor() {
         },
         totalSelectedImages() {
             return this.folders.filter(f => this.checked[f.id]).reduce((s, f) => s + (f.files_count || 0), 0);
+        },
+        parsedKeywords() {
+            return this.keywordsInput.split(',').map(s => s.trim()).filter(Boolean);
         },
 
         // ── Génération des dates (partagé avec addRow) ─────────────
@@ -527,13 +548,16 @@ function bulkLibraryEditor() {
                         folder_ids: folderIds,
                         num_posts: this.numPosts,
                         images_per_post: this.imagesPerPost,
+                        keywords: this.parsedKeywords(),
                     }),
                 });
                 const data = await resp.json();
 
                 const mediaRows = data.rows || [];
                 if (mediaRows.length === 0) {
-                    this.pickError = data.message || "Aucune image éligible dans les dossiers choisis (toutes déjà planifiées/publiées ?).";
+                    this.pickError = data.message || (this.parsedKeywords().length
+                        ? "Aucune image ne correspond à ces mots-clés dans les dossiers cochés (ou déjà planifiées/publiées)."
+                        : "Aucune image éligible dans les dossiers choisis (toutes déjà planifiées/publiées ?).");
                     this.picking = false;
                     return;
                 }
@@ -596,6 +620,7 @@ function bulkLibraryEditor() {
                         folder_ids: folderIds,
                         num_posts: 1,
                         images_per_post: this.imagesPerPost,
+                        keywords: this.parsedKeywords(),
                     }),
                 });
                 const data = await resp.json();
