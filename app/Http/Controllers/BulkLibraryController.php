@@ -231,8 +231,22 @@ class BulkLibraryController extends Controller
 
         $byParent = $all->groupBy('parent_id');
 
+        // Compte RÉCURSIF (dossier + tous ses descendants), mémoïsé.
+        $recursive = [];
+        $computeRec = function ($id) use (&$computeRec, &$recursive, $byParent, $imageCounts) {
+            if (array_key_exists($id, $recursive)) {
+                return $recursive[$id];
+            }
+            $total = (int) ($imageCounts[$id] ?? 0);
+            foreach ($byParent->get($id, collect()) as $child) {
+                $total += $computeRec($child->id);
+            }
+
+            return $recursive[$id] = $total;
+        };
+
         $tree = [];
-        $walk = function ($parentId, int $depth, string $prefix) use (&$walk, &$tree, $byParent, $imageCounts) {
+        $walk = function ($parentId, int $depth, string $prefix) use (&$walk, &$tree, $byParent, $imageCounts, $computeRec) {
             foreach ($byParent->get($parentId, collect()) as $folder) {
                 $path = $prefix === '' ? $folder->name : $prefix.' / '.$folder->name;
                 $tree[] = [
@@ -244,6 +258,7 @@ class BulkLibraryController extends Controller
                     'color' => $folder->color,
                     'is_private' => (bool) $folder->is_private,
                     'files_count' => (int) ($imageCounts[$folder->id] ?? 0),
+                    'files_count_total' => $computeRec($folder->id),
                 ];
                 $walk($folder->id, $depth + 1, $path);
             }
