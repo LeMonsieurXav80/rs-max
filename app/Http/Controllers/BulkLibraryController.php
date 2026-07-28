@@ -18,18 +18,16 @@ use Illuminate\View\View;
  * uploadés à la main.
  *
  * Garde-fous :
- *  - route WEB authentifiée à usage interne : les médias intimes/privés SONT
- *    tirables ici. La protection « public only » vit sur l'API publique à token
+ *  - route WEB authentifiée à usage interne : TOUS les niveaux d'intimité sont
+ *    tirables ici (public, prive, semi_prive, never_publish). Le marqueur
+ *    `never_publish` signifie « non publiable via l'API publique », pas « jamais
+ *    publiable » : la protection « public only » vit uniquement sur l'API à token
  *    ({@see \App\Http\Controllers\Api\MediaApiController}), pas sur cet outil ;
- *  - les médias marqués `never_publish` ne sont jamais tirés ;
  *  - une image déjà référencée par un post `scheduled|publishing|published`
  *    n'est jamais re-tirée.
  */
 class BulkLibraryController extends Controller
 {
-    /** Niveau d'intimité explicitement exclu de toute publication. */
-    private const NEVER_PUBLISH = 'never_publish';
-
     /** Statuts d'un post qui « consomment » définitivement une image. */
     private const USED_STATUSES = ['scheduled', 'publishing', 'published'];
 
@@ -82,14 +80,14 @@ class BulkLibraryController extends Controller
         // Ensemble des filenames déjà consommés (planifiés OU publiés).
         $usedFilenames = $this->usedFilenames();
 
-        // Images éligibles : dans les dossiers cochés, type image, non « never_publish »,
-        // pas déjà planifiées/publiées, et — si des mots-clés sont fournis — matchant au
-        // moins un mot-clé sur tags / description / lieu (ville, région, pays).
+        // Images éligibles : dans les dossiers cochés, type image (tous niveaux
+        // d'intimité — outil interne), pas déjà planifiées/publiées, et — si des
+        // mots-clés sont fournis — matchant au moins un mot-clé sur tags /
+        // description / lieu (ville, région, pays).
         // LIKE sur le texte brut de thematic_tags (JSON) : portable SQLite (dev) + MySQL (prod),
         // là où JSON_SEARCH ne l'est pas.
         $eligible = MediaFile::query()
             ->whereIn('folder_id', $folderIds)
-            ->tap(fn ($q) => $this->scopePublishableIntimacy($q))
             ->where('mime_type', 'like', 'image/%')
             ->when(! empty($usedFilenames), fn ($q) => $q->whereNotIn('filename', $usedFilenames))
             ->when(! empty($keywords), fn ($q) => $q->where(function ($outer) use ($keywords) {
@@ -131,19 +129,6 @@ class BulkLibraryController extends Controller
             'available' => count($rows),
             'shortfall' => count($rows) < $numPosts,
         ]);
-    }
-
-    /**
-     * Restreint une requête aux médias publiables : tout sauf `never_publish`.
-     * `orWhereNull` est indispensable car en SQL `intimacy_level != 'x'` écarte
-     * silencieusement les lignes à NULL (un média non classé serait alors invisible).
-     */
-    private function scopePublishableIntimacy($query): void
-    {
-        $query->where(function ($q) {
-            $q->where('intimacy_level', '!=', self::NEVER_PUBLISH)
-                ->orWhereNull('intimacy_level');
-        });
     }
 
     /**
@@ -221,9 +206,9 @@ class BulkLibraryController extends Controller
     {
         $all = MediaFolder::orderBy('sort_order')->orderBy('name')->get();
 
-        // Compte des images publiables par dossier (direct, non récursif).
+        // Compte des images par dossier (direct, non récursif). Tous niveaux
+        // d'intimité — outil interne, tout est publiable ici.
         $imageCounts = MediaFile::query()
-            ->tap(fn ($q) => $this->scopePublishableIntimacy($q))
             ->where('mime_type', 'like', 'image/%')
             ->selectRaw('folder_id, count(*) as c')
             ->groupBy('folder_id')
