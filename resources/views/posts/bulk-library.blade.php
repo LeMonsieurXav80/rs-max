@@ -38,6 +38,9 @@
                 <div class="flex items-center justify-between mb-4">
                     <h2 class="text-lg font-semibold text-gray-900">Dossiers sources</h2>
                     <div class="flex items-center gap-2 text-xs">
+                        <button type="button" @click="expandAll(true)" class="px-2 py-1 rounded-lg bg-gray-100 text-gray-600 hover:bg-gray-200 transition-colors">Tout déplier</button>
+                        <button type="button" @click="expandAll(false)" class="px-2 py-1 rounded-lg bg-gray-100 text-gray-600 hover:bg-gray-200 transition-colors">Tout replier</button>
+                        <span class="text-gray-300">·</span>
                         <button type="button" @click="selectAllFolders(true)" class="px-2 py-1 rounded-lg bg-gray-100 text-gray-600 hover:bg-gray-200 transition-colors">Tout cocher</button>
                         <button type="button" @click="selectAllFolders(false)" class="px-2 py-1 rounded-lg bg-gray-100 text-gray-600 hover:bg-gray-200 transition-colors">Tout décocher</button>
                     </div>
@@ -49,20 +52,32 @@
 
                 <div class="max-h-96 overflow-y-auto pr-1 space-y-0.5" x-show="folders.length > 0">
                     <template x-for="f in folders" :key="f.id">
-                        <label class="flex items-center gap-2 py-1.5 rounded-lg hover:bg-gray-50 cursor-pointer"
-                               :style="'padding-left:' + (f.depth * 18 + 4) + 'px'">
-                            <input type="checkbox"
-                                   :checked="!!checked[f.id]"
-                                   @change="toggleFolder(f.id)"
-                                   x-effect="$el.indeterminate = boxIndeterminate(f.id)"
-                                   class="rounded border-gray-300 text-indigo-600 focus:ring-indigo-500 h-4 w-4">
-                            <span class="w-2.5 h-2.5 rounded-full flex-shrink-0" :style="'background:' + (f.color || '#cbd5e1')"></span>
-                            <svg x-show="f.is_private" class="w-3.5 h-3.5 text-amber-500 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1.8" title="Dossier privé / intime">
-                                <path stroke-linecap="round" stroke-linejoin="round" d="M16.5 10.5V6.75a4.5 4.5 0 1 0-9 0v3.75m-.75 11.25h10.5a2.25 2.25 0 0 0 2.25-2.25v-6.75a2.25 2.25 0 0 0-2.25-2.25H6.75a2.25 2.25 0 0 0-2.25 2.25v6.75a2.25 2.25 0 0 0 2.25 2.25Z"/>
-                            </svg>
-                            <span class="text-sm text-gray-700 truncate" x-text="f.name"></span>
-                            <span class="text-xs text-gray-400 ml-auto flex-shrink-0" x-text="f.files_count + ' img'"></span>
-                        </label>
+                        <div class="flex items-center gap-1 py-1.5 rounded-lg hover:bg-gray-50"
+                             x-show="isFolderVisible(f)"
+                             :style="'padding-left:' + (f.depth * 18 + 4) + 'px'">
+                            {{-- Chevron déplier/replier (ou espaceur pour les feuilles) --}}
+                            <button type="button" x-show="hasChildren(f.id)" @click="toggleExpand(f.id)"
+                                    class="flex-shrink-0 w-4 h-4 flex items-center justify-center text-gray-400 hover:text-gray-600">
+                                <svg class="w-3.5 h-3.5 transition-transform" :class="expanded[f.id] && 'rotate-90'" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2.5">
+                                    <path stroke-linecap="round" stroke-linejoin="round" d="m8.25 4.5 7.5 7.5-7.5 7.5" />
+                                </svg>
+                            </button>
+                            <span x-show="!hasChildren(f.id)" class="flex-shrink-0 w-4"></span>
+
+                            <label class="flex items-center gap-2 flex-1 min-w-0 cursor-pointer">
+                                <input type="checkbox"
+                                       :checked="!!checked[f.id]"
+                                       @change="toggleFolder(f.id)"
+                                       x-effect="$el.indeterminate = boxIndeterminate(f.id)"
+                                       class="rounded border-gray-300 text-indigo-600 focus:ring-indigo-500 h-4 w-4">
+                                <span class="w-2.5 h-2.5 rounded-full flex-shrink-0" :style="'background:' + (f.color || '#cbd5e1')"></span>
+                                <svg x-show="f.is_private" class="w-3.5 h-3.5 text-amber-500 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1.8" title="Dossier privé / intime">
+                                    <path stroke-linecap="round" stroke-linejoin="round" d="M16.5 10.5V6.75a4.5 4.5 0 1 0-9 0v3.75m-.75 11.25h10.5a2.25 2.25 0 0 0 2.25-2.25v-6.75a2.25 2.25 0 0 0-2.25-2.25H6.75a2.25 2.25 0 0 0-2.25 2.25v6.75a2.25 2.25 0 0 0 2.25 2.25Z"/>
+                                </svg>
+                                <span class="text-sm text-gray-700 truncate" x-text="f.name"></span>
+                                <span class="text-xs text-gray-400 ml-auto flex-shrink-0" x-text="f.files_count + ' img'"></span>
+                            </label>
+                        </div>
                     </template>
                 </div>
 
@@ -425,6 +440,7 @@ function bulkLibraryEditor() {
         // Arbre de dossiers (aplati, avec depth/path/files_count).
         folders: @json($folders),
         checked: {},
+        expanded: {},
         keywordsInput: '',
         picking: false,
         pickError: null,
@@ -456,6 +472,28 @@ function bulkLibraryEditor() {
         // ── Arbre de dossiers ──────────────────────────────────────
         childrenOf(id) {
             return this.folders.filter(f => f.parent_id === id).map(f => f.id);
+        },
+        hasChildren(id) {
+            return this.folders.some(f => f.parent_id === id);
+        },
+        // Visible seulement si TOUS ses ancêtres sont dépliés (racines toujours visibles).
+        isFolderVisible(f) {
+            let pid = f.parent_id;
+            while (pid !== null && pid !== undefined) {
+                if (!this.expanded[pid]) return false;
+                const parent = this.folders.find(x => x.id === pid);
+                if (!parent) break;
+                pid = parent.parent_id;
+            }
+            return true;
+        },
+        toggleExpand(id) {
+            this.expanded[id] = !this.expanded[id];
+        },
+        expandAll(state) {
+            for (const f of this.folders) {
+                if (this.hasChildren(f.id)) this.expanded[f.id] = state;
+            }
         },
         descendantsOf(id) {
             const out = [];
