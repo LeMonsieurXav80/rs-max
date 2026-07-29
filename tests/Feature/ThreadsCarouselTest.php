@@ -92,6 +92,57 @@ class ThreadsCarouselTest extends TestCase
         $this->assertSame(4, $childSeq);
     }
 
+    public function test_carousel_rebuilds_when_container_vanishes_at_publish(): void
+    {
+        $childSeq = 0;
+        $parentAttempts = 0;
+        $publishAttempts = 0;
+
+        Http::fake(function (Request $request) use (&$childSeq, &$parentAttempts, &$publishAttempts) {
+            $data = $request->data();
+
+            if ($request->method() === 'GET') {
+                return Http::response(['status' => 'FINISHED', 'permalink' => 'https://threads.net/p/1']);
+            }
+
+            // Publication finale : 1er conteneur « introuvable » (4279009), 2e OK.
+            if (str_contains($request->url(), '/threads_publish')) {
+                $publishAttempts++;
+
+                if ($publishAttempts === 1) {
+                    return Http::response([
+                        'error' => [
+                            'message' => 'The requested resource does not exist',
+                            'type' => 'OAuthException',
+                            'code' => 24,
+                            'error_subcode' => 4279009,
+                            'is_transient' => false,
+                        ],
+                    ], 400);
+                }
+
+                return Http::response(['id' => 'PUBLISHED_ID']);
+            }
+
+            if (($data['media_type'] ?? null) === 'CAROUSEL') {
+                $parentAttempts++;
+
+                return Http::response(['id' => 'CAROUSEL_ID_'.$parentAttempts]);
+            }
+
+            return Http::response(['id' => 'child_'.(++$childSeq)]);
+        });
+
+        $result = (new ThreadsAdapter)->publish($this->account(), 'Légende', $this->media());
+
+        $this->assertTrue($result['success'], 'Le carrousel doit être reconstruit puis republié après un conteneur introuvable (4279009)');
+        $this->assertSame('PUBLISHED_ID', $result['external_id']);
+        $this->assertSame(2, $publishAttempts, 'La publication doit être réessayée exactement une fois');
+        $this->assertSame(2, $parentAttempts, 'Un nouveau conteneur parent doit être assemblé au 2e essai');
+        // 2 images × 2 tentatives = 4 enfants recréés (rebuild complet).
+        $this->assertSame(4, $childSeq);
+    }
+
     public function test_carousel_retries_child_creation_on_transient_error(): void
     {
         $childPosts = 0;

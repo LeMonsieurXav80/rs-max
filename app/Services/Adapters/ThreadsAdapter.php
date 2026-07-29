@@ -16,15 +16,20 @@ class ThreadsAdapter implements PlatformAdapterInterface, ThreadableAdapterInter
     private const VIDEO_POLL_INTERVAL = 10;
 
     // Threads' carousel/container endpoints are intermittently flaky: they return
-    // HTTP 5xx with a generic `code=1` "An unknown error occurred", or reject a
-    // freshly-created carousel child as expired (subcode 4279004). We retry those.
+    // HTTP 5xx with a generic `code=1` "An unknown error occurred", reject a
+    // freshly-created carousel child as expired (subcode 4279004), or lose the
+    // parent container between assembly and publish (subcode 4279009,
+    // "resource does not exist" / « contenu multimédia introuvable »). We retry
+    // those by rebuilding the whole carousel from scratch.
     private const TRANSIENT_MAX_ATTEMPTS = 3;
 
     private const TRANSIENT_BACKOFF = 3;
 
-    private const CAROUSEL_ASSEMBLY_MAX_ATTEMPTS = 2;
+    private const CAROUSEL_ASSEMBLY_MAX_ATTEMPTS = 3;
 
     private const INVALID_CHILDREN_SUBCODE = 4279004;
+
+    private const EXPIRED_RESOURCE_SUBCODE = 4279009;
 
     public function publish(SocialAccount $account, string $content, ?array $media = null, ?array $options = null): array
     {
@@ -303,7 +308,21 @@ class ThreadsAdapter implements PlatformAdapterInterface, ThreadableAdapterInter
             $carouselId = $this->extractId($carouselResponse, 'carousel container creation');
 
             if ($carouselId !== null) {
-                return $this->publishContainer($userId, $accessToken, $carouselId);
+                $publishResult = $this->publishContainer($userId, $accessToken, $carouselId);
+
+                // Threads can also lose the parent container between assembly and
+                // finalize (subcode 4279009). Rebuild the whole carousel and retry.
+                if ($publishResult['success'] || empty($publishResult['retryable_carousel']) || $attempt >= self::CAROUSEL_ASSEMBLY_MAX_ATTEMPTS) {
+                    return $publishResult;
+                }
+
+                Log::warning('ThreadsAdapter: carousel container vanished at publish, rebuilding', [
+                    'attempt' => $attempt,
+                    'carousel_id' => $carouselId,
+                ]);
+                $lastError = $publishResult;
+
+                continue;
             }
 
             $lastError = $this->errorFromResponse($carouselResponse, 'Failed to create carousel container');
@@ -425,6 +444,7 @@ class ThreadsAdapter implements PlatformAdapterInterface, ThreadableAdapterInter
 
         $error = $body['error']['message'] ?? 'Unknown error during threads_publish';
         $code = $body['error']['code'] ?? null;
+        $subcode = (int) ($body['error']['error_subcode'] ?? 0);
 
         Log::error('ThreadsAdapter: threads_publish failed', [
             'creation_id' => $creationId,
@@ -442,6 +462,9 @@ class ThreadsAdapter implements PlatformAdapterInterface, ThreadableAdapterInter
             'success' => false,
             'external_id' => null,
             'error' => $detail,
+            // Signals publishCarousel() to rebuild the carousel from scratch: the
+            // parent/children vanished or expired between assembly and finalize.
+            'retryable_carousel' => in_array($subcode, [self::INVALID_CHILDREN_SUBCODE, self::EXPIRED_RESOURCE_SUBCODE], true),
         ];
     }
 
