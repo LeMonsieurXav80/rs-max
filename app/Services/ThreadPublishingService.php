@@ -18,6 +18,7 @@ use App\Services\Adapters\ThreadsAdapter;
 use App\Services\Adapters\TwitterAdapter;
 use App\Services\Adapters\YouTubeAdapter;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Facades\URL;
 
 class ThreadPublishingService
@@ -78,7 +79,15 @@ class ThreadPublishingService
             }
 
             $content = $this->getSegmentContentForAccount($segment, $account);
-            $media = $this->resolveMediaUrls($segment->media);
+
+            // Incrustation titre/sous-titre : uniquement sur la 1ere image du 1er post publie.
+            $rawSegmentMedia = $segment->media;
+            $overlayTemp = null;
+            if ($thread->visual_overlay_enabled && $previousExternalId === null && ! empty($rawSegmentMedia)) {
+                [$rawSegmentMedia, $overlayTemp] = $this->applyFirstImageOverlay($thread, $rawSegmentMedia);
+            }
+
+            $media = $this->resolveMediaUrls($rawSegmentMedia);
 
             // Threads API: video replies break the thread chain, so strip videos from replies.
             if ($account->platform->slug === 'threads' && $previousExternalId !== null && ! empty($media)) {
@@ -167,6 +176,8 @@ class ThreadPublishingService
 
                 $this->markRemainingSegments($segments, $account, $segment->position, 'failed', 'Exception in previous segment');
                 break;
+            } finally {
+                $this->cleanupOverlayTemp($overlayTemp);
             }
 
             // Rate limiting between segments.
@@ -216,8 +227,21 @@ class ThreadPublishingService
             $allMedia = array_slice($allMedia, 0, 10);
         }
 
-        $media = $this->resolveMediaUrls(! empty($allMedia) ? $allMedia : null);
-        $result = $adapter->publish($account, $compiledContent, $media);
+        // Incrustation optionnelle du titre/sous-titre sur la premiere image.
+        // $allMedia (original) reste intact pour le tracking d'usage plus bas.
+        $rawMedia = ! empty($allMedia) ? $allMedia : null;
+        $overlayTemp = null;
+        if ($thread->visual_overlay_enabled && $rawMedia) {
+            [$rawMedia, $overlayTemp] = $this->applyFirstImageOverlay($thread, $rawMedia);
+        }
+
+        $media = $this->resolveMediaUrls($rawMedia);
+
+        try {
+            $result = $adapter->publish($account, $compiledContent, $media);
+        } finally {
+            $this->cleanupOverlayTemp($overlayTemp);
+        }
 
         // Mark first segment with external_id, rest as skipped.
         $firstSegment = $segments->first();
@@ -583,6 +607,82 @@ class ThreadPublishingService
             'bluesky' => new BlueskyAdapter,
             default => null,
         };
+    }
+
+    /**
+     * Incruste titre + sous-titre sur la PREMIERE image du tableau media (brut, non
+     * resolu). Retourne [nouveauMedia, ?tempFilename]. Le tableau d'origine n'est
+     * jamais mute (il sert au tracking d'usage sur l'image source). L'image composee
+     * est ephemere : elle vit dans media/ le temps de l'upload puis est supprimee via
+     * cleanupOverlayTemp(). Toute erreur => fallback silencieux sur l'image d'origine.
+     *
+     * @return array{0: array, 1: string|null}
+     */
+    private function applyFirstImageOverlay(Thread $thread, array $media): array
+    {
+        // Localise le premier item image (on ignore les videos).
+        $targetIndex = null;
+        foreach ($media as $i => $item) {
+            $type = $item['type'] ?? null;
+            $url = $item['url'] ?? '';
+            $isVideo = $type === 'video' || preg_match('/\.(mp4|mov|webm|m4v)$/i', $url);
+            $isImage = $type === 'image' || (! $type && preg_match('/\.(jpe?g|png|webp|gif)$/i', $url));
+            if ($isImage && ! $isVideo) {
+                $targetIndex = $i;
+                break;
+            }
+        }
+
+        if ($targetIndex === null) {
+            return [$media, null];
+        }
+
+        $sourceUrl = $media[$targetIndex]['url'] ?? '';
+        if (! str_starts_with($sourceUrl, '/media/')) {
+            return [$media, null]; // image externe : pas de fichier source local a composer
+        }
+
+        $sourceFilename = basename(parse_url($sourceUrl, PHP_URL_PATH) ?: $sourceUrl);
+        $sourcePath = Storage::disk('local')->path("media/{$sourceFilename}");
+        if (! is_file($sourcePath)) {
+            return [$media, null];
+        }
+
+        $tempFilename = app(TemplateImageService::class)->renderOverlayToTemp(
+            $thread->mediaTemplate,
+            $sourcePath,
+            (string) ($thread->visual_overlay_title ?? ''),
+            $thread->visual_overlay_subtitle,
+        );
+
+        if (! $tempFilename) {
+            return [$media, null];
+        }
+
+        // Copie superficielle : on ne touche pas au tableau d'origine.
+        $media[$targetIndex]['url'] = '/media/'.$tempFilename;
+        $media[$targetIndex]['type'] = 'image';
+
+        return [$media, $tempFilename];
+    }
+
+    /**
+     * Supprime l'image composee ephemere. Ne journalise qu'en cas d'echec reel.
+     */
+    private function cleanupOverlayTemp(?string $tempFilename): void
+    {
+        if (! $tempFilename) {
+            return;
+        }
+
+        try {
+            Storage::disk('local')->delete("media/{$tempFilename}");
+        } catch (\Throwable $e) {
+            Log::warning('ThreadPublishingService: echec suppression overlay temporaire', [
+                'file' => $tempFilename,
+                'error' => $e->getMessage(),
+            ]);
+        }
     }
 
     private function resolveMediaUrls(?array $media): ?array

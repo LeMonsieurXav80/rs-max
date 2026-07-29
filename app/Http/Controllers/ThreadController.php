@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Models\HookCategory;
+use App\Models\MediaTemplate;
 use App\Models\Persona;
 use App\Models\Platform;
 use App\Models\RedditSource;
@@ -14,6 +15,7 @@ use App\Models\ThreadSegmentPlatform;
 use App\Models\WpSource;
 use App\Models\YtSource;
 use App\Services\AiAssistService;
+use App\Services\TemplateImageService;
 use App\Services\ThreadBoostService;
 use App\Services\ThreadContentGenerationService;
 use App\Services\ThreadPublishingService;
@@ -21,6 +23,7 @@ use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Storage;
 use Illuminate\View\View;
 
 class ThreadController extends Controller
@@ -114,7 +117,53 @@ class ThreadController extends Controller
             ->limit(50)
             ->get();
 
-        return view('threads.create', compact('accounts', 'platforms', 'personas', 'hookCategories', 'sourceTypeCounts', 'accountGroups', 'boostableThreads'));
+        $overlayTemplates = MediaTemplate::where('is_active', true)->orderBy('name')->get();
+
+        return view('threads.create', compact('accounts', 'platforms', 'personas', 'hookCategories', 'sourceTypeCounts', 'accountGroups', 'boostableThreads', 'overlayTemplates'));
+    }
+
+    /**
+     * AJAX : rend un aperçu de l'incrustation titre/sous-titre sur une image donnée,
+     * sans rien persister (ni MediaFile, ni fichier temporaire). Utilisé par les
+     * formulaires de création/édition de fil pour prévisualiser l'overlay avant
+     * publication. Retourne un data-URI JPEG affichable directement dans un <img>.
+     */
+    public function overlayPreview(Request $request, TemplateImageService $templateImage): JsonResponse
+    {
+        $validated = $request->validate([
+            'media_template_id' => 'required|integer|exists:media_templates,id',
+            'source' => 'required|string',
+            'title' => 'nullable|string|max:120',
+            'subtitle' => 'nullable|string|max:160',
+        ]);
+
+        $title = trim((string) ($validated['title'] ?? ''));
+        $subtitle = trim((string) ($validated['subtitle'] ?? ''));
+        if ($title === '' && $subtitle === '') {
+            return response()->json(['error' => 'Ajoute un titre ou un sous-titre pour générer l’aperçu.'], 422);
+        }
+
+        // Résout l'image source : uniquement une image locale servie sous /media/.
+        // basename() neutralise toute tentative de traversée de chemin.
+        $path = parse_url($validated['source'], PHP_URL_PATH) ?: $validated['source'];
+        if (! str_contains($path, '/media/')) {
+            return response()->json(['error' => 'Aperçu indisponible pour une image externe.'], 422);
+        }
+
+        $sourcePath = Storage::disk('local')->path('media/'.basename($path));
+        if (! is_file($sourcePath)) {
+            return response()->json(['error' => 'Image source introuvable.'], 404);
+        }
+
+        $template = MediaTemplate::findOrFail($validated['media_template_id']);
+        $image = $templateImage->renderOverlay($template, $sourcePath, $title, $subtitle);
+        if (! $image) {
+            return response()->json(['error' => 'Le rendu de l’aperçu a échoué (police ou template invalide).'], 500);
+        }
+
+        return response()->json([
+            'data_uri' => $image->toJpeg(85)->toDataUri(),
+        ]);
     }
 
     /**
@@ -137,6 +186,10 @@ class ThreadController extends Controller
             'scheduled_at' => 'nullable|date|after_or_equal:now',
             'publish_now' => 'nullable|boolean',
             'instagram_compiled_fr' => 'nullable|string|max:2200',
+            'visual_overlay_enabled' => 'nullable|boolean',
+            'visual_overlay_title' => 'nullable|string|max:120',
+            'visual_overlay_subtitle' => 'nullable|string|max:160',
+            'media_template_id' => 'nullable|integer|exists:media_templates,id|required_if:visual_overlay_enabled,1',
             'boost' => 'nullable|array',
             'boost.source_thread_id' => 'required_with:boost|integer|exists:threads,id',
             'boost.promo_text' => 'required_with:boost|string|max:5000',
@@ -145,7 +198,9 @@ class ThreadController extends Controller
         $publishNow = $request->boolean('publish_now');
         $user = $request->user();
 
-        $thread = DB::transaction(function () use ($validated, $user, $publishNow, $boostService) {
+        $overlayEnabled = $request->boolean('visual_overlay_enabled');
+
+        $thread = DB::transaction(function () use ($validated, $user, $publishNow, $boostService, $overlayEnabled) {
             $igCompiledFr = isset($validated['instagram_compiled_fr']) ? trim((string) $validated['instagram_compiled_fr']) : '';
             $instagramCompiled = $igCompiledFr !== '' ? ['fr' => $igCompiledFr] : null;
 
@@ -157,6 +212,10 @@ class ThreadController extends Controller
                 'status' => $publishNow ? 'draft' : ($validated['status'] ?? 'draft'),
                 'scheduled_at' => $publishNow ? null : ($validated['scheduled_at'] ?? null),
                 'instagram_compiled_content' => $instagramCompiled,
+                'visual_overlay_enabled' => $overlayEnabled,
+                'visual_overlay_title' => $overlayEnabled ? ($validated['visual_overlay_title'] ?? null) : null,
+                'visual_overlay_subtitle' => $overlayEnabled ? ($validated['visual_overlay_subtitle'] ?? null) : null,
+                'media_template_id' => $overlayEnabled ? ($validated['media_template_id'] ?? null) : null,
             ]);
 
             // Create segments.
@@ -307,7 +366,9 @@ class ThreadController extends Controller
             ->limit(50)
             ->get();
 
-        return view('threads.edit', compact('thread', 'accounts', 'platforms', 'personas', 'selectedAccountIds', 'accountGroups', 'boostableThreads'));
+        $overlayTemplates = MediaTemplate::where('is_active', true)->orderBy('name')->get();
+
+        return view('threads.edit', compact('thread', 'accounts', 'platforms', 'personas', 'selectedAccountIds', 'accountGroups', 'boostableThreads', 'overlayTemplates'));
     }
 
     /**
@@ -339,12 +400,18 @@ class ThreadController extends Controller
             'status' => 'required|in:draft,scheduled',
             'scheduled_at' => 'nullable|date|after_or_equal:now',
             'instagram_compiled_fr' => 'nullable|string|max:2200',
+            'visual_overlay_enabled' => 'nullable|boolean',
+            'visual_overlay_title' => 'nullable|string|max:120',
+            'visual_overlay_subtitle' => 'nullable|string|max:160',
+            'media_template_id' => 'nullable|integer|exists:media_templates,id|required_if:visual_overlay_enabled,1',
             'boost' => 'nullable|array',
             'boost.source_thread_id' => 'required_with:boost|integer|exists:threads,id',
             'boost.promo_text' => 'required_with:boost|string|max:5000',
         ]);
 
-        DB::transaction(function () use ($thread, $validated, $boostService) {
+        $overlayEnabled = $request->boolean('visual_overlay_enabled');
+
+        DB::transaction(function () use ($thread, $validated, $boostService, $overlayEnabled) {
             $igCompiled = $thread->instagram_compiled_content ?? [];
             $igCompiledFr = isset($validated['instagram_compiled_fr']) ? trim((string) $validated['instagram_compiled_fr']) : '';
             if ($igCompiledFr !== '') {
@@ -359,6 +426,10 @@ class ThreadController extends Controller
                 'status' => $validated['status'],
                 'scheduled_at' => $validated['scheduled_at'] ?? null,
                 'instagram_compiled_content' => ! empty($igCompiled) ? $igCompiled : null,
+                'visual_overlay_enabled' => $overlayEnabled,
+                'visual_overlay_title' => $overlayEnabled ? ($validated['visual_overlay_title'] ?? null) : null,
+                'visual_overlay_subtitle' => $overlayEnabled ? ($validated['visual_overlay_subtitle'] ?? null) : null,
+                'media_template_id' => $overlayEnabled ? ($validated['media_template_id'] ?? null) : null,
             ]);
 
             // Delete old segments (cascade deletes segment platforms).

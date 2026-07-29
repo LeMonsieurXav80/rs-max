@@ -148,6 +148,7 @@ Route::middleware(['auth', 'verified', 'throttle:600,1'])->group(function () {
     // Threads (Fils de discussion)
     Route::post('threads/generate-from-url', [ThreadController::class, 'generateFromUrl'])->name('threads.generateFromUrl');
     Route::post('threads/regenerate-segment', [ThreadController::class, 'regenerateSegment'])->name('threads.regenerateSegment');
+    Route::post('threads/overlay-preview', [ThreadController::class, 'overlayPreview'])->name('threads.overlayPreview');
     Route::resource('threads', ThreadController::class);
     Route::post('threads/{thread}/compile-instagram', [ThreadController::class, 'compileInstagram'])->name('threads.compileInstagram');
     Route::post('threads/{thread}/publish', [ThreadController::class, 'publishAll'])->name('threads.publish');

@@ -20,6 +20,10 @@ class Thread extends Model
         'scheduled_at',
         'published_at',
         'instagram_compiled_content',
+        'visual_overlay_enabled',
+        'visual_overlay_title',
+        'visual_overlay_subtitle',
+        'media_template_id',
     ];
 
     protected function casts(): array
@@ -28,6 +32,7 @@ class Thread extends Model
             'scheduled_at' => 'datetime',
             'published_at' => 'datetime',
             'instagram_compiled_content' => 'array',
+            'visual_overlay_enabled' => 'boolean',
         ];
     }
 
@@ -43,6 +48,14 @@ class Thread extends Model
     public function user(): BelongsTo
     {
         return $this->belongsTo(User::class);
+    }
+
+    /**
+     * Template d'incrustation (titre + sous-titre) applique a la premiere image.
+     */
+    public function mediaTemplate(): BelongsTo
+    {
+        return $this->belongsTo(MediaTemplate::class);
     }
 
     public function segments(): HasMany

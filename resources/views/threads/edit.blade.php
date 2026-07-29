@@ -348,6 +348,78 @@
             </div>
         </template>
 
+        {{-- Section: Incrustation titre/sous-titre sur la 1ere image --}}
+        <template x-if="hasAnyMedia">
+            <div class="bg-white rounded-2xl shadow-sm border border-gray-100 p-6 lg:p-8">
+                <label class="flex items-start gap-3 cursor-pointer">
+                    <input type="checkbox" name="visual_overlay_enabled" value="1"
+                           x-model="visualOverlayEnabled"
+                           class="mt-1 rounded text-indigo-600 focus:ring-indigo-500">
+                    <span>
+                        <span class="block text-base font-semibold text-gray-900">Incruster un titre sur la 1<sup>re</sup> image</span>
+                        <span class="block text-xs text-gray-500 mt-0.5">
+                            Un titre + sous-titre sont composes sur la premiere image (fil ou carrousel) au moment de publier.
+                            L'image d'origine n'est pas modifiee ; l'image composee est generee a la volee puis supprimee.
+                        </span>
+                    </span>
+                </label>
+
+                <div x-show="visualOverlayEnabled" x-cloak class="mt-5 space-y-4 border-t border-gray-100 pt-5">
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-1">Style (template)</label>
+                        <select name="media_template_id" x-model="mediaTemplateId"
+                                class="w-full rounded-xl border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 text-sm">
+                            <option value="">— Choisir un template —</option>
+                            @foreach ($overlayTemplates as $tpl)
+                                <option value="{{ $tpl->id }}">{{ $tpl->name }} ({{ \App\Models\MediaTemplate::FORMATS[$tpl->format]['label'] ?? $tpl->format }})</option>
+                            @endforeach
+                        </select>
+                        @if ($overlayTemplates->isEmpty())
+                            <p class="text-xs text-amber-600 mt-1">
+                                Aucun template. Cree-en un dans <a href="{{ route('media.templates') }}" class="underline" target="_blank">Templates media</a>.
+                            </p>
+                        @endif
+                    </div>
+
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-1">Titre visuel</label>
+                        <input type="text" name="visual_overlay_title" x-model="visualOverlayTitle"
+                               maxlength="120" placeholder="Ex : 7 spots vanlife en Europe"
+                               class="w-full rounded-xl border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 text-sm">
+                        <span class="text-xs text-gray-400" x-text="visualOverlayTitle.length + ' / 120'"></span>
+                    </div>
+
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-1">Sous-titre visuel <span class="text-gray-400 font-normal">(optionnel)</span></label>
+                        <input type="text" name="visual_overlay_subtitle" x-model="visualOverlaySubtitle"
+                               maxlength="160" placeholder="Ex : le guide complet"
+                               class="w-full rounded-xl border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 text-sm">
+                        <span class="text-xs text-gray-400" x-text="visualOverlaySubtitle.length + ' / 160'"></span>
+                    </div>
+
+                    {{-- Apercu du rendu (compose la 1re image du fil avec le titre) --}}
+                    <div class="border-t border-gray-100 pt-4">
+                        <button type="button" @click="previewOverlay()" :disabled="overlayPreviewLoading"
+                                class="inline-flex items-center gap-2 px-3 py-2 text-sm font-medium rounded-xl bg-indigo-600 text-white hover:bg-indigo-700 disabled:opacity-50 transition-colors">
+                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1.5">
+                                <path stroke-linecap="round" stroke-linejoin="round" d="M2.036 12.322a1.012 1.012 0 010-.639C3.423 7.51 7.36 4.5 12 4.5c4.638 0 8.573 3.007 9.963 7.178.07.207.07.431 0 .639C20.577 16.49 16.64 19.5 12 19.5c-4.638 0-8.573-3.007-9.963-7.178z" />
+                                <path stroke-linecap="round" stroke-linejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                            </svg>
+                            <span x-text="overlayPreviewLoading ? 'Rendu en cours…' : 'Aperçu du rendu'"></span>
+                        </button>
+                        <p class="text-xs text-gray-400 mt-1.5">
+                            Compose ton titre sur la 1<sup>re</sup> image du fil, tel qu'il apparaitra a la publication.
+                        </p>
+                        <p x-show="overlayPreviewError" x-cloak x-text="overlayPreviewError" class="text-xs text-red-500 mt-2"></p>
+                        <div x-show="overlayPreviewSrc" x-cloak class="mt-3">
+                            <img :src="overlayPreviewSrc" alt="Aperçu de l'incrustation"
+                                 class="max-w-xs w-full rounded-xl border border-gray-200 shadow-sm">
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </template>
+
         {{-- Section 4: Status --}}
         <div class="bg-white rounded-2xl shadow-sm border border-gray-100 p-6 lg:p-8">
             <h2 class="text-base font-semibold text-gray-900 mb-4">Statut</h2>
@@ -589,8 +661,76 @@
                 segments: @json($segmentsJson),
                 selectedAccounts: [],
                 instagramCompiledFr: @json(old('instagram_compiled_fr', $thread->instagram_compiled_content['fr'] ?? '')),
+                visualOverlayEnabled: @json((bool) old('visual_overlay_enabled', $thread->visual_overlay_enabled)),
+                visualOverlayTitle: @json(old('visual_overlay_title', $thread->visual_overlay_title ?? '')),
+                visualOverlaySubtitle: @json(old('visual_overlay_subtitle', $thread->visual_overlay_subtitle ?? '')),
+                mediaTemplateId: @json((string) old('media_template_id', $thread->media_template_id ?? '')),
+                overlayPreviewSrc: '',
+                overlayPreviewLoading: false,
+                overlayPreviewError: '',
                 instagramGenerating: false,
                 instagramError: '',
+
+                // Retourne l'URL de la 1re image (non-video) trouvee dans les posts, ou ''.
+                firstImageUrl() {
+                    for (const seg of (this.segments || [])) {
+                        for (const m of (seg.media || [])) {
+                            const url = m.url || '';
+                            const type = m.type || '';
+                            const isVideo = type === 'video' || /\.(mp4|mov|webm|m4v)(\?|$)/i.test(url);
+                            const isImage = type === 'image' || /\.(jpe?g|png|webp|gif)(\?|$)/i.test(url);
+                            if (isImage && !isVideo) return url;
+                        }
+                    }
+                    return '';
+                },
+
+                async previewOverlay() {
+                    this.overlayPreviewError = '';
+                    this.overlayPreviewSrc = '';
+
+                    if (!this.mediaTemplateId) {
+                        this.overlayPreviewError = 'Choisis un template.';
+                        return;
+                    }
+                    if (!this.visualOverlayTitle.trim() && !this.visualOverlaySubtitle.trim()) {
+                        this.overlayPreviewError = 'Saisis un titre ou un sous-titre.';
+                        return;
+                    }
+                    const source = this.firstImageUrl();
+                    if (!source) {
+                        this.overlayPreviewError = 'Ajoute au moins une image a un post pour previsualiser.';
+                        return;
+                    }
+
+                    this.overlayPreviewLoading = true;
+                    try {
+                        const resp = await fetch('{{ route('threads.overlayPreview') }}', {
+                            method: 'POST',
+                            headers: {
+                                'Content-Type': 'application/json',
+                                'Accept': 'application/json',
+                                'X-CSRF-TOKEN': document.querySelector('meta[name=csrf-token]').getAttribute('content'),
+                            },
+                            body: JSON.stringify({
+                                media_template_id: this.mediaTemplateId,
+                                source,
+                                title: this.visualOverlayTitle,
+                                subtitle: this.visualOverlaySubtitle,
+                            }),
+                        });
+                        const data = await resp.json();
+                        if (!resp.ok) {
+                            this.overlayPreviewError = data.error || 'Erreur lors du rendu de l’aperçu.';
+                            return;
+                        }
+                        this.overlayPreviewSrc = data.data_uri;
+                    } catch (e) {
+                        this.overlayPreviewError = 'Erreur reseau lors du rendu de l’aperçu.';
+                    } finally {
+                        this.overlayPreviewLoading = false;
+                    }
+                },
 
                 init() {
                     this.updateSelectedAccounts();
