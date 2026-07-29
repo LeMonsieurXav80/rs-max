@@ -3,12 +3,14 @@
 namespace App\Http\Controllers;
 
 use App\Concerns\ProcessesImages;
+use App\Jobs\GenerateMediaThumbnailJob;
 use App\Models\MediaFile;
 use App\Models\MediaFolder;
 use App\Models\MediaPublication;
 use App\Models\Post;
 use App\Models\Setting;
 use App\Services\AiAssistService;
+use App\Services\Media\ThumbnailService;
 use App\Services\Media\VideoNormalizer;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -99,17 +101,22 @@ class MediaController extends Controller
                 'taken_at' => $mf->taken_at?->format('Y-m-d'),
                 'taken_at_label' => $mf->taken_at?->locale('fr')->isoFormat('MMMM YYYY'),
                 'publication_count' => (int) $mf->publication_count,
+                // Vignette légère pour images ET vidéos (grille /media).
+                'thumbnail_url' => $mf->thumbnail_url,
             ];
-
-            if ($isVideo) {
-                $item['thumbnail_url'] = route('media.thumbnail', $mf->filename);
-            }
 
             return $item;
         })->values();
 
-        // Find which posts reference each media file
-        $posts = Post::whereNotNull('media')->with('postPlatforms.platform')->get();
+        // Find which posts reference each media file — restreint aux posts
+        // référençant réellement l'un des fichiers affichés (filtre LIKE) au lieu
+        // de charger tous les posts + leurs plateformes en mémoire.
+        $shownFilenames = $mediaFiles->pluck('filename')->all();
+        $posts = empty($shownFilenames)
+            ? collect()
+            : $this->postsReferencingFilenames($shownFilenames)
+                ->with('postPlatforms.platform')
+                ->get(['id', 'status', 'media', 'content_fr', 'scheduled_at', 'published_at']);
         $mediaPostMap = [];
 
         foreach ($posts as $post) {
@@ -214,7 +221,7 @@ class MediaController extends Controller
             'url' => $mf->url,
             'is_image' => $mf->is_image,
             'is_video' => $mf->is_video,
-            'thumbnail_url' => $mf->is_video ? route('media.thumbnail', $mf->filename) : null,
+            'thumbnail_url' => $mf->thumbnail_url,
             'size_human' => $mf->size_human,
             'date' => $mf->created_at->format('d/m/Y'),
             'folder_id' => $mf->folder_id,
@@ -581,7 +588,7 @@ class MediaController extends Controller
             // Use the filename from processImage (may have changed for PNG→JPG)
             $finalFilename = $result['filename'] ?? $filename;
 
-            MediaFile::create([
+            $mediaFile = MediaFile::create([
                 'folder_id' => $folderId,
                 'filename' => $finalFilename,
                 'original_name' => $originalName,
@@ -591,6 +598,13 @@ class MediaController extends Controller
                 'height' => $result['height'],
                 'source' => 'upload',
             ]);
+
+            // Vignette image : générée en synchrone (GD, rapide) pour un affichage
+            // léger immédiat dans les grilles (picker de post + page /media).
+            $thumbRel = app(ThumbnailService::class)->generate($mediaFile);
+            if ($thumbRel) {
+                $mediaFile->update(['thumbnail_path' => $thumbRel]);
+            }
 
             return response()->json([
                 'url' => "/media/{$finalFilename}",
@@ -615,7 +629,7 @@ class MediaController extends Controller
         $storedSize = Storage::disk('local')->size("media/{$filename}");
         $resolution = $this->getVideoResolution($storedPath);
 
-        MediaFile::create([
+        $mediaFile = MediaFile::create([
             'folder_id' => $folderId,
             'filename' => $filename,
             'original_name' => $originalName,
@@ -625,6 +639,10 @@ class MediaController extends Controller
             'height' => $resolution['height'] ?: null,
             'source' => 'upload',
         ]);
+
+        // Vignette vidéo : ffmpeg est coûteux → déléguée à la queue pour ne pas
+        // bloquer la réponse d'upload. En attendant, thumbnail() la génère à la volée.
+        GenerateMediaThumbnailJob::dispatch($mediaFile->id);
 
         return response()->json([
             'url' => "/media/{$filename}",
@@ -1033,32 +1051,33 @@ class MediaController extends Controller
                 'folder_id' => $mf->folder_id,
                 'folder_name' => $mf->folder?->name,
                 'publication_count' => (int) $mf->publication_count,
+                // Vignette légère pour images ET vidéos (grille du picker).
+                'thumbnail_url' => $mf->thumbnail_url,
             ];
-
-            if ($isVideo) {
-                $item['thumbnail_url'] = route('media.thumbnail', $mf->filename);
-            }
 
             return $item;
         })->values();
 
-        // Statut de publication par filename, calcule sur l'ensemble des posts
-        // (meme logique que la page /media : published > publishing > scheduled > failed > brouillon).
+        // Statut de publication par filename. On ne charge QUE les posts qui
+        // référencent l'un des fichiers affichés (filtre LIKE), avec les seules
+        // colonnes utiles — au lieu de matérialiser tous les posts en mémoire.
         $filenames = $items->pluck('filename')->all();
         $statusesByFilename = [];
         if (! empty($filenames)) {
-            Post::whereNotNull('media')->get()->each(function (Post $post) use (&$statusesByFilename, $filenames) {
-                if (! is_array($post->media)) {
-                    return;
-                }
-                foreach ($post->media as $mediaItem) {
-                    $url = is_string($mediaItem) ? $mediaItem : ($mediaItem['url'] ?? '');
-                    $fname = basename($url);
-                    if ($fname && in_array($fname, $filenames, true)) {
-                        $statusesByFilename[$fname][] = $post->status;
+            $this->postsReferencingFilenames($filenames)
+                ->get(['id', 'status', 'media'])
+                ->each(function (Post $post) use (&$statusesByFilename, $filenames) {
+                    if (! is_array($post->media)) {
+                        return;
                     }
-                }
-            });
+                    foreach ($post->media as $mediaItem) {
+                        $url = is_string($mediaItem) ? $mediaItem : ($mediaItem['url'] ?? '');
+                        $fname = basename($url);
+                        if ($fname && in_array($fname, $filenames, true)) {
+                            $statusesByFilename[$fname][] = $post->status;
+                        }
+                    }
+                });
         }
 
         $items = $items->map(function ($item) use ($statusesByFilename) {
@@ -1147,56 +1166,51 @@ class MediaController extends Controller
     }
 
     /**
-     * Serve a video thumbnail (generated via ffmpeg, cached).
+     * Sert la vignette légère d'un média (image ou vidéo).
+     *
+     * Chemin rapide : la vignette pré-générée existe sur disque → servie directement.
+     * Sinon elle est générée à la volée (GD pour image, ffmpeg pour vidéo), mise en
+     * cache disque, et thumbnail_path persisté. En dernier recours pour une image,
+     * l'original est servi afin que l'aperçu s'affiche quand même.
      */
-    public function thumbnail(Request $request, string $filename): BinaryFileResponse
+    public function thumbnail(Request $request, string $filename, ThumbnailService $thumbnails): BinaryFileResponse
     {
-        $videoPath = Storage::disk('local')->path("media/{$filename}");
-        if (! file_exists($videoPath)) {
+        $headers = [
+            'Content-Type' => 'image/jpeg',
+            'Cache-Control' => 'private, max-age=604800',
+        ];
+
+        // Chemin rapide : vignette déjà générée.
+        $thumbAbs = $thumbnails->absolutePath($filename);
+        if (file_exists($thumbAbs) && filesize($thumbAbs) > 0) {
+            return response()->file($thumbAbs, $headers);
+        }
+
+        $media = MediaFile::where('filename', $filename)->first();
+        if (! $media) {
             abort(404);
         }
 
-        $thumbDir = Storage::disk('local')->path('media/thumbnails');
-        if (! is_dir($thumbDir)) {
-            mkdir($thumbDir, 0755, true);
+        $rel = $thumbnails->generate($media);
+        if ($rel) {
+            if ($media->thumbnail_path !== $rel) {
+                $media->update(['thumbnail_path' => $rel]);
+            }
+
+            return response()->file($thumbnails->absolutePath($filename), $headers);
         }
 
-        $thumbFilename = pathinfo($filename, PATHINFO_FILENAME).'.jpg';
-        $thumbPath = $thumbDir.'/'.$thumbFilename;
-
-        if (! file_exists($thumbPath)) {
-            $ffmpeg = $this->findBinary('ffmpeg');
-            if (! $ffmpeg) {
-                abort(404);
-            }
-
-            // Extract frame at ~5 seconds
-            exec(sprintf(
-                '%s -ss 5 -i %s -frames:v 1 -q:v 3 -vf "scale=480:-1" -update 1 %s 2>/dev/null',
-                escapeshellarg($ffmpeg),
-                escapeshellarg($videoPath),
-                escapeshellarg($thumbPath)
-            ));
-
-            // If 5s failed (video too short), try first frame
-            if (! file_exists($thumbPath) || filesize($thumbPath) === 0) {
-                exec(sprintf(
-                    '%s -i %s -frames:v 1 -q:v 3 -vf "scale=480:-1" -update 1 %s 2>/dev/null',
-                    escapeshellarg($ffmpeg),
-                    escapeshellarg($videoPath),
-                    escapeshellarg($thumbPath)
-                ));
-            }
-
-            if (! file_exists($thumbPath) || filesize($thumbPath) === 0) {
-                abort(404);
-            }
+        // Échec de génération : pour une image, on sert l'original en repli
+        // (mieux vaut un aperçu lourd que pas d'aperçu). Pour une vidéo, 404
+        // → le front affiche le placeholder « play ».
+        if ($media->is_image && Storage::disk('local')->exists("media/{$filename}")) {
+            return response()->file(Storage::disk('local')->path("media/{$filename}"), [
+                'Content-Type' => $media->mime_type,
+                'Cache-Control' => 'private, max-age=86400',
+            ]);
         }
 
-        return response()->file($thumbPath, [
-            'Content-Type' => 'image/jpeg',
-            'Cache-Control' => 'private, max-age=604800',
-        ]);
+        abort(404);
     }
 
     /**
@@ -1329,6 +1343,25 @@ class MediaController extends Controller
     /**
      * Locate a binary (ffmpeg, ffprobe, etc.).
      */
+    /**
+     * Requête des posts référençant l'un des fichiers donnés (matching sur la
+     * colonne JSON `media` via LIKE). Évite de matérialiser tous les posts en
+     * mémoire à chaque affichage de la bibliothèque. Le calleur choisit les
+     * colonnes / eager loads via ->get([...]) ou ->with(...).
+     *
+     * @param  array<int,string>  $filenames
+     */
+    private function postsReferencingFilenames(array $filenames): \Illuminate\Database\Eloquent\Builder
+    {
+        return Post::query()
+            ->whereNotNull('media')
+            ->where(function ($q) use ($filenames) {
+                foreach ($filenames as $fname) {
+                    $q->orWhere('media', 'like', '%'.$fname.'%');
+                }
+            });
+    }
+
     private function findBinary(string $name): ?string
     {
         $path = trim(exec("which {$name} 2>/dev/null"));

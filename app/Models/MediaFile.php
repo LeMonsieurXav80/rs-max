@@ -16,6 +16,7 @@ class MediaFile extends Model
         'size',
         'width',
         'height',
+        'thumbnail_path',
         'source',
         'source_url',
         'description_fr',
@@ -67,6 +68,15 @@ class MediaFile extends Model
     public function getUrlAttribute(): string
     {
         return "/media/{$this->filename}";
+    }
+
+    /**
+     * URL de la vignette légère (image ET vidéo). Pointe toujours vers la route
+     * media.thumbnail, qui sert la vignette pré-générée ou la génère à la volée.
+     */
+    public function getThumbnailUrlAttribute(): string
+    {
+        return route('media.thumbnail', $this->filename);
     }
 
     public function getIsImageAttribute(): bool

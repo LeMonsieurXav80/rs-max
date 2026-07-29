@@ -45,9 +45,9 @@
                 $item['status_label'] = null;
                 $item['status_class'] = '';
             }
-            if ($item['is_video'] ?? false) {
-                $item['thumbnail_url'] = route('media.thumbnail', $item['filename']);
-            }
+            // Vignette légère pour images ET vidéos (peut déjà être présente si
+            // fournie par le controller ; on garantit sa présence ici).
+            $item['thumbnail_url'] = $item['thumbnail_url'] ?? route('media.thumbnail', $item['filename']);
             return $item;
         })->values()->toArray();
 
@@ -1628,7 +1628,8 @@
                                     </div>
                                 </div>
                                 <template x-if="item.is_image">
-                                    <img :src="item.url" :alt="item.filename" class="w-full h-full object-cover" loading="lazy">
+                                    <img :src="item.thumbnail_url || item.url" :alt="item.filename" class="w-full h-full object-cover" loading="lazy"
+                                         x-on:error="$el.src = item.url">
                                 </template>
                                 <template x-if="item.is_video">
                                     <div class="w-full h-full relative">
