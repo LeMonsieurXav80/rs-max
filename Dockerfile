@@ -24,6 +24,21 @@ RUN apk add --no-cache \
     npm \
     ffmpeg
 
+# Chromium + libs pour la rasterisation des carrousels (Browsershot/Puppeteer)
+RUN apk add --no-cache \
+    chromium \
+    nss \
+    freetype \
+    harfbuzz \
+    ca-certificates \
+    ttf-freefont
+
+# Normalise le binaire Chromium vers un chemin stable (le nom varie selon la
+# version d'Alpine : chromium vs chromium-browser vs /usr/lib/chromium/chrome).
+RUN if [ ! -x /usr/bin/chromium-browser ]; then \
+        ln -sf "$(command -v chromium || echo /usr/lib/chromium/chrome)" /usr/bin/chromium-browser; \
+    fi
+
 # Install PHP extensions
 RUN docker-php-ext-configure gd --with-freetype --with-jpeg --with-webp \
     && docker-php-ext-install -j$(nproc) \
@@ -65,6 +80,18 @@ RUN composer install --no-dev --optimize-autoloader --no-interaction
 
 # Install and build frontend assets
 RUN npm ci && npm run build && rm -rf node_modules
+
+# Driver Puppeteer pour Browsershot (rendu des carrousels). On garde node au
+# runtime et on réinstalle SEULEMENT puppeteer dans node_modules (résolu par
+# require('puppeteer') depuis vendor/spatie/browsershot). On n'embarque PAS le
+# Chromium de Puppeteer : on réutilise celui d'Alpine (/usr/bin/chromium-browser).
+ENV PUPPETEER_SKIP_DOWNLOAD=true
+ENV PUPPETEER_SKIP_CHROMIUM_DOWNLOAD=true
+RUN npm install puppeteer --no-save
+
+# Config carrousel : chemin du Chromium système + no-sandbox (obligatoire en conteneur)
+ENV CAROUSEL_CHROME_PATH=/usr/bin/chromium-browser
+ENV CAROUSEL_NO_SANDBOX=true
 
 # Create necessary directories
 RUN mkdir -p /var/www/html/storage/framework/{sessions,views,cache} \
