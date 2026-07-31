@@ -648,8 +648,7 @@ class ThreadPublishingService
             return [$media, null];
         }
 
-        $tempFilename = app(TemplateImageService::class)->renderOverlayToTemp(
-            $thread->mediaTemplate,
+        $tempFilename = app(\App\Services\Carousel\CarouselRenderService::class)->renderOverlayToTemp(
             $sourcePath,
             (string) ($thread->visual_overlay_title ?? ''),
             $thread->visual_overlay_subtitle,

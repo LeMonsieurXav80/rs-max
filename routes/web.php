@@ -7,6 +7,7 @@ use App\Http\Controllers\Bot\FacebookBotController;
 use App\Http\Controllers\BotHubController;
 use App\Http\Controllers\BulkLibraryController;
 use App\Http\Controllers\BulkPostController;
+use App\Http\Controllers\CarouselStudioController;
 use App\Http\Controllers\CrossPostController;
 use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\FacebookOAuthController;
@@ -21,7 +22,6 @@ use App\Http\Controllers\LocationController;
 use App\Http\Controllers\MediaController;
 use App\Http\Controllers\MediaFolderController;
 use App\Http\Controllers\MediaStudioController;
-use App\Http\Controllers\MediaTemplateController;
 use App\Http\Controllers\PersonaController;
 use App\Http\Controllers\PinterestFeedController;
 use App\Http\Controllers\PinterestOAuthController;
@@ -178,13 +178,10 @@ Route::middleware(['auth', 'verified', 'throttle:600,1'])->group(function () {
     Route::post('media/studio/process', [MediaStudioController::class, 'process'])->name('media.studio.process');
     Route::post('media/studio/logo', [MediaStudioController::class, 'uploadLogo'])->name('media.studio.logo');
 
-    // Media Templates
-    Route::get('media/templates', [MediaTemplateController::class, 'index'])->name('media.templates');
-    Route::post('media/templates', [MediaTemplateController::class, 'store'])->name('media.templates.store');
-    Route::put('media/templates/{template}', [MediaTemplateController::class, 'update'])->name('media.templates.update');
-    Route::delete('media/templates/{template}', [MediaTemplateController::class, 'destroy'])->name('media.templates.destroy');
-    Route::post('media/templates/download-font', [MediaTemplateController::class, 'downloadFont'])->name('media.templates.downloadFont');
-    Route::post('media/templates/{template}/preview', [MediaTemplateController::class, 'preview'])->name('media.templates.preview');
+    // Studio Carrousel (briques HTML/CSS)
+    Route::get('carousel/studio', [CarouselStudioController::class, 'index'])->name('carousel.studio');
+    Route::post('carousel/studio/preview', [CarouselStudioController::class, 'preview'])->name('carousel.studio.preview');
+    Route::post('carousel/studio/render', [CarouselStudioController::class, 'render'])->name('carousel.studio.render');
 
     // Prompt Generator
     Route::get('prompts/image', [PromptGeneratorController::class, 'image'])->name('prompts.image');

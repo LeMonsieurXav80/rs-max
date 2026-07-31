@@ -3,7 +3,6 @@
 namespace App\Http\Controllers;
 
 use App\Models\HookCategory;
-use App\Models\MediaTemplate;
 use App\Models\Persona;
 use App\Models\Platform;
 use App\Models\RedditSource;
@@ -15,7 +14,7 @@ use App\Models\ThreadSegmentPlatform;
 use App\Models\WpSource;
 use App\Models\YtSource;
 use App\Services\AiAssistService;
-use App\Services\TemplateImageService;
+use App\Services\Carousel\CarouselRenderService;
 use App\Services\ThreadBoostService;
 use App\Services\ThreadContentGenerationService;
 use App\Services\ThreadPublishingService;
@@ -117,9 +116,7 @@ class ThreadController extends Controller
             ->limit(50)
             ->get();
 
-        $overlayTemplates = MediaTemplate::where('is_active', true)->orderBy('name')->get();
-
-        return view('threads.create', compact('accounts', 'platforms', 'personas', 'hookCategories', 'sourceTypeCounts', 'accountGroups', 'boostableThreads', 'overlayTemplates'));
+        return view('threads.create', compact('accounts', 'platforms', 'personas', 'hookCategories', 'sourceTypeCounts', 'accountGroups', 'boostableThreads'));
     }
 
     /**
@@ -128,10 +125,9 @@ class ThreadController extends Controller
      * formulaires de création/édition de fil pour prévisualiser l'overlay avant
      * publication. Retourne un data-URI JPEG affichable directement dans un <img>.
      */
-    public function overlayPreview(Request $request, TemplateImageService $templateImage): JsonResponse
+    public function overlayPreview(Request $request, CarouselRenderService $carousel): JsonResponse
     {
         $validated = $request->validate([
-            'media_template_id' => 'required|integer|exists:media_templates,id',
             'source' => 'required|string',
             'title' => 'nullable|string|max:120',
             'subtitle' => 'nullable|string|max:160',
@@ -155,14 +151,13 @@ class ThreadController extends Controller
             return response()->json(['error' => 'Image source introuvable.'], 404);
         }
 
-        $template = MediaTemplate::findOrFail($validated['media_template_id']);
-        $image = $templateImage->renderOverlay($template, $sourcePath, $title, $subtitle);
-        if (! $image) {
-            return response()->json(['error' => 'Le rendu de l’aperçu a échoué (police ou template invalide).'], 500);
+        $dataUri = $carousel->renderOverlayDataUri($sourcePath, $title, $subtitle);
+        if (! $dataUri) {
+            return response()->json(['error' => 'Le rendu de l’aperçu a échoué.'], 500);
         }
 
         return response()->json([
-            'data_uri' => $image->toJpeg(85)->toDataUri(),
+            'data_uri' => $dataUri,
         ]);
     }
 
@@ -189,7 +184,6 @@ class ThreadController extends Controller
             'visual_overlay_enabled' => 'nullable|boolean',
             'visual_overlay_title' => 'nullable|string|max:120',
             'visual_overlay_subtitle' => 'nullable|string|max:160',
-            'media_template_id' => 'nullable|integer|exists:media_templates,id|required_if:visual_overlay_enabled,1',
             'boost' => 'nullable|array',
             'boost.source_thread_id' => 'required_with:boost|integer|exists:threads,id',
             'boost.promo_text' => 'required_with:boost|string|max:5000',
@@ -215,7 +209,6 @@ class ThreadController extends Controller
                 'visual_overlay_enabled' => $overlayEnabled,
                 'visual_overlay_title' => $overlayEnabled ? ($validated['visual_overlay_title'] ?? null) : null,
                 'visual_overlay_subtitle' => $overlayEnabled ? ($validated['visual_overlay_subtitle'] ?? null) : null,
-                'media_template_id' => $overlayEnabled ? ($validated['media_template_id'] ?? null) : null,
             ]);
 
             // Create segments.
@@ -366,9 +359,7 @@ class ThreadController extends Controller
             ->limit(50)
             ->get();
 
-        $overlayTemplates = MediaTemplate::where('is_active', true)->orderBy('name')->get();
-
-        return view('threads.edit', compact('thread', 'accounts', 'platforms', 'personas', 'selectedAccountIds', 'accountGroups', 'boostableThreads', 'overlayTemplates'));
+        return view('threads.edit', compact('thread', 'accounts', 'platforms', 'personas', 'selectedAccountIds', 'accountGroups', 'boostableThreads'));
     }
 
     /**
@@ -403,7 +394,6 @@ class ThreadController extends Controller
             'visual_overlay_enabled' => 'nullable|boolean',
             'visual_overlay_title' => 'nullable|string|max:120',
             'visual_overlay_subtitle' => 'nullable|string|max:160',
-            'media_template_id' => 'nullable|integer|exists:media_templates,id|required_if:visual_overlay_enabled,1',
             'boost' => 'nullable|array',
             'boost.source_thread_id' => 'required_with:boost|integer|exists:threads,id',
             'boost.promo_text' => 'required_with:boost|string|max:5000',
@@ -429,7 +419,6 @@ class ThreadController extends Controller
                 'visual_overlay_enabled' => $overlayEnabled,
                 'visual_overlay_title' => $overlayEnabled ? ($validated['visual_overlay_title'] ?? null) : null,
                 'visual_overlay_subtitle' => $overlayEnabled ? ($validated['visual_overlay_subtitle'] ?? null) : null,
-                'media_template_id' => $overlayEnabled ? ($validated['media_template_id'] ?? null) : null,
             ]);
 
             // Delete old segments (cascade deletes segment platforms).

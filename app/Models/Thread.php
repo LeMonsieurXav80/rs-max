@@ -23,7 +23,6 @@ class Thread extends Model
         'visual_overlay_enabled',
         'visual_overlay_title',
         'visual_overlay_subtitle',
-        'media_template_id',
     ];
 
     protected function casts(): array
@@ -48,14 +47,6 @@ class Thread extends Model
     public function user(): BelongsTo
     {
         return $this->belongsTo(User::class);
-    }
-
-    /**
-     * Template d'incrustation (titre + sous-titre) applique a la premiere image.
-     */
-    public function mediaTemplate(): BelongsTo
-    {
-        return $this->belongsTo(MediaTemplate::class);
     }
 
     public function segments(): HasMany

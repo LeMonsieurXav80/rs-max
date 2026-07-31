@@ -601,22 +601,6 @@
 
                 <div x-show="visualOverlayEnabled" x-cloak class="mt-5 space-y-4 border-t border-gray-100 pt-5">
                     <div>
-                        <label class="block text-sm font-medium text-gray-700 mb-1">Style (template)</label>
-                        <select name="media_template_id" x-model="mediaTemplateId"
-                                class="w-full rounded-xl border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 text-sm">
-                            <option value="">— Choisir un template —</option>
-                            @foreach ($overlayTemplates as $tpl)
-                                <option value="{{ $tpl->id }}">{{ $tpl->name }} ({{ \App\Models\MediaTemplate::FORMATS[$tpl->format]['label'] ?? $tpl->format }})</option>
-                            @endforeach
-                        </select>
-                        @if ($overlayTemplates->isEmpty())
-                            <p class="text-xs text-amber-600 mt-1">
-                                Aucun template. Cree-en un dans <a href="{{ route('media.templates') }}" class="underline" target="_blank">Templates media</a>.
-                            </p>
-                        @endif
-                    </div>
-
-                    <div>
                         <label class="block text-sm font-medium text-gray-700 mb-1">Titre visuel</label>
                         <input type="text" name="visual_overlay_title" x-model="visualOverlayTitle"
                                maxlength="120" placeholder="Ex : 7 spots vanlife en Europe"
@@ -967,7 +951,6 @@
                 visualOverlayEnabled: false,
                 visualOverlayTitle: '',
                 visualOverlaySubtitle: '',
-                mediaTemplateId: '',
                 overlayPreviewSrc: '',
                 overlayPreviewLoading: false,
                 overlayPreviewError: '',
@@ -990,10 +973,6 @@
                     this.overlayPreviewError = '';
                     this.overlayPreviewSrc = '';
 
-                    if (!this.mediaTemplateId) {
-                        this.overlayPreviewError = 'Choisis un template.';
-                        return;
-                    }
                     if (!this.visualOverlayTitle.trim() && !this.visualOverlaySubtitle.trim()) {
                         this.overlayPreviewError = 'Saisis un titre ou un sous-titre.';
                         return;
@@ -1014,7 +993,6 @@
                                 'X-CSRF-TOKEN': document.querySelector('meta[name=csrf-token]').getAttribute('content'),
                             },
                             body: JSON.stringify({
-                                media_template_id: this.mediaTemplateId,
                                 source,
                                 title: this.visualOverlayTitle,
                                 subtitle: this.visualOverlaySubtitle,
