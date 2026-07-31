@@ -121,23 +121,22 @@
                 </div>
 
                 <div class="relative">
-                    {{-- Conteneur à défilement horizontal : les slides sont côte à côte (sens du swipe). --}}
-                    <div class="mx-auto bg-gray-100 rounded-lg overflow-x-auto overflow-y-hidden"
-                         :style="`max-width:${previewW}px; height:${slideVisualHeight()}px`">
-                        <div class="relative" :style="`width:${bandVisualWidth()}px; height:${slideVisualHeight()}px`">
+                    {{-- Toutes les slides côte à côte, ajustées pour tenir dans la largeur (pas de défilement). --}}
+                    <div class="mx-auto bg-gray-100 rounded-lg overflow-hidden"
+                         :style="`width:${previewW}px; height:${slideVisualHeight()}px`">
+                        <div class="relative" :style="`width:${previewW}px; height:${slideVisualHeight()}px`">
                             <iframe :srcdoc="previewHtml" scrolling="no"
                                     class="border-0 origin-top-left pointer-events-none absolute top-0 left-0"
                                     :style="`width:${bandCssWidth()}px; height:${ratios[ratio].h}px; transform:scale(${previewScale()});`"></iframe>
                             {{-- Guides de découpe entre slides (couture verticale) --}}
                             <template x-for="n in Math.max(0, slides.length - 1)" :key="n">
                                 <div class="absolute top-0 bottom-0 border-l border-dashed border-white/70 pointer-events-none"
-                                     :style="`left:${n * previewW}px`"></div>
+                                     :style="`left:${n * (previewW / slides.length)}px`"></div>
                             </template>
                         </div>
                     </div>
                     <div x-show="previewLoading" class="absolute top-2 right-2 text-[10px] px-2 py-0.5 rounded-full bg-black/50 text-white">…</div>
                 </div>
-                <p x-show="slides.length > 1" class="text-[11px] text-gray-400 mt-2 text-center">← défile pour voir les slides suivantes →</p>
             </div>
 
             <button type="button" @click="generate()" :disabled="rendering"
@@ -177,7 +176,7 @@
             slides: [],
             previewHtml: '',
             previewLoading: false,
-            previewW: 300,
+            previewW: 348,
             rendering: false,
             renderError: '',
             generated: [],
@@ -294,12 +293,11 @@
                 }
             },
 
-            // ── Helpers présentation (bande horizontale, 1 slide = previewW de large) ──
+            // ── Helpers présentation (bande horizontale, toutes les slides tiennent dans previewW) ──
             ratioW() { return this.ratios[this.ratio]?.w || 1080; },
             ratioH() { return this.ratios[this.ratio]?.h || 1350; },
-            previewScale() { return this.previewW / this.ratioW(); },
             bandCssWidth() { return this.slides.length * this.ratioW(); },
-            bandVisualWidth() { return this.slides.length * this.previewW; },
+            previewScale() { return this.previewW / this.bandCssWidth(); },
             slideVisualHeight() { return this.ratioH() * this.previewScale(); },
             headers() {
                 return {
