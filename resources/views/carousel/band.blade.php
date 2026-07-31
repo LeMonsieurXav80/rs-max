@@ -1,11 +1,10 @@
 {{--
-    Assembleur de carrousel — rend une BANDE CONTINUE de slides empilés
-    verticalement (largeur w, hauteur N×h). Cette bande est ensuite rasterisée
-    en une seule image puis tranchée en N slides de w×h par le CarouselRenderService.
+    Assembleur de carrousel — rend une BANDE CONTINUE de slides côte à côte
+    HORIZONTALEMENT (largeur N×w, hauteur h), dans le sens du swipe.
 
-    Rendre la bande d'un seul tenant (plutôt qu'un screenshot par slide) pose les
+    Sert l'aperçu (affiché tel quel dans l'iframe du Studio) et posera les
     fondations de la continuité d'image inter-slides (Phase 3) : une image posée à
-    cheval sur une couture sera coupée pile à la frontière.
+    cheval sur une couture verticale sera coupée pile à la frontière quand on swipe.
 
     Variables attendues :
       $w, $h       int    dimensions d'un slide (px de design, avant deviceScaleFactor)
@@ -20,8 +19,14 @@
 <style>
     *, *::before, *::after { box-sizing: border-box; }
     html, body { margin: 0; padding: 0; background: #000; }
-    [data-carousel-root] { width: {{ $w }}px; }
+    [data-carousel-root] {
+        display: flex;
+        flex-direction: row;
+        width: {{ $w * count($slides) }}px;
+        height: {{ $h }}px;
+    }
     [data-carousel-slide] {
+        flex: 0 0 auto;
         width: {{ $w }}px;
         height: {{ $h }}px;
         overflow: hidden;

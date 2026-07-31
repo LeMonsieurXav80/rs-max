@@ -120,18 +120,24 @@
                     <span class="text-xs text-gray-400" x-text="slides.length + ' slide' + (slides.length > 1 ? 's' : '') + ' · ' + ratio"></span>
                 </div>
 
-                <div class="relative mx-auto bg-gray-100 rounded-lg overflow-hidden"
-                     :style="`width:${previewW}px; height:${bandVisualHeight()}px`">
-                    <iframe :srcdoc="previewHtml" scrolling="no"
-                            class="border-0 origin-top-left pointer-events-none"
-                            :style="`width:1080px; height:${bandHeight()}px; transform:scale(${previewW/1080});`"></iframe>
-                    {{-- Guides de découpe entre slides --}}
-                    <template x-for="n in Math.max(0, slides.length - 1)" :key="n">
-                        <div class="absolute left-0 right-0 border-t border-dashed border-white/60 pointer-events-none"
-                             :style="`top:${n * ratios[ratio].h * (previewW/1080)}px`"></div>
-                    </template>
+                <div class="relative">
+                    {{-- Conteneur à défilement horizontal : les slides sont côte à côte (sens du swipe). --}}
+                    <div class="mx-auto bg-gray-100 rounded-lg overflow-x-auto overflow-y-hidden"
+                         :style="`max-width:${previewW}px; height:${slideVisualHeight()}px`">
+                        <div class="relative" :style="`width:${bandVisualWidth()}px; height:${slideVisualHeight()}px`">
+                            <iframe :srcdoc="previewHtml" scrolling="no"
+                                    class="border-0 origin-top-left pointer-events-none absolute top-0 left-0"
+                                    :style="`width:${bandCssWidth()}px; height:${ratios[ratio].h}px; transform:scale(${previewScale()});`"></iframe>
+                            {{-- Guides de découpe entre slides (couture verticale) --}}
+                            <template x-for="n in Math.max(0, slides.length - 1)" :key="n">
+                                <div class="absolute top-0 bottom-0 border-l border-dashed border-white/70 pointer-events-none"
+                                     :style="`left:${n * previewW}px`"></div>
+                            </template>
+                        </div>
+                    </div>
                     <div x-show="previewLoading" class="absolute top-2 right-2 text-[10px] px-2 py-0.5 rounded-full bg-black/50 text-white">…</div>
                 </div>
+                <p x-show="slides.length > 1" class="text-[11px] text-gray-400 mt-2 text-center">← défile pour voir les slides suivantes →</p>
             </div>
 
             <button type="button" @click="generate()" :disabled="rendering"
@@ -171,7 +177,7 @@
             slides: [],
             previewHtml: '',
             previewLoading: false,
-            previewW: 360,
+            previewW: 300,
             rendering: false,
             renderError: '',
             generated: [],
@@ -288,13 +294,13 @@
                 }
             },
 
-            // ── Helpers présentation ──
-            bandHeight() {
-                return this.slides.length * (this.ratios[this.ratio]?.h || 1350);
-            },
-            bandVisualHeight() {
-                return this.bandHeight() * (this.previewW / 1080);
-            },
+            // ── Helpers présentation (bande horizontale, 1 slide = previewW de large) ──
+            ratioW() { return this.ratios[this.ratio]?.w || 1080; },
+            ratioH() { return this.ratios[this.ratio]?.h || 1350; },
+            previewScale() { return this.previewW / this.ratioW(); },
+            bandCssWidth() { return this.slides.length * this.ratioW(); },
+            bandVisualWidth() { return this.slides.length * this.previewW; },
+            slideVisualHeight() { return this.ratioH() * this.previewScale(); },
             headers() {
                 return {
                     'Content-Type': 'application/json',

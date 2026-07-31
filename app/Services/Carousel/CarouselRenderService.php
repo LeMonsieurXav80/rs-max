@@ -15,13 +15,15 @@ use Spatie\Browsershot\Browsershot;
 /**
  * Rend un carrousel HTML/CSS (une suite de briques de slide) en N images.
  *
- * Pipeline : briques Blade → BANDE HTML continue (band.blade.php) → rasterisation
- * Chromium (Browsershot) en une seule image → découpe en N slides de w×h (GD).
+ * Pipeline : briques Blade → BANDE HTML continue HORIZONTALE (band.blade.php).
+ * - Aperçu : la bande est affichée telle quelle dans une iframe (aucun Chromium).
+ * - Export : chaque slide est rasterisée individuellement via Chromium/Browsershot
+ *   (robuste quel que soit le nombre de slides — pas de limite de taille de canvas).
  *
- * Rendre la bande d'un seul tenant pose les fondations de la continuité d'image
- * inter-slides (Phase 3). Les polices et les images de slots sont embarquées en
- * data-URI base64 : le rendu marche à l'identique en aperçu navigateur local et
- * dans Browsershot, sans dépendance réseau ni souci de chemin/CSP.
+ * La bande horizontale posera les fondations de la continuité d'image inter-slides
+ * (Phase 3). Les polices et les images de slots sont embarquées en data-URI base64 :
+ * le rendu marche à l'identique en aperçu navigateur et dans Browsershot, sans
+ * dépendance réseau ni souci de chemin/CSP.
  */
 class CarouselRenderService
 {
@@ -56,22 +58,16 @@ class CarouselRenderService
     public function render(string $ratio, array $slides, string $format = 'jpg', int $quality = 88): array
     {
         [$w, $h] = $this->dimensions($ratio);
-        $count = count($slides);
-        $scale = (int) config('carousel.scale', 2);
-
-        $html = $this->buildHtmlWithDims($w, $h, $slides);
-        $binary = $this->screenshot($html, $w, $h * $count, $scale);
 
         $filenames = [];
-        for ($i = 0; $i < $count; $i++) {
-            // Découpe la tranche i à l'échelle rasterisée, puis downscale à w×h (export canonique).
-            $slice = $this->manager->read($binary)
-                ->crop($w * $scale, $h * $scale, 0, $i * $h * $scale)
-                ->resize($w, $h);
+        foreach ($slides as $slide) {
+            // Une rasterisation par slide : toujours net (supersampling), aucune
+            // limite de taille de canvas quel que soit le nombre de slides.
+            $image = $this->rasterizeSlide($w, $h, $slide);
 
             $encoded = $format === 'png'
-                ? $slice->toPng()->toString()
-                : $slice->toJpeg($quality)->toString();
+                ? $image->toPng()->toString()
+                : $image->toJpeg($quality)->toString();
 
             $filename = 'carousel_'.Str::random(24).'.'.$format;
             Storage::disk('local')->put("media/{$filename}", $encoded);
@@ -193,7 +189,6 @@ class CarouselRenderService
             ->setScreenshotType('png')
             ->windowSize($w, $totalH)
             ->deviceScaleFactor($scale)
-            ->fullPage()
             ->waitUntilNetworkIdle()
             ->setDelay(200); // laisse Chromium poser les @font-face
 
