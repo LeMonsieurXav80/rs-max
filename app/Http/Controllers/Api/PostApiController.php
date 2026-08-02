@@ -87,6 +87,8 @@ class PostApiController extends Controller
             'content_en' => 'nullable|string|max:10000',
             'platform_contents' => 'nullable|array',
             'platform_contents.*' => 'nullable|string|max:10000',
+            'translations' => 'nullable|array',
+            'translations.*' => 'nullable|string|max:10000',
             'hashtags' => 'nullable|string|max:1000',
             'media' => 'nullable|array',
             'link_url' => 'nullable|url|max:2048',
@@ -107,12 +109,14 @@ class PostApiController extends Controller
 
         $post = DB::transaction(function () use ($validated, $user, $validAccounts) {
             $platformContents = array_filter($validated['platform_contents'] ?? [], fn ($v) => ! empty($v));
+            $translations = array_filter($validated['translations'] ?? [], fn ($v) => ! empty($v));
 
             $post = Post::create([
                 'user_id' => $user->id,
                 'content_fr' => $validated['content_fr'],
                 'content_en' => $validated['content_en'] ?? null,
                 'platform_contents' => ! empty($platformContents) ? $platformContents : null,
+                'translations' => ! empty($translations) ? $translations : null,
                 'hashtags' => $validated['hashtags'] ?? null,
                 'auto_translate' => true,
                 'media' => $validated['media'] ?? null,
@@ -155,6 +159,8 @@ class PostApiController extends Controller
             'content_en' => 'nullable|string|max:10000',
             'platform_contents' => 'nullable|array',
             'platform_contents.*' => 'nullable|string|max:10000',
+            'translations' => 'nullable|array',
+            'translations.*' => 'nullable|string|max:10000',
             'hashtags' => 'nullable|string|max:1000',
             'media' => 'nullable|array',
             'link_url' => 'nullable|url|max:2048',
@@ -171,6 +177,10 @@ class PostApiController extends Controller
 
             if (isset($validated['platform_contents'])) {
                 $updateData['platform_contents'] = array_filter($validated['platform_contents'], fn ($v) => ! empty($v)) ?: null;
+            }
+
+            if (isset($validated['translations'])) {
+                $updateData['translations'] = array_filter($validated['translations'], fn ($v) => ! empty($v)) ?: null;
             }
 
             $post->update($updateData);

@@ -86,6 +86,8 @@ class ThreadApiController extends Controller
             'segments.*.content_fr' => 'required|string|max:10000',
             'segments.*.platform_contents' => 'nullable|array',
             'segments.*.platform_contents.*' => 'nullable|string|max:10000',
+            'segments.*.translations' => 'nullable|array',
+            'segments.*.translations.*' => 'nullable|string|max:10000',
             'segments.*.media' => 'nullable|array',
             'status' => 'required|in:draft,scheduled',
             'scheduled_at' => 'required_if:status,scheduled|nullable|date|after_or_equal:now',
@@ -116,12 +118,14 @@ class ThreadApiController extends Controller
 
             foreach ($validated['segments'] as $index => $segData) {
                 $platformContents = array_filter($segData['platform_contents'] ?? [], fn ($v) => ! empty($v));
+                $translations = array_filter($segData['translations'] ?? [], fn ($v) => ! empty($v));
 
                 $segment = ThreadSegment::create([
                     'thread_id' => $thread->id,
                     'position' => $index + 1,
                     'content_fr' => $segData['content_fr'],
                     'platform_contents' => ! empty($platformContents) ? $platformContents : null,
+                    'translations' => ! empty($translations) ? $translations : null,
                     'media' => $segData['media'] ?? null,
                 ]);
 
@@ -180,6 +184,8 @@ class ThreadApiController extends Controller
             'segments.*.content_fr' => 'required|string|max:10000',
             'segments.*.platform_contents' => 'nullable|array',
             'segments.*.platform_contents.*' => 'nullable|string|max:10000',
+            'segments.*.translations' => 'nullable|array',
+            'segments.*.translations.*' => 'nullable|string|max:10000',
             'segments.*.media' => 'nullable|array',
         ]);
 
@@ -199,12 +205,14 @@ class ThreadApiController extends Controller
 
                 foreach ($validated['segments'] as $index => $segData) {
                     $platformContents = array_filter($segData['platform_contents'] ?? [], fn ($v) => ! empty($v));
+                    $translations = array_filter($segData['translations'] ?? [], fn ($v) => ! empty($v));
 
                     $segment = ThreadSegment::create([
                         'thread_id' => $thread->id,
                         'position' => $index + 1,
                         'content_fr' => $segData['content_fr'],
                         'platform_contents' => ! empty($platformContents) ? $platformContents : null,
+                        'translations' => ! empty($translations) ? $translations : null,
                         'media' => $segData['media'] ?? null,
                     ]);
 

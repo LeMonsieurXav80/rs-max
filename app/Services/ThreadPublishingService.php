@@ -511,6 +511,14 @@ class ThreadPublishingService
             return $translations[$cacheKey];
         }
 
+        // Repli sur la traduction generique (clé `en` plutot que `twitter_en`), sauf si la
+        // plateforme a un contenu dedie — cf. PublishingService::getTranslation().
+        $hasPlatformOverride = ! empty(($segment->platform_contents ?? [])[$platformSlug]);
+
+        if (! $hasPlatformOverride && ! empty($translations[$lang])) {
+            return $translations[$lang];
+        }
+
         $sourceText = $segment->getContentForPlatform($platformSlug);
         if (empty($sourceText)) {
             return null;

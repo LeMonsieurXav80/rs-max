@@ -2,10 +2,10 @@
 
 namespace App\Services;
 
+use App\Jobs\PublishToPlatformJob;
 use App\Models\Post;
 use App\Models\Setting;
 use App\Models\SocialAccount;
-use App\Jobs\PublishToPlatformJob;
 use Illuminate\Support\Facades\Log;
 
 class PublishingService
@@ -75,6 +75,7 @@ class PublishingService
         $multiLang = count($parts) > 1;
         $sections = array_map(function ($part) use ($multiLang) {
             $flag = self::LANGUAGE_FLAGS[$part['lang']] ?? '';
+
             return $multiLang && $flag ? "{$flag} {$part['text']}" : $part['text'];
         }, $parts);
 
@@ -87,17 +88,17 @@ class PublishingService
 
         // Append link_url if set and not already present in the content
         if ($post->link_url && ! str_contains($content, $post->link_url)) {
-            $content .= "\n\n" . $post->link_url;
+            $content .= "\n\n".$post->link_url;
         }
 
         // Append hashtags
         if ($post->hashtags) {
-            $content .= "\n\n" . $post->hashtags;
+            $content .= "\n\n".$post->hashtags;
         }
 
         // Append branding if enabled
         if ($account->show_branding && $account->branding) {
-            $content .= "\n\n" . $account->branding;
+            $content .= "\n\n".$account->branding;
         }
 
         return $content;
@@ -116,8 +117,18 @@ class PublishingService
             return $translations[$cacheKey];
         }
 
-        // Backward compat: check content_en for English (only when no platform-specific content)
-        if ($lang === 'en' && ! $platformSlug && ! empty($post->content_en)) {
+        // Repli sur la traduction generique (clé `en` plutot que `twitter_en`) : c'est la
+        // forme ecrite par l'API et par l'UI. On ne l'utilise que si la plateforme n'a pas
+        // de contenu dedie, sinon on publierait la traduction du mauvais texte source.
+        $hasPlatformOverride = $platformSlug && ! empty(($post->platform_contents ?? [])[$platformSlug]);
+
+        if (! $hasPlatformOverride && ! empty($translations[$lang])) {
+            return $translations[$lang];
+        }
+
+        // Backward compat: content_en, meme quand une plateforme est ciblee (tant qu'elle
+        // n'a pas de contenu dedie) — sinon ce champ n'etait jamais lu a la publication.
+        if ($lang === 'en' && ! $hasPlatformOverride && ! empty($post->content_en)) {
             return $post->content_en;
         }
 
