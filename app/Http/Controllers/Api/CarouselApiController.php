@@ -23,9 +23,11 @@ use Illuminate\Validation\ValidationException;
  * manifeste via BrickRegistry, donc une nouvelle brique est exploitable en API
  * sans écrire une seule règle.
  *
- * - GET  /api/carousel/bricks   : le contrat (briques, slots typés, ratios, positions).
+ * - GET  /api/carousel/bricks   : le contrat (briques, slots typés, ratios, positions, thème par défaut).
+ * - GET  /api/carousel/fonts    : catalogue Google Fonts acceptable dans `theme`.
  * - POST /api/carousel/preview  : HTML de la bande, SANS Chromium (aperçu instantané).
  * - POST /api/carousel/render   : rasterise (Chromium) et crée les MediaFile (source=api).
+ * - POST /api/carousel/image    : UNE brique => UNE image (template employé seul).
  *
  * Le rendu est SYNCHRONE : compter ~2 s par slide (un Chromium par slide), d'où le
  * plafond de 20 slides hérité du manifeste et le throttle sur la route.
@@ -41,6 +43,8 @@ class CarouselApiController extends Controller
             'ratios' => config('carousel.ratios', []),
             'default_ratio' => config('carousel.default_ratio', '4:5'),
             'positions' => $registry->positions(),
+            // Valeurs appliquées quand `theme` est absent ou partiel.
+            'theme' => config('carousel.theme', []),
             'bricks' => array_values(array_map(fn (array $brick) => [
                 'slug' => $brick['slug'],
                 'name' => $brick['name'],
@@ -48,6 +52,40 @@ class CarouselApiController extends Controller
                 'ratios' => $brick['ratios'],
                 'slots' => array_values($brick['slots']),
             ], $registry->all())),
+        ]);
+    }
+
+    /**
+     * Polices acceptables dans `theme.title_font` / `theme.body_font` : le
+     * catalogue Google complet (~1900 familles). Sans cet endpoint, un client
+     * d'API n'aurait aucun moyen de connaître les valeurs valides.
+     *
+     * `installed` = copie locale déjà présente ; sinon elle est téléchargée au
+     * premier rendu qui l'utilise (quelques secondes de plus, une seule fois).
+     */
+    public function fonts(Request $request, FontLibrary $fonts): JsonResponse
+    {
+        $validated = $request->validate([
+            'q' => ['nullable', 'string', 'max:60'],
+            'limit' => ['nullable', 'integer', 'between:1,2000'],
+        ]);
+
+        $query = mb_strtolower(trim((string) ($validated['q'] ?? '')));
+        $installed = array_flip($fonts->families());
+
+        $catalogue = $fonts->catalogue();
+        if ($query !== '') {
+            $catalogue = array_values(array_filter(
+                $catalogue,
+                fn (array $font) => str_contains(mb_strtolower($font['family']), $query),
+            ));
+        }
+
+        return response()->json([
+            'total' => count($catalogue),
+            'fonts' => array_map(fn (array $font) => $font + [
+                'installed' => isset($installed[$font['family']]),
+            ], array_slice($catalogue, 0, (int) ($validated['limit'] ?? 100))),
         ]);
     }
 
@@ -149,18 +187,77 @@ class CarouselApiController extends Controller
     }
 
     /**
+     * UNE brique => UNE image. Même pipeline que le carrousel, sans l'enveloppe :
+     * de quoi illustrer un tweet ou un post simple avec un template, sans être
+     * obligé de fabriquer un carrousel puis d'en jeter les autres slides.
+     *
+     * `ratio` accepte en plus la valeur `auto` : la sortie épouse alors le ratio
+     * NATIF de l'image de fond (plafonné à 1080), comme l'incrustation de titre
+     * à la publication — utile quand recadrer la photo n'est pas souhaitable.
+     */
+    public function image(Request $request, CarouselRenderService $carousel, ThumbnailService $thumbnails): JsonResponse
+    {
+        $registry = app(BrickRegistry::class);
+        $slug = $request->input('brick');
+
+        $validated = $request->validate([
+            'brick' => ['required', 'string', 'in:'.implode(',', $registry->slugs())],
+            'ratio' => ['nullable', 'string', 'in:'.implode(',', [...$registry->ratioKeys(), 'auto'])],
+            'data' => ['nullable', 'array'],
+            'format' => ['nullable', 'string', 'in:jpg,png'],
+            'quality' => ['nullable', 'integer', 'between:40,100'],
+        ] + $registry->themeRules()
+          + (is_string($slug) ? $registry->slotRulesFor($slug, 'data') : []));
+
+        $theme = $registry->normalizeTheme($validated['theme'] ?? null);
+        app(FontLibrary::class)->ensureTheme($theme);
+
+        $slide = $registry->normalizeSlide($validated['brick'], $validated['data'] ?? []) + ['theme' => $theme];
+
+        $requested = $validated['ratio'] ?? config('carousel.default_ratio', '4:5');
+        $ratio = $requested === 'auto' ? null : $requested;
+
+        // `auto` sans image n'a pas de sens : autant le dire plutôt que de
+        // retomber silencieusement sur un ratio arbitraire.
+        if ($ratio === null && empty($slide['data']['image'])) {
+            throw ValidationException::withMessages([
+                'ratio' => 'Le ratio « auto » suppose une image de fond : ce sont ses proportions qui sont reprises.',
+            ]);
+        }
+
+        $format = $validated['format'] ?? 'jpg';
+        $quality = (int) ($validated['quality'] ?? 88);
+
+        try {
+            $filename = $carousel->renderOne($slide, $ratio, $format, $quality);
+        } catch (\Throwable $e) {
+            Log::error('CarouselApi: échec du rendu image', ['error' => $e->getMessage()]);
+
+            return response()->json([
+                'message' => 'Échec du rendu de l’image (navigateur headless indisponible ?).',
+            ], 500);
+        }
+
+        return response()->json([
+            'brick' => $validated['brick'],
+            'ratio' => $requested,
+            'image' => $this->persist($filename, $format, 0, $thumbnails, 'image'),
+        ], 201);
+    }
+
+    /**
      * Enregistre une slide rendue dans la médiathèque (source=api).
      *
      * @return array<string, mixed>
      */
-    private function persist(string $filename, string $format, int $index, ThumbnailService $thumbnails): array
+    private function persist(string $filename, string $format, int $index, ThumbnailService $thumbnails, string $label = 'carrousel'): array
     {
         $path = Storage::disk('local')->path("media/{$filename}");
         $dim = @getimagesize($path) ?: [null, null];
 
         $media = MediaFile::create([
             'filename' => $filename,
-            'original_name' => 'carrousel-'.now()->format('Ymd-His').'-'.$index.'.'.$format,
+            'original_name' => $label.'-'.now()->format('Ymd-His').'-'.$index.'.'.$format,
             'mime_type' => $format === 'png' ? 'image/png' : 'image/jpeg',
             'size' => is_file($path) ? filesize($path) : 0,
             'width' => $dim[0],

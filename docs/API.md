@@ -2,6 +2,10 @@
 
 API REST d'orchestration multi-plateformes : publication, planification, génération IA, stats.
 
+> **Fabrication d'images et de carrousels** (templates HTML/CSS, briques, thème,
+> polices) : voir le document dédié [`carousel-api.md`](carousel-api.md).
+> Il partage la base URL, l'authentification et les conventions décrites ici.
+
 ---
 
 ## Table des matières

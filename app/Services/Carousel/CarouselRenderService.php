@@ -116,18 +116,74 @@ class CarouselRenderService
         foreach ($slides as $slide) {
             // Une rasterisation par slide : toujours net (supersampling), aucune
             // limite de taille de canvas quel que soit le nombre de slides.
-            $image = $this->rasterizeSlide($w, $h, $slide);
-
-            $encoded = $format === 'png'
-                ? $image->toPng()->toString()
-                : $image->toJpeg($quality)->toString();
-
-            $filename = 'carousel_'.Str::random(24).'.'.$format;
-            Storage::disk('local')->put("media/{$filename}", $encoded);
-            $filenames[] = $filename;
+            $filenames[] = $this->store($this->rasterizeSlide($w, $h, $slide), $format, $quality);
         }
 
         return $filenames;
+    }
+
+    /**
+     * Rend UNE brique en UNE image — un template employé seul, sans carrousel
+     * (visuel de tweet, vignette d'article…). Retourne le nom de fichier écrit
+     * dans storage/app/media/.
+     *
+     * `$ratio` = clé de ratio du manifeste, ou null pour épouser le ratio NATIF
+     * de l'image de fond (plafonné à 1080 sur le grand côté, comme l'incrustation
+     * de publication). Sans image de fond, null retombe sur le ratio par défaut.
+     *
+     * @param  array{brick: string, data?: array, theme?: array}  $slide
+     */
+    public function renderOne(array $slide, ?string $ratio = null, string $format = 'jpg', int $quality = 88): string
+    {
+        [$w, $h] = $ratio !== null
+            ? $this->dimensions($ratio)
+            : $this->sourceDimensions((string) $this->localPath($slide['data']['image'] ?? null));
+
+        return $this->store($this->rasterizeSlide($w, $h, $slide), $format, $quality);
+    }
+
+    /**
+     * Dimensions d'export d'une image unique, sans rien rasteriser : permet à
+     * l'appelant d'annoncer la taille produite.
+     *
+     * @return array{0: int, 1: int} [w, h]
+     */
+    public function outputDimensions(?string $ratio, mixed $imageRef = null): array
+    {
+        return $ratio !== null
+            ? $this->dimensions($ratio)
+            : $this->sourceDimensions((string) $this->localPath($imageRef));
+    }
+
+    /**
+     * Encode et écrit une image rendue sous media/. Retourne le nom de fichier.
+     */
+    private function store(Image $image, string $format, int $quality): string
+    {
+        $encoded = $format === 'png'
+            ? $image->toPng()->toString()
+            : $image->toJpeg($quality)->toString();
+
+        $filename = 'carousel_'.Str::random(24).'.'.$format;
+        Storage::disk('local')->put("media/{$filename}", $encoded);
+
+        return $filename;
+    }
+
+    /**
+     * Chemin disque d'une référence d'image locale (`/media/…`), ou null.
+     * Les data-URI et URL externes n'ont pas de chemin : le ratio natif ne peut
+     * pas s'en déduire.
+     */
+    private function localPath(mixed $value): ?string
+    {
+        if (! is_string($value) || ! str_contains($value, '/media/')) {
+            return null;
+        }
+
+        $path = Storage::disk('local')->path('media/'.basename(parse_url($value, PHP_URL_PATH) ?: $value));
+
+        return is_file($path) ? $path : null;
     }
 
     /**

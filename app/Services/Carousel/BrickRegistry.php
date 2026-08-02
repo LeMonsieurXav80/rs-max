@@ -280,20 +280,31 @@ class BrickRegistry
      */
     public function compositionRules(): array
     {
-        // Toute police du catalogue Google est acceptable : la copie locale est
-        // téléchargée à l'usage (FontLibrary::ensureTheme), pas avant.
-        $fonts = app(FontLibrary::class)->catalogueFamilies();
-
         return [
             'ratio' => ['required', 'string', 'in:'.implode(',', $this->ratioKeys())],
             'slides' => ['required', 'array', 'min:1', 'max:20'],
             'slides.*.brick' => ['required', 'string', 'in:'.implode(',', $this->slugs())],
             'slides.*.data' => ['nullable', 'array'],
+        ] + $this->themeRules();
+    }
 
-            // Apparence du carrousel (s'applique à toutes ses slides).
-            // Hex à 6 chiffres OBLIGATOIRE : le dégradé de lisibilité concatène
-            // un canal alpha à la couleur (voir Anchor::scrim), donc #000 ou
-            // rgb(...) casseraient le rendu sans erreur visible.
+    /**
+     * Règles d'apparence, partagées par le carrousel (où le thème s'applique à
+     * toutes les slides) et par l'image unique.
+     *
+     * Hex à 6 chiffres OBLIGATOIRE : le dégradé de lisibilité concatène un canal
+     * alpha à la couleur (voir Anchor::scrim), donc #000 ou rgb(...) casseraient
+     * le rendu sans erreur visible.
+     *
+     * @return array<string, mixed>
+     */
+    public function themeRules(): array
+    {
+        // Toute police du catalogue Google est acceptable : la copie locale est
+        // téléchargée à l'usage (FontLibrary::ensureTheme), pas avant.
+        $fonts = app(FontLibrary::class)->catalogueFamilies();
+
+        return [
             'theme' => ['nullable', 'array'],
             'theme.background' => ['nullable', 'string', 'regex:/^#[0-9a-fA-F]{6}$/'],
             'theme.text' => ['nullable', 'string', 'regex:/^#[0-9a-fA-F]{6}$/'],
@@ -337,9 +348,27 @@ class BrickRegistry
                 continue;
             }
 
-            foreach ($this->get($slug)['slots'] as $key => $slot) {
-                $rules["slides.{$i}.data.{$key}"] = $this->slotRule($slot);
-            }
+            $rules += $this->slotRulesFor($slug, "slides.{$i}.data");
+        }
+
+        return $rules;
+    }
+
+    /**
+     * Règles des slots d'UNE brique, sous un préfixe de champ donné. Sert le
+     * carrousel (`slides.0.data`) comme l'image unique (`data`).
+     *
+     * @return array<string, mixed>
+     */
+    public function slotRulesFor(string $slug, string $prefix = 'data'): array
+    {
+        if (! $this->exists($slug)) {
+            return [];
+        }
+
+        $rules = [];
+        foreach ($this->get($slug)['slots'] as $key => $slot) {
+            $rules["{$prefix}.{$key}"] = $this->slotRule($slot);
         }
 
         return $rules;
@@ -356,20 +385,29 @@ class BrickRegistry
      */
     public function normalizeSlides(array $slides): array
     {
-        return array_values(array_map(function (array $slide) {
-            $brick = $this->get($slide['brick']);
-            $raw = $slide['data'] ?? [];
+        return array_values(array_map(
+            fn (array $slide) => $this->normalizeSlide($slide['brick'], $slide['data'] ?? []),
+            $slides,
+        ));
+    }
 
-            $data = [];
-            foreach ($brick['slots'] as $key => $slot) {
-                $value = $this->normalizeValue($slot, $raw[$key] ?? null);
-                if ($value !== null) {
-                    $data[$key] = $value;
-                }
+    /**
+     * Même nettoyage pour une slide isolée (image unique).
+     *
+     * @param  array<string, mixed>  $raw
+     * @return array{brick: string, data: array<string, mixed>}
+     */
+    public function normalizeSlide(string $slug, array $raw = []): array
+    {
+        $data = [];
+        foreach ($this->get($slug)['slots'] as $key => $slot) {
+            $value = $this->normalizeValue($slot, $raw[$key] ?? null);
+            if ($value !== null) {
+                $data[$key] = $value;
             }
+        }
 
-            return ['brick' => $slide['brick'], 'data' => $data];
-        }, $slides));
+        return ['brick' => $slug, 'data' => $data];
     }
 
     /**

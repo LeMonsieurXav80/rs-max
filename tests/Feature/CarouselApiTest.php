@@ -243,5 +243,121 @@ class CarouselApiTest extends TestCase
             'ratio' => '4:5',
             'slides' => [['brick' => 'bold-text', 'data' => ['title' => 'X']]],
         ])->assertStatus(401);
+
+        $this->postJson('/api/carousel/image', [
+            'brick' => 'bold-text',
+            'data' => ['title' => 'X'],
+        ])->assertStatus(401);
+    }
+
+    public function test_le_manifeste_expose_le_theme_par_defaut(): void
+    {
+        $this->actAsApiUser();
+
+        $theme = $this->getJson('/api/carousel/bricks')->assertOk()->json('theme');
+
+        // Sans ces valeurs, un client d'API ne saurait pas ce qui s'applique
+        // quand il omet `theme`.
+        $this->assertArrayHasKey('background', $theme);
+        $this->assertArrayHasKey('title_font', $theme);
+    }
+
+    public function test_le_catalogue_de_polices_est_interrogeable(): void
+    {
+        $this->actAsApiUser();
+
+        $all = $this->getJson('/api/carousel/fonts')->assertOk();
+        $this->assertGreaterThan(0, $all->json('total'));
+        $this->assertLessThanOrEqual(100, count($all->json('fonts')), 'limite par défaut');
+
+        $found = $this->getJson('/api/carousel/fonts?q=montser')->assertOk();
+        $families = array_column($found->json('fonts'), 'family');
+
+        $this->assertContains('Montserrat', $families);
+        // Les polices livrées sont déjà présentes sur le disque : le client sait
+        // que le rendu ne paiera pas le téléchargement.
+        $montserrat = collect($found->json('fonts'))->firstWhere('family', 'Montserrat');
+        $this->assertTrue($montserrat['installed']);
+    }
+
+    public function test_limage_unique_refuse_une_brique_inconnue(): void
+    {
+        $this->actAsApiUser();
+
+        $this->postJson('/api/carousel/image', [
+            'brick' => 'brique-qui-nexiste-pas',
+            'data' => ['title' => 'X'],
+        ])->assertStatus(422)->assertJsonValidationErrors('brick');
+    }
+
+    public function test_limage_unique_applique_les_regles_de_slots_de_sa_brique(): void
+    {
+        $this->actAsApiUser();
+
+        // Mêmes règles dérivées du manifeste que pour une slide de carrousel.
+        $this->postJson('/api/carousel/image', [
+            'brick' => 'photo-title-bl',
+            'ratio' => '1:1',
+            'data' => ['position' => 'nulle-part'],
+        ])->assertStatus(422)->assertJsonValidationErrors('data.position');
+
+        $this->postJson('/api/carousel/image', [
+            'brick' => 'photo-title-bl',
+            'ratio' => '1:1',
+            'data' => ['offset' => 400],
+        ])->assertStatus(422)->assertJsonValidationErrors('data.offset');
+
+        $this->postJson('/api/carousel/image', [
+            'brick' => 'bold-text',
+            'theme' => ['overlay' => '#000'],
+            'data' => ['title' => 'X'],
+        ])->assertStatus(422)->assertJsonValidationErrors('theme.overlay');
+    }
+
+    public function test_limage_unique_refuse_un_ratio_inconnu(): void
+    {
+        $this->actAsApiUser();
+
+        $this->postJson('/api/carousel/image', [
+            'brick' => 'bold-text',
+            'ratio' => '16:9',
+            'data' => ['title' => 'X'],
+        ])->assertStatus(422)->assertJsonValidationErrors('ratio');
+    }
+
+    public function test_le_ratio_auto_exige_une_image_de_fond(): void
+    {
+        $this->actAsApiUser();
+
+        // `auto` reprend les proportions de la photo : sans photo, on le dit
+        // plutôt que de retomber en silence sur un ratio arbitraire.
+        $this->postJson('/api/carousel/image', [
+            'brick' => 'bold-text',
+            'ratio' => 'auto',
+            'data' => ['title' => 'X'],
+        ])->assertStatus(422)->assertJsonValidationErrors('ratio');
+    }
+
+    public function test_les_dimensions_de_sortie_suivent_le_ratio_demande(): void
+    {
+        $this->actAsApiUser();
+
+        $carousel = app(\App\Services\Carousel\CarouselRenderService::class);
+
+        $this->assertSame([1080, 566], $carousel->outputDimensions('1.91:1'));
+        $this->assertSame([1080, 1350], $carousel->outputDimensions('4:5'));
+
+        // `auto` sur une image 1365×2048 : ratio natif, plafonné à 1080.
+        $filename = 'test_auto_'.uniqid().'.png';
+        $png = imagecreatetruecolor(400, 800);
+        ob_start();
+        imagepng($png);
+        Storage::disk('local')->put("media/{$filename}", (string) ob_get_clean());
+
+        try {
+            $this->assertSame([400, 800], $carousel->outputDimensions(null, "/media/{$filename}"));
+        } finally {
+            Storage::disk('local')->delete("media/{$filename}");
+        }
     }
 }

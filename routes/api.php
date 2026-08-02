@@ -70,6 +70,7 @@ Route::middleware('auth:sanctum')->group(function () {
 
     // ── Studio carrousel (briques HTML/CSS) ──
     Route::get('/carousel/bricks', [CarouselApiController::class, 'bricks']);
+    Route::get('/carousel/fonts', [CarouselApiController::class, 'fonts']); // valeurs acceptables pour theme.*_font
     // CRUD des briques STOCKÉES EN BASE (les briques fournies restent en lecture seule)
     Route::post('/carousel/bricks', [CarouselApiController::class, 'storeBrick']);
     Route::put('/carousel/bricks/{brick}', [CarouselApiController::class, 'updateBrick']);
@@ -77,6 +78,9 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::post('/carousel/preview', [CarouselApiController::class, 'preview']); // HTML de la bande, sans Chromium
     Route::post('/carousel/render', [CarouselApiController::class, 'render'])
         ->middleware('throttle:20,1'); // rendu synchrone Chromium : ~2 s par slide
+    // Une brique employée seule => une image (visuel de tweet, vignette d'article).
+    Route::post('/carousel/image', [CarouselApiController::class, 'image'])
+        ->middleware('throttle:60,1'); // une seule rasterisation : plafond plus large que /render
 
     // ── Banques d'images externes (Pexels, Pixabay, Unsplash) ──
     Route::get('/stock-photos/search', [MediaApiController::class, 'stockPhotosSearch']);
