@@ -52,8 +52,11 @@
             @endphp
             <div class="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden flex flex-col">
 
-                {{-- Aperçu visuel réel du template (iframe, aucun Chromium) --}}
-                <div class="relative bg-gray-100 overflow-hidden" style="height: {{ (int) round($dims['h'] * $scale) }}px;">
+                {{-- Aperçu visuel réel du template (iframe, aucun Chromium).
+                     Largeur figée en style inline : l'aperçu est mis à l'échelle en PHP,
+                     il ne doit donc pas dépendre de la largeur réelle de la carte. --}}
+                <div class="relative bg-gray-100 overflow-hidden mx-auto"
+                     style="width: {{ $cardW }}px; height: {{ (int) round($dims['h'] * $scale) }}px;">
                     <iframe srcdoc="{{ $t['preview'] }}" scrolling="no" loading="lazy"
                             class="border-0 origin-top-left absolute top-0 left-0 pointer-events-none"
                             style="width: {{ $dims['w'] }}px; height: {{ $dims['h'] }}px; transform: scale({{ $scale }});"></iframe>
