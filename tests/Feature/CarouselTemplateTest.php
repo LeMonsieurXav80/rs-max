@@ -137,6 +137,74 @@ class CarouselTemplateTest extends TestCase
         $this->assertStringContainsString('&lt;script&gt;', $html);
     }
 
+    public function test_les_champs_sont_deduits_du_gabarit(): void
+    {
+        $slots = $this->renderer()->extractSlots(
+            '<!-- exemple : {{ ignore_moi }} -->'
+            .'<img src="{{ image }}">{{#if titre}}<h1>{{ titre }}</h1>{{/if}}'
+            .'<p>{{ body }}</p>{{#each rows}}{{ left }}{{ right }}{{ index }}{{/each}}'
+            .'<span style="color:{{ theme.accent }}"></span>'
+        );
+
+        // Les types sont inférés du nom et de l'usage.
+        $this->assertSame('image', $slots['image']['type']);
+        $this->assertSame('text', $slots['titre']['type']);
+        $this->assertSame('textarea', $slots['body']['type']);
+        $this->assertSame('textarea', $slots['rows']['type']);
+
+        // Variables de boucle, thème et commentaires ne créent pas de champ.
+        foreach (['left', 'right', 'index', 'theme.accent', 'ignore_moi'] as $absent) {
+            $this->assertArrayNotHasKey($absent, $slots);
+        }
+    }
+
+    public function test_creer_un_template_ne_demande_que_le_gabarit(): void
+    {
+        // Aucun champ n'est déclaré : ils doivent sortir du gabarit tout seuls.
+        $this->actingAs($this->manager())
+            ->post(route('carousel.templates.store'), [
+                'name' => 'Sans déclaration',
+                'html' => '<div class="s">{{#if accroche}}<h1>{{ accroche }}</h1>{{/if}}<img src="{{ image }}"></div>',
+                'css' => '.s { color: var(--text); font-family: "Montserrat"; }',
+            ])
+            ->assertRedirect();
+
+        $brick = CarouselBrick::firstWhere('name', 'Sans déclaration');
+        $this->assertSame(['accroche', 'image'], array_keys($brick->slots));
+        $this->assertSame('text', $brick->slots['accroche']['type']);
+        $this->assertSame('image', $brick->slots['image']['type']);
+        $this->assertStringContainsString('Montserrat', $brick->css);
+    }
+
+    public function test_la_feuille_de_style_est_injectee_et_ne_peut_pas_sechapper(): void
+    {
+        $html = $this->renderer()->render(
+            '<div class="s">{{ title }}</div>',
+            ['title' => 'T'],
+            [],
+            1080,
+            1350,
+            '.s { color: red; font-family: "Montserrat"; } </style><script>alert(1)</script>'
+        );
+
+        $this->assertStringContainsString('color: red', $html);
+        // Les guillemets restent (indispensables en CSS)…
+        $this->assertStringContainsString('"Montserrat"', $html);
+        // …mais on ne peut pas sortir du bloc <style> pour injecter un script.
+        $this->assertStringNotContainsString('<script', $html);
+    }
+
+    public function test_un_css_dangereux_est_refuse_a_lenregistrement(): void
+    {
+        $this->actingAs($this->manager())
+            ->post(route('carousel.templates.store'), [
+                'name' => 'CSS externe',
+                'html' => '<div>{{ title }}</div>',
+                'css' => 'body { background: url(https://evil.tld/p.png); }',
+            ])
+            ->assertSessionHasErrors('css');
+    }
+
     public function test_un_gabarit_dangereux_est_signale(): void
     {
         $renderer = $this->renderer();

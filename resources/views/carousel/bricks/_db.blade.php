@@ -6,4 +6,4 @@
     aucune exécution. Le {!! !!} est donc sûr : la sortie du moteur est déjà
     échappée slot par slot et nettoyée des balises interdites.
 --}}
-{!! app(\App\Services\Carousel\TemplateRenderer::class)->render((string) ($template ?? ''), $data, $theme, $w, $h) !!}
+{!! app(\App\Services\Carousel\TemplateRenderer::class)->render((string) ($template ?? ''), $data, $theme, $w, $h, $css ?? null) !!}

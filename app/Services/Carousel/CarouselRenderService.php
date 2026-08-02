@@ -81,7 +81,7 @@ class CarouselRenderService
      * l'aperçu live de l'éditeur de templates, où la brique n'existe pas encore
      * dans le registre.
      */
-    public function buildTemplateHtml(string $ratio, string $template, array $data = [], array $theme = [], bool $embedFonts = true): string
+    public function buildTemplateHtml(string $ratio, string $template, array $data = [], array $theme = [], bool $embedFonts = true, ?string $css = null): string
     {
         [$w, $h] = $this->dimensions($ratio);
 
@@ -94,6 +94,7 @@ class CarouselRenderService
                 'data' => $this->resolveImageSlots($data),
                 'theme' => $this->resolveTheme($theme),
                 'template' => $template,
+                'css' => $css,
             ]],
         ])->render();
     }
@@ -220,6 +221,7 @@ class CarouselRenderService
                 'theme' => $this->resolveTheme($slide['theme'] ?? []),
                 // Non nul pour les briques stockées en base (rendues par TemplateRenderer).
                 'template' => $brick['template'] ?? null,
+                'css' => $brick['css'] ?? null,
             ];
         }, $slides);
 

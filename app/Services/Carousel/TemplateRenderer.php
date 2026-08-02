@@ -32,17 +32,95 @@ class TemplateRenderer
     private const FORBIDDEN_TAGS = ['script', 'iframe', 'object', 'embed', 'link', 'meta', 'base', 'form', 'svg'];
 
     /**
+     * Variables de boucle, fournies par {{#each}} : ce ne sont pas des champs
+     * éditables et elles ne doivent donc pas apparaître dans les slots déduits.
+     */
+    private const LOOP_VARS = ['left', 'right', 'index'];
+
+    /**
      * @param  array<string, mixed>  $data  slots déjà normalisés (BrickRegistry)
      * @param  array<string, mixed>  $theme
      */
-    public function render(string $template, array $data, array $theme, int $w, int $h): string
+    public function render(string $template, array $data, array $theme, int $w, int $h, ?string $css = null): string
     {
         $context = $this->context($data, $theme);
 
         $html = $this->renderSections($template, $context, $data);
         $html = $this->sanitize($html);
 
-        return $this->wrap($html, $data, $theme, $h);
+        return $this->wrap($html, $data, $theme, $h, $css);
+    }
+
+    /**
+     * DÉDUIT les champs éditables à partir du gabarit : chaque marqueur devient
+     * un slot. On n'a donc rien à déclarer à la main — écrire {{ titre }} dans le
+     * gabarit suffit à faire apparaître le champ « Titre » dans le Studio.
+     *
+     * Le type est inféré du nom (une image s'appelle image/photo/visuel) et de
+     * l'usage ({{#each}} => liste, donc champ multiligne).
+     *
+     * @return array<string, array{label: string, type: string}>
+     */
+    public function extractSlots(string $template): array
+    {
+        // Les commentaires ne définissent pas de champs (ils citent souvent la syntaxe).
+        $template = preg_replace('/<!--.*?-->/s', '', $template) ?? $template;
+
+        $lists = [];
+        if (preg_match_all('/\{\{#each\s+([\w]+)\s*\}\}/', $template, $m)) {
+            $lists = array_unique($m[1]);
+        }
+
+        $keys = [];
+        // Ordre d'apparition : {{ x }}, {{#if x}}, {{#unless x}}, {{#each x}}.
+        if (preg_match_all('/\{\{\s*#?(?:if|unless|each)?\s*([\w.]+)\s*\}\}/', $template, $m)) {
+            foreach ($m[1] as $key) {
+                if (str_contains($key, '.') || in_array($key, self::LOOP_VARS, true)) {
+                    continue; // theme.* et variables de boucle
+                }
+                $keys[$key] = true;
+            }
+        }
+
+        $slots = [];
+        foreach (array_keys($keys) as $key) {
+            $slots[$key] = [
+                'label' => $this->humanize($key),
+                'type' => $this->inferType($key, in_array($key, $lists, true)),
+            ];
+
+            if ($slots[$key]['type'] === 'range') {
+                $slots[$key] += ['min' => -25, 'max' => 25, 'step' => 1, 'default' => 0, 'unit' => '%'];
+            }
+            if ($slots[$key]['type'] === 'position') {
+                $slots[$key]['default'] = 'bottom-left';
+            }
+        }
+
+        return $slots;
+    }
+
+    private function inferType(string $key, bool $isList): string
+    {
+        if ($key === 'position') {
+            return 'position';
+        }
+        if ($key === 'offset') {
+            return 'range';
+        }
+        if (preg_match('/^(image|photo|visuel|fond|background|illustration)/i', $key)) {
+            return 'image';
+        }
+        if ($isList || preg_match('/^(items|rows|lignes|body|texte|paragraphe|quote|citation|description)/i', $key)) {
+            return 'textarea';
+        }
+
+        return 'text';
+    }
+
+    private function humanize(string $key): string
+    {
+        return ucfirst(str_replace('_', ' ', $key));
     }
 
     /**
@@ -183,7 +261,7 @@ class TemplateRenderer
      * Enveloppe le gabarit dans un conteneur plein cadre qui porte les variables
      * CSS et fait du slide un conteneur de requête (unités cqw/cqh).
      */
-    private function wrap(string $html, array $data, array $theme, int $h): string
+    private function wrap(string $html, array $data, array $theme, int $h, ?string $css = null): string
     {
         $anchor = Anchor::resolve($data['position'] ?? null, $theme['overlay'] ?? '#000000');
         $shift = Anchor::offsetTransform($data['offset'] ?? 0, $h);
@@ -210,8 +288,16 @@ class TemplateRenderer
         // comme une classe utilitaire prête à poser dans le gabarit.
         $scrim = $anchor['scrim'];
 
+        // La feuille de style du template est posée dans le même conteneur que le
+        // gabarit ; on la nettoie comme le HTML (pas de ressource externe, pas de
+        // balise glissée dans une chaîne CSS).
+        $sheet = $css === null || trim($css) === ''
+            ? ''
+            : '<style>'.$this->cssSheet($css).'</style>';
+
         return '<div class="brick-root" style="position:absolute; inset:0; container-type:size; '.$style.'">'
             .'<style>.brick-scrim{'.$this->cssValue($scrim).'}</style>'
+            .$sheet
             .$html
             .'</div>';
     }
@@ -222,5 +308,17 @@ class TemplateRenderer
     private function cssValue(string $value): string
     {
         return str_replace(['<', '>', '"'], '', $value);
+    }
+
+    /**
+     * Feuille de style d'un template : on retire `<` et `>` (seule façon de sortir
+     * du bloc <style>) mais on garde les guillemets, indispensables en CSS
+     * (font-family:"…", content:"…").
+     */
+    private function cssSheet(string $css): string
+    {
+        $css = preg_replace('/javascript\s*:/i', '', $css) ?? $css;
+
+        return str_replace(['<', '>'], '', $css);
     }
 }

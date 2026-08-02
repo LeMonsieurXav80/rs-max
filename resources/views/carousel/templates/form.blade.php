@@ -3,19 +3,7 @@
 @section('title', $mode === 'edit' ? 'Modifier le template' : 'Nouveau template')
 
 @php
-    // Slots du manifeste (clé => définition) → liste indexée pour le formulaire.
     // Calculé ici et pas dans @json : les closures dans @json cassent le parse Blade.
-    $slotsForm = [];
-    foreach ($template->slots ?: [] as $key => $slot) {
-        $default = $slot['default'] ?? null;
-        $slotsForm[] = [
-            'key' => $key,
-            'label' => $slot['label'] ?? $key,
-            'type' => $slot['type'] ?? 'text',
-            'default' => is_scalar($default) ? (string) $default : '',
-        ];
-    }
-    $slotsForm = old('slots', $slotsForm);
     $sampleForm = (object) old('sample_data', $template->sample_data ?: []);
     $defaultRatio = config('carousel.default_ratio', '4:5');
 @endphp
@@ -52,16 +40,17 @@
 
                 {{-- Identité --}}
                 <div class="bg-white rounded-2xl shadow-sm border border-gray-100 p-5 space-y-4">
-                    <div>
-                        <label class="block text-sm font-medium text-gray-700 mb-1">Nom</label>
-                        <input type="text" name="name" value="{{ old('name', $template->name) }}" required
-                               class="w-full rounded-lg border-gray-300 text-sm focus:border-indigo-500 focus:ring-indigo-500">
-                    </div>
-                    <div>
-                        <label class="block text-sm font-medium text-gray-700 mb-1">Description</label>
-                        <textarea name="description" rows="2"
-                                  class="w-full rounded-lg border-gray-300 text-sm focus:border-indigo-500 focus:ring-indigo-500">{{ old('description', $template->description) }}</textarea>
-                        <p class="text-xs text-gray-400 mt-1">Affichée dans le Studio sous le nom du template.</p>
+                    <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 mb-1">Nom</label>
+                            <input type="text" name="name" value="{{ old('name', $template->name) }}" required
+                                   class="w-full rounded-lg border-gray-300 text-sm focus:border-indigo-500 focus:ring-indigo-500">
+                        </div>
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 mb-1">Description</label>
+                            <input type="text" name="description" value="{{ old('description', $template->description) }}"
+                                   class="w-full rounded-lg border-gray-300 text-sm focus:border-indigo-500 focus:ring-indigo-500">
+                        </div>
                     </div>
                     <div>
                         <label class="block text-sm font-medium text-gray-700 mb-2">Formats compatibles</label>
@@ -81,66 +70,65 @@
                     </div>
                 </div>
 
-                {{-- Champs éditables (slots) --}}
-                <div class="bg-white rounded-2xl shadow-sm border border-gray-100 p-5">
-                    <div class="flex items-center justify-between mb-1">
-                        <h2 class="text-sm font-semibold text-gray-900">Champs du template</h2>
-                        <button type="button" @click="addSlot()"
-                                class="text-xs px-2.5 py-1 rounded-lg border border-gray-200 text-gray-600 hover:border-indigo-300 hover:text-indigo-600">
-                            + Ajouter un champ
-                        </button>
-                    </div>
-                    <p class="text-xs text-gray-400 mb-4">
-                        Chaque champ devient un marqueur utilisable dans le gabarit : <code class="text-gray-500">&#123;&#123; clé &#125;&#125;</code>.
-                    </p>
-
-                    <div class="space-y-3">
-                        <template x-for="(slot, i) in slots" :key="i">
-                            <div class="grid grid-cols-[1fr_1.4fr_1fr_auto] gap-2 items-center">
-                                <input type="text" :name="`slots[${i}][key]`" x-model="slot.key" @input="queuePreview()"
-                                       placeholder="cle" class="rounded-lg border-gray-300 text-sm font-mono focus:border-indigo-500 focus:ring-indigo-500">
-                                <input type="text" :name="`slots[${i}][label]`" x-model="slot.label"
-                                       placeholder="Libellé affiché" class="rounded-lg border-gray-300 text-sm focus:border-indigo-500 focus:ring-indigo-500">
-                                <select :name="`slots[${i}][type]`" x-model="slot.type" @change="queuePreview()"
-                                        class="rounded-lg border-gray-300 text-sm focus:border-indigo-500 focus:ring-indigo-500">
-                                    @foreach ($slotTypes as $value => $label)
-                                        <option value="{{ $value }}">{{ $label }}</option>
-                                    @endforeach
-                                </select>
-                                <input type="hidden" :name="`slots[${i}][default]`" :value="slot.default ?? ''">
-                                <button type="button" @click="slots.splice(i, 1); queuePreview()"
-                                        class="p-1.5 text-red-400 hover:text-red-600" title="Retirer">✕</button>
-                            </div>
-                        </template>
-                    </div>
-                </div>
-
                 {{-- Gabarit --}}
                 <div class="bg-white rounded-2xl shadow-sm border border-gray-100 p-5">
-                    <h2 class="text-sm font-semibold text-gray-900 mb-1">Gabarit HTML / CSS</h2>
+                    <h2 class="text-sm font-semibold text-gray-900 mb-1">Gabarit HTML</h2>
                     <p class="text-xs text-gray-400 mb-3">
-                        Marqueurs : <code>&#123;&#123; cle &#125;&#125;</code> ·
-                        <code>&#123;&#123;#if cle&#125;&#125; … &#123;&#123;/if&#125;&#125;</code> ·
-                        <code>&#123;&#123;#each items&#125;&#125; &#123;&#123; left &#125;&#125; &#123;&#123; right &#125;&#125; &#123;&#123;/each&#125;&#125;</code>.
-                        Tailles en <code>cqh</code>/<code>cqw</code> (6cqh = 6 % de la hauteur).
-                        Couleurs du thème : <code>var(--text)</code>, <code>var(--accent)</code>, <code>var(--bg)</code>.
-                        Ni script, ni ressource externe.
+                        Écris <code>&#123;&#123; titre &#125;&#125;</code> et le champ « Titre » apparaît tout seul dans le Studio —
+                        rien à déclarer. Aussi : <code>&#123;&#123;#if titre&#125;&#125; … &#123;&#123;/if&#125;&#125;</code> pour masquer un bloc vide,
+                        <code>&#123;&#123;#each items&#125;&#125; &#123;&#123; left &#125;&#125; &#123;&#123; right &#125;&#125; &#123;&#123;/each&#125;&#125;</code> pour une liste.
                     </p>
-                    <textarea name="html" x-model="html" @input="queuePreview()" rows="20" spellcheck="false"
+                    <textarea name="html" x-model="html" @input="onSourceChange()" rows="16" spellcheck="false"
                               class="w-full rounded-lg border-gray-300 text-xs font-mono leading-relaxed focus:border-indigo-500 focus:ring-indigo-500">{{ old('html', $template->html) }}</textarea>
                 </div>
 
-                {{-- Données d'exemple --}}
+                {{-- CSS --}}
                 <div class="bg-white rounded-2xl shadow-sm border border-gray-100 p-5">
-                    <h2 class="text-sm font-semibold text-gray-900 mb-1">Données d’exemple</h2>
-                    <p class="text-xs text-gray-400 mb-3">Servent à l’aperçu ci-contre et à la vignette de la galerie.</p>
+                    <h2 class="text-sm font-semibold text-gray-900 mb-1">Feuille de style</h2>
+                    <p class="text-xs text-gray-400 mb-3">
+                        Tailles en <code>cqh</code>/<code>cqw</code> (6cqh = 6 % de la hauteur du slide) pour tenir dans tous les formats.
+                        Couleurs du thème : <code>var(--text)</code>, <code>var(--accent)</code>, <code>var(--bg)</code>.
+                        Emplacement du texte : <code>var(--justify)</code>, <code>var(--align)</code>, <code>var(--text-align)</code>.
+                        Voile de lisibilité tout prêt : classe <code>.brick-scrim</code>. Ni script, ni ressource externe.
+                    </p>
+                    <textarea name="css" x-model="css" @input="queuePreview()" rows="14" spellcheck="false"
+                              class="w-full rounded-lg border-gray-300 text-xs font-mono leading-relaxed focus:border-indigo-500 focus:ring-indigo-500">{{ old('css', $template->css) }}</textarea>
+                </div>
+
+                {{-- Champs déduits + données d'exemple --}}
+                <div class="bg-white rounded-2xl shadow-sm border border-gray-100 p-5">
+                    <h2 class="text-sm font-semibold text-gray-900 mb-1">Champs détectés</h2>
+                    <p class="text-xs text-gray-400 mb-4">
+                        Déduits du gabarit. Les valeurs ci-dessous ne servent qu’à l’aperçu et à la vignette de la galerie.
+                    </p>
+
+                    <template x-if="!slots.length">
+                        <p class="text-xs text-gray-400 italic">Aucun champ pour l’instant — ajoute un marqueur dans le gabarit.</p>
+                    </template>
+
                     <div class="space-y-2">
-                        <template x-for="slot in slots.filter(s => s.key && s.type !== 'image')" :key="slot.key">
-                            <div class="grid grid-cols-[140px_1fr] gap-2 items-center">
-                                <label class="text-xs text-gray-500 truncate" x-text="slot.key"></label>
-                                <input type="text" :name="`sample_data[${slot.key}]`" x-model="sample[slot.key]"
-                                       @input="queuePreview()"
-                                       class="rounded-lg border-gray-300 text-sm focus:border-indigo-500 focus:ring-indigo-500">
+                        <template x-for="slot in slots" :key="slot.key">
+                            <div class="grid grid-cols-[150px_1fr] gap-3 items-start">
+                                <div class="pt-1.5">
+                                    <span class="text-xs font-mono text-gray-600" x-text="slot.key"></span>
+                                    <span class="block text-[10px] text-gray-400" x-text="slot.type"></span>
+                                </div>
+
+                                <template x-if="slot.type === 'image'">
+                                    <p class="text-xs text-gray-400 pt-1.5">Une image de la médiathèque est utilisée pour l’aperçu.</p>
+                                </template>
+
+                                <template x-if="slot.type === 'textarea'">
+                                    <textarea :name="`sample_data[${slot.key}]`" x-model="sample[slot.key]"
+                                              @input="queuePreview()" rows="2"
+                                              class="w-full rounded-lg border-gray-300 text-sm focus:border-indigo-500 focus:ring-indigo-500"></textarea>
+                                </template>
+
+                                <template x-if="slot.type !== 'image' && slot.type !== 'textarea'">
+                                    <input type="text" :name="`sample_data[${slot.key}]`" x-model="sample[slot.key]"
+                                           @input="queuePreview()"
+                                           class="w-full rounded-lg border-gray-300 text-sm focus:border-indigo-500 focus:ring-indigo-500">
+                                </template>
                             </div>
                         </template>
                     </div>
@@ -184,19 +172,72 @@
         return {
             ratios: @json($ratios),
             ratio: @json($defaultRatio),
-            slots: @json($slotsForm),
-            sample: @json($sampleForm),
             html: @json(old('html', $template->html)),
+            css: @json(old('css', $template->css)),
+            sample: @json($sampleForm),
+            sampleImage: @json($sampleImage),
+            slots: [],
             previewHtml: '',
             previewW: 348,
             _timer: null,
 
+            // Valeurs d'exemple par défaut (lorem) — l'aperçu est parlant d'emblée.
+            LOREM: {
+                title: 'Un titre d’exemple, assez long pour juger',
+                subtitle: 'Le sous-titre qui précise l’idée.',
+                author: 'Source de la citation, 2026',
+                handle: '@moncompte',
+                number: '02',
+                note: 'Une note discrète en bas de slide.',
+                quote: 'Une citation d’exemple, pour juger la mise en page à sa vraie longueur.',
+                items: "26|essais contrôlés\n1 036|participants",
+                rows: "Première ligne|valeur\nDeuxième ligne|autre valeur",
+                columns: '2',
+                position: 'bottom-left',
+                offset: '0',
+            },
+
             init() {
+                this.refreshSlots();
                 this.updatePreview();
             },
 
-            addSlot() {
-                this.slots.push({ key: '', label: '', type: 'text', default: '' });
+            // ── Déduction des champs à partir du gabarit (miroir de TemplateRenderer) ──
+            refreshSlots() {
+                const src = (this.html || '').replace(/<!--[\s\S]*?-->/g, '');
+                const lists = new Set([...src.matchAll(/\{\{#each\s+(\w+)\s*\}\}/g)].map(m => m[1]));
+                const keys = [];
+
+                for (const m of src.matchAll(/\{\{\s*#?(?:if|unless|each)?\s*([\w.]+)\s*\}\}/g)) {
+                    const key = m[1];
+                    if (key.includes('.') || ['left', 'right', 'index'].includes(key)) continue;
+                    if (!keys.includes(key)) keys.push(key);
+                }
+
+                this.slots = keys.map(key => ({ key, type: this.inferType(key, lists.has(key)) }));
+
+                // Pré-remplissage lorem des nouveaux champs.
+                for (const slot of this.slots) {
+                    if (this.sample[slot.key] !== undefined && this.sample[slot.key] !== '') continue;
+                    if (slot.type === 'image') continue;
+                    this.sample[slot.key] = this.LOREM[slot.key]
+                        ?? (slot.type === 'textarea'
+                            ? 'Un paragraphe d’exemple, assez fourni pour voir comment le texte se comporte sur plusieurs lignes.'
+                            : 'Texte d’exemple');
+                }
+            },
+
+            inferType(key, isList) {
+                if (key === 'position') return 'position';
+                if (key === 'offset') return 'range';
+                if (/^(image|photo|visuel|fond|background|illustration)/i.test(key)) return 'image';
+                if (isList || /^(items|rows|lignes|body|texte|paragraphe|quote|citation|description)/i.test(key)) return 'textarea';
+                return 'text';
+            },
+
+            onSourceChange() {
+                this.refreshSlots();
+                this.queuePreview();
             },
 
             ratioW() { return this.ratios[this.ratio]?.w || 1080; },
@@ -208,6 +249,12 @@
             },
 
             async updatePreview() {
+                // Les slots image reçoivent l'illustration de la médiathèque.
+                const data = { ...this.sample };
+                for (const slot of this.slots) {
+                    if (slot.type === 'image') data[slot.key] = this.sampleImage;
+                }
+
                 try {
                     const resp = await fetch('{{ route('carousel.templates.preview') }}', {
                         method: 'POST',
@@ -215,7 +262,7 @@
                             'Content-Type': 'application/json',
                             'X-CSRF-TOKEN': document.querySelector('meta[name=csrf-token]').getAttribute('content'),
                         },
-                        body: JSON.stringify({ html: this.html, ratio: this.ratio, data: this.sample }),
+                        body: JSON.stringify({ html: this.html, css: this.css, ratio: this.ratio, data }),
                     });
                     this.previewHtml = await resp.text();
                 } catch (e) {

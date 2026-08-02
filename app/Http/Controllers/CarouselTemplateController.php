@@ -66,20 +66,29 @@ class CarouselTemplateController extends Controller
         ]);
     }
 
-    public function create(Request $request, BrickRegistry $registry): View
+    public function create(Request $request, BrickRegistry $registry, TemplateRenderer $renderer): View
     {
         // ?from=slug : duplication d'un template existant (ou d'une brique fournie).
         $from = $request->query('from');
         $source = $from && $registry->exists($from) ? $registry->get($from) : null;
 
-        return $this->form(new CarouselBrick([
+        $html = $source['template'] ?? $this->starterHtml();
+
+        $draft = new CarouselBrick([
             'name' => $source ? $source['name'].' (copie)' : '',
             'description' => $source['description'] ?? '',
             'ratios' => $source['ratios'] ?? ['*'],
-            'slots' => $source ? $this->slotsToForm($source['slots']) : $this->defaultSlots(),
-            'html' => $source['template'] ?? $this->starterHtml(),
-            'sample_data' => $source ? $registry->sampleData($from) : [],
-        ]), 'create');
+            'slots' => $renderer->extractSlots($html),
+            'html' => $html,
+            'css' => $source ? ($source['css'] ?? null) : $this->starterCss(),
+        ]);
+
+        // Données d'exemple pré-remplies : l'aperçu est parlant dès l'ouverture.
+        $draft->sample_data = $source
+            ? $registry->sampleData($from)
+            : $registry->sampleFor($draft->slots);
+
+        return $this->form($draft, 'create');
     }
 
     public function edit(CarouselBrick $template): View
@@ -122,6 +131,7 @@ class CarouselTemplateController extends Controller
     {
         $validated = $request->validate([
             'html' => ['nullable', 'string', 'max:60000'],
+            'css' => ['nullable', 'string', 'max:30000'],
             'ratio' => ['nullable', 'string', 'in:'.implode(',', array_keys(config('carousel.ratios', [])))],
             'data' => ['nullable', 'array'],
         ]);
@@ -131,6 +141,7 @@ class CarouselTemplateController extends Controller
             (string) ($validated['html'] ?? ''),
             $this->scalarsOnly($validated['data'] ?? []),
             embedFonts: false,
+            css: $validated['css'] ?? null,
         );
 
         return response($html, 200, ['Content-Type' => 'text/html; charset=UTF-8']);
@@ -142,15 +153,8 @@ class CarouselTemplateController extends Controller
             'template' => $template,
             'mode' => $mode,
             'ratios' => config('carousel.ratios', []),
-            'positions' => config('carousel.positions', []),
-            'slotTypes' => [
-                'text' => 'Texte court',
-                'textarea' => 'Texte long / liste',
-                'image' => 'Image',
-                'position' => 'Emplacement (grille 3×3)',
-                'range' => 'Curseur',
-                'select' => 'Liste de choix',
-            ],
+            // Image d'illustration pour l'aperçu live des slots de type image.
+            'sampleImage' => app(BrickRegistry::class)->sampleFor(['image' => ['type' => 'image']])['image'] ?? '',
         ]);
     }
 
@@ -168,20 +172,19 @@ class CarouselTemplateController extends Controller
             'ratios' => ['nullable', 'array'],
             'ratios.*' => ['string'],
             'html' => ['required', 'string', 'max:60000'],
-            'slots' => ['nullable', 'array', 'max:12'],
-            'slots.*.key' => ['required', 'string', 'max:40', 'regex:/^[a-z][a-z0-9_]*$/'],
-            'slots.*.label' => ['required', 'string', 'max:120'],
-            'slots.*.type' => ['required', 'string', 'in:text,textarea,image,position,range,select'],
-            'slots.*.default' => ['nullable', 'string', 'max:200'],
+            'css' => ['nullable', 'string', 'max:30000'],
             'sample_data' => ['nullable', 'array'],
         ], [
-            'slots.*.key.regex' => 'Une clé de champ doit être en minuscules, sans espace (ex. « titre_bas »).',
             'slug.regex' => 'L’identifiant ne peut contenir que des minuscules, chiffres et tirets.',
         ]);
 
-        // Un gabarit ne doit contenir ni script, ni ressource externe, ni PHP.
+        // Ni gabarit ni feuille de style ne doivent contenir de script,
+        // de ressource externe ou de PHP.
         if ($problems = $renderer->violations($validated['html'])) {
             throw ValidationException::withMessages(['html' => $problems]);
+        }
+        if (! empty($validated['css']) && $problems = $renderer->violations($validated['css'])) {
+            throw ValidationException::withMessages(['css' => $problems]);
         }
 
         $slug = $validated['slug'] ?? null;
@@ -194,8 +197,11 @@ class CarouselTemplateController extends Controller
             'name' => $validated['name'],
             'description' => $validated['description'] ?? null,
             'ratios' => $validated['ratios'] ?? ['*'],
-            'slots' => $this->slotsFromForm($validated['slots'] ?? []),
+            // Les champs éditables sont DÉDUITS du gabarit : écrire {{ titre }}
+            // suffit à créer le champ. Rien à déclarer à la main.
+            'slots' => $renderer->extractSlots($validated['html']),
             'html' => $validated['html'],
+            'css' => $validated['css'] ?? null,
             'sample_data' => $this->scalarsOnly($validated['sample_data'] ?? []),
         ];
     }
@@ -213,69 +219,53 @@ class CarouselTemplateController extends Controller
     }
 
     /**
-     * Formulaire (liste indexée) → manifeste (clé => définition).
+     * Gabarit de départ d'un nouveau template : chaque marqueur crée son champ.
      */
-    private function slotsFromForm(array $slots): array
-    {
-        $out = [];
-        foreach ($slots as $slot) {
-            $def = ['label' => $slot['label'], 'type' => $slot['type']];
-
-            if (($slot['default'] ?? '') !== '' && $slot['default'] !== null) {
-                $def['default'] = $slot['default'];
-            }
-            if ($slot['type'] === 'range') {
-                $def += ['min' => -25, 'max' => 25, 'step' => 1, 'unit' => '%'];
-            }
-
-            $out[$slot['key']] = $def;
-        }
-
-        return $out;
-    }
-
-    /**
-     * Manifeste normalisé → liste pour le formulaire.
-     */
-    private function slotsToForm(array $slots): array
-    {
-        return array_values(array_map(fn (array $s) => [
-            'key' => $s['key'],
-            'label' => $s['label'],
-            'type' => $s['type'],
-            'default' => is_scalar($s['default'] ?? null) ? (string) $s['default'] : '',
-        ], $slots));
-    }
-
-    private function defaultSlots(): array
-    {
-        return [
-            ['key' => 'image', 'label' => 'Image de fond', 'type' => 'image', 'default' => ''],
-            ['key' => 'title', 'label' => 'Titre', 'type' => 'text', 'default' => ''],
-        ];
-    }
-
     private function starterHtml(): string
     {
         return <<<'HTML'
-<!-- Les tailles s'expriment en cqh/cqw : 6cqh = 6 % de la hauteur du slide. -->
-<div style="position:absolute; inset:0; background:var(--bg);">
+<div class="slide">
   {{#if image}}
-    <img src="{{ image }}" alt="" style="position:absolute; inset:0; width:100%; height:100%; object-fit:cover;">
+    <img class="fond" src="{{ image }}" alt="">
   {{/if}}
 
   <div class="brick-scrim"></div>
 
-  <div style="position:absolute; inset:0; display:flex; flex-direction:column;
-              justify-content:var(--justify); align-items:var(--align);
-              padding:7cqw; text-align:var(--text-align);">
-    {{#if title}}
-      <h1 style="margin:0; font-family:var(--title-font); font-weight:800;
-                 font-size:6.2cqh; line-height:1.08; color:var(--text);">{{ title }}</h1>
-    {{/if}}
+  <div class="bloc">
+    {{#if title}}<h1>{{ title }}</h1>{{/if}}
+    {{#if subtitle}}<p>{{ subtitle }}</p>{{/if}}
   </div>
 </div>
 HTML;
+    }
+
+    /**
+     * Feuille de style de départ. Les tailles sont en cqh/cqw (6cqh = 6 % de la
+     * hauteur du slide) pour que le template tienne dans tous les formats.
+     */
+    private function starterCss(): string
+    {
+        return <<<'CSS'
+.slide { position:absolute; inset:0; background:var(--bg); }
+.fond  { position:absolute; inset:0; width:100%; height:100%; object-fit:cover; }
+
+.bloc {
+  position:absolute; inset:0; padding:7cqw;
+  display:flex; flex-direction:column;
+  justify-content:var(--justify); align-items:var(--align);
+  text-align:var(--text-align);
+}
+
+h1 {
+  margin:0; font-family:var(--title-font); font-weight:800;
+  font-size:6.2cqh; line-height:1.08; color:var(--text);
+}
+
+p {
+  margin:2.2cqh 0 0; font-family:var(--body-font);
+  font-size:3cqh; line-height:1.35; color:var(--text); opacity:0.88;
+}
+CSS;
     }
 
     /**

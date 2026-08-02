@@ -21,6 +21,7 @@ class CarouselBrick extends Model
         'ratios',
         'slots',
         'html',
+        'css',
         'sample_data',
         'user_id',
         'sort_order',

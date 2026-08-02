@@ -121,6 +121,7 @@ class BrickRegistry
             'ratios' => $brick->ratios ?: ['*'],
             'slots' => $slots,
             'template' => $brick->html,
+            'css' => $brick->css,
             'sample' => $brick->sample_data ?: [],
             'is_builtin' => false,
         ];
@@ -156,10 +157,24 @@ class BrickRegistry
     {
         $brick = $this->get($slug);
 
-        $declared = $brick['sample'] ?? [];
+        return $this->sampleFor($brick['slots'], $brick['sample'] ?? []);
+    }
+
+    /**
+     * Même chose pour un jeu de slots quelconque — utilisé par l'éditeur, où le
+     * template n'est pas encore enregistré.
+     *
+     * @param  array<string, array>  $slots
+     * @param  array<string, mixed>  $declared
+     * @return array<string, mixed>
+     */
+    public function sampleFor(array $slots, array $declared = []): array
+    {
         $sample = [];
 
-        foreach ($brick['slots'] as $key => $slot) {
+        foreach ($slots as $key => $slot) {
+            $slot = $this->normalizeSlot((string) $key, $slot);
+
             if (array_key_exists($key, $declared)) {
                 $sample[$key] = $declared[$key];
 
@@ -205,14 +220,21 @@ class BrickRegistry
 
         try {
             $candidates = MediaFile::query()
+                ->with('folder')
                 ->where('mime_type', 'like', 'image/%')
                 ->whereNotNull('thumbnail_path')
                 ->inRandomOrder()
-                ->limit(5)
-                ->pluck('thumbnail_path');
+                ->limit(10)
+                ->get();
 
-            foreach ($candidates as $relative) {
-                $path = Storage::disk('local')->path($relative);
+            foreach ($candidates as $media) {
+                // Jamais d'image issue d'un dossier privé dans une vignette de
+                // galerie : ces aperçus s'affichent sans qu'on les demande.
+                if ($media->folder?->isEffectivelyPrivate()) {
+                    continue;
+                }
+
+                $path = Storage::disk('local')->path($media->thumbnail_path);
                 if (! is_file($path)) {
                     continue;
                 }
@@ -340,6 +362,7 @@ class BrickRegistry
             // sert de point de départ réel quand on duplique une brique fournie.
             // Le rendu des briques fournies reste assuré par leur vue Blade.
             'template' => $def['template'] ?? $this->builtinTemplate($slug),
+            'css' => $def['css'] ?? null,
             'sample' => $def['sample'] ?? [],
             'is_builtin' => true,
         ];
