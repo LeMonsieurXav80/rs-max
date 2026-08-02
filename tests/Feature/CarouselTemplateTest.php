@@ -87,6 +87,41 @@ class CarouselTemplateTest extends TestCase
         $this->assertStringContainsString('<li>2. 1 036 = participants</li>', $html);
     }
 
+    public function test_une_balise_citee_dans_un_commentaire_navale_pas_le_gabarit(): void
+    {
+        // Piège réel : documenter la syntaxe en commentaire faisait boucler le
+        // moteur depuis la fausse ouverture jusqu'au vrai {{/each}}.
+        $template = '<!-- exemple : {{#each items}} … {{/each}} -->'
+            .'<ul>{{#each items}}<li>{{ left }}</li>{{/each}}</ul>';
+
+        $html = $this->renderer()->render($template, ['items' => "a|1\nb|2"], [], 1080, 1350);
+
+        $this->assertStringContainsString('<li>a</li>', $html);
+        $this->assertStringContainsString('<li>b</li>', $html);
+        $this->assertSame(2, substr_count($html, '<li>'));
+    }
+
+    public function test_les_gabarits_des_briques_fournies_sont_disponibles(): void
+    {
+        $registry = app(BrickRegistry::class);
+
+        // « Dupliquer » doit partir du VRAI gabarit, pas d'une page blanche.
+        foreach (['photo-title-bl', 'image-full', 'stat-grid', 'quote', 'table-rows', 'numbered', 'cta-end'] as $slug) {
+            $template = $registry->get($slug)['template'];
+            $this->assertNotEmpty($template, "Gabarit manquant pour {$slug}");
+            $this->assertSame([], $this->renderer()->violations($template), "Gabarit invalide pour {$slug}");
+        }
+    }
+
+    public function test_les_donnees_dexemple_fournissent_une_image(): void
+    {
+        // Sans image, les aperçus de la galerie sortaient vides.
+        $sample = app(BrickRegistry::class)->sampleData('photo-title-bl');
+
+        $this->assertArrayHasKey('image', $sample);
+        $this->assertStringStartsWith('data:image/', $sample['image']);
+    }
+
     public function test_une_donnee_de_slot_ressort_echappee(): void
     {
         $html = $this->renderer()->render(

@@ -172,6 +172,15 @@ Route::middleware(['auth', 'verified', 'throttle:600,1'])->group(function () {
     Route::delete('media/folders/{folder}', [MediaFolderController::class, 'destroy'])->name('media.folders.destroy');
     Route::post('media/folders/move', [MediaFolderController::class, 'moveFiles'])->name('media.folders.move');
 
+    // Polices des aperçus de carrousel : servies une fois et mises en cache, au
+    // lieu d'embarquer ~1,3 Mo de TTF base64 dans CHAQUE iframe d'aperçu.
+    Route::get('carousel/fonts.css', function (\App\Services\Carousel\CarouselRenderService $carousel) {
+        return response($carousel->fontFaceCss(), 200, [
+            'Content-Type' => 'text/css; charset=UTF-8',
+            'Cache-Control' => 'private, max-age=86400',
+        ]);
+    })->name('carousel.fonts');
+
     // Studio Carrousel (briques HTML/CSS)
     Route::get('carousel/studio', [CarouselStudioController::class, 'index'])->name('carousel.studio');
     Route::post('carousel/studio/preview', [CarouselStudioController::class, 'preview'])->name('carousel.studio.preview');

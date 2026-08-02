@@ -42,11 +42,38 @@ class CarouselRenderService
      *
      * @param  array<int, array{brick: string, data?: array, theme?: array}>  $slides
      */
-    public function buildHtml(string $ratio, array $slides): string
+    public function buildHtml(string $ratio, array $slides, bool $embedFonts = true): string
     {
         [$w, $h] = $this->dimensions($ratio);
 
-        return $this->buildHtmlWithDims($w, $h, $slides);
+        return $this->buildHtmlWithDims($w, $h, $slides, $embedFonts);
+    }
+
+    /**
+     * Feuille de style des @font-face (TTF en base64). Servie par une route mise
+     * en cache : une page qui affiche PLUSIEURS aperçus (galerie de templates)
+     * ne duplique pas ~1,3 Mo de polices par iframe.
+     */
+    public function fontFaceCss(): string
+    {
+        $css = '';
+        foreach (config('carousel.fonts', []) as $family => $weights) {
+            foreach ($weights as $weight => $filename) {
+                $path = storage_path('app/fonts/'.$filename);
+                if (! is_file($path)) {
+                    // Tente un téléchargement via GoogleFontsService (nom de poids inféré).
+                    $this->fonts->ensureFont($family, $this->weightName((int) $weight));
+                }
+                if (! is_file($path)) {
+                    continue;
+                }
+                $b64 = base64_encode((string) file_get_contents($path));
+                $css .= "@font-face{font-family:'{$family}';font-weight:{$weight};font-style:normal;"
+                    ."src:url(data:font/ttf;base64,{$b64}) format('truetype');}\n";
+            }
+        }
+
+        return $css;
     }
 
     /**
@@ -54,14 +81,14 @@ class CarouselRenderService
      * l'aperçu live de l'éditeur de templates, où la brique n'existe pas encore
      * dans le registre.
      */
-    public function buildTemplateHtml(string $ratio, string $template, array $data = [], array $theme = []): string
+    public function buildTemplateHtml(string $ratio, string $template, array $data = [], array $theme = [], bool $embedFonts = true): string
     {
         [$w, $h] = $this->dimensions($ratio);
 
         return View::make('carousel.band', [
             'w' => $w,
             'h' => $h,
-            'fontFaces' => $this->fontFaceBlock(),
+            'fontFaces' => $this->fontFaceBlock($embedFonts),
             'slides' => [[
                 'view' => 'carousel.bricks._db',
                 'data' => $this->resolveImageSlots($data),
@@ -182,7 +209,7 @@ class CarouselRenderService
      *
      * @param  array<int, array{brick: string, data?: array, theme?: array}>  $slides
      */
-    private function buildHtmlWithDims(int $w, int $h, array $slides): string
+    private function buildHtmlWithDims(int $w, int $h, array $slides, bool $embedFonts = true): string
     {
         $resolved = array_map(function (array $slide) {
             $brick = $this->brick($slide['brick']);
@@ -199,7 +226,7 @@ class CarouselRenderService
         return View::make('carousel.band', [
             'w' => $w,
             'h' => $h,
-            'fontFaces' => $this->fontFaceBlock(),
+            'fontFaces' => $this->fontFaceBlock($embedFonts),
             'slides' => $resolved,
         ])->render();
     }
@@ -334,29 +361,17 @@ class CarouselRenderService
     }
 
     /**
-     * Construit le bloc <style> des @font-face à partir des polices configurées,
-     * chaque TTF embarqué en base64 (ensureFont télécharge au besoin).
+     * En-tête des polices. Embarquées en base64 pour le rendu Chromium (aucune
+     * dépendance réseau) ; simple <link> vers la route cachée quand l'aperçu est
+     * affiché dans le navigateur de l'utilisateur.
      */
-    private function fontFaceBlock(): string
+    private function fontFaceBlock(bool $embed = true): string
     {
-        $css = '';
-        foreach (config('carousel.fonts', []) as $family => $weights) {
-            foreach ($weights as $weight => $filename) {
-                $path = storage_path('app/fonts/'.$filename);
-                if (! is_file($path)) {
-                    // Tente un téléchargement via GoogleFontsService (nom de poids inféré).
-                    $this->fonts->ensureFont($family, $this->weightName((int) $weight));
-                }
-                if (! is_file($path)) {
-                    continue;
-                }
-                $b64 = base64_encode((string) file_get_contents($path));
-                $css .= "@font-face{font-family:'{$family}';font-weight:{$weight};font-style:normal;"
-                    ."src:url(data:font/ttf;base64,{$b64}) format('truetype');}\n";
-            }
+        if (! $embed) {
+            return '<link rel="stylesheet" href="'.e(route('carousel.fonts')).'">';
         }
 
-        return "<style>\n{$css}</style>";
+        return "<style>\n".$this->fontFaceCss().'</style>';
     }
 
     private function weightName(int $weight): string

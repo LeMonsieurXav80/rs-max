@@ -1,0 +1,26 @@
+<!-- Image de fond assombrie + bloc de texte positionnable. -->
+<div style="position:absolute; inset:0; background:var(--overlay);">
+  {{#if image}}
+    <img src="{{ image }}" alt=""
+         style="position:absolute; inset:0; width:100%; height:100%; object-fit:cover;">
+  {{/if}}
+
+  <div class="brick-scrim"></div>
+
+  <div style="position:absolute; inset:0; display:flex; flex-direction:column;
+              justify-content:var(--justify); align-items:var(--align);
+              padding:10cqw;">
+    <div style="text-align:var(--text-align); max-width:100%;">
+      {{#if title}}
+        <h1 style="margin:0; font-family:var(--title-font); font-weight:800;
+                   font-size:7.2cqh; line-height:1.1; letter-spacing:-0.01em;
+                   color:var(--text); text-wrap:balance;">{{ title }}</h1>
+      {{/if}}
+      {{#if body}}
+        <p style="margin:3cqh auto 0; max-width:78cqw; font-family:var(--body-font);
+                  font-weight:400; font-size:3cqh; line-height:1.4;
+                  color:var(--text); opacity:0.9;">{{ body }}</p>
+      {{/if}}
+    </div>
+  </div>
+</div>

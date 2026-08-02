@@ -1,0 +1,34 @@
+<!--
+  Tableau. Le slot `rows` s'écrit une ligne par ligne du tableau :
+      Créatinine sérique | ↑ artefact
+      DFG estimé | inchangé
+-->
+<div style="position:absolute; inset:0;
+            background:linear-gradient(160deg, var(--bg) 0%, var(--bg) 60%, var(--accent) 130%);
+            display:flex; flex-direction:column; justify-content:center;
+            padding:9cqw;">
+
+  {{#if title}}
+    <h2 style="margin:0 0 3.5cqh; font-family:var(--title-font); font-weight:800;
+               font-size:4.6cqh; line-height:1.12; letter-spacing:-0.01em;
+               color:var(--text); text-wrap:balance;">{{ title }}</h2>
+  {{/if}}
+
+  <div>
+    {{#each rows}}
+      <div style="display:flex; align-items:baseline; justify-content:space-between;
+                  gap:5cqw; padding:2.2cqh 0; border-top:1px solid rgba(255,255,255,0.12);">
+        <span style="font-family:var(--body-font); font-weight:400; font-size:3cqh;
+                     line-height:1.3; color:var(--text); opacity:0.85;">{{ left }}</span>
+        <span style="flex:0 0 auto; font-family:var(--title-font); font-weight:700;
+                     font-size:3cqh; line-height:1.3; color:var(--accent);
+                     white-space:nowrap;">{{ right }}</span>
+      </div>
+    {{/each}}
+  </div>
+
+  {{#if note}}
+    <p style="margin:3cqh 0 0; font-family:var(--body-font); font-weight:400;
+              font-size:2.1cqh; line-height:1.35; color:var(--text); opacity:0.55;">{{ note }}</p>
+  {{/if}}
+</div>

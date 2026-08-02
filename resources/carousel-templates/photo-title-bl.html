@@ -1,0 +1,31 @@
+<!--
+  Photo plein cadre + titre positionnable.
+  Tailles en cqh/cqw (6.2cqh = 6,2 % de la hauteur du slide).
+  Variables fournies : --text --bg --accent --overlay --title-font --body-font
+                       --justify --align --text-align  (+ classe .brick-scrim)
+-->
+<div style="position:absolute; inset:0; background:var(--overlay);">
+  {{#if image}}
+    <img src="{{ image }}" alt=""
+         style="position:absolute; inset:0; width:100%; height:100%; object-fit:cover;">
+  {{/if}}
+
+  <!-- Voile de lisibilité, orienté selon l'emplacement du texte -->
+  <div class="brick-scrim"></div>
+
+  <div style="position:absolute; inset:0; display:flex; flex-direction:column;
+              justify-content:var(--justify); align-items:var(--align);
+              padding:7cqw;">
+    <div style="text-align:var(--text-align); max-width:100%;">
+      {{#if title}}
+        <h1 style="margin:0; font-family:var(--title-font); font-weight:800;
+                   font-size:6.2cqh; line-height:1.08; letter-spacing:-0.01em;
+                   color:var(--text); text-wrap:balance;">{{ title }}</h1>
+      {{/if}}
+      {{#if subtitle}}
+        <p style="margin:2.2cqh 0 0; font-family:var(--body-font); font-weight:400;
+                  font-size:3cqh; line-height:1.35; color:var(--text); opacity:0.88;">{{ subtitle }}</p>
+      {{/if}}
+    </div>
+  </div>
+</div>

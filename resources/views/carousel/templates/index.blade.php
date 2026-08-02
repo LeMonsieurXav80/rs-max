@@ -71,8 +71,12 @@
                     <div class="flex items-center justify-between mt-4 pt-3 border-t border-gray-100">
                         <span class="text-[11px] text-gray-400">{{ $t['slots'] }} champ{{ $t['slots'] > 1 ? 's' : '' }}</span>
                         <div class="flex items-center gap-3">
+                            {{-- Sur une brique fournie, l'éditeur s'ouvre pré-rempli avec son
+                                 VRAI gabarit HTML : on voit l'intérieur et on part de là. --}}
                             <a href="{{ route('carousel.templates.create', ['from' => $t['slug']]) }}"
-                               class="text-xs text-gray-500 hover:text-indigo-600">Dupliquer</a>
+                               class="text-xs {{ $t['is_builtin'] ? 'font-medium text-indigo-600 hover:text-indigo-700' : 'text-gray-500 hover:text-indigo-600' }}">
+                                {{ $t['is_builtin'] ? 'Voir / modifier le HTML' : 'Dupliquer' }}
+                            </a>
 
                             @if (! $t['is_builtin'])
                                 <a href="{{ route('carousel.templates.edit', $t['id']) }}"

@@ -1,0 +1,22 @@
+<!-- Texte plein, sans image : fond dégradé léger + filet d'accent. -->
+<div style="position:absolute; inset:0;
+            background:linear-gradient(160deg, var(--bg) 0%, var(--bg) 55%, var(--accent) 140%);
+            display:flex; flex-direction:column;
+            justify-content:var(--justify); align-items:var(--align);
+            padding:10cqw;">
+  <div style="text-align:var(--text-align); max-width:100%;">
+    <span style="display:block; width:14cqw; height:1.2cqh; background:var(--accent);
+                 border-radius:999px; margin-bottom:4.5cqh;"></span>
+
+    {{#if title}}
+      <h1 style="margin:0; font-family:var(--title-font); font-weight:800;
+                 font-size:8.8cqh; line-height:1.02; letter-spacing:-0.02em;
+                 color:var(--text); text-wrap:balance;">{{ title }}</h1>
+    {{/if}}
+    {{#if subtitle}}
+      <p style="margin:3.5cqh 0 0; max-width:88cqw; font-family:var(--body-font);
+                font-weight:400; font-size:3.2cqh; line-height:1.4;
+                color:var(--text); opacity:0.82;">{{ subtitle }}</p>
+    {{/if}}
+  </div>
+</div>

@@ -51,10 +51,11 @@ class CarouselTemplateController extends Controller
             'slots' => count($brick['slots']),
             'id' => $ids[$brick['slug']] ?? null,
             // Aperçu réel de la brique, alimenté par ses données d'exemple.
+            // embedFonts:false => les polices passent par la route mise en cache.
             'preview' => $carousel->buildHtml($ratio, [[
                 'brick' => $brick['slug'],
                 'data' => $registry->sampleData($brick['slug']),
-            ]]),
+            ]], embedFonts: false),
         ])->values();
 
         return view('carousel.templates.index', [
@@ -129,6 +130,7 @@ class CarouselTemplateController extends Controller
             $validated['ratio'] ?? config('carousel.default_ratio', '4:5'),
             (string) ($validated['html'] ?? ''),
             $this->scalarsOnly($validated['data'] ?? []),
+            embedFonts: false,
         );
 
         return response($html, 200, ['Content-Type' => 'text/html; charset=UTF-8']);

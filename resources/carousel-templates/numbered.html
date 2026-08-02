@@ -1,0 +1,38 @@
+<!-- Slide numérotée : pastille + filigrane géant du numéro. -->
+<div style="position:absolute; inset:0; background:var(--bg);">
+  {{#if image}}
+    <img src="{{ image }}" alt=""
+         style="position:absolute; inset:0; width:100%; height:100%; object-fit:cover;">
+    <div class="brick-scrim"></div>
+  {{/if}}
+
+  {{#if number}}
+    <div style="position:absolute; right:-2cqw; bottom:-6cqh;
+                font-family:var(--title-font); font-weight:800; font-size:42cqh;
+                line-height:0.8; letter-spacing:-0.04em; color:var(--accent);
+                opacity:0.16;">{{ number }}</div>
+  {{/if}}
+
+  <div style="position:absolute; inset:0; display:flex; flex-direction:column;
+              justify-content:var(--justify); align-items:var(--align);
+              padding:9cqw;">
+    <div style="text-align:var(--text-align); max-width:100%;">
+      {{#if number}}
+        <span style="display:inline-block; margin-bottom:2.5cqh; padding:0.8cqh 3cqw;
+                     border-radius:999px; background:var(--accent);
+                     font-family:var(--title-font); font-weight:700; font-size:3cqh;
+                     line-height:1.4; color:#ffffff;">{{ number }}</span>
+      {{/if}}
+      {{#if title}}
+        <h2 style="margin:0; font-family:var(--title-font); font-weight:800;
+                   font-size:6.4cqh; line-height:1.08; letter-spacing:-0.015em;
+                   color:var(--text); text-wrap:balance;">{{ title }}</h2>
+      {{/if}}
+      {{#if body}}
+        <p style="margin:2.8cqh 0 0; max-width:82cqw; font-family:var(--body-font);
+                  font-weight:400; font-size:2.8cqh; line-height:1.4;
+                  color:var(--text); opacity:0.85;">{{ body }}</p>
+      {{/if}}
+    </div>
+  </div>
+</div>

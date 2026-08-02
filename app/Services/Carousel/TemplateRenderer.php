@@ -111,8 +111,12 @@ class TemplateRenderer
     private function renderSections(string $template, array $context, array $data): string
     {
         // {{#each slot}} … {{/each}} — une ligne = un item (Lines::parse).
+        // Le corps ne peut pas contenir un autre {{#each}} : sinon une balise citée
+        // en exemple dans un commentaire avalerait tout le gabarit jusqu'au vrai
+        // {{/each}}. Avec cette garde, la fausse ouverture ne matche pas et le
+        // moteur repart sur la vraie.
         $template = preg_replace_callback(
-            '/\{\{#each\s+([\w.]+)\s*\}\}(.*?)\{\{\/each\}\}/s',
+            '/\{\{#each\s+([\w.]+)\s*\}\}((?:(?!\{\{#each\b).)*?)\{\{\/each\}\}/s',
             function (array $m) use ($context, $data) {
                 $items = Lines::parse($data[$m[1]] ?? null, 12);
                 $out = '';
@@ -130,8 +134,9 @@ class TemplateRenderer
         ) ?? $template;
 
         // {{#if slot}} … {{/if}} et {{#unless slot}} … {{/unless}}
+        // Même garde que pour {{#each}} : pas d'ouverture imbriquée dans le corps.
         $template = preg_replace_callback(
-            '/\{\{#(if|unless)\s+([\w.]+)\s*\}\}(.*?)\{\{\/\1\}\}/s',
+            '/\{\{#(if|unless)\s+([\w.]+)\s*\}\}((?:(?!\{\{#(?:if|unless)\b).)*?)\{\{\/\1\}\}/s',
             function (array $m) use ($context) {
                 $filled = isset($context[$m[2]]) && trim($context[$m[2]]) !== '';
                 $keep = $m[1] === 'if' ? $filled : ! $filled;

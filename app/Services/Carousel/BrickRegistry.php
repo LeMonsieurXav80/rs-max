@@ -24,8 +24,17 @@ use Illuminate\Support\Facades\Storage;
  */
 class BrickRegistry
 {
+    /**
+     * Dégradé de repli quand la médiathèque ne fournit aucune image exploitable
+     * pour illustrer un aperçu (SVG, donc quelques centaines d'octets).
+     */
+    private const PLACEHOLDER_IMAGE = 'data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIxMDgwIiBoZWlnaHQ9IjEzNTAiPjxkZWZzPjxsaW5lYXJHcmFkaWVudCBpZD0iZyIgeDE9IjAiIHkxPSIwIiB4Mj0iMSIgeTI9IjEiPjxzdG9wIG9mZnNldD0iMCIgc3RvcC1jb2xvcj0iIzMzNDE1NSIvPjxzdG9wIG9mZnNldD0iMSIgc3RvcC1jb2xvcj0iIzBmMTcyYSIvPjwvbGluZWFyR3JhZGllbnQ+PC9kZWZzPjxyZWN0IHdpZHRoPSIxMDgwIiBoZWlnaHQ9IjEzNTAiIGZpbGw9InVybCgjZykiLz48L3N2Zz4=';
+
     /** @var array<string, array>|null Mémo par instance (le registre est appelé plusieurs fois par rendu). */
     private ?array $cache = null;
+
+    /** Image d'illustration retenue pour toute la requête (aperçus cohérents). */
+    private ?string $sampleImage = null;
 
     /**
      * Manifeste complet, normalisé, indexé par slug : briques FOURNIES
@@ -158,7 +167,7 @@ class BrickRegistry
             }
 
             $value = match ($slot['type']) {
-                'image' => null,
+                'image' => $this->sampleImage(),
                 'position', 'select', 'range' => $slot['default'],
                 'textarea' => $this->sampleList($key),
                 default => $this->sampleText($key),
@@ -170,6 +179,53 @@ class BrickRegistry
         }
 
         return $sample;
+    }
+
+    /**
+     * Gabarit HTML équivalent d'une brique fournie, s'il existe.
+     */
+    private function builtinTemplate(string $slug): ?string
+    {
+        $path = resource_path("carousel-templates/{$slug}.html");
+
+        return is_file($path) ? (string) file_get_contents($path) : null;
+    }
+
+    /**
+     * Image d'illustration pour les aperçus : une vignette de la médiathèque,
+     * choisie une fois par requête (sinon chaque aperçu tirerait une image
+     * différente). Retourne une data-URI, ou un dégradé de repli s'il n'y a
+     * aucun média exploitable.
+     */
+    private function sampleImage(): string
+    {
+        if ($this->sampleImage !== null) {
+            return $this->sampleImage;
+        }
+
+        try {
+            $candidates = MediaFile::query()
+                ->where('mime_type', 'like', 'image/%')
+                ->whereNotNull('thumbnail_path')
+                ->inRandomOrder()
+                ->limit(5)
+                ->pluck('thumbnail_path');
+
+            foreach ($candidates as $relative) {
+                $path = Storage::disk('local')->path($relative);
+                if (! is_file($path)) {
+                    continue;
+                }
+
+                $mime = str_ends_with(strtolower($path), '.png') ? 'image/png' : 'image/jpeg';
+
+                return $this->sampleImage = 'data:'.$mime.';base64,'.base64_encode((string) file_get_contents($path));
+            }
+        } catch (\Throwable $e) {
+            // Médiathèque indisponible : on retombe sur le dégradé.
+        }
+
+        return $this->sampleImage = self::PLACEHOLDER_IMAGE;
     }
 
     private function sampleText(string $key): string
@@ -280,8 +336,10 @@ class BrickRegistry
             'view' => $def['view'] ?? null,
             'ratios' => $def['ratios'] ?? ['*'],
             'slots' => $slots,
-            // Gabarit HTML de départ proposé quand on duplique une brique fournie.
-            'template' => $def['template'] ?? null,
+            // Gabarit HTML équivalent (resources/carousel-templates/{slug}.html) :
+            // sert de point de départ réel quand on duplique une brique fournie.
+            // Le rendu des briques fournies reste assuré par leur vue Blade.
+            'template' => $def['template'] ?? $this->builtinTemplate($slug),
             'sample' => $def['sample'] ?? [],
             'is_builtin' => true,
         ];

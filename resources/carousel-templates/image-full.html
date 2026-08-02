@@ -1,0 +1,11 @@
+<!--
+  Image seule, plein cadre. Aucun texte, aucun dégradé.
+  L'image est recadrée par le centre (object-fit:cover) : elle s'agrandit ou se
+  réduit sans déformation, et le débordement est rogné à parts égales.
+-->
+<div style="position:absolute; inset:0; background:var(--bg);">
+  {{#if image}}
+    <img src="{{ image }}" alt=""
+         style="position:absolute; inset:0; width:100%; height:100%; object-fit:cover;">
+  {{/if}}
+</div>

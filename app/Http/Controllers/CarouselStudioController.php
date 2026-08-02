@@ -47,7 +47,9 @@ class CarouselStudioController extends Controller
     {
         $data = $this->validated($request);
 
-        $html = $carousel->buildHtml($data['ratio'], $data['slides']);
+        // embedFonts:false => les polices viennent de la route cachée plutôt que
+        // d'être renvoyées en base64 à chaque frappe.
+        $html = $carousel->buildHtml($data['ratio'], $data['slides'], embedFonts: false);
 
         return response($html, 200, ['Content-Type' => 'text/html; charset=UTF-8']);
     }

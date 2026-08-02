@@ -1,0 +1,31 @@
+<!--
+  Grille de chiffres. Le slot `items` s'écrit une ligne par item, deux colonnes
+  séparées par une barre verticale :
+      26 | essais contrôlés
+      1 036 | participants
+  Dans la boucle ci-dessous, « left » est la partie avant la barre, « right »
+  celle d'après.
+-->
+<div style="position:absolute; inset:0;
+            background:linear-gradient(160deg, var(--bg) 0%, var(--bg) 60%, var(--accent) 130%);
+            display:flex; flex-direction:column; justify-content:center;
+            padding:9cqw;">
+
+  {{#if title}}
+    <h2 style="margin:0 0 5cqh; font-family:var(--title-font); font-weight:800;
+               font-size:4.6cqh; line-height:1.12; letter-spacing:-0.01em;
+               color:var(--text); text-wrap:balance;">{{ title }}</h2>
+  {{/if}}
+
+  <div style="display:grid; grid-template-columns:repeat({{ columns }}, 1fr);
+              align-items:start; gap:4.5cqh 6cqw;">
+    {{#each items}}
+      <div>
+        <div style="font-family:var(--title-font); font-weight:800; font-size:9cqh;
+                    line-height:1; letter-spacing:-0.03em; color:var(--accent);">{{ left }}</div>
+        <div style="margin-top:1.2cqh; font-family:var(--body-font); font-weight:400;
+                    font-size:2.4cqh; line-height:1.3; color:var(--text); opacity:0.78;">{{ right }}</div>
+      </div>
+    {{/each}}
+  </div>
+</div>
