@@ -70,6 +70,10 @@ Route::middleware('auth:sanctum')->group(function () {
 
     // ── Studio carrousel (briques HTML/CSS) ──
     Route::get('/carousel/bricks', [CarouselApiController::class, 'bricks']);
+    // CRUD des briques STOCKÉES EN BASE (les briques fournies restent en lecture seule)
+    Route::post('/carousel/bricks', [CarouselApiController::class, 'storeBrick']);
+    Route::put('/carousel/bricks/{brick}', [CarouselApiController::class, 'updateBrick']);
+    Route::delete('/carousel/bricks/{brick}', [CarouselApiController::class, 'destroyBrick']);
     Route::post('/carousel/preview', [CarouselApiController::class, 'preview']); // HTML de la bande, sans Chromium
     Route::post('/carousel/render', [CarouselApiController::class, 'render'])
         ->middleware('throttle:20,1'); // rendu synchrone Chromium : ~2 s par slide

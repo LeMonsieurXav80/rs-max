@@ -45,6 +45,8 @@
                 'h' => $h,
                 'data' => $slide['data'] ?? [],
                 'theme' => $slide['theme'] ?? [],
+                // Gabarit des briques stockées en base (null pour les briques en code).
+                'template' => $slide['template'] ?? null,
             ])
         </section>
     @endforeach

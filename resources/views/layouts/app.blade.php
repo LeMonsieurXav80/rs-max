@@ -116,7 +116,7 @@
 
                     {{-- Medias --}}
                     <a href="{{ url('/media') }}"
-                       class="flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-colors {{ $currentRoute === 'media' && $currentRoute !== 'media.studio' ? 'bg-indigo-50 text-indigo-600' : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900' }}">
+                       class="flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-colors {{ $currentRoute === 'media' ? 'bg-indigo-50 text-indigo-600' : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900' }}">
                         <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1.5">
                             <path stroke-linecap="round" stroke-linejoin="round" d="m2.25 15.75 5.159-5.159a2.25 2.25 0 0 1 3.182 0l5.159 5.159m-1.5-1.5 1.409-1.409a2.25 2.25 0 0 1 3.182 0l2.909 2.909M3.75 21h16.5A2.25 2.25 0 0 0 22.5 18.75V5.25A2.25 2.25 0 0 0 20.25 3H3.75A2.25 2.25 0 0 0 1.5 5.25v13.5A2.25 2.25 0 0 0 3.75 21Z" />
                         </svg>
@@ -124,10 +124,10 @@
                     </a>
                     {{-- Edition en masse : fusionnee dans /media (multi-select). Lien retire. --}}
                     {{-- Studio (collapsible) --}}
-                    <div x-data="{ studioOpen: {{ str_starts_with($currentRoute, 'media/studio') || str_starts_with($currentRoute, 'carousel/studio') || str_starts_with($currentRoute, 'prompts') ? 'true' : 'false' }} }">
+                    <div x-data="{ studioOpen: {{ str_starts_with($currentRoute, 'carousel/') ? 'true' : 'false' }} }">
                         <button
                             @click="studioOpen = !studioOpen"
-                            class="w-full flex items-center justify-between px-3 py-2 pl-11 rounded-xl text-sm font-medium transition-colors {{ str_starts_with($currentRoute, 'media/studio') || str_starts_with($currentRoute, 'carousel/studio') || str_starts_with($currentRoute, 'prompts') ? 'text-indigo-600' : 'text-gray-500 hover:bg-gray-50 hover:text-gray-900' }}"
+                            class="w-full flex items-center justify-between px-3 py-2 pl-11 rounded-xl text-sm font-medium transition-colors {{ str_starts_with($currentRoute, 'carousel/') ? 'text-indigo-600' : 'text-gray-500 hover:bg-gray-50 hover:text-gray-900' }}"
                         >
                             <span class="flex items-center gap-3">
                                 <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1.5">
@@ -141,13 +141,6 @@
                         </button>
 
                         <div x-show="studioOpen" x-collapse class="ml-12 mt-1 space-y-0.5 border-l border-gray-200 pl-3">
-                            <a href="{{ route('media.studio') }}"
-                               class="flex items-center gap-3 px-3 py-1.5 rounded-lg text-sm transition-colors {{ $currentRoute === 'media/studio' ? 'bg-indigo-50 text-indigo-600 font-medium' : 'text-gray-500 hover:bg-gray-50 hover:text-gray-900' }}">
-                                <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1.5">
-                                    <path stroke-linecap="round" stroke-linejoin="round" d="M6 13.5V3.75m0 9.75a1.5 1.5 0 0 1 0 3m0-3a1.5 1.5 0 0 0 0 3m0 3.75V16.5m12-3V3.75m0 9.75a1.5 1.5 0 0 1 0 3m0-3a1.5 1.5 0 0 0 0 3m0 3.75V16.5m-6-9V3.75m0 3.75a1.5 1.5 0 0 1 0 3m0-3a1.5 1.5 0 0 0 0 3m0 9.75V10.5" />
-                                </svg>
-                                Encodage
-                            </a>
                             <a href="{{ route('carousel.studio') }}"
                                class="flex items-center gap-3 px-3 py-1.5 rounded-lg text-sm transition-colors {{ $currentRoute === 'carousel/studio' ? 'bg-indigo-50 text-indigo-600 font-medium' : 'text-gray-500 hover:bg-gray-50 hover:text-gray-900' }}">
                                 <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1.5">
@@ -155,20 +148,15 @@
                                 </svg>
                                 Carrousel
                             </a>
-                            <a href="{{ route('prompts.image') }}"
-                               class="flex items-center gap-3 px-3 py-1.5 rounded-lg text-sm transition-colors {{ $currentRoute === 'prompts/image' ? 'bg-indigo-50 text-indigo-600 font-medium' : 'text-gray-500 hover:bg-gray-50 hover:text-gray-900' }}">
-                                <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1.5">
-                                    <path stroke-linecap="round" stroke-linejoin="round" d="M9.813 15.904 9 18.75l-.813-2.846a4.5 4.5 0 0 0-3.09-3.09L2.25 12l2.846-.813a4.5 4.5 0 0 0 3.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 0 0 3.09 3.09L15.75 12l-2.846.813a4.5 4.5 0 0 0-3.09 3.09Z" />
-                                </svg>
-                                Prompts image
-                            </a>
-                            <a href="{{ route('prompts.video') }}"
-                               class="flex items-center gap-3 px-3 py-1.5 rounded-lg text-sm transition-colors {{ $currentRoute === 'prompts/video' ? 'bg-indigo-50 text-indigo-600 font-medium' : 'text-gray-500 hover:bg-gray-50 hover:text-gray-900' }}">
-                                <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1.5">
-                                    <path stroke-linecap="round" stroke-linejoin="round" d="m15.75 10.5 4.72-4.72a.75.75 0 0 1 1.28.53v11.38a.75.75 0 0 1-1.28.53l-4.72-4.72M4.5 18.75h9a2.25 2.25 0 0 0 2.25-2.25v-9a2.25 2.25 0 0 0-2.25-2.25h-9A2.25 2.25 0 0 0 2.25 7.5v9a2.25 2.25 0 0 0 2.25 2.25Z" />
-                                </svg>
-                                Prompts video
-                            </a>
+                            @if (in_array(auth()->user()->role, ['admin', 'manager']))
+                                <a href="{{ route('carousel.templates.index') }}"
+                                   class="flex items-center gap-3 px-3 py-1.5 rounded-lg text-sm transition-colors {{ str_starts_with($currentRoute, 'carousel/templates') ? 'bg-indigo-50 text-indigo-600 font-medium' : 'text-gray-500 hover:bg-gray-50 hover:text-gray-900' }}">
+                                    <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1.5">
+                                        <path stroke-linecap="round" stroke-linejoin="round" d="M3.75 6A2.25 2.25 0 0 1 6 3.75h2.25A2.25 2.25 0 0 1 10.5 6v2.25a2.25 2.25 0 0 1-2.25 2.25H6a2.25 2.25 0 0 1-2.25-2.25V6ZM3.75 15.75A2.25 2.25 0 0 1 6 13.5h2.25a2.25 2.25 0 0 1 2.25 2.25V18a2.25 2.25 0 0 1-2.25 2.25H6A2.25 2.25 0 0 1 3.75 18v-2.25ZM13.5 6a2.25 2.25 0 0 1 2.25-2.25H18A2.25 2.25 0 0 1 20.25 6v2.25A2.25 2.25 0 0 1 18 10.5h-2.25a2.25 2.25 0 0 1-2.25-2.25V6ZM13.5 15.75a2.25 2.25 0 0 1 2.25-2.25H18a2.25 2.25 0 0 1 2.25 2.25V18A2.25 2.25 0 0 1 18 20.25h-2.25A2.25 2.25 0 0 1 13.5 18v-2.25Z" />
+                                    </svg>
+                                    Templates
+                                </a>
+                            @endif
                         </div>
                     </div>
 

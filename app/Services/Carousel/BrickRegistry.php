@@ -2,6 +2,7 @@
 
 namespace App\Services\Carousel;
 
+use App\Models\CarouselBrick;
 use App\Models\MediaFile;
 use Illuminate\Support\Facades\Storage;
 
@@ -23,19 +24,33 @@ use Illuminate\Support\Facades\Storage;
  */
 class BrickRegistry
 {
+    /** @var array<string, array>|null Mémo par instance (le registre est appelé plusieurs fois par rendu). */
+    private ?array $cache = null;
+
     /**
-     * Manifeste complet, normalisé, indexé par slug.
+     * Manifeste complet, normalisé, indexé par slug : briques FOURNIES
+     * (config/carousel.php) + briques stockées en BASE. En cas de collision de
+     * slug, la base l'emporte — c'est ce qui permet de surcharger une brique
+     * fournie sans toucher au code.
      *
-     * @return array<string, array{slug: string, name: string, description: string, view: ?string, ratios: array, slots: array}>
+     * @return array<string, array{slug: string, name: string, description: string, view: ?string, ratios: array, slots: array, template: ?string, is_builtin: bool}>
      */
     public function all(): array
     {
-        $bricks = [];
-        foreach (config('carousel.bricks', []) as $slug => $def) {
-            $bricks[$slug] = $this->normalizeBrick($slug, $def);
+        if ($this->cache !== null) {
+            return $this->cache;
         }
 
-        return $bricks;
+        $bricks = [];
+        foreach (config('carousel.bricks', []) as $slug => $def) {
+            $bricks[$slug] = $this->normalizeBrick((string) $slug, $def);
+        }
+
+        foreach ($this->storedBricks() as $brick) {
+            $bricks[$brick->slug] = $this->normalizeStored($brick);
+        }
+
+        return $this->cache = $bricks;
     }
 
     /**
@@ -43,20 +58,63 @@ class BrickRegistry
      */
     public function slugs(): array
     {
-        return array_keys(config('carousel.bricks', []));
+        return array_keys($this->all());
     }
 
     /**
-     * @return array{slug: string, name: string, description: string, view: ?string, ratios: array, slots: array}
+     * @return array{slug: string, name: string, description: string, view: ?string, ratios: array, slots: array, template: ?string, is_builtin: bool}
      */
     public function get(string $slug): array
     {
-        $def = config("carousel.bricks.{$slug}");
-        if (! is_array($def)) {
+        $brick = $this->all()[$slug] ?? null;
+        if ($brick === null) {
             throw new \InvalidArgumentException("Brique de carrousel inconnue : {$slug}");
         }
 
-        return $this->normalizeBrick($slug, $def);
+        return $brick;
+    }
+
+    public function exists(string $slug): bool
+    {
+        return isset($this->all()[$slug]);
+    }
+
+    /**
+     * Briques en base. Tolère l'absence de table (avant `migrate`) : le système
+     * doit continuer à tourner sur les seules briques fournies.
+     *
+     * @return \Illuminate\Support\Collection<int, CarouselBrick>
+     */
+    private function storedBricks(): \Illuminate\Support\Collection
+    {
+        try {
+            return CarouselBrick::query()->orderBy('sort_order')->orderBy('name')->get();
+        } catch (\Throwable $e) {
+            return collect();
+        }
+    }
+
+    /**
+     * Une brique en base passe par la vue-pont `_db` et porte son gabarit.
+     */
+    private function normalizeStored(CarouselBrick $brick): array
+    {
+        $slots = [];
+        foreach ($brick->slots ?? [] as $key => $slot) {
+            $slots[$key] = $this->normalizeSlot((string) $key, $slot);
+        }
+
+        return [
+            'slug' => $brick->slug,
+            'name' => $brick->name,
+            'description' => (string) $brick->description,
+            'view' => 'carousel.bricks._db',
+            'ratios' => $brick->ratios ?: ['*'],
+            'slots' => $slots,
+            'template' => $brick->html,
+            'sample' => $brick->sample_data ?: [],
+            'is_builtin' => false,
+        ];
     }
 
     /**
@@ -75,6 +133,66 @@ class BrickRegistry
     public function positions(): array
     {
         return config('carousel.positions', []);
+    }
+
+    /**
+     * Jeu de données d'exemple pour prévisualiser une brique dans la galerie de
+     * templates. Priorité au `sample` déclaré (config ou colonne sample_data) ;
+     * à défaut on en déduit un à partir des slots, pour qu'une brique tout juste
+     * créée ait quand même un aperçu parlant.
+     *
+     * @return array<string, mixed>
+     */
+    public function sampleData(string $slug): array
+    {
+        $brick = $this->get($slug);
+
+        $declared = $brick['sample'] ?? [];
+        $sample = [];
+
+        foreach ($brick['slots'] as $key => $slot) {
+            if (array_key_exists($key, $declared)) {
+                $sample[$key] = $declared[$key];
+
+                continue;
+            }
+
+            $value = match ($slot['type']) {
+                'image' => null,
+                'position', 'select', 'range' => $slot['default'],
+                'textarea' => $this->sampleList($key),
+                default => $this->sampleText($key),
+            };
+
+            if ($value !== null) {
+                $sample[$key] = $value;
+            }
+        }
+
+        return $sample;
+    }
+
+    private function sampleText(string $key): string
+    {
+        return match ($key) {
+            'title' => 'Un titre d’exemple, assez long pour juger',
+            'subtitle' => 'Le sous-titre qui précise l’idée.',
+            'author' => 'Source de la citation, 2026',
+            'handle' => '@moncompte',
+            'number' => '02',
+            'note' => 'Une note discrète en bas de slide.',
+            default => 'Texte d’exemple',
+        };
+    }
+
+    private function sampleList(string $key): string
+    {
+        return match ($key) {
+            'items' => "26|essais contrôlés\n1 036|participants",
+            'rows' => "Première ligne|valeur\nDeuxième ligne|autre valeur",
+            'quote' => 'Une citation d’exemple, pour juger la mise en page à sa vraie longueur.',
+            default => 'Un paragraphe d’exemple, assez fourni pour voir comment le texte se comporte sur plusieurs lignes.',
+        };
     }
 
     /**
@@ -106,7 +224,7 @@ class BrickRegistry
 
         foreach ($slides as $i => $slide) {
             $slug = is_array($slide) ? ($slide['brick'] ?? null) : null;
-            if (! is_string($slug) || ! is_array(config("carousel.bricks.{$slug}"))) {
+            if (! is_string($slug) || ! $this->exists($slug)) {
                 continue;
             }
 
@@ -162,6 +280,10 @@ class BrickRegistry
             'view' => $def['view'] ?? null,
             'ratios' => $def['ratios'] ?? ['*'],
             'slots' => $slots,
+            // Gabarit HTML de départ proposé quand on duplique une brique fournie.
+            'template' => $def['template'] ?? null,
+            'sample' => $def['sample'] ?? [],
+            'is_builtin' => true,
         ];
     }
 

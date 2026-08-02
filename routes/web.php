@@ -8,6 +8,7 @@ use App\Http\Controllers\BotHubController;
 use App\Http\Controllers\BulkLibraryController;
 use App\Http\Controllers\BulkPostController;
 use App\Http\Controllers\CarouselStudioController;
+use App\Http\Controllers\CarouselTemplateController;
 use App\Http\Controllers\CrossPostController;
 use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\FacebookOAuthController;
@@ -21,14 +22,12 @@ use App\Http\Controllers\LinkedInOAuthController;
 use App\Http\Controllers\LocationController;
 use App\Http\Controllers\MediaController;
 use App\Http\Controllers\MediaFolderController;
-use App\Http\Controllers\MediaStudioController;
 use App\Http\Controllers\PersonaController;
 use App\Http\Controllers\PinterestFeedController;
 use App\Http\Controllers\PinterestOAuthController;
 use App\Http\Controllers\PlatformController;
 use App\Http\Controllers\PostController;
 use App\Http\Controllers\ProfileController;
-use App\Http\Controllers\PromptGeneratorController;
 use App\Http\Controllers\PublishController;
 use App\Http\Controllers\RedditSourceController;
 use App\Http\Controllers\ReshareController;
@@ -173,22 +172,10 @@ Route::middleware(['auth', 'verified', 'throttle:600,1'])->group(function () {
     Route::delete('media/folders/{folder}', [MediaFolderController::class, 'destroy'])->name('media.folders.destroy');
     Route::post('media/folders/move', [MediaFolderController::class, 'moveFiles'])->name('media.folders.move');
 
-    // Media Studio
-    Route::get('media/studio', [MediaStudioController::class, 'index'])->name('media.studio');
-    Route::post('media/studio/process', [MediaStudioController::class, 'process'])->name('media.studio.process');
-    Route::post('media/studio/logo', [MediaStudioController::class, 'uploadLogo'])->name('media.studio.logo');
-
     // Studio Carrousel (briques HTML/CSS)
     Route::get('carousel/studio', [CarouselStudioController::class, 'index'])->name('carousel.studio');
     Route::post('carousel/studio/preview', [CarouselStudioController::class, 'preview'])->name('carousel.studio.preview');
     Route::post('carousel/studio/render', [CarouselStudioController::class, 'render'])->name('carousel.studio.render');
-
-    // Prompt Generator
-    Route::get('prompts/image', [PromptGeneratorController::class, 'image'])->name('prompts.image');
-    Route::post('prompts/image/generate', [PromptGeneratorController::class, 'generateImage'])->name('prompts.image.generate');
-    Route::get('prompts/video', [PromptGeneratorController::class, 'video'])->name('prompts.video');
-    Route::post('prompts/video/analyze', [PromptGeneratorController::class, 'analyzePhoto'])->name('prompts.video.analyze');
-    Route::post('prompts/video/generate', [PromptGeneratorController::class, 'generateVideo'])->name('prompts.video.generate');
 
     // Media library
     Route::get('media', [MediaController::class, 'index'])->name('media.index');
@@ -252,6 +239,15 @@ Route::middleware(['auth', 'verified', 'throttle:600,1'])->group(function () {
         Route::get('accounts/{account}/import/info', [ImportController::class, 'info'])->name('accounts.import.info');
         Route::post('accounts/{account}/import', [ImportController::class, 'import'])->name('accounts.import');
         Route::post('accounts/sync-followers', [ImportController::class, 'syncFollowers'])->name('accounts.syncFollowers');
+
+        // Templates de carrousel (gabarits de slide stockés en base)
+        Route::get('carousel/templates', [CarouselTemplateController::class, 'index'])->name('carousel.templates.index');
+        Route::get('carousel/templates/create', [CarouselTemplateController::class, 'create'])->name('carousel.templates.create');
+        Route::post('carousel/templates', [CarouselTemplateController::class, 'store'])->name('carousel.templates.store');
+        Route::post('carousel/templates/preview', [CarouselTemplateController::class, 'preview'])->name('carousel.templates.preview');
+        Route::get('carousel/templates/{template}/edit', [CarouselTemplateController::class, 'edit'])->name('carousel.templates.edit');
+        Route::put('carousel/templates/{template}', [CarouselTemplateController::class, 'update'])->name('carousel.templates.update');
+        Route::delete('carousel/templates/{template}', [CarouselTemplateController::class, 'destroy'])->name('carousel.templates.destroy');
 
         // Personas
         Route::resource('personas', PersonaController::class)->except(['show']);

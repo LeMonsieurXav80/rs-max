@@ -31,6 +31,7 @@ class CarouselRenderService
 
     public function __construct(
         private GoogleFontsService $fonts,
+        private BrickRegistry $bricks,
     ) {
         $this->manager = new ImageManager(new Driver);
     }
@@ -46,6 +47,28 @@ class CarouselRenderService
         [$w, $h] = $this->dimensions($ratio);
 
         return $this->buildHtmlWithDims($w, $h, $slides);
+    }
+
+    /**
+     * HTML d'un slide unique à partir d'un gabarit BRUT (non enregistré) : sert
+     * l'aperçu live de l'éditeur de templates, où la brique n'existe pas encore
+     * dans le registre.
+     */
+    public function buildTemplateHtml(string $ratio, string $template, array $data = [], array $theme = []): string
+    {
+        [$w, $h] = $this->dimensions($ratio);
+
+        return View::make('carousel.band', [
+            'w' => $w,
+            'h' => $h,
+            'fontFaces' => $this->fontFaceBlock(),
+            'slides' => [[
+                'view' => 'carousel.bricks._db',
+                'data' => $this->resolveImageSlots($data),
+                'theme' => $this->resolveTheme($theme),
+                'template' => $template,
+            ]],
+        ])->render();
     }
 
     /**
@@ -168,6 +191,8 @@ class CarouselRenderService
                 'view' => $brick['view'],
                 'data' => $this->resolveImageSlots($slide['data'] ?? []),
                 'theme' => $this->resolveTheme($slide['theme'] ?? []),
+                // Non nul pour les briques stockées en base (rendues par TemplateRenderer).
+                'template' => $brick['template'] ?? null,
             ];
         }, $slides);
 
@@ -242,13 +267,15 @@ class CarouselRenderService
     }
 
     /**
-     * @return array{name: string, view: string, slots: array, ratios: array}
+     * Brique normalisée (fournie en code OU stockée en base) via le registre.
+     *
+     * @return array{name: string, view: string, slots: array, ratios: array, template: ?string}
      */
     private function brick(string $slug): array
     {
-        $brick = config("carousel.bricks.{$slug}");
-        if (! $brick || empty($brick['view'])) {
-            throw new \InvalidArgumentException("Brique de carrousel inconnue : {$slug}");
+        $brick = $this->bricks->get($slug);
+        if (empty($brick['view'])) {
+            throw new \InvalidArgumentException("Brique de carrousel sans vue : {$slug}");
         }
 
         return $brick;

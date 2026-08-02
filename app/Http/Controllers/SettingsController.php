@@ -76,15 +76,6 @@ class SettingsController extends Controller
         'ai_model_inbox',
         'inbox_use_persona',
         'inbox_reply_prompt',
-        // Studio
-        'studio_video_crf',
-        'studio_audio_bitrate',
-        'studio_logo_size',
-        'studio_logo_x',
-        'studio_logo_y',
-        'studio_text_font_size',
-        'studio_text_x',
-        'studio_text_y',
         // Notifications
         'notify_publish_error',
         'notify_telegram_chat_id',
@@ -153,15 +144,6 @@ class SettingsController extends Controller
         'inbox_sync_freq_twitter' => 'hourly',
         'ai_model_inbox' => 'gpt-4o-mini',
         'inbox_use_persona' => true,
-        // Studio
-        'studio_video_crf' => 28,
-        'studio_audio_bitrate' => 96,
-        'studio_logo_size' => 50,
-        'studio_logo_x' => 20,
-        'studio_logo_y' => 35,
-        'studio_text_font_size' => 28,
-        'studio_text_x' => 65,
-        'studio_text_y' => 35,
         // Notifications
         'notify_publish_error' => false,
         'notify_telegram_chat_id' => '',

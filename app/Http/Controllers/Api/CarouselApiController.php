@@ -3,15 +3,18 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
+use App\Models\CarouselBrick;
 use App\Models\MediaFile;
 use App\Services\Carousel\BrickRegistry;
 use App\Services\Carousel\CarouselRenderService;
+use App\Services\Carousel\TemplateRenderer;
 use App\Services\Media\ThumbnailService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\Response;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Storage;
+use Illuminate\Validation\ValidationException;
 
 /**
  * API REST du studio carrousel : mêmes briques, même pipeline de rendu que le
@@ -45,6 +48,60 @@ class CarouselApiController extends Controller
                 'slots' => array_values($brick['slots']),
             ], $registry->all())),
         ]);
+    }
+
+    /**
+     * Crée une brique en base (un « template » de slide). Le gabarit n'est jamais
+     * compilé : il est validé ici puis rendu par substitution échappée.
+     */
+    public function storeBrick(Request $request, TemplateRenderer $renderer): JsonResponse
+    {
+        $data = $this->validatedBrick($request, $renderer, null);
+        $data['user_id'] = $request->user()->id;
+
+        return response()->json(['brick' => CarouselBrick::create($data)], 201);
+    }
+
+    public function updateBrick(Request $request, CarouselBrick $brick, TemplateRenderer $renderer): JsonResponse
+    {
+        $brick->update($this->validatedBrick($request, $renderer, $brick));
+
+        return response()->json(['brick' => $brick->fresh()]);
+    }
+
+    public function destroyBrick(CarouselBrick $brick): JsonResponse
+    {
+        $brick->delete();
+
+        return response()->json(['deleted' => true]);
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function validatedBrick(Request $request, TemplateRenderer $renderer, ?CarouselBrick $existing): array
+    {
+        $unique = 'unique:carousel_bricks,slug'.($existing ? ','.$existing->id : '');
+
+        $validated = $request->validate([
+            'slug' => [$existing ? 'nullable' : 'required', 'string', 'max:60', 'regex:/^[a-z0-9-]+$/', $unique],
+            'name' => [$existing ? 'nullable' : 'required', 'string', 'max:120'],
+            'description' => ['nullable', 'string', 'max:500'],
+            'ratios' => ['nullable', 'array'],
+            'ratios.*' => ['string'],
+            'html' => [$existing ? 'nullable' : 'required', 'string', 'max:60000'],
+            'slots' => ['nullable', 'array', 'max:12'],
+            'sample_data' => ['nullable', 'array'],
+        ]);
+
+        if (isset($validated['html']) && ($problems = $renderer->violations($validated['html']))) {
+            throw ValidationException::withMessages(['html' => $problems]);
+        }
+
+        return array_filter(
+            $validated,
+            fn ($value) => $value !== null,
+        );
     }
 
     public function preview(Request $request, CarouselRenderService $carousel): Response

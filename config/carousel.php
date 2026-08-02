@@ -114,7 +114,9 @@ return [
     'bricks' => [
 
         'photo-title-bl' => [
-            'name' => 'Photo + titre bas-gauche',
+            // Le slug reste `photo-title-bl` (référencé par carousel.overlay_brick),
+            // mais l'emplacement du titre est désormais un slot : le nom le reflète.
+            'name' => 'Photo + titre positionnable',
             'description' => 'Image plein cadre, dégradé sombre, titre (et sous-titre) posés à l’emplacement de ton choix. Par défaut en bas à gauche — c’est la brique de l’incrustation overlay.',
             'view' => 'carousel.bricks.photo-title-bl',
             'ratios' => ['*'],
