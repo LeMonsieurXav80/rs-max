@@ -74,7 +74,8 @@
                              class="relative rounded-xl overflow-hidden border-2 aspect-square cursor-pointer transition-all"
                              :class="isInMedia(item) ? 'border-indigo-500 ring-2 ring-indigo-200' : 'border-gray-200 hover:border-indigo-300'">
                             <template x-if="item.is_image">
-                                <img :src="item.thumbnail_url || item.url" class="w-full h-full object-cover" loading="lazy">
+                                <img :src="item.thumbnail_url || item.url" class="w-full h-full object-cover" loading="lazy"
+                                     x-on:error="if (!$el.dataset.fellBack && item.url) { $el.dataset.fellBack = '1'; $el.src = item.url; }">
                             </template>
                             <template x-if="item.is_video">
                                 <div class="w-full h-full relative">
