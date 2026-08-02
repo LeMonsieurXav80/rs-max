@@ -1,6 +1,7 @@
 <?php
 
 use App\Http\Controllers\Api\ApiController;
+use App\Http\Controllers\Api\CarouselApiController;
 use App\Http\Controllers\Api\GenerateApiController;
 use App\Http\Controllers\Api\MediaApiController;
 use App\Http\Controllers\Api\PersonaApiController;
@@ -66,6 +67,12 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::post('/media/{media}/mark-published', [MediaApiController::class, 'markPublished']);
     Route::post('/media/{media}/mark-wp-used', [MediaApiController::class, 'markWpUsed']); // trace l'usage sur un site WordPress (idempotent par-site)
     Route::post('/media/{media}/analyze-vision', [MediaApiController::class, 'analyzeVision']);
+
+    // ── Studio carrousel (briques HTML/CSS) ──
+    Route::get('/carousel/bricks', [CarouselApiController::class, 'bricks']);
+    Route::post('/carousel/preview', [CarouselApiController::class, 'preview']); // HTML de la bande, sans Chromium
+    Route::post('/carousel/render', [CarouselApiController::class, 'render'])
+        ->middleware('throttle:20,1'); // rendu synchrone Chromium : ~2 s par slide
 
     // ── Banques d'images externes (Pexels, Pixabay, Unsplash) ──
     Route::get('/stock-photos/search', [MediaApiController::class, 'stockPhotosSearch']);
