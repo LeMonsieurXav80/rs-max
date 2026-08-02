@@ -27,6 +27,17 @@
         @endif
     @endforeach
 
+    @unless ($migrated)
+        <div class="mb-6 rounded-xl bg-amber-50 border border-amber-200 p-4">
+            <p class="text-sm text-amber-800 font-medium">Migration en attente</p>
+            <p class="text-xs text-amber-700 mt-1">
+                La table <code>carousel_bricks</code> n’existe pas encore : lance
+                <code>php artisan migrate</code>. En attendant, seuls les templates fournis
+                sont affichés et la création est indisponible.
+            </p>
+        </div>
+    @endunless
+
     <p class="text-sm text-gray-500 mb-6">
         Un template est une mise en page de slide. Les templates <span class="font-medium text-gray-700">fournis</span>
         sont livrés avec l’application : duplique-les pour les adapter. Les autres sont modifiables directement.

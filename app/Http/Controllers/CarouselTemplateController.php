@@ -32,26 +32,36 @@ class CarouselTemplateController extends Controller
     {
         $ratio = config('carousel.default_ratio', '4:5');
 
-        $templates = collect($registry->all())->map(function (array $brick) use ($registry, $carousel, $ratio) {
-            return [
-                'slug' => $brick['slug'],
-                'name' => $brick['name'],
-                'description' => $brick['description'],
-                'is_builtin' => $brick['is_builtin'],
-                'slots' => count($brick['slots']),
-                'id' => CarouselBrick::where('slug', $brick['slug'])->value('id'),
-                // Aperçu réel de la brique, alimenté par ses données d'exemple.
-                'preview' => $carousel->buildHtml($ratio, [[
-                    'brick' => $brick['slug'],
-                    'data' => $registry->sampleData($brick['slug']),
-                ]]),
-            ];
-        })->values();
+        // Une seule requête pour tous les identifiants (et non une par brique).
+        // Tolère l'absence de table : sans migration, la galerie affiche au moins
+        // les briques fournies au lieu de renvoyer une erreur 500.
+        try {
+            $ids = CarouselBrick::pluck('id', 'slug');
+            $migrated = true;
+        } catch (\Throwable $e) {
+            $ids = collect();
+            $migrated = false;
+        }
+
+        $templates = collect($registry->all())->map(fn (array $brick) => [
+            'slug' => $brick['slug'],
+            'name' => $brick['name'],
+            'description' => $brick['description'],
+            'is_builtin' => $brick['is_builtin'],
+            'slots' => count($brick['slots']),
+            'id' => $ids[$brick['slug']] ?? null,
+            // Aperçu réel de la brique, alimenté par ses données d'exemple.
+            'preview' => $carousel->buildHtml($ratio, [[
+                'brick' => $brick['slug'],
+                'data' => $registry->sampleData($brick['slug']),
+            ]]),
+        ])->values();
 
         return view('carousel.templates.index', [
             'templates' => $templates,
             'ratio' => $ratio,
             'dims' => config("carousel.ratios.{$ratio}"),
+            'migrated' => $migrated,
         ]);
     }
 
