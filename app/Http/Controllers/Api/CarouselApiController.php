@@ -7,6 +7,7 @@ use App\Models\CarouselBrick;
 use App\Models\MediaFile;
 use App\Services\Carousel\BrickRegistry;
 use App\Services\Carousel\CarouselRenderService;
+use App\Services\Carousel\FontLibrary;
 use App\Services\Carousel\TemplateRenderer;
 use App\Services\Media\ThumbnailService;
 use Illuminate\Http\JsonResponse;
@@ -201,6 +202,10 @@ class CarouselApiController extends Controller
         // `theme` s'applique à tout le carrousel : couleurs (hex 6 chiffres) et
         // polices choisies parmi celles de la bibliothèque.
         $theme = $registry->normalizeTheme($validated['theme'] ?? null);
+
+        // La copie locale de la police est téléchargée ICI, à la première utilisation :
+        // choisir une police dans l'interface suffit, il n'y a pas d'étape d'ajout.
+        app(FontLibrary::class)->ensureTheme($theme);
 
         $slides = array_map(
             fn (array $slide) => $slide + ['theme' => $theme],

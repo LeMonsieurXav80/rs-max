@@ -57,59 +57,50 @@
                     </template>
                 </div>
 
+                {{-- Sélecteur de police : catalogue Google complet, chaque nom
+                     affiché DANS sa propre typo. Les polices d'aperçu sont chargées
+                     depuis Google (c'est une page web) ; le rendu, lui, utilise
+                     toujours la copie locale. --}}
                 <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                    <div>
-                        <label class="block text-xs text-gray-500 mb-1">Police des titres</label>
-                        <select x-model="theme.title_font" @change="queuePreview()"
-                                class="w-full rounded-lg border-gray-300 text-sm focus:border-indigo-500 focus:ring-indigo-500">
-                            <template x-for="f in fonts" :key="f"><option :value="f" x-text="f"></option></template>
-                        </select>
-                    </div>
-                    <div>
-                        <label class="block text-xs text-gray-500 mb-1">Police des textes</label>
-                        <select x-model="theme.body_font" @change="queuePreview()"
-                                class="w-full rounded-lg border-gray-300 text-sm focus:border-indigo-500 focus:ring-indigo-500">
-                            <template x-for="f in fonts" :key="f"><option :value="f" x-text="f"></option></template>
-                        </select>
-                    </div>
-                </div>
+                    <template x-for="picker in ['title_font', 'body_font']" :key="picker">
+                        <div class="relative" @click.outside="openPicker = null">
+                            <label class="block text-xs text-gray-500 mb-1"
+                                   x-text="picker === 'title_font' ? 'Police des titres' : 'Police des textes'"></label>
 
-                @if ($canAddFonts)
-                    <div class="mt-3 pt-3 border-t border-gray-100">
-                        <p class="text-xs text-gray-500 mb-2">
-                            Ajouter une police Google : elle est téléchargée une fois puis servie par nos soins
-                            (le rendu ne dépend jamais du réseau).
-                        </p>
-                        <div class="flex items-center gap-2">
-                            <select x-model="newFont"
-                                    class="flex-1 rounded-lg border-gray-300 text-sm focus:border-indigo-500 focus:ring-indigo-500">
-                                <option value="">Choisir dans le catalogue…</option>
-                                <template x-for="(families, category) in fontCatalogue" :key="category">
-                                    <optgroup :label="category">
-                                        <template x-for="f in families" :key="f">
-                                            <option :value="f" x-text="f"></option>
-                                        </template>
-                                    </optgroup>
-                                </template>
-                            </select>
-                            <button type="button" @click="addFont()" :disabled="addingFont || !newFont"
-                                    class="px-3 py-1.5 rounded-lg text-sm border border-gray-200 text-gray-600 hover:border-indigo-300 hover:text-indigo-600 disabled:opacity-50">
-                                <span x-show="!addingFont">Ajouter</span>
-                                <span x-show="addingFont">…</span>
+                            <button type="button" @click="togglePicker(picker)"
+                                    class="w-full flex items-center justify-between rounded-lg border border-gray-300 px-3 py-2 text-sm text-left hover:border-indigo-300">
+                                <span :style="`font-family:'${theme[picker]}', sans-serif`" x-text="theme[picker]"></span>
+                                <span class="text-gray-400 text-xs">▾</span>
                             </button>
+
+                            <div x-show="openPicker === picker" x-cloak
+                                 class="absolute z-30 mt-1 w-full bg-white rounded-xl border border-gray-200 shadow-lg">
+                                <div class="p-2 border-b border-gray-100">
+                                    <input type="text" x-model="fontSearch" @input="loadPreviewFonts()"
+                                           placeholder="Chercher parmi 1900+ polices…"
+                                           class="w-full rounded-lg border-gray-200 text-sm focus:border-indigo-500 focus:ring-indigo-500">
+                                </div>
+                                <div class="max-h-72 overflow-y-auto py-1">
+                                    <template x-for="f in filteredFonts()" :key="f.family">
+                                        <button type="button" @click="chooseFont(picker, f.family)"
+                                                class="w-full text-left px-3 py-2 hover:bg-indigo-50"
+                                                :class="theme[picker] === f.family && 'bg-indigo-50'">
+                                            <span class="block text-base leading-tight text-gray-900"
+                                                  :style="`font-family:'${f.family}', sans-serif`" x-text="f.family"></span>
+                                            <span class="block text-[10px] text-gray-400" x-text="f.category"></span>
+                                        </button>
+                                    </template>
+                                    <p x-show="!filteredFonts().length" class="px-3 py-4 text-xs text-gray-400">
+                                        Aucune police ne correspond.
+                                    </p>
+                                </div>
+                            </div>
                         </div>
-                        <div class="flex items-center gap-2 mt-2">
-                            <input type="text" x-model="customFont" @keydown.enter.prevent="addFont(true)"
-                                   placeholder="…ou n’importe quelle police Google par son nom exact"
-                                   class="flex-1 rounded-lg border-gray-300 text-xs focus:border-indigo-500 focus:ring-indigo-500">
-                            <button type="button" @click="addFont(true)" :disabled="addingFont || !customFont"
-                                    class="px-3 py-1.5 rounded-lg text-xs border border-gray-200 text-gray-600 hover:border-indigo-300 hover:text-indigo-600 disabled:opacity-50">
-                                Ajouter
-                            </button>
-                        </div>
-                    </div>
-                    <p x-show="fontError" x-text="fontError" class="text-xs text-red-500 mt-1"></p>
-                @endif
+                    </template>
+                </div>
+                <p class="text-[10px] text-gray-400 mt-2">
+                    La police choisie est téléchargée une fois puis servie par nos soins : le rendu final ne dépend jamais de Google.
+                </p>
             </div>
 
             {{-- Slides --}}
@@ -294,14 +285,11 @@
             ratios: @json($ratios),
             bricks: @json($bricks),
             ratio: @json($defaultRatio),
-            fonts: @json($fonts),
             theme: @json($theme),
             defaultTheme: @json($theme),
             fontCatalogue: @json($fontCatalogue),
-            newFont: '',
-            customFont: '',
-            addingFont: false,
-            fontError: '',
+            fontSearch: '',
+            openPicker: null,
             colorFields: [
                 { key: 'background', label: 'Fond', hint: 'Slides sans image' },
                 { key: 'text', label: 'Texte', hint: 'Tous les textes' },
@@ -390,33 +378,48 @@
                 this.theme = { ...this.defaultTheme };
                 this.queuePreview();
             },
-            async addFont(custom = false) {
-                const family = (custom ? this.customFont : this.newFont).trim();
-                if (!family) return;
-                this.addingFont = true;
-                this.fontError = '';
-                try {
-                    const resp = await fetch('{{ route('carousel.studio.fonts') }}', {
-                        method: 'POST',
-                        headers: this.headers(),
-                        body: JSON.stringify({ family }),
-                    });
-                    const data = await resp.json();
-                    if (!resp.ok) {
-                        this.fontError = data.message || Object.values(data.errors || {}).flat()[0] || 'Échec de l’ajout.';
-                        return;
-                    }
-                    this.fonts = data.families;
-                    this.fontCatalogue = data.catalogue;
-                    this.theme.title_font = family;
-                    this.newFont = '';
-                    this.customFont = '';
-                    this.updatePreview();
-                } catch (e) {
-                    this.fontError = 'Erreur réseau lors de l’ajout de la police.';
-                } finally {
-                    this.addingFont = false;
+            // ── Choix de police (catalogue Google complet) ──
+            togglePicker(picker) {
+                this.openPicker = this.openPicker === picker ? null : picker;
+                if (this.openPicker) {
+                    this.fontSearch = '';
+                    this.loadPreviewFonts();
                 }
+            },
+            filteredFonts() {
+                const q = this.fontSearch.trim().toLowerCase();
+                const list = q
+                    ? this.fontCatalogue.filter(f => f.family.toLowerCase().includes(q))
+                    : this.fontCatalogue;
+                return list.slice(0, 40);
+            },
+            chooseFont(picker, family) {
+                this.theme[picker] = family;
+                this.openPicker = null;
+                // Le serveur télécharge la copie locale au premier rendu.
+                this.updatePreview();
+            },
+            // Charge depuis Google les polices actuellement listées, pour que chaque
+            // nom s'affiche dans sa propre typo. Un seul <link> par lot, limité aux
+            // caractères réellement affichés (paramètre `text`) pour rester léger.
+            loadPreviewFonts() {
+                const families = this.filteredFonts().map(f => f.family);
+                if (!families.length) return;
+
+                const chars = [...new Set(families.join(''))].join('');
+                const href = 'https://fonts.googleapis.com/css2?'
+                    + families.map(f => 'family=' + encodeURIComponent(f)).join('&')
+                    + '&text=' + encodeURIComponent(chars)
+                    + '&display=swap';
+
+                let link = document.getElementById('carousel-font-previews');
+                if (!link) {
+                    link = document.createElement('link');
+                    link.id = 'carousel-font-previews';
+                    link.rel = 'stylesheet';
+                    document.head.appendChild(link);
+                }
+                link.href = href;
             },
 
             payload() {

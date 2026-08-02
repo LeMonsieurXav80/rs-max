@@ -280,7 +280,9 @@ class BrickRegistry
      */
     public function compositionRules(): array
     {
-        $fonts = implode(',', app(FontLibrary::class)->families());
+        // Toute police du catalogue Google est acceptable : la copie locale est
+        // téléchargée à l'usage (FontLibrary::ensureTheme), pas avant.
+        $fonts = app(FontLibrary::class)->catalogueFamilies();
 
         return [
             'ratio' => ['required', 'string', 'in:'.implode(',', $this->ratioKeys())],
@@ -297,8 +299,8 @@ class BrickRegistry
             'theme.text' => ['nullable', 'string', 'regex:/^#[0-9a-fA-F]{6}$/'],
             'theme.accent' => ['nullable', 'string', 'regex:/^#[0-9a-fA-F]{6}$/'],
             'theme.overlay' => ['nullable', 'string', 'regex:/^#[0-9a-fA-F]{6}$/'],
-            'theme.title_font' => ['nullable', 'string', 'in:'.$fonts],
-            'theme.body_font' => ['nullable', 'string', 'in:'.$fonts],
+            'theme.title_font' => ['nullable', 'string', \Illuminate\Validation\Rule::in($fonts)],
+            'theme.body_font' => ['nullable', 'string', \Illuminate\Validation\Rule::in($fonts)],
         ];
     }
 

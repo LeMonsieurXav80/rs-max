@@ -32,9 +32,9 @@ class CarouselStudioController extends Controller
         return view('carousel.studio', [
             'ratios' => config('carousel.ratios', []),
             'theme' => config('carousel.theme', []),
-            'fonts' => $fonts->families(),
+            // Catalogue Google Fonts complet : le choix se fait directement
+            // dedans, la copie locale est téléchargée à la première utilisation.
             'fontCatalogue' => $fonts->catalogue(),
-            'canAddFonts' => in_array(auth()->user()->role, ['admin', 'manager'], true),
             // Slots normalisés (typés) : le compositeur construit ses champs à partir
             // de ce contrat, sans rien coder en dur par brique.
             'bricks' => collect($registry->all())
@@ -100,34 +100,6 @@ class CarouselStudioController extends Controller
     }
 
     /**
-     * Ajoute une police Google à la bibliothèque (réservé admin/manager : écrit
-     * des fichiers et déclenche un téléchargement externe).
-     */
-    public function addFont(Request $request, FontLibrary $fonts): JsonResponse
-    {
-        if (! in_array($request->user()->role, ['admin', 'manager'], true)) {
-            return response()->json(['message' => 'Action réservée aux administrateurs.'], 403);
-        }
-
-        $validated = $request->validate([
-            'family' => ['required', 'string', 'max:60', 'regex:/^[A-Za-z0-9 ]+$/'],
-        ], [
-            'family.regex' => 'Le nom de la police ne peut contenir que des lettres, chiffres et espaces.',
-        ]);
-
-        if (! $fonts->add($validated['family'])) {
-            return response()->json([
-                'message' => 'Police introuvable sur Google Fonts (vérifie l’orthographe exacte, ex. « Space Grotesk »).',
-            ], 422);
-        }
-
-        return response()->json([
-            'families' => $fonts->families(),
-            'catalogue' => $fonts->catalogue(),
-        ]);
-    }
-
-    /**
      * Valide et normalise la requête en {ratio, slides:[{brick, data}]}.
      * Règles et nettoyage sont DÉRIVÉS du manifeste (BrickRegistry) : les slots
      * inconnus tombent, les images non locales sont écartées (anti-SSRF).
@@ -145,6 +117,10 @@ class CarouselStudioController extends Controller
         // L'apparence est choisie au niveau du carrousel puis portée par chaque
         // slide (le moteur de rendu résout le thème slide par slide).
         $theme = $registry->normalizeTheme($validated['theme'] ?? null);
+
+        // La copie locale de la police est téléchargée ICI, à la première utilisation :
+        // choisir une police dans l'interface suffit, il n'y a pas d'étape d'ajout.
+        app(FontLibrary::class)->ensureTheme($theme);
 
         $slides = array_map(
             fn (array $slide) => $slide + ['theme' => $theme],
