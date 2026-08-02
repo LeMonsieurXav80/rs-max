@@ -23,6 +23,7 @@ API REST d'orchestration multi-plateformes : publication, planification, génér
 11. [Endpoints — Personas](#11-endpoints--personas)
 12. [Endpoints — Statistiques et calendrier](#12-endpoints--statistiques-et-calendrier)
 13. [Annexes : plateformes, langues, statuts](#13-annexes--plateformes-langues-statuts)
+14. [Endpoints en session web (PAS accessibles par token)](#14-endpoints-en-session-web-pas-accessibles-par-token)
 
 ---
 
@@ -748,3 +749,31 @@ D'autres codes sont acceptés (tout ce qu'OpenAI peut traduire), mais seuls ceux
 - `bulk-schedule` : 100 posts max par requête.
 - `bulk-schedule-threads` : 50 threads max par requête.
 - Pagination : 100 items max par page.
+
+---
+
+## 14. Endpoints en session web (PAS accessibles par token)
+
+Quatre endpoints commencent par `/api/` alors qu'ils sont déclarés dans
+`routes/web.php` : ils tournent sous le middleware `web` (cookie de session +
+CSRF) et **ne répondent pas à un token Bearer**. Vérifié avec un vrai token :
+`401` avec `Accept: application/json`, redirection `302` vers `/login` sans cet
+en-tête — alors que le même token répond `200` sur `/api/me`.
+
+Ce sont des endpoints AJAX internes à l'interface. Ils sont listés ici pour
+qu'on cesse de les confondre avec l'API à token.
+
+| Endpoint | Rôle requis | Ce qu'il fait |
+|---|---|---|
+| `GET /api/hashtags` | authentifié | 20 hashtags les plus utilisés **par l'utilisateur connecté**. Renvoie un tableau de chaînes. |
+| `GET /api/locations/search?q=` | authentifié | Autocomplete de lieux Facebook (Graph v21.0 `/pages/search`, 10 max, pages ayant une `location`). `q` requis, min 2. |
+| `GET /api/source-items/sources?type=` | **manager** | Sources de contenu actives d'un type (`rss`, `wordpress`, `youtube`, `reddit`). |
+| `GET /api/source-items/items?type=&source_id=` | **manager** | Éléments d'une source (50 max, tri `published_at` desc). `search` filtre le titre uniquement. |
+
+> ⚠️ `GET /api/locations/search` **échoue en silence** : sans token Facebook
+> disponible, ou si Graph renvoie une erreur, il répond `200` avec un tableau
+> vide. Un résultat vide ne distingue donc pas « aucun lieu » de « token
+> expiré » — vérifier les logs `LocationController:` avant de conclure.
+
+Documentation détaillée (réponses complètes, champ `extra`, pièges) : note
+`RS-Max API` du vault Obsidian, section 20.
