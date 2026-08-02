@@ -43,17 +43,19 @@ fournies ; on peut en créer d'autres (§ 8).
 | `range` | nombre borné | ex. `offset` = décalage vertical en % de la hauteur |
 | `select` | une des options annoncées | ex. `columns` |
 
-**Thème** — l'apparence, commune à toute la production : 4 couleurs + 2 polices.
-Identique pour l'image seule et pour le carrousel.
+**Thème** — l'apparence, commune à toute la production : 4 couleurs, 2 polices et
+2 échelles typographiques. Identique pour l'image seule et pour le carrousel.
 
 ```json
 {
-  "background": "#0f0f1a",
-  "text":       "#ffffff",
-  "accent":     "#0083ff",
-  "overlay":    "#000000",
-  "title_font": "Montserrat",
-  "body_font":  "Poppins"
+  "background":  "#0f0f1a",
+  "text":        "#ffffff",
+  "accent":      "#0083ff",
+  "overlay":     "#000000",
+  "title_font":  "Montserrat",
+  "body_font":   "Poppins",
+  "title_scale": 1,
+  "body_scale":  1
 }
 ```
 
@@ -62,6 +64,34 @@ Identique pour l'image seule et pour le carrousel.
 > alpha à la couleur, une forme courte casserait le rendu **sans erreur visible**.
 
 Toute clé omise reprend la valeur par défaut, exposée par `GET /carousel/bricks`.
+
+### Taille du texte : `title_scale` et `body_scale`
+
+Les briques ne fixent pas des tailles en pixels : elles composent en **fraction de
+la hauteur du slide** (un titre à ~6 % de la hauteur), ce qui garde le même
+gabarit lisible en `1:1` comme en `9:16`. Ces deux facteurs multiplient ces
+fractions — c'est le seul réglage de taille, il n'y en a pas par slide.
+
+| Clé | Défaut | Bornes | Ce qu'elle touche |
+|---|---|---|---|
+| `title_scale` | `1` | `0.6` – `1.8` | tout ce qui est composé en police de titre : titres, chiffres de `stat-grid`, citation et guillemet de `quote`, numéro de `numbered`, pastille de `cta-end` |
+| `body_scale` | `1` | `0.6` – `1.8` | sous-titres, corps, libellés, lignes de `table-rows` |
+
+`1` = tailles natives des briques, donc un thème qui ne dit rien rend exactement
+comme avant l'ajout du réglage. Hors bornes → **422** : en dessous de `0.6` le
+texte n'est plus lisible sur mobile, au-dessus de `1.8` il déborde du cadre — et
+un débordement ne se voit pas à la génération, seulement une fois publié.
+
+L'auto-rétrécissement des titres longs (au-delà de ~60 puis ~90 caractères) reste
+appliqué **avant** le facteur : un titre long à `title_scale: 1.4` reste plus
+petit qu'un titre court à la même valeur.
+
+Pour un template maison (§ 8), les deux facteurs sont exposés en variables CSS :
+
+```css
+.titre { font-size: calc(6cqh * var(--title-scale)); }
+.corps { font-size: calc(3cqh * var(--body-scale)); }
+```
 
 ---
 
@@ -168,7 +198,7 @@ slides.
 |---|---|---|---|
 | `brick` | ✅ | — | slug de la brique |
 | `data` | — | `{}` | les slots de la brique (§ 1) |
-| `theme` | — | thème par défaut | couleurs et polices |
+| `theme` | — | thème par défaut | couleurs, polices et échelles typographiques (§ 1) |
 | `ratio` | — | `4:5` | une clé de `ratios`, **ou `auto`** |
 | `format` | — | `jpg` | `jpg` ou `png` |
 | `quality` | — | `88` | 40 à 100 (JPEG) |
@@ -244,7 +274,7 @@ Même pipeline, plusieurs slides. **Un carrousel est verrouillé sur un seul rat
 | `slides` | ✅ | — | 1 à 20 entrées, dans l'ordre de publication |
 | `slides[].brick` | ✅ | — | slug de la brique de CETTE slide |
 | `slides[].data` | — | `{}` | les slots de cette brique |
-| `theme` | — | thème par défaut | couleurs et polices, pour tout le carrousel |
+| `theme` | — | thème par défaut | couleurs, polices et échelles typographiques (§ 1), pour tout le carrousel |
 | `format` | — | `jpg` | `jpg` ou `png` |
 | `quality` | — | `88` | 40 à 100 |
 

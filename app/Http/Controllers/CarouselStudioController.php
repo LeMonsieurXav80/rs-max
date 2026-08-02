@@ -7,6 +7,7 @@ use App\Models\MediaFile;
 use App\Services\Carousel\BrickRegistry;
 use App\Services\Carousel\CarouselRenderService;
 use App\Services\Carousel\FontLibrary;
+use App\Services\Carousel\Typography;
 use App\Services\Media\ThumbnailService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -50,6 +51,9 @@ class CarouselStudioController extends Controller
                     'slots' => array_values($b['slots']),
                 ])->values(),
             'defaultRatio' => config('carousel.default_ratio', '4:5'),
+            // Bornes des curseurs d'échelle typographique : la même source que la
+            // validation API, pour que le Studio ne propose rien qui sera refusé.
+            'scaleRange' => ['min' => Typography::MIN, 'max' => Typography::MAX],
         ]);
     }
 

@@ -14,8 +14,13 @@
     $titleFont = $theme['title_font'] ?? 'Montserrat';
     $bodyFont = $theme['body_font'] ?? 'Poppins';
 
+    // Échelle typographique du thème : les chiffres sont composés en police de
+    // titre, les libellés en police de texte.
+    $ts = \App\Services\Carousel\Typography::title($theme);
+    $bs = \App\Services\Carousel\Typography::body($theme);
+
     $pad = (int) round($w * 0.09);
-    $titleSize = (int) round($h * 0.046);
+    $titleSize = (int) round($h * 0.046 * $ts);
 
     // Le chiffre rétrécit quand la grille se densifie (nb d'items et de colonnes).
     $rows = max(1, (int) ceil(max(1, count($items)) / max(1, $cols)));
@@ -23,8 +28,8 @@
         $rows >= 3 => 0.070,
         $rows === 2 => 0.090,
         default => 0.110,
-    } / max(1, $cols / 2));
-    $labelSize = (int) round($h * 0.024);
+    } * $ts / max(1, $cols / 2));
+    $labelSize = (int) round($h * 0.024 * $bs);
 @endphp
 
 <div style="position:absolute; inset:0;

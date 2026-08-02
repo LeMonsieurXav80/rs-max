@@ -273,6 +273,11 @@ class TemplateRenderer
             '--overlay' => $theme['overlay'] ?? '#000000',
             '--title-font' => "'".($theme['title_font'] ?? 'Montserrat')."', sans-serif",
             '--body-font' => "'".($theme['body_font'] ?? 'Poppins')."', sans-serif",
+            // Échelle typographique : un gabarit qui écrit
+            // `font-size: calc(6cqh * var(--title-scale))` suit le réglage du
+            // thème, comme les briques. Neutre (1) s'il n'en tient pas compte.
+            '--title-scale' => (string) Typography::title($theme),
+            '--body-scale' => (string) Typography::body($theme),
             '--justify' => $anchor['justify'],
             '--align' => $anchor['align'],
             '--text-align' => $anchor['text_align'],

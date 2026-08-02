@@ -19,10 +19,14 @@
     $anchor = \App\Services\Carousel\Anchor::resolve($data['position'] ?? 'middle-left', $image ? $overlay : $bg);
     $shift = \App\Services\Carousel\Anchor::offsetTransform($data['offset'] ?? 0, $h);
 
+    // Échelle typographique du thème : multiplie les fractions ci-dessous.
+    $ts = \App\Services\Carousel\Typography::title($theme);
+    $bs = \App\Services\Carousel\Typography::body($theme);
+
     $pad = (int) round($w * 0.09);
-    $titleSize = (int) round($h * (mb_strlen($title) > 60 ? 0.052 : 0.064));
-    $bodySize = (int) round($h * 0.028);
-    $badgeSize = (int) round($h * 0.030);
+    $titleSize = (int) round($h * (mb_strlen($title) > 60 ? 0.052 : 0.064) * $ts);
+    $bodySize = (int) round($h * 0.028 * $bs);
+    $badgeSize = (int) round($h * 0.030 * $ts);
 @endphp
 
 <div style="position:absolute; inset:0; background:{{ $image ? $overlay : $bg }};">
@@ -36,7 +40,7 @@
     @if ($number !== '')
         <div style="position:absolute; right:{{ (int) round($w * -0.02) }}px; bottom:{{ (int) round($h * -0.06) }}px;
                     font-family:'{{ $titleFont }}',sans-serif; font-weight:800;
-                    font-size:{{ (int) round($h * 0.42) }}px; line-height:0.8; letter-spacing:-0.04em;
+                    font-size:{{ (int) round($h * 0.42 * $ts) }}px; line-height:0.8; letter-spacing:-0.04em;
                     color:{{ $accent }}; opacity:0.16;">{{ $number }}</div>
     @endif
 

@@ -296,6 +296,10 @@ return [
         'overlay' => '#000000',
         'title_font' => 'Montserrat',
         'body_font' => 'Poppins',
+        // Échelle typographique : 1 = tailles natives des briques (fractions de
+        // la hauteur du slide). Bornes dans App\Services\Carousel\Typography.
+        'title_scale' => 1.0,
+        'body_scale' => 1.0,
     ],
 
 ];

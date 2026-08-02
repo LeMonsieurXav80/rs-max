@@ -238,6 +238,58 @@ class CarouselApiTest extends TestCase
         ])->assertStatus(422);
     }
 
+    public function test_lechelle_typographique_agrandit_le_texte(): void
+    {
+        $this->actAsApiUser();
+
+        $payload = fn (array $theme) => [
+            'ratio' => '4:5',
+            'theme' => $theme,
+            'slides' => [['brick' => 'photo-title-bl', 'data' => ['title' => 'X', 'subtitle' => 'Y']]],
+        ];
+
+        $sizes = function (string $html): array {
+            preg_match_all('/font-size:(\d+)px/', $html, $m);
+
+            return array_map('intval', $m[1]);
+        };
+
+        $natif = $sizes($this->postJson('/api/carousel/preview', $payload([]))->assertOk()->getContent());
+        $grand = $sizes($this->postJson('/api/carousel/preview', $payload([
+            'title_scale' => 1.5,
+        ]))->assertOk()->getContent());
+        $petit = $sizes($this->postJson('/api/carousel/preview', $payload([
+            'body_scale' => 0.7,
+        ]))->assertOk()->getContent());
+
+        // Le titre grossit de moitié, le sous-titre (police de texte) ne bouge pas.
+        $this->assertSame((int) round($natif[0] * 1.5), $grand[0]);
+        $this->assertSame($natif[1], $grand[1]);
+
+        // Et réciproquement : body_scale ne touche pas au titre.
+        $this->assertSame($natif[0], $petit[0]);
+        $this->assertLessThan($natif[1], $petit[1]);
+    }
+
+    public function test_une_echelle_typographique_hors_bornes_est_refusee(): void
+    {
+        $this->actAsApiUser();
+
+        // Trop grand : le texte déborderait du cadre sans qu'aucune erreur ne le dise.
+        $this->postJson('/api/carousel/preview', [
+            'ratio' => '4:5',
+            'theme' => ['title_scale' => 4],
+            'slides' => [['brick' => 'bold-text', 'data' => ['title' => 'X']]],
+        ])->assertStatus(422)->assertJsonValidationErrors('theme.title_scale');
+
+        // Trop petit : illisible sur mobile.
+        $this->postJson('/api/carousel/preview', [
+            'ratio' => '4:5',
+            'theme' => ['body_scale' => 0.1],
+            'slides' => [['brick' => 'bold-text', 'data' => ['title' => 'X']]],
+        ])->assertStatus(422)->assertJsonValidationErrors('theme.body_scale');
+    }
+
     public function test_lapi_exige_une_authentification(): void
     {
         $this->postJson('/api/carousel/preview', [

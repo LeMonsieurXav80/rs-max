@@ -17,10 +17,14 @@
     $anchor = \App\Services\Carousel\Anchor::resolve($data['position'] ?? 'middle-left', $bg);
     $shift = \App\Services\Carousel\Anchor::offsetTransform($data['offset'] ?? 0, $h);
 
+    // Échelle typographique du thème : multiplie les fractions ci-dessous.
+    $ts = \App\Services\Carousel\Typography::title($theme);
+    $bs = \App\Services\Carousel\Typography::body($theme);
+
     $pad = (int) round($w * 0.10);
     // Titre adaptatif : une punchline courte reste énorme, un texte long se pose.
-    $titleSize = (int) round($h * (mb_strlen($title) > 90 ? 0.058 : (mb_strlen($title) > 55 ? 0.072 : 0.088)));
-    $subSize = (int) round($h * 0.032);
+    $titleSize = (int) round($h * (mb_strlen($title) > 90 ? 0.058 : (mb_strlen($title) > 55 ? 0.072 : 0.088)) * $ts);
+    $subSize = (int) round($h * 0.032 * $bs);
 @endphp
 
 {{-- Fond : dégradé très léger plutôt qu'aplat, pour éviter l'effet « bloc mort ». --}}

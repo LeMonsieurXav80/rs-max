@@ -312,22 +312,39 @@ class BrickRegistry
             'theme.overlay' => ['nullable', 'string', 'regex:/^#[0-9a-fA-F]{6}$/'],
             'theme.title_font' => ['nullable', 'string', \Illuminate\Validation\Rule::in($fonts)],
             'theme.body_font' => ['nullable', 'string', \Illuminate\Validation\Rule::in($fonts)],
+            // Échelle typographique : 1 = tailles natives des briques. Bornée des
+            // deux côtés — en dessous c'est illisible, au-dessus ça déborde du cadre.
+            'theme.title_scale' => ['nullable', 'numeric', 'between:'.Typography::MIN.','.Typography::MAX],
+            'theme.body_scale' => ['nullable', 'numeric', 'between:'.Typography::MIN.','.Typography::MAX],
         ];
     }
 
     /**
      * Ne garde que les clés de thème connues et renseignées.
      *
-     * @return array<string, string>
+     * Couleurs et polices sont des chaînes ; les échelles typographiques sont des
+     * nombres, ramenés dans leurs bornes ici pour qu'un brouillon mis en cache ne
+     * puisse pas ressortir hors limites si les bornes bougent plus tard.
+     *
+     * @return array<string, string|float>
      */
     public function normalizeTheme(?array $theme): array
     {
-        $allowed = ['background', 'text', 'accent', 'overlay', 'title_font', 'body_font'];
+        $strings = ['background', 'text', 'accent', 'overlay', 'title_font', 'body_font'];
+        $scales = ['title_scale', 'body_scale'];
 
-        return array_filter(
-            array_intersect_key($theme ?? [], array_flip($allowed)),
+        $normalized = array_filter(
+            array_intersect_key($theme ?? [], array_flip($strings)),
             fn ($value) => is_string($value) && $value !== '',
         );
+
+        foreach ($scales as $key) {
+            if (isset($theme[$key]) && is_numeric($theme[$key])) {
+                $normalized[$key] = Typography::clamp($theme[$key]);
+            }
+        }
+
+        return $normalized;
     }
 
     /**

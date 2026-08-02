@@ -18,11 +18,16 @@
     $anchor = \App\Services\Carousel\Anchor::resolve($data['position'] ?? 'middle-left', $image ? $overlay : $bg);
     $shift = \App\Services\Carousel\Anchor::offsetTransform($data['offset'] ?? 0, $h);
 
+    // Échelle typographique du thème : la citation est composée en police de
+    // titre (guillemet compris), la signature en police de texte.
+    $ts = \App\Services\Carousel\Typography::title($theme);
+    $bs = \App\Services\Carousel\Typography::body($theme);
+
     $pad = (int) round($w * 0.10);
     // Une citation courte peut respirer en grand ; une longue doit rentrer.
-    $quoteSize = (int) round($h * (mb_strlen($quote) > 160 ? 0.040 : (mb_strlen($quote) > 90 ? 0.050 : 0.062)));
-    $authorSize = (int) round($h * 0.026);
-    $markSize = (int) round($h * 0.16);
+    $quoteSize = (int) round($h * (mb_strlen($quote) > 160 ? 0.040 : (mb_strlen($quote) > 90 ? 0.050 : 0.062)) * $ts);
+    $authorSize = (int) round($h * 0.026 * $bs);
+    $markSize = (int) round($h * 0.16 * $ts);
 @endphp
 
 <div style="position:absolute; inset:0; background:{{ $image ? $overlay : $bg }};">

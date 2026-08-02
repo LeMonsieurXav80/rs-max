@@ -14,10 +14,17 @@
     $titleFont = $theme['title_font'] ?? 'Montserrat';
     $bodyFont = $theme['body_font'] ?? 'Poppins';
 
+    // Échelle typographique du thème : multiplie les fractions ci-dessous.
+    // Les lignes mêlent libellé (police de texte) et valeur (police de titre) sur
+    // la même ligne de base : elles suivent l'échelle des textes, sinon les deux
+    // colonnes se désaligneraient dès que les facteurs divergent.
+    $ts = \App\Services\Carousel\Typography::title($theme);
+    $bs = \App\Services\Carousel\Typography::body($theme);
+
     $pad = (int) round($w * 0.09);
-    $titleSize = (int) round($h * 0.046);
+    $titleSize = (int) round($h * 0.046 * $ts);
     // Au-delà de 5 lignes on resserre pour que le tableau tienne dans le cadre.
-    $rowSize = (int) round($h * (count($rows) > 6 ? 0.026 : (count($rows) > 4 ? 0.030 : 0.034)));
+    $rowSize = (int) round($h * (count($rows) > 6 ? 0.026 : (count($rows) > 4 ? 0.030 : 0.034)) * $bs);
     $rowPad = (int) round($h * (count($rows) > 6 ? 0.016 : 0.022));
 @endphp
 
@@ -49,7 +56,7 @@
 
     @if ($note !== '')
         <p style="margin:{{ (int) round($h * 0.03) }}px 0 0; font-family:'{{ $bodyFont }}',sans-serif;
-                  font-weight:400; font-size:{{ (int) round($h * 0.021) }}px; line-height:1.35;
+                  font-weight:400; font-size:{{ (int) round($h * 0.021 * $bs) }}px; line-height:1.35;
                   color:{{ $text }}; opacity:0.55;">{{ $note }}</p>
     @endif
 </div>

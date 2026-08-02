@@ -16,10 +16,14 @@
     $anchor = \App\Services\Carousel\Anchor::resolve($data['position'] ?? 'middle-center', $overlay);
     $shift = \App\Services\Carousel\Anchor::offsetTransform($data['offset'] ?? 0, $h);
 
+    // Échelle typographique du thème : multiplie les fractions ci-dessous.
+    $ts = \App\Services\Carousel\Typography::title($theme);
+    $bs = \App\Services\Carousel\Typography::body($theme);
+
     $pad = (int) round($w * 0.10);
     // Titre adaptatif : on réduit au-delà de ~60 puis ~90 caractères.
-    $titleSize = (int) round($h * (mb_strlen($title) > 90 ? 0.052 : (mb_strlen($title) > 60 ? 0.062 : 0.072)));
-    $bodySize = (int) round($h * 0.030);
+    $titleSize = (int) round($h * (mb_strlen($title) > 90 ? 0.052 : (mb_strlen($title) > 60 ? 0.062 : 0.072)) * $ts);
+    $bodySize = (int) round($h * 0.030 * $bs);
 @endphp
 
 <div style="position:absolute; inset:0; background:{{ $overlay }};">

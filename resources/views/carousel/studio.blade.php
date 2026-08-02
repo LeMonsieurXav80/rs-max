@@ -41,7 +41,7 @@
                 <div class="flex items-center justify-between mb-3">
                     <label class="block text-sm font-medium text-gray-700">Apparence</label>
                     <button type="button" @click="resetTheme()" class="text-xs text-gray-400 hover:text-indigo-600">
-                        Rétablir les couleurs par défaut
+                        Rétablir l’apparence par défaut
                     </button>
                 </div>
 
@@ -107,6 +107,24 @@
                 <p class="text-[10px] text-gray-400 mt-2">
                     La police choisie est téléchargée une fois puis servie par nos soins : le rendu final ne dépend jamais de Google.
                 </p>
+
+                {{-- Échelle typographique : les briques dimensionnent leur texte en
+                     fraction de la hauteur du slide, ces curseurs multiplient. --}}
+                <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 mt-4">
+                    <template x-for="s in scaleFields" :key="s.key">
+                        <div>
+                            <div class="flex items-baseline justify-between mb-1">
+                                <label class="block text-xs text-gray-500" x-text="s.label"></label>
+                                <span class="text-[10px] text-gray-400 font-mono"
+                                      x-text="Math.round((theme[s.key] ?? 1) * 100) + '%'"></span>
+                            </div>
+                            <input type="range" :min="scaleMin" :max="scaleMax" step="0.05"
+                                   x-model.number="theme[s.key]" @input="queuePreview()"
+                                   class="w-full accent-indigo-600">
+                            <p class="text-[10px] text-gray-400 mt-1" x-text="s.hint"></p>
+                        </div>
+                    </template>
+                </div>
             </div>
 
             {{-- Slides --}}
@@ -302,6 +320,12 @@
                 { key: 'text', label: 'Texte', hint: 'Tous les textes' },
                 { key: 'accent', label: 'Accent', hint: 'Chiffres, filets, pastilles' },
                 { key: 'overlay', label: 'Voile', hint: 'Dégradé sur les photos' },
+            ],
+            scaleMin: @json($scaleRange['min']),
+            scaleMax: @json($scaleRange['max']),
+            scaleFields: [
+                { key: 'title_scale', label: 'Taille des titres', hint: '100 % = taille native de la brique' },
+                { key: 'body_scale', label: 'Taille des textes', hint: 'Sous-titres, corps, libellés' },
             ],
             slides: [],
             previewHtml: '',
