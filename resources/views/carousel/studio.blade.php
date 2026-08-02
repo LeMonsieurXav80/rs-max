@@ -63,7 +63,10 @@
                      toujours la copie locale. --}}
                 <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
                     <template x-for="picker in ['title_font', 'body_font']" :key="picker">
-                        <div class="relative" @click.outside="openPicker = null">
+                        {{-- La garde `openPicker === picker` est indispensable : les deux
+                             pickers partagent le même état, donc le clic qui ouvre l'un est
+                             « outside » de l'autre, dont le handler refermait aussitôt. --}}
+                        <div class="relative" @click.outside="if (openPicker === picker) openPicker = null">
                             <label class="block text-xs text-gray-500 mb-1"
                                    x-text="picker === 'title_font' ? 'Police des titres' : 'Police des textes'"></label>
 
