@@ -26,6 +26,29 @@ return [
 
     'default_ratio' => '4:5',
 
+    /*
+    |--------------------------------------------------------------------------
+    | Ancres de position du bloc de texte (slots de type `position`)
+    |--------------------------------------------------------------------------
+    |
+    | Grille 3×3. Combinée au slot `offset` (décalage fin en % de la hauteur),
+    | elle permet de remonter/redescendre un titre SANS créer une brique par
+    | emplacement. Le dégradé de lisibilité suit l'ancre verticale (App\Services\
+    | Carousel\Anchor).
+    |
+    */
+    'positions' => [
+        'top-left' => 'Haut gauche',
+        'top-center' => 'Haut centre',
+        'top-right' => 'Haut droite',
+        'middle-left' => 'Milieu gauche',
+        'middle-center' => 'Milieu centre',
+        'middle-right' => 'Milieu droite',
+        'bottom-left' => 'Bas gauche',
+        'bottom-center' => 'Bas centre',
+        'bottom-right' => 'Bas droite',
+    ],
+
     // Brique utilisée pour l'incrustation titre sur la 1re image d'un fil (feature overlay).
     'overlay_brick' => 'photo-title-bl',
 
@@ -77,7 +100,12 @@ return [
     |
     | Chaque brique = un template de slide nommé/décrit, scopé à des ratios.
     | `view`  : partial Blade dans resources/views/carousel/bricks/.
-    | `slots` : champs éditables (clé => libellé humain).
+    | `slots` : champs éditables. Deux écritures possibles :
+    |             'title' => 'Titre'                      (raccourci = champ texte)
+    |             'title' => ['label'=>…, 'type'=>…, …]   (forme complète)
+    |           Types : text, textarea, image, position, range, select.
+    |           BrickRegistry normalise, valide et nettoie à partir de ça — le
+    |           Studio ET l'API REST s'y adossent, rien à écrire en double.
     | `ratios`: ratios compatibles ('*' = tous).
     |
     | Phase 3 ajoutera `ports` (grammaire d'adjacence) et la continuité d'image.
@@ -87,25 +115,47 @@ return [
 
         'photo-title-bl' => [
             'name' => 'Photo + titre bas-gauche',
-            'description' => 'Image plein cadre, dégradé sombre en bas, titre (et sous-titre) alignés en bas à gauche. Remplace l’ancienne incrustation overlay.',
+            'description' => 'Image plein cadre, dégradé sombre, titre (et sous-titre) posés à l’emplacement de ton choix. Par défaut en bas à gauche — c’est la brique de l’incrustation overlay.',
             'view' => 'carousel.bricks.photo-title-bl',
             'ratios' => ['*'],
             'slots' => [
-                'image' => 'Photo de fond',
-                'title' => 'Titre',
-                'subtitle' => 'Sous-titre (optionnel)',
+                'image' => ['label' => 'Photo de fond', 'type' => 'image'],
+                'title' => ['label' => 'Titre', 'type' => 'text', 'max_length' => 200],
+                'subtitle' => ['label' => 'Sous-titre (optionnel)', 'type' => 'text', 'max_length' => 300],
+                'position' => ['label' => 'Emplacement du titre', 'type' => 'position', 'default' => 'bottom-left'],
+                'offset' => [
+                    'label' => 'Décalage vertical',
+                    'type' => 'range',
+                    'min' => -25, 'max' => 25, 'step' => 1, 'default' => 0, 'unit' => '%',
+                ],
+            ],
+        ],
+
+        'image-full' => [
+            'name' => 'Image seule (plein cadre)',
+            'description' => 'Uniquement l’image, recadrée plein cadre (cover). Aucun texte, aucun dégradé — pour insérer une image existante telle quelle.',
+            'view' => 'carousel.bricks.image-full',
+            'ratios' => ['*'],
+            'slots' => [
+                'image' => 'Image',
             ],
         ],
 
         'text-on-image' => [
             'name' => 'Texte sur image de fond',
-            'description' => 'Image de fond assombrie, bloc de texte centré (titre large + paragraphe). Idéal slide de transition ou citation.',
+            'description' => 'Image de fond assombrie, bloc de texte (titre large + paragraphe) positionnable. Idéal slide de transition ou citation.',
             'view' => 'carousel.bricks.text-on-image',
             'ratios' => ['*'],
             'slots' => [
-                'image' => 'Image de fond',
-                'title' => 'Titre',
-                'body' => 'Paragraphe (optionnel)',
+                'image' => ['label' => 'Image de fond', 'type' => 'image'],
+                'title' => ['label' => 'Titre', 'type' => 'text', 'max_length' => 200],
+                'body' => ['label' => 'Paragraphe (optionnel)', 'type' => 'textarea', 'max_length' => 600],
+                'position' => ['label' => 'Emplacement du texte', 'type' => 'position', 'default' => 'middle-center'],
+                'offset' => [
+                    'label' => 'Décalage vertical',
+                    'type' => 'range',
+                    'min' => -25, 'max' => 25, 'step' => 1, 'default' => 0, 'unit' => '%',
+                ],
             ],
         ],
 
@@ -115,8 +165,107 @@ return [
             'view' => 'carousel.bricks.bold-text',
             'ratios' => ['*'],
             'slots' => [
-                'title' => 'Titre',
-                'subtitle' => 'Sous-titre (optionnel)',
+                'title' => ['label' => 'Titre', 'type' => 'text', 'max_length' => 200],
+                'subtitle' => ['label' => 'Sous-titre (optionnel)', 'type' => 'text', 'max_length' => 300],
+                'position' => ['label' => 'Emplacement du texte', 'type' => 'position', 'default' => 'middle-left'],
+                'offset' => [
+                    'label' => 'Décalage vertical',
+                    'type' => 'range',
+                    'min' => -25, 'max' => 25, 'step' => 1, 'default' => 0, 'unit' => '%',
+                ],
+            ],
+        ],
+
+        'stat-grid' => [
+            'name' => 'Grille de chiffres',
+            'description' => 'Titre + grille de chiffres clés (chiffre à l’accent, libellé dessous). Une ligne = « chiffre | libellé ».',
+            'view' => 'carousel.bricks.stat-grid',
+            'ratios' => ['*'],
+            'slots' => [
+                'title' => ['label' => 'Titre (optionnel)', 'type' => 'text', 'max_length' => 120],
+                'items' => [
+                    'label' => 'Chiffres — une ligne par item : « 42 % | des lecteurs abandonnent »',
+                    'type' => 'textarea',
+                    'max_length' => 600,
+                ],
+                'columns' => [
+                    'label' => 'Colonnes',
+                    'type' => 'select',
+                    'options' => [1 => '1 colonne', 2 => '2 colonnes'],
+                    'default' => 2,
+                ],
+            ],
+        ],
+
+        'quote' => [
+            'name' => 'Citation',
+            'description' => 'Citation en grand avec guillemet d’accent et auteur. Image de fond optionnelle.',
+            'view' => 'carousel.bricks.quote',
+            'ratios' => ['*'],
+            'slots' => [
+                'quote' => ['label' => 'Citation', 'type' => 'textarea', 'max_length' => 400],
+                'author' => ['label' => 'Auteur / source (optionnel)', 'type' => 'text', 'max_length' => 120],
+                'image' => ['label' => 'Image de fond (optionnelle)', 'type' => 'image'],
+                'position' => ['label' => 'Emplacement du texte', 'type' => 'position', 'default' => 'middle-left'],
+                'offset' => [
+                    'label' => 'Décalage vertical',
+                    'type' => 'range',
+                    'min' => -25, 'max' => 25, 'step' => 1, 'default' => 0, 'unit' => '%',
+                ],
+            ],
+        ],
+
+        'table-rows' => [
+            'name' => 'Tableau',
+            'description' => 'Lignes libellé / valeur avec filets fins. Une ligne = « libellé | valeur ». Idéal comparatif ou récapitulatif.',
+            'view' => 'carousel.bricks.table-rows',
+            'ratios' => ['*'],
+            'slots' => [
+                'title' => ['label' => 'Titre (optionnel)', 'type' => 'text', 'max_length' => 120],
+                'rows' => [
+                    'label' => 'Lignes — une par ligne : « Protéines | 24 g »',
+                    'type' => 'textarea',
+                    'max_length' => 800,
+                ],
+                'note' => ['label' => 'Note de bas de slide (optionnelle)', 'type' => 'text', 'max_length' => 200],
+            ],
+        ],
+
+        'numbered' => [
+            'name' => 'Slide numérotée',
+            'description' => 'Numéro d’étape (pastille + filigrane géant) + titre et texte. Pour les carrousels en étapes.',
+            'view' => 'carousel.bricks.numbered',
+            'ratios' => ['*'],
+            'slots' => [
+                'number' => ['label' => 'Numéro (ex. 01)', 'type' => 'text', 'max_length' => 4],
+                'title' => ['label' => 'Titre', 'type' => 'text', 'max_length' => 160],
+                'body' => ['label' => 'Texte (optionnel)', 'type' => 'textarea', 'max_length' => 400],
+                'image' => ['label' => 'Image de fond (optionnelle)', 'type' => 'image'],
+                'position' => ['label' => 'Emplacement du texte', 'type' => 'position', 'default' => 'middle-left'],
+                'offset' => [
+                    'label' => 'Décalage vertical',
+                    'type' => 'range',
+                    'min' => -25, 'max' => 25, 'step' => 1, 'default' => 0, 'unit' => '%',
+                ],
+            ],
+        ],
+
+        'cta-end' => [
+            'name' => 'Slide de fin (appel à l’action)',
+            'description' => 'Dernière slide : accroche, précision et pastille de compte (@handle). Image de fond optionnelle.',
+            'view' => 'carousel.bricks.cta-end',
+            'ratios' => ['*'],
+            'slots' => [
+                'title' => ['label' => 'Accroche', 'type' => 'text', 'max_length' => 160],
+                'subtitle' => ['label' => 'Précision (optionnelle)', 'type' => 'text', 'max_length' => 300],
+                'handle' => ['label' => 'Compte (ex. @monsuper.compte)', 'type' => 'text', 'max_length' => 60],
+                'image' => ['label' => 'Image de fond (optionnelle)', 'type' => 'image'],
+                'position' => ['label' => 'Emplacement du texte', 'type' => 'position', 'default' => 'middle-center'],
+                'offset' => [
+                    'label' => 'Décalage vertical',
+                    'type' => 'range',
+                    'min' => -25, 'max' => 25, 'step' => 1, 'default' => 0, 'unit' => '%',
+                ],
             ],
         ],
 

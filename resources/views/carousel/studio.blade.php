@@ -40,7 +40,7 @@
                         <div class="flex items-center justify-between mb-4">
                             <div class="flex items-center gap-2">
                                 <span class="inline-flex items-center justify-center w-6 h-6 rounded-full bg-indigo-100 text-indigo-700 text-xs font-semibold" x-text="i + 1"></span>
-                                <select x-model="slide.brick" @change="queuePreview()"
+                                <select x-model="slide.brick" @change="onBrickChange(i)"
                                         class="rounded-lg border-gray-300 text-sm focus:border-indigo-500 focus:ring-indigo-500">
                                     <template x-for="b in bricks" :key="b.slug">
                                         <option :value="b.slug" x-text="b.name"></option>
@@ -60,12 +60,17 @@
                         <p class="text-xs text-gray-400 mb-3" x-text="brickDef(slide.brick).description"></p>
 
                         <div class="space-y-3">
-                            <template x-for="(label, key) in brickDef(slide.brick).slots" :key="key">
+                            {{-- Champs générés à partir des slots TYPÉS du manifeste. --}}
+                            <template x-for="slot in brickDef(slide.brick).slots" :key="slot.key">
                                 <div>
-                                    <label class="block text-xs font-medium text-gray-600 mb-1" x-text="label"></label>
+                                    <label class="block text-xs font-medium text-gray-600 mb-1">
+                                        <span x-text="slot.label"></span>
+                                        <span x-show="slot.type === 'range'" class="text-gray-400"
+                                              x-text="'· ' + (slide.data[slot.key] ?? 0) + (slot.unit || '')"></span>
+                                    </label>
 
                                     {{-- Slot image --}}
-                                    <template x-if="key === 'image'">
+                                    <template x-if="slot.type === 'image'">
                                         <div class="flex items-center gap-3">
                                             <template x-if="slide.data._thumb">
                                                 <img :src="slide.data._thumb" class="w-14 h-14 rounded-lg object-cover border border-gray-200">
@@ -80,14 +85,51 @@
                                     </template>
 
                                     {{-- Slot texte long --}}
-                                    <template x-if="key === 'body'">
-                                        <textarea x-model="slide.data.body" @input="queuePreview()" rows="2"
+                                    <template x-if="slot.type === 'textarea'">
+                                        <textarea x-model="slide.data[slot.key]" @input="queuePreview()" rows="2"
                                                   class="w-full rounded-lg border-gray-300 text-sm focus:border-indigo-500 focus:ring-indigo-500"></textarea>
                                     </template>
 
-                                    {{-- Slots texte court --}}
-                                    <template x-if="key !== 'image' && key !== 'body'">
-                                        <input type="text" x-model="slide.data[key]" @input="queuePreview()"
+                                    {{-- Slot position : grille d'ancres 3×3 --}}
+                                    <template x-if="slot.type === 'position'">
+                                        <div class="inline-grid grid-cols-3 gap-1 p-1.5 rounded-lg bg-gray-50 border border-gray-200">
+                                            <template x-for="(pLabel, pKey) in slot.options" :key="pKey">
+                                                <button type="button" :title="pLabel"
+                                                        @click="slide.data[slot.key] = pKey; queuePreview()"
+                                                        class="w-7 h-7 rounded flex items-center justify-center transition-colors"
+                                                        :class="slide.data[slot.key] === pKey ? 'bg-indigo-600' : 'bg-white hover:bg-indigo-100 border border-gray-200'">
+                                                    <span class="w-1.5 h-1.5 rounded-full"
+                                                          :class="slide.data[slot.key] === pKey ? 'bg-white' : 'bg-gray-400'"></span>
+                                                </button>
+                                            </template>
+                                        </div>
+                                    </template>
+
+                                    {{-- Slot plage : décalage fin --}}
+                                    <template x-if="slot.type === 'range'">
+                                        <div class="flex items-center gap-2">
+                                            <input type="range" :min="slot.min" :max="slot.max" :step="slot.step"
+                                                   x-model.number="slide.data[slot.key]" @input="queuePreview()"
+                                                   class="flex-1 accent-indigo-600">
+                                            <button type="button" @click="slide.data[slot.key] = slot.default ?? 0; queuePreview()"
+                                                    class="text-xs text-gray-400 hover:text-indigo-600">réinit.</button>
+                                        </div>
+                                    </template>
+
+                                    {{-- Slot liste --}}
+                                    <template x-if="slot.type === 'select'">
+                                        <select x-model="slide.data[slot.key]" @change="queuePreview()"
+                                                class="w-full rounded-lg border-gray-300 text-sm focus:border-indigo-500 focus:ring-indigo-500">
+                                            <template x-for="(oLabel, oKey) in slot.options" :key="oKey">
+                                                <option :value="oKey" x-text="oLabel"></option>
+                                            </template>
+                                        </select>
+                                    </template>
+
+                                    {{-- Slot texte court (défaut) --}}
+                                    <template x-if="slot.type === 'text'">
+                                        <input type="text" x-model="slide.data[slot.key]" @input="queuePreview()"
+                                               :maxlength="slot.max_length"
                                                class="w-full rounded-lg border-gray-300 text-sm focus:border-indigo-500 focus:ring-indigo-500">
                                     </template>
                                 </div>
@@ -192,13 +234,28 @@
             },
 
             brickDef(slug) {
-                return this.bricks.find(b => b.slug === slug) || { slots: {}, description: '' };
+                return this.bricks.find(b => b.slug === slug) || { slots: [], description: '' };
+            },
+
+            // Valeurs initiales issues des `default` du manifeste (position, décalage…).
+            defaultsFor(slug) {
+                const data = {};
+                for (const slot of this.brickDef(slug).slots) {
+                    if (slot.default !== null && slot.default !== undefined) data[slot.key] = slot.default;
+                }
+                return data;
             },
 
             addSlide(slug, refresh = true) {
                 if (!slug) return;
-                this.slides.push({ _id: ++this._seq, brick: slug, data: {} });
+                this.slides.push({ _id: ++this._seq, brick: slug, data: this.defaultsFor(slug) });
                 if (refresh) this.queuePreview();
+            },
+            // Changement de brique : on complète avec les défauts de la nouvelle
+            // (les slots devenus inutiles sont ignorés côté serveur).
+            onBrickChange(i) {
+                this.slides[i].data = { ...this.defaultsFor(this.slides[i].brick), ...this.slides[i].data };
+                this.queuePreview();
             },
             removeSlide(i) {
                 if (this.slides.length === 1) return;

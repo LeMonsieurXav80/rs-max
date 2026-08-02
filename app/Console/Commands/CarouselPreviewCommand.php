@@ -21,6 +21,8 @@ class CarouselPreviewCommand extends Command
         {brick? : Slug de brique à prévisualiser seule (défaut : démo multi-briques)}
         {--ratio=4:5 : Ratio (clé de config carousel.ratios)}
         {--image= : Chemin d\'une image de test pour les slots image}
+        {--position= : Ancre du bloc de texte (top-left … bottom-right)}
+        {--offset= : Décalage vertical fin du bloc de texte, en % de la hauteur (-25 à 25)}
         {--render : Rasterise via Browsershot en plus du HTML (nécessite Chromium)}';
 
     protected $description = 'Prévisualise/rends des briques de carrousel en local';
@@ -41,6 +43,23 @@ class CarouselPreviewCommand extends Command
             $this->error('Brique inconnue. Dispo : '.implode(', ', array_keys(config('carousel.bricks', []))));
 
             return self::FAILURE;
+        }
+
+        // Surcharges d'authoring : tester une ancre / un décalage sans éditer le code.
+        if ($position = $this->option('position')) {
+            if (! isset(config('carousel.positions', [])[$position])) {
+                $this->error("Position inconnue : {$position}. Dispo : ".implode(', ', array_keys(config('carousel.positions', []))));
+
+                return self::FAILURE;
+            }
+            foreach ($slides as $i => $slide) {
+                $slides[$i]['data']['position'] = $position;
+            }
+        }
+        if (($offset = $this->option('offset')) !== null && $offset !== '') {
+            foreach ($slides as $i => $slide) {
+                $slides[$i]['data']['offset'] = (float) $offset;
+            }
         }
 
         $html = $service->buildHtml($ratio, $slides);
@@ -76,6 +95,12 @@ class CarouselPreviewCommand extends Command
                     'subtitle' => '26 essais, 1036 participants passés au crible.',
                 ],
             ],
+            'image-full' => [
+                'brick' => 'image-full',
+                'data' => [
+                    'image' => $image,
+                ],
+            ],
             'text-on-image' => [
                 'brick' => 'text-on-image',
                 'data' => [
@@ -89,6 +114,47 @@ class CarouselPreviewCommand extends Command
                 'data' => [
                     'title' => 'Bien toléré aux doses étudiées.',
                     'subtitle' => 'Le verdict, réserve honnête comprise.',
+                ],
+            ],
+            'stat-grid' => [
+                'brick' => 'stat-grid',
+                'data' => [
+                    'title' => 'Ce que dit la littérature',
+                    'items' => "26|essais contrôlés\n1 036|participants\n0|effet rénal significatif\n12 sem.|durée médiane",
+                    'columns' => 2,
+                ],
+            ],
+            'quote' => [
+                'brick' => 'quote',
+                'data' => [
+                    'image' => $image,
+                    'quote' => 'Aucune altération de la fonction rénale n’a été observée chez des sujets sains.',
+                    'author' => 'Journal of the ISSN, 2021',
+                ],
+            ],
+            'table-rows' => [
+                'brick' => 'table-rows',
+                'data' => [
+                    'title' => 'Ce qu’on mesure vraiment',
+                    'rows' => "Créatinine sérique|↑ artefact\nDFG estimé|inchangé\nCystatine C|inchangée\nProtéinurie|absente",
+                    'note' => 'La créatinine monte sans que le rein souffre : c’est le piège.',
+                ],
+            ],
+            'numbered' => [
+                'brick' => 'numbered',
+                'data' => [
+                    'image' => $image,
+                    'number' => '02',
+                    'title' => 'Choisir le bon marqueur',
+                    'body' => 'La cystatine C ne dépend pas de la masse musculaire.',
+                ],
+            ],
+            'cta-end' => [
+                'brick' => 'cta-end',
+                'data' => [
+                    'title' => 'Enregistre ce post pour ton prochain bilan.',
+                    'subtitle' => 'On décortique une étude par semaine, sans hype.',
+                    'handle' => '@lemonsieurxav',
                 ],
             ],
         ];

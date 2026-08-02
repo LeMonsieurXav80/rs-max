@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Models\MediaFile;
+use App\Services\Carousel\BrickRegistry;
 use App\Services\Carousel\CarouselRenderService;
 use App\Services\Media\ThumbnailService;
 use Illuminate\Http\JsonResponse;
@@ -25,16 +26,18 @@ use Illuminate\View\View;
  */
 class CarouselStudioController extends Controller
 {
-    public function index(): View
+    public function index(BrickRegistry $registry): View
     {
         return view('carousel.studio', [
             'ratios' => config('carousel.ratios', []),
-            'bricks' => collect(config('carousel.bricks', []))
-                ->map(fn ($b, $slug) => [
-                    'slug' => $slug,
-                    'name' => $b['name'] ?? $slug,
-                    'description' => $b['description'] ?? '',
-                    'slots' => $b['slots'] ?? [],
+            // Slots normalisés (typés) : le compositeur construit ses champs à partir
+            // de ce contrat, sans rien coder en dur par brique.
+            'bricks' => collect($registry->all())
+                ->map(fn (array $b) => [
+                    'slug' => $b['slug'],
+                    'name' => $b['name'],
+                    'description' => $b['description'],
+                    'slots' => array_values($b['slots']),
                 ])->values(),
             'defaultRatio' => config('carousel.default_ratio', '4:5'),
         ]);
@@ -91,47 +94,22 @@ class CarouselStudioController extends Controller
 
     /**
      * Valide et normalise la requête en {ratio, slides:[{brick, data}]}.
-     * Restreint chaque slot image à une référence locale /media/.
+     * Règles et nettoyage sont DÉRIVÉS du manifeste (BrickRegistry) : les slots
+     * inconnus tombent, les images non locales sont écartées (anti-SSRF).
      *
      * @return array{ratio: string, slides: array<int, array{brick: string, data: array}>}
      */
     private function validated(Request $request): array
     {
-        $ratios = array_keys(config('carousel.ratios', []));
-        $bricks = array_keys(config('carousel.bricks', []));
+        $registry = app(BrickRegistry::class);
 
-        $validated = $request->validate([
-            'ratio' => ['required', 'string', 'in:'.implode(',', $ratios)],
-            'slides' => ['required', 'array', 'min:1', 'max:20'],
-            'slides.*.brick' => ['required', 'string', 'in:'.implode(',', $bricks)],
-            'slides.*.data' => ['nullable', 'array'],
-            'slides.*.data.title' => ['nullable', 'string', 'max:200'],
-            'slides.*.data.subtitle' => ['nullable', 'string', 'max:300'],
-            'slides.*.data.body' => ['nullable', 'string', 'max:600'],
-            'slides.*.data.image' => ['nullable', 'string', 'max:2048'],
-        ]);
+        $validated = $request->validate(
+            $registry->compositionRules() + $registry->slotRules($request->input('slides', []))
+        );
 
-        $slides = array_map(function (array $slide) {
-            $data = $slide['data'] ?? [];
-
-            // Sécurité : n'accepte qu'une image locale servie sous /media/.
-            if (! empty($data['image']) && ! $this->isLocalMedia($data['image'])) {
-                unset($data['image']);
-            }
-
-            return ['brick' => $slide['brick'], 'data' => $data];
-        }, $validated['slides']);
-
-        return ['ratio' => $validated['ratio'], 'slides' => $slides];
-    }
-
-    private function isLocalMedia(string $value): bool
-    {
-        $path = parse_url($value, PHP_URL_PATH) ?: $value;
-        if (! str_contains($path, '/media/')) {
-            return false;
-        }
-
-        return is_file(Storage::disk('local')->path('media/'.basename($path)));
+        return [
+            'ratio' => $validated['ratio'],
+            'slides' => $registry->normalizeSlides($validated['slides']),
+        ];
     }
 }

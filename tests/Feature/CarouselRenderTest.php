@@ -57,6 +57,29 @@ class CarouselRenderTest extends TestCase
         $this->assertStringContainsString('data:font/ttf;base64,', $html);
     }
 
+    public function test_la_brique_image_seule_ne_rend_que_limage(): void
+    {
+        // Image de test locale : un PNG 2×2 écrit dans media/ (résolu en data-URI).
+        $filename = 'test_image_full_'.uniqid().'.png';
+        $png = base64_decode('iVBORw0KGgoAAAANSUhEUgAAAAIAAAACCAYAAACgL26xAAAAF0lEQVR4nGP8//8/AzJgYkAD5AswMDAAAA0OAgOfEE2OAAAAAElFTkSuQmCC');
+        \Illuminate\Support\Facades\Storage::disk('local')->put("media/{$filename}", $png);
+
+        try {
+            $html = $this->service()->buildHtml('1:1', [
+                ['brick' => 'image-full', 'data' => ['image' => "/media/{$filename}", 'title' => 'ignoré']],
+            ]);
+
+            // L'image est embarquée en data-URI, plein cadre.
+            $this->assertStringContainsString('data:image/png;base64,', $html);
+            $this->assertStringContainsString('object-fit:cover', $html);
+            // Aucun texte ni dégradé : le slot title inexistant n'est pas rendu.
+            $this->assertStringNotContainsString('ignoré', $html);
+            $this->assertStringNotContainsString('linear-gradient', $html);
+        } finally {
+            \Illuminate\Support\Facades\Storage::disk('local')->delete("media/{$filename}");
+        }
+    }
+
     public function test_une_brique_inconnue_leve_une_exception(): void
     {
         $this->expectException(\InvalidArgumentException::class);
