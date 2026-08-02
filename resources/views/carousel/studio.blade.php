@@ -3,7 +3,10 @@
 @section('title', 'Studio carrousel')
 
 @section('content')
-<div x-data="carouselStudio()" x-init="init()" class="max-w-7xl">
+{{-- Pas de x-init="init()" : Alpine appelle déjà init() tout seul quand la
+     donnée en expose un. Le doubler rejouait l'injection du brouillon (?draft=)
+     et dupliquait ses slides. --}}
+<div x-data="carouselStudio()" class="max-w-7xl">
 
     <div class="flex items-center justify-between mb-6">
         <div>
@@ -12,7 +15,7 @@
         </div>
     </div>
 
-    <div class="grid grid-cols-1 lg:grid-cols-[1fr_380px] gap-6 items-start">
+    <div class="grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_560px] gap-6 items-start">
 
         {{-- ─────────────── Colonne composition ─────────────── --}}
         <div class="space-y-5">
@@ -235,7 +238,7 @@
                     <span class="text-xs text-gray-400" x-text="slides.length + ' slide' + (slides.length > 1 ? 's' : '') + ' · ' + ratio"></span>
                 </div>
 
-                <div class="relative">
+                <div class="relative" x-ref="previewBox">
                     {{-- Toutes les slides côte à côte, ajustées pour tenir dans la largeur (pas de défilement). --}}
                     <div class="mx-auto bg-gray-100 rounded-lg overflow-hidden"
                          :style="`width:${previewW}px; height:${slideVisualHeight()}px`">
@@ -334,6 +337,8 @@
                 }
 
                 this.$watch('ratio', () => this.queuePreview());
+                window.addEventListener('resize', () => this.fitPreview());
+                this.$nextTick(() => this.fitPreview());
                 this.updatePreview();
             },
 
@@ -465,6 +470,7 @@
             },
             async updatePreview() {
                 const seq = ++this._seq;
+                this.fitPreview();
                 this.previewLoading = true;
                 try {
                     const resp = await fetch('{{ route('carousel.studio.preview') }}', {
@@ -505,6 +511,15 @@
             },
 
             // ── Helpers présentation (bande horizontale, toutes les slides tiennent dans previewW) ──
+            // La bande occupe toute la largeur disponible de la colonne, sauf si
+            // un portrait la ferait dépasser de l'écran : on repasse alors par la
+            // hauteur pour qu'elle reste visible d'un seul coup d'œil.
+            fitPreview() {
+                const avail = this.$refs.previewBox?.clientWidth || 348;
+                const byWidth = avail / this.bandCssWidth();
+                const byHeight = (window.innerHeight * 0.72) / this.ratioH();
+                this.previewW = this.bandCssWidth() * Math.min(byWidth, byHeight);
+            },
             ratioW() { return this.ratios[this.ratio]?.w || 1080; },
             ratioH() { return this.ratios[this.ratio]?.h || 1350; },
             bandCssWidth() { return this.slides.length * this.ratioW(); },
