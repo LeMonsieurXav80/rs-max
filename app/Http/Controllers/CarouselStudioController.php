@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Http\Controllers\Api\CarouselApiController;
 use App\Models\MediaFile;
 use App\Services\Carousel\BrickRegistry;
 use App\Services\Carousel\CarouselRenderService;
@@ -10,6 +11,7 @@ use App\Services\Media\ThumbnailService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\Response;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\View\View;
 
@@ -27,11 +29,14 @@ use Illuminate\View\View;
  */
 class CarouselStudioController extends Controller
 {
-    public function index(BrickRegistry $registry, FontLibrary $fonts): View
+    public function index(Request $request, BrickRegistry $registry, FontLibrary $fonts): View
     {
         return view('carousel.studio', [
             'ratios' => config('carousel.ratios', []),
             'theme' => config('carousel.theme', []),
+            // Composition déposée par l'API (?draft=…) : le compositeur s'ouvre
+            // pré-rempli au lieu de sa slide vierge. Null si absent ou expiré.
+            'draft' => $this->draft($request->query('draft'), $registry),
             // Catalogue Google Fonts complet : le choix se fait directement
             // dedans, la copie locale est téléchargée à la première utilisation.
             'fontCatalogue' => $fonts->catalogue(),
@@ -46,6 +51,57 @@ class CarouselStudioController extends Controller
                 ])->values(),
             'defaultRatio' => config('carousel.default_ratio', '4:5'),
         ]);
+    }
+
+    /**
+     * Brouillon déposé par `POST /api/carousel/studio-link`, prêt à être injecté
+     * dans le compositeur. Retourne null si le jeton est absent, inconnu ou
+     * expiré : la page s'ouvre alors normalement, vierge.
+     *
+     * Le brouillon n'est PAS consommé à la lecture — recharger la page doit
+     * continuer à fonctionner tant qu'il n'a pas expiré.
+     *
+     * @return array{ratio: string, theme: array, slides: array}|null
+     */
+    private function draft(mixed $token, BrickRegistry $registry): ?array
+    {
+        if (! is_string($token) || $token === '') {
+            return null;
+        }
+
+        $draft = Cache::get(CarouselApiController::DRAFT_PREFIX.$token);
+        if (! is_array($draft) || ! isset($draft['ratio'], $draft['slides'])) {
+            return null;
+        }
+
+        $slides = [];
+        foreach ($draft['slides'] as $slide) {
+            // Une brique supprimée entre le dépôt et l'ouverture donnerait une
+            // slide sans champs : on l'écarte plutôt que de l'afficher vide.
+            if (! is_array($slide) || ! $registry->exists($slide['brick'] ?? '')) {
+                continue;
+            }
+
+            $data = $slide['data'] ?? [];
+            // Le compositeur affiche la vignette du média choisi : sans elle, la
+            // slide serait correcte à l'aperçu mais sans miniature dans le formulaire.
+            if (! empty($data['image'])) {
+                $media = MediaFile::where('filename', basename((string) $data['image']))->first();
+                $data['_thumb'] = $media?->thumbnail_url ?? $data['image'];
+            }
+
+            $slides[] = ['brick' => $slide['brick'], 'data' => $data];
+        }
+
+        if ($slides === []) {
+            return null;
+        }
+
+        return [
+            'ratio' => $draft['ratio'],
+            'theme' => is_array($draft['theme'] ?? null) ? $draft['theme'] : [],
+            'slides' => $slides,
+        ];
     }
 
     public function preview(Request $request, CarouselRenderService $carousel): Response

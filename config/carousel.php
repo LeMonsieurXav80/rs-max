@@ -274,6 +274,18 @@ return [
     ],
 
     /*
+    |--------------------------------------------------------------------------
+    | Brouillons ouverts dans le Studio depuis l'API
+    |--------------------------------------------------------------------------
+    |
+    | POST /api/carousel/studio-link dépose une composition en cache et renvoie
+    | un lien vers le Studio pré-rempli. Rien n'est persisté : c'est une page
+    | intermédiaire, le brouillon s'efface tout seul à l'expiration.
+    |
+    */
+    'draft_ttl_hours' => (int) env('CAROUSEL_DRAFT_TTL_HOURS', 24),
+
+    /*
     | Thème par défaut appliqué aux briques (surchargeable slide par slide via
     | les données `theme`). Couleurs en hex.
     */

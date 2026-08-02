@@ -5,6 +5,7 @@ namespace Tests\Feature;
 use App\Models\MediaFile;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Storage;
 use Laravel\Sanctum\Sanctum;
 use Tests\TestCase;
@@ -335,6 +336,80 @@ class CarouselApiTest extends TestCase
             'brick' => 'bold-text',
             'ratio' => 'auto',
             'data' => ['title' => 'X'],
+        ])->assertStatus(422)->assertJsonValidationErrors('ratio');
+    }
+
+    public function test_le_lien_studio_ouvre_le_compositeur_prerempli(): void
+    {
+        $user = $this->actAsApiUser();
+
+        $response = $this->postJson('/api/carousel/studio-link', [
+            'ratio' => '1:1',
+            'theme' => ['accent' => '#ff5c00'],
+            'slides' => [
+                ['brick' => 'bold-text', 'data' => ['title' => 'Titre venu de l’IA', 'position' => 'top-left']],
+                ['brick' => 'quote', 'data' => ['quote' => 'Une citation', 'author' => 'Source']],
+            ],
+        ])->assertStatus(201)->assertJsonStructure(['url', 'expires_at']);
+
+        $url = $response->json('url');
+        $this->assertStringContainsString('/carousel/studio?draft=', $url);
+
+        // La page du Studio reprend la composition telle qu'elle a été déposée.
+        $page = $this->actingAs($user)->get($url)->assertOk();
+        $draft = $page->viewData('draft');
+
+        $this->assertSame('1:1', $draft['ratio']);
+        $this->assertSame('#ff5c00', $draft['theme']['accent']);
+        $this->assertCount(2, $draft['slides']);
+        $this->assertSame('bold-text', $draft['slides'][0]['brick']);
+        $this->assertSame('Titre venu de l’IA', $draft['slides'][0]['data']['title']);
+        $this->assertSame('top-left', $draft['slides'][0]['data']['position']);
+        $this->assertSame('quote', $draft['slides'][1]['brick']);
+    }
+
+    public function test_le_lien_studio_exige_une_session(): void
+    {
+        // Brouillon déposé directement, pour qu'aucune authentification ne soit
+        // posée par le test : c'est bien l'accès anonyme qu'on veut éprouver.
+        Cache::put(\App\Http\Controllers\Api\CarouselApiController::DRAFT_PREFIX.'jeton-de-test', [
+            'ratio' => '1:1',
+            'theme' => [],
+            'slides' => [['brick' => 'bold-text', 'data' => ['title' => 'X']]],
+        ], now()->addHour());
+
+        // Le lien n'est pas un partage public : sans session, on part au login.
+        $this->get('/carousel/studio?draft=jeton-de-test')->assertRedirect('/login');
+
+        // Et l'endpoint qui fabrique le lien exige un token.
+        $this->postJson('/api/carousel/studio-link', [
+            'ratio' => '1:1',
+            'slides' => [['brick' => 'bold-text', 'data' => ['title' => 'X']]],
+        ])->assertStatus(401);
+    }
+
+    public function test_un_brouillon_inconnu_ouvre_un_studio_vierge(): void
+    {
+        $user = $this->actAsApiUser();
+
+        // Jeton expiré ou inventé : la page s'ouvre normalement, sans planter.
+        $page = $this->actingAs($user)->get('/carousel/studio?draft=jeton-qui-nexiste-pas')->assertOk();
+
+        $this->assertNull($page->viewData('draft'));
+    }
+
+    public function test_le_lien_studio_valide_la_composition(): void
+    {
+        $this->actAsApiUser();
+
+        $this->postJson('/api/carousel/studio-link', [
+            'ratio' => '1:1',
+            'slides' => [['brick' => 'bold-text', 'data' => ['position' => 'nulle-part']]],
+        ])->assertStatus(422)->assertJsonValidationErrors('slides.0.data.position');
+
+        $this->postJson('/api/carousel/studio-link', [
+            'ratio' => 'inconnu',
+            'slides' => [['brick' => 'bold-text', 'data' => ['title' => 'X']]],
         ])->assertStatus(422)->assertJsonValidationErrors('ratio');
     }
 

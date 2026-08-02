@@ -81,6 +81,8 @@ Route::middleware('auth:sanctum')->group(function () {
     // Une brique employée seule => une image (visuel de tweet, vignette d'article).
     Route::post('/carousel/image', [CarouselApiController::class, 'image'])
         ->middleware('throttle:60,1'); // une seule rasterisation : plafond plus large que /render
+    // Lien vers le Studio pré-rempli : l'IA dégrossit, l'humain peaufine.
+    Route::post('/carousel/studio-link', [CarouselApiController::class, 'studioLink']);
 
     // ── Banques d'images externes (Pexels, Pixabay, Unsplash) ──
     Route::get('/stock-photos/search', [MediaApiController::class, 'stockPhotosSearch']);

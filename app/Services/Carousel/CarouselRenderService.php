@@ -428,7 +428,13 @@ class CarouselRenderService
     private function fontFaceBlock(bool $embed = true): string
     {
         if (! $embed) {
-            return '<link rel="stylesheet" href="'.e(route('carousel.fonts')).'">';
+            // `v` = empreinte des familles disponibles. La feuille est mise en
+            // cache 24 h par le navigateur : sans ce paramètre, une police tout
+            // juste téléchargée (thème d'un brouillon) s'afficherait en police
+            // système jusqu'à expiration, sans erreur.
+            $version = substr(md5(implode(',', array_keys($this->fontLibrary->all()))), 0, 8);
+
+            return '<link rel="stylesheet" href="'.e(route('carousel.fonts', ['v' => $version])).'">';
         }
 
         return "<style>\n".$this->fontFaceCss().'</style>';

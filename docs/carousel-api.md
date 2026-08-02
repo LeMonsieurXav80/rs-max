@@ -17,6 +17,7 @@ base URL, l'authentification et les conventions.
 5. [Une image depuis un template : `POST /carousel/image`](#5-une-image-depuis-un-template--post-carouselimage)
 6. [Un carrousel complet : `POST /carousel/render`](#6-un-carrousel-complet--post-carouselrender)
 7. [Aperçu HTML sans rendu : `POST /carousel/preview`](#7-aperçu-html-sans-rendu--post-carouselpreview)
+7 bis. [Ouvrir le Studio pré-rempli : `POST /carousel/studio-link`](#7-bis-ouvrir-le-studio-pré-rempli--post-carouselstudio-link)
 8. [Gérer ses propres templates : CRUD `/carousel/bricks`](#8-gérer-ses-propres-templates--crud-carouselbricks)
 9. [Enchaîner avec une publication](#9-enchaîner-avec-une-publication)
 10. [Référence : briques fournies](#10-référence--briques-fournies)
@@ -313,6 +314,56 @@ Même corps que `/carousel/render`, mais renvoie le **HTML** de la bande
 Utile pour contrôler une composition avant de payer la rasterisation — un
 `<iframe srcdoc>` suffit à l'afficher. Pour prévisualiser une image seule, envoyer
 une composition d'une seule slide (le ratio `auto` n'est pas disponible ici).
+
+---
+
+## 7 bis. Ouvrir le Studio pré-rempli : `POST /carousel/studio-link`
+
+Le cas **« l'IA dégrossit, l'humain peaufine »**. Au lieu de produire des images
+définitives, on dépose une composition et on récupère un **lien vers le Studio**
+déjà rempli : ratio, thème et slides en place, aperçu affiché. Il ne reste qu'à
+ajuster à la main puis générer.
+
+Le corps est **exactement celui de `/carousel/render`** (§ 6).
+
+```bash
+curl -X POST https://<domaine>/api/carousel/studio-link \
+  -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
+  -d '{ "ratio": "4:5",
+        "theme": { "accent": "#ff5c00", "title_font": "Bebas Neue" },
+        "slides": [
+          { "brick": "photo-title-bl", "data": { "image": 4213, "title": "Mon titre" } },
+          { "brick": "stat-grid", "data": { "title": "Les chiffres", "items": "26|essais" } }
+        ] }'
+```
+
+**Réponse `201`** :
+
+```json
+{
+  "url": "https://<domaine>/carousel/studio?draft=xK3f…",
+  "expires_at": "2026-08-03T17:42:11+00:00"
+}
+```
+
+### Ce qu'il faut savoir
+
+- **Le lien n'est pas un partage public.** Le Studio exige une session RS-Max :
+  un visiteur non connecté est redirigé vers la page de login, puis ramené sur le
+  brouillon. Pour montrer un rendu à quelqu'un d'extérieur, générer les images
+  (§ 5 ou § 6) et les lui envoyer.
+- **Rien n'est persisté.** La composition vit en cache pendant
+  `CAROUSEL_DRAFT_TTL_HOURS` (24 h par défaut) puis disparaît. Ce n'est pas une
+  bibliothèque de carrousels : c'est une page intermédiaire.
+- **Le brouillon n'est pas consommé à l'ouverture** : recharger la page le
+  réapplique tant qu'il n'a pas expiré. Corollaire — un `F5` après des
+  modifications manuelles les écrase.
+- **Aucune image n'est rendue** : l'endpoint ne lance pas Chromium, il répond
+  instantanément. La rasterisation se fait depuis le bouton « Générer les
+  images » du Studio.
+- Un jeton inconnu ou expiré n'est pas une erreur : le Studio s'ouvre vierge.
+- Les polices du thème sont téléchargées **au moment de créer le lien**, pour que
+  l'aperçu s'affiche dans la bonne typo dès la première ouverture.
 
 ---
 

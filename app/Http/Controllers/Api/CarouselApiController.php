@@ -13,8 +13,10 @@ use App\Services\Media\ThumbnailService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\Response;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
 
 /**
@@ -37,6 +39,9 @@ use Illuminate\Validation\ValidationException;
  */
 class CarouselApiController extends Controller
 {
+    /** Préfixe des brouillons de composition en cache (lus par le Studio). */
+    public const DRAFT_PREFIX = 'carousel_draft:';
+
     public function bricks(BrickRegistry $registry): JsonResponse
     {
         return response()->json([
@@ -183,6 +188,47 @@ class CarouselApiController extends Controller
                 $filenames,
                 array_keys($filenames),
             ),
+        ], 201);
+    }
+
+    /**
+     * Dépose une composition et renvoie un LIEN vers le Studio pré-rempli.
+     *
+     * Sert le cas « l'IA dégrossit, l'humain peaufine » : plutôt que de rendre
+     * des images définitives, on ouvre le compositeur habituel avec le ratio,
+     * le thème et les slides déjà en place, et on termine à la main.
+     *
+     * Rien n'est persisté — c'est une page intermédiaire. La composition vit en
+     * cache le temps du `draft_ttl_hours` puis disparaît d'elle-même. Le lien
+     * n'est pas un partage public : le Studio exige une session RS-Max.
+     */
+    public function studioLink(Request $request): JsonResponse
+    {
+        $registry = app(BrickRegistry::class);
+
+        $validated = $request->validate(
+            $registry->compositionRules() + $registry->slotRules($request->input('slides', []))
+        );
+
+        $theme = $registry->normalizeTheme($validated['theme'] ?? null);
+
+        // Les copies locales doivent exister AVANT l'ouverture : l'aperçu du
+        // Studio sert les polices depuis carousel/fonts.css, jamais depuis
+        // Google. Sans ça, la première ouverture s'afficherait en police système.
+        app(FontLibrary::class)->ensureTheme($theme);
+
+        $token = Str::random(48);
+        $expiresAt = now()->addHours((int) config('carousel.draft_ttl_hours', 24));
+
+        Cache::put(self::DRAFT_PREFIX.$token, [
+            'ratio' => $validated['ratio'],
+            'theme' => $theme,
+            'slides' => $registry->normalizeSlides($validated['slides']),
+        ], $expiresAt);
+
+        return response()->json([
+            'url' => route('carousel.studio', ['draft' => $token]),
+            'expires_at' => $expiresAt->toIso8601String(),
         ], 201);
     }
 

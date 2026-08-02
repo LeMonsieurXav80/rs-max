@@ -290,6 +290,7 @@
             ratio: @json($defaultRatio),
             theme: @json($theme),
             defaultTheme: @json($theme),
+            draft: @json($draft),
             fontCatalogue: @json($fontCatalogue),
             fontSearch: '',
             openPicker: null,
@@ -311,8 +312,27 @@
             _timer: null,
 
             init() {
+                // Composition déposée par l'API (?draft=…) : on reprend le travail
+                // là où il a été laissé plutôt que de démarrer sur une slide vierge.
+                if (this.draft) {
+                    this.ratio = this.draft.ratio || this.ratio;
+                    this.theme = { ...this.theme, ...(this.draft.theme || {}) };
+                    for (const slide of this.draft.slides) {
+                        this.slides.push({
+                            _id: ++this._seq,
+                            brick: slide.brick,
+                            // Les défauts de la brique comblent les slots que le
+                            // brouillon n'a pas renseignés (position, décalage…).
+                            data: { ...this.defaultsFor(slide.brick), ...slide.data },
+                        });
+                    }
+                }
+
                 // Une première slide par défaut avec la brique overlay.
-                this.addSlide(this.bricks[0]?.slug, false);
+                if (!this.slides.length) {
+                    this.addSlide(this.bricks[0]?.slug, false);
+                }
+
                 this.$watch('ratio', () => this.queuePreview());
                 this.updatePreview();
             },
