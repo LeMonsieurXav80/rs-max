@@ -34,21 +34,12 @@
             </a>
         </div>
 
-        {{-- Bandeau LLM : si rien n'est configure ou cle manquante, le bot ne pourra rien generer --}}
+        {{-- Bandeau LLM : sans cle OpenAI, le bot ne pourra rien generer --}}
         @if ($llm['mode'] === 'none')
             <div class="mb-3 rounded-lg bg-red-50 border border-red-200 px-3 py-2 text-xs text-red-800">
                 <strong>Aucun LLM configure.</strong> Aucun commentaire ne sera genere.
-                <a href="{{ route('settings.index', ['tab' => 'ia_libre']) }}" class="underline font-medium">
-                    Configure un LLM gratuit
-                </a>
-                ou ajoute une cle OpenAI dans l'onglet Contenu IA.
-            </div>
-        @elseif (! $llm['key_ok'])
-            <div class="mb-3 rounded-lg bg-red-50 border border-red-200 px-3 py-2 text-xs text-red-800">
-                <strong>Modele defini :</strong> <code class="bg-white px-1 rounded">{{ $llm['label'] }}</code>
-                — mais la cle API du provider est <strong>manquante en BDD</strong>.
-                <a href="{{ route('settings.index', ['tab' => 'ia_libre']) }}" class="underline font-medium">
-                    Verifie tes cles dans Settings
+                <a href="{{ route('settings.index', ['tab' => 'ia']) }}" class="underline font-medium">
+                    Ajoute une cle OpenAI dans l'onglet Contenu IA
                 </a>
                 (n'oublie pas de cliquer "Enregistrer les parametres" en bas).
             </div>

@@ -746,55 +746,19 @@ TXT;
     }
 
     /**
-     * Appel LLM multi-provider (Groq / OpenRouter / Google AI / Mistral / Together / OpenAI).
-     * Selection :
-     *   1. $modelOverride si fourni (format "provider/model_id")
-     *   2. Sinon : free_llms_default_vision_model si $needVision, sinon free_llms_default_text_model
-     *   3. Fallback : OpenAI (modeles ai_model_text / ai_model_vision)
+     * Appel LLM (OpenAI Chat Completions).
+     * Modele : $modelOverride si fourni, sinon ai_model_vision / ai_model_text.
      *
      * Retourne le contenu textuel de la reponse (str) ou null en cas d'echec.
      */
     private function callLlm(array $messages, ?string $modelOverride, bool $needVision, array $opts = []): ?string
     {
-        $qualified = $modelOverride;
+        $modelId = $modelOverride
+            ?: Setting::get($needVision ? 'ai_model_vision' : 'ai_model_text', $needVision ? 'gpt-4o' : 'gpt-4o-mini');
 
-        if (! $qualified) {
-            $settingKey = $needVision ? 'free_llms_default_vision_model' : 'free_llms_default_text_model';
-            $qualified = Setting::get($settingKey) ?: null;
-        }
-
-        if ($qualified && str_contains($qualified, '/')) {
-            [$provider, $modelId] = explode('/', $qualified, 2);
-        } else {
-            $provider = 'openai';
-            $modelId = $qualified ?: Setting::get($needVision ? 'ai_model_vision' : 'ai_model_text', $needVision ? 'gpt-4o' : 'gpt-4o-mini');
-        }
-
-        $temperature = $opts['temperature'] ?? 0.7;
-        $maxTokens = $opts['max_tokens'] ?? 1000;
-
-        return match ($provider) {
-            'google_ai' => $this->callGoogleAi($messages, $modelId, $temperature, $maxTokens),
-            default => $this->callOpenAiCompatible($provider, $modelId, $messages, $temperature, $maxTokens),
-        };
-    }
-
-    /**
-     * Appelle un endpoint compatible OpenAI Chat Completions
-     * (OpenAI / Groq / OpenRouter / Mistral / Together).
-     */
-    private function callOpenAiCompatible(string $provider, string $modelId, array $messages, float $temperature, int $maxTokens): ?string
-    {
-        [$baseUrl, $apiKey] = match ($provider) {
-            'groq' => ['https://api.groq.com/openai/v1', Setting::getEncrypted('groq_api_key')],
-            'openrouter' => ['https://openrouter.ai/api/v1', Setting::getEncrypted('openrouter_api_key')],
-            'mistral' => ['https://api.mistral.ai/v1', Setting::getEncrypted('mistral_api_key')],
-            'together' => ['https://api.together.xyz/v1', Setting::getEncrypted('together_api_key')],
-            default => ['https://api.openai.com/v1', Setting::getEncrypted('openai_api_key')],
-        };
-
+        $apiKey = Setting::getEncrypted('openai_api_key');
         if (! $apiKey) {
-            Log::warning("AiAssistService: No API key for provider {$provider}");
+            Log::warning('AiAssistService: No OpenAI API key');
 
             return null;
         }
@@ -803,16 +767,15 @@ TXT;
             $resp = Http::withHeaders([
                 'Authorization' => "Bearer {$apiKey}",
                 'Content-Type' => 'application/json',
-            ])->timeout(60)->post("{$baseUrl}/chat/completions", [
+            ])->timeout(60)->post('https://api.openai.com/v1/chat/completions', [
                 'model' => $modelId,
                 'messages' => $messages,
-                'temperature' => $temperature,
-                'max_tokens' => $maxTokens,
+                'temperature' => $opts['temperature'] ?? 0.7,
+                'max_tokens' => $opts['max_tokens'] ?? 1000,
             ]);
 
             if (! $resp->successful()) {
                 Log::error('AiAssistService: LLM API error', [
-                    'provider' => $provider,
                     'model' => $modelId,
                     'status' => $resp->status(),
                     'body' => mb_substr($resp->body(), 0, 500),
@@ -825,103 +788,7 @@ TXT;
 
             return $content !== '' ? $content : null;
         } catch (\Exception $e) {
-            Log::error('AiAssistService: LLM call exception', [
-                'provider' => $provider,
-                'error' => $e->getMessage(),
-            ]);
-
-            return null;
-        }
-    }
-
-    /**
-     * Adapter Google AI (format generateContent different d'OpenAI Chat).
-     */
-    private function callGoogleAi(array $messages, string $modelId, float $temperature, int $maxTokens): ?string
-    {
-        $apiKey = Setting::getEncrypted('google_ai_api_key');
-        if (! $apiKey) {
-            Log::warning('AiAssistService: No Google AI API key');
-
-            return null;
-        }
-
-        $systemInstruction = null;
-        $contents = [];
-
-        foreach ($messages as $msg) {
-            if ($msg['role'] === 'system') {
-                $systemInstruction = is_string($msg['content']) ? $msg['content'] : '';
-
-                continue;
-            }
-
-            $parts = [];
-            if (is_string($msg['content'])) {
-                $parts[] = ['text' => $msg['content']];
-            } else {
-                foreach ($msg['content'] as $block) {
-                    if ($block['type'] === 'text') {
-                        $parts[] = ['text' => $block['text']];
-                    } elseif ($block['type'] === 'image_url') {
-                        $url = $block['image_url']['url'] ?? '';
-                        if (str_starts_with($url, 'data:')) {
-                            // data URL → inline_data
-                            [$mimePart, $b64] = explode(',', $url, 2);
-                            $mime = preg_match('/data:([^;]+);base64/', $mimePart, $m) ? $m[1] : 'image/jpeg';
-                            $parts[] = ['inline_data' => ['mime_type' => $mime, 'data' => $b64]];
-                        } else {
-                            // URL distante → fetch + base64 (Google AI ne supporte pas les URL directes hors File API)
-                            try {
-                                $bin = Http::timeout(15)->get($url);
-                                if ($bin->successful()) {
-                                    $mime = $bin->header('Content-Type') ?: 'image/jpeg';
-                                    $parts[] = ['inline_data' => ['mime_type' => $mime, 'data' => base64_encode($bin->body())]];
-                                }
-                            } catch (\Exception $e) {
-                                Log::warning('AiAssistService: Failed to fetch image for Google AI', ['url' => $url]);
-                            }
-                        }
-                    }
-                }
-            }
-
-            $contents[] = [
-                'role' => $msg['role'] === 'assistant' ? 'model' : 'user',
-                'parts' => $parts,
-            ];
-        }
-
-        try {
-            $payload = [
-                'contents' => $contents,
-                'generationConfig' => [
-                    'temperature' => $temperature,
-                    'maxOutputTokens' => $maxTokens,
-                ],
-            ];
-            if ($systemInstruction) {
-                $payload['systemInstruction'] = ['parts' => [['text' => $systemInstruction]]];
-            }
-
-            $resp = Http::timeout(60)
-                ->post("https://generativelanguage.googleapis.com/v1beta/models/{$modelId}:generateContent?key={$apiKey}", $payload);
-
-            if (! $resp->successful()) {
-                Log::error('AiAssistService: Google AI error', [
-                    'model' => $modelId,
-                    'status' => $resp->status(),
-                    'body' => mb_substr($resp->body(), 0, 500),
-                ]);
-
-                return null;
-            }
-
-            $text = $resp->json('candidates.0.content.parts.0.text', '');
-
-            return $text !== '' ? trim($text) : null;
-        } catch (\Exception $e) {
-            Log::error('AiAssistService: Google AI exception', ['error' => $e->getMessage()]);
+            Log::error('AiAssistService: LLM call exception', ['error' => $e->getMessage()]);
 
             return null;
         }
