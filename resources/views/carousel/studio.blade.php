@@ -33,6 +33,85 @@
                 <p class="text-xs text-gray-400 mt-2">Toutes les slides partagent ce format (contrainte Instagram).</p>
             </div>
 
+            {{-- Apparence : couleurs + polices, appliquées à TOUT le carrousel --}}
+            <div class="bg-white rounded-2xl shadow-sm border border-gray-100 p-5">
+                <div class="flex items-center justify-between mb-3">
+                    <label class="block text-sm font-medium text-gray-700">Apparence</label>
+                    <button type="button" @click="resetTheme()" class="text-xs text-gray-400 hover:text-indigo-600">
+                        Rétablir les couleurs par défaut
+                    </button>
+                </div>
+
+                <div class="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-4">
+                    <template x-for="c in colorFields" :key="c.key">
+                        <div>
+                            <label class="block text-xs text-gray-500 mb-1" x-text="c.label"></label>
+                            <div class="flex items-center gap-2">
+                                <input type="color" x-model="theme[c.key]" @input="queuePreview()"
+                                       class="w-8 h-8 rounded border border-gray-200 cursor-pointer bg-white p-0.5">
+                                <input type="text" x-model="theme[c.key]" @input="queuePreview()"
+                                       class="w-full rounded-lg border-gray-300 text-xs font-mono focus:border-indigo-500 focus:ring-indigo-500">
+                            </div>
+                            <p class="text-[10px] text-gray-400 mt-1" x-text="c.hint"></p>
+                        </div>
+                    </template>
+                </div>
+
+                <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <div>
+                        <label class="block text-xs text-gray-500 mb-1">Police des titres</label>
+                        <select x-model="theme.title_font" @change="queuePreview()"
+                                class="w-full rounded-lg border-gray-300 text-sm focus:border-indigo-500 focus:ring-indigo-500">
+                            <template x-for="f in fonts" :key="f"><option :value="f" x-text="f"></option></template>
+                        </select>
+                    </div>
+                    <div>
+                        <label class="block text-xs text-gray-500 mb-1">Police des textes</label>
+                        <select x-model="theme.body_font" @change="queuePreview()"
+                                class="w-full rounded-lg border-gray-300 text-sm focus:border-indigo-500 focus:ring-indigo-500">
+                            <template x-for="f in fonts" :key="f"><option :value="f" x-text="f"></option></template>
+                        </select>
+                    </div>
+                </div>
+
+                @if ($canAddFonts)
+                    <div class="mt-3 pt-3 border-t border-gray-100">
+                        <p class="text-xs text-gray-500 mb-2">
+                            Ajouter une police Google : elle est téléchargée une fois puis servie par nos soins
+                            (le rendu ne dépend jamais du réseau).
+                        </p>
+                        <div class="flex items-center gap-2">
+                            <select x-model="newFont"
+                                    class="flex-1 rounded-lg border-gray-300 text-sm focus:border-indigo-500 focus:ring-indigo-500">
+                                <option value="">Choisir dans le catalogue…</option>
+                                <template x-for="(families, category) in fontCatalogue" :key="category">
+                                    <optgroup :label="category">
+                                        <template x-for="f in families" :key="f">
+                                            <option :value="f" x-text="f"></option>
+                                        </template>
+                                    </optgroup>
+                                </template>
+                            </select>
+                            <button type="button" @click="addFont()" :disabled="addingFont || !newFont"
+                                    class="px-3 py-1.5 rounded-lg text-sm border border-gray-200 text-gray-600 hover:border-indigo-300 hover:text-indigo-600 disabled:opacity-50">
+                                <span x-show="!addingFont">Ajouter</span>
+                                <span x-show="addingFont">…</span>
+                            </button>
+                        </div>
+                        <div class="flex items-center gap-2 mt-2">
+                            <input type="text" x-model="customFont" @keydown.enter.prevent="addFont(true)"
+                                   placeholder="…ou n’importe quelle police Google par son nom exact"
+                                   class="flex-1 rounded-lg border-gray-300 text-xs focus:border-indigo-500 focus:ring-indigo-500">
+                            <button type="button" @click="addFont(true)" :disabled="addingFont || !customFont"
+                                    class="px-3 py-1.5 rounded-lg text-xs border border-gray-200 text-gray-600 hover:border-indigo-300 hover:text-indigo-600 disabled:opacity-50">
+                                Ajouter
+                            </button>
+                        </div>
+                    </div>
+                    <p x-show="fontError" x-text="fontError" class="text-xs text-red-500 mt-1"></p>
+                @endif
+            </div>
+
             {{-- Slides --}}
             <div class="space-y-4">
                 <template x-for="(slide, i) in slides" :key="slide._id">
@@ -215,6 +294,20 @@
             ratios: @json($ratios),
             bricks: @json($bricks),
             ratio: @json($defaultRatio),
+            fonts: @json($fonts),
+            theme: @json($theme),
+            defaultTheme: @json($theme),
+            fontCatalogue: @json($fontCatalogue),
+            newFont: '',
+            customFont: '',
+            addingFont: false,
+            fontError: '',
+            colorFields: [
+                { key: 'background', label: 'Fond', hint: 'Slides sans image' },
+                { key: 'text', label: 'Texte', hint: 'Tous les textes' },
+                { key: 'accent', label: 'Accent', hint: 'Chiffres, filets, pastilles' },
+                { key: 'overlay', label: 'Voile', hint: 'Dégradé sur les photos' },
+            ],
             slides: [],
             previewHtml: '',
             previewLoading: false,
@@ -292,9 +385,44 @@
             },
 
             // ── Aperçu live (pas de Chromium) ──
+            // ── Apparence ──
+            resetTheme() {
+                this.theme = { ...this.defaultTheme };
+                this.queuePreview();
+            },
+            async addFont(custom = false) {
+                const family = (custom ? this.customFont : this.newFont).trim();
+                if (!family) return;
+                this.addingFont = true;
+                this.fontError = '';
+                try {
+                    const resp = await fetch('{{ route('carousel.studio.fonts') }}', {
+                        method: 'POST',
+                        headers: this.headers(),
+                        body: JSON.stringify({ family }),
+                    });
+                    const data = await resp.json();
+                    if (!resp.ok) {
+                        this.fontError = data.message || Object.values(data.errors || {}).flat()[0] || 'Échec de l’ajout.';
+                        return;
+                    }
+                    this.fonts = data.families;
+                    this.fontCatalogue = data.catalogue;
+                    this.theme.title_font = family;
+                    this.newFont = '';
+                    this.customFont = '';
+                    this.updatePreview();
+                } catch (e) {
+                    this.fontError = 'Erreur réseau lors de l’ajout de la police.';
+                } finally {
+                    this.addingFont = false;
+                }
+            },
+
             payload() {
                 return {
                     ratio: this.ratio,
+                    theme: this.theme,
                     slides: this.slides.map(s => {
                         const data = {};
                         for (const [k, v] of Object.entries(s.data)) {

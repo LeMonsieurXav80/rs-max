@@ -198,9 +198,15 @@ class CarouselApiController extends Controller
             $registry->compositionRules() + $registry->slotRules($request->input('slides', []))
         );
 
-        return [
-            'ratio' => $validated['ratio'],
-            'slides' => $registry->normalizeSlides($validated['slides']),
-        ];
+        // `theme` s'applique à tout le carrousel : couleurs (hex 6 chiffres) et
+        // polices choisies parmi celles de la bibliothèque.
+        $theme = $registry->normalizeTheme($validated['theme'] ?? null);
+
+        $slides = array_map(
+            fn (array $slide) => $slide + ['theme' => $theme],
+            $registry->normalizeSlides($validated['slides'])
+        );
+
+        return ['ratio' => $validated['ratio'], 'slides' => $slides];
     }
 }

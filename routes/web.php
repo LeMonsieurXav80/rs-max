@@ -184,6 +184,7 @@ Route::middleware(['auth', 'verified', 'throttle:600,1'])->group(function () {
     // Studio Carrousel (briques HTML/CSS)
     Route::get('carousel/studio', [CarouselStudioController::class, 'index'])->name('carousel.studio');
     Route::post('carousel/studio/preview', [CarouselStudioController::class, 'preview'])->name('carousel.studio.preview');
+    Route::post('carousel/studio/fonts', [CarouselStudioController::class, 'addFont'])->name('carousel.studio.fonts');
     Route::post('carousel/studio/render', [CarouselStudioController::class, 'render'])->name('carousel.studio.render');
 
     // Media library

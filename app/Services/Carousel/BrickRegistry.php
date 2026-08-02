@@ -280,12 +280,41 @@ class BrickRegistry
      */
     public function compositionRules(): array
     {
+        $fonts = implode(',', app(FontLibrary::class)->families());
+
         return [
             'ratio' => ['required', 'string', 'in:'.implode(',', $this->ratioKeys())],
             'slides' => ['required', 'array', 'min:1', 'max:20'],
             'slides.*.brick' => ['required', 'string', 'in:'.implode(',', $this->slugs())],
             'slides.*.data' => ['nullable', 'array'],
+
+            // Apparence du carrousel (s'applique à toutes ses slides).
+            // Hex à 6 chiffres OBLIGATOIRE : le dégradé de lisibilité concatène
+            // un canal alpha à la couleur (voir Anchor::scrim), donc #000 ou
+            // rgb(...) casseraient le rendu sans erreur visible.
+            'theme' => ['nullable', 'array'],
+            'theme.background' => ['nullable', 'string', 'regex:/^#[0-9a-fA-F]{6}$/'],
+            'theme.text' => ['nullable', 'string', 'regex:/^#[0-9a-fA-F]{6}$/'],
+            'theme.accent' => ['nullable', 'string', 'regex:/^#[0-9a-fA-F]{6}$/'],
+            'theme.overlay' => ['nullable', 'string', 'regex:/^#[0-9a-fA-F]{6}$/'],
+            'theme.title_font' => ['nullable', 'string', 'in:'.$fonts],
+            'theme.body_font' => ['nullable', 'string', 'in:'.$fonts],
         ];
+    }
+
+    /**
+     * Ne garde que les clés de thème connues et renseignées.
+     *
+     * @return array<string, string>
+     */
+    public function normalizeTheme(?array $theme): array
+    {
+        $allowed = ['background', 'text', 'accent', 'overlay', 'title_font', 'body_font'];
+
+        return array_filter(
+            array_intersect_key($theme ?? [], array_flip($allowed)),
+            fn ($value) => is_string($value) && $value !== '',
+        );
     }
 
     /**

@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use App\Models\MediaFile;
 use App\Services\Carousel\BrickRegistry;
 use App\Services\Carousel\CarouselRenderService;
+use App\Services\Carousel\FontLibrary;
 use App\Services\Media\ThumbnailService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -26,10 +27,14 @@ use Illuminate\View\View;
  */
 class CarouselStudioController extends Controller
 {
-    public function index(BrickRegistry $registry): View
+    public function index(BrickRegistry $registry, FontLibrary $fonts): View
     {
         return view('carousel.studio', [
             'ratios' => config('carousel.ratios', []),
+            'theme' => config('carousel.theme', []),
+            'fonts' => $fonts->families(),
+            'fontCatalogue' => $fonts->catalogue(),
+            'canAddFonts' => in_array(auth()->user()->role, ['admin', 'manager'], true),
             // Slots normalisés (typés) : le compositeur construit ses champs à partir
             // de ce contrat, sans rien coder en dur par brique.
             'bricks' => collect($registry->all())
@@ -95,6 +100,34 @@ class CarouselStudioController extends Controller
     }
 
     /**
+     * Ajoute une police Google à la bibliothèque (réservé admin/manager : écrit
+     * des fichiers et déclenche un téléchargement externe).
+     */
+    public function addFont(Request $request, FontLibrary $fonts): JsonResponse
+    {
+        if (! in_array($request->user()->role, ['admin', 'manager'], true)) {
+            return response()->json(['message' => 'Action réservée aux administrateurs.'], 403);
+        }
+
+        $validated = $request->validate([
+            'family' => ['required', 'string', 'max:60', 'regex:/^[A-Za-z0-9 ]+$/'],
+        ], [
+            'family.regex' => 'Le nom de la police ne peut contenir que des lettres, chiffres et espaces.',
+        ]);
+
+        if (! $fonts->add($validated['family'])) {
+            return response()->json([
+                'message' => 'Police introuvable sur Google Fonts (vérifie l’orthographe exacte, ex. « Space Grotesk »).',
+            ], 422);
+        }
+
+        return response()->json([
+            'families' => $fonts->families(),
+            'catalogue' => $fonts->catalogue(),
+        ]);
+    }
+
+    /**
      * Valide et normalise la requête en {ratio, slides:[{brick, data}]}.
      * Règles et nettoyage sont DÉRIVÉS du manifeste (BrickRegistry) : les slots
      * inconnus tombent, les images non locales sont écartées (anti-SSRF).
@@ -109,9 +142,15 @@ class CarouselStudioController extends Controller
             $registry->compositionRules() + $registry->slotRules($request->input('slides', []))
         );
 
-        return [
-            'ratio' => $validated['ratio'],
-            'slides' => $registry->normalizeSlides($validated['slides']),
-        ];
+        // L'apparence est choisie au niveau du carrousel puis portée par chaque
+        // slide (le moteur de rendu résout le thème slide par slide).
+        $theme = $registry->normalizeTheme($validated['theme'] ?? null);
+
+        $slides = array_map(
+            fn (array $slide) => $slide + ['theme' => $theme],
+            $registry->normalizeSlides($validated['slides'])
+        );
+
+        return ['ratio' => $validated['ratio'], 'slides' => $slides];
     }
 }

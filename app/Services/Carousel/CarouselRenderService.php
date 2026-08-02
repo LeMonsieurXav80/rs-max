@@ -32,6 +32,7 @@ class CarouselRenderService
     public function __construct(
         private GoogleFontsService $fonts,
         private BrickRegistry $bricks,
+        private FontLibrary $fontLibrary,
     ) {
         $this->manager = new ImageManager(new Driver);
     }
@@ -57,7 +58,8 @@ class CarouselRenderService
     public function fontFaceCss(): string
     {
         $css = '';
-        foreach (config('carousel.fonts', []) as $family => $weights) {
+        // Polices livrées + polices ajoutées depuis l'interface.
+        foreach ($this->fontLibrary->all() as $family => $weights) {
             foreach ($weights as $weight => $filename) {
                 $path = storage_path('app/fonts/'.$filename);
                 if (! is_file($path)) {

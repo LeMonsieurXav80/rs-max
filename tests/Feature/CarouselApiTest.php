@@ -179,6 +179,64 @@ class CarouselApiTest extends TestCase
         ])->assertStatus(422);
     }
 
+    public function test_le_theme_du_carrousel_est_applique_a_toutes_les_slides(): void
+    {
+        $this->actAsApiUser();
+
+        $html = $this->postJson('/api/carousel/preview', [
+            'ratio' => '4:5',
+            'theme' => [
+                'background' => '#123456',
+                'text' => '#fedcba',
+                'accent' => '#00ff00',
+                'overlay' => '#101820',
+                'title_font' => 'Playfair Display',
+            ],
+            'slides' => [
+                ['brick' => 'bold-text', 'data' => ['title' => 'A']],
+                ['brick' => 'bold-text', 'data' => ['title' => 'B']],
+            ],
+        ])->assertOk()->getContent();
+
+        $this->assertSame(2, substr_count($html, '#123456') > 0 ? 2 : 0, 'fond appliqué');
+        $this->assertStringContainsString('#fedcba', $html);
+        $this->assertStringContainsString('#00ff00', $html);
+        $this->assertStringContainsString('Playfair Display', $html);
+    }
+
+    public function test_le_degrade_suit_la_couleur_de_voile(): void
+    {
+        $this->actAsApiUser();
+
+        $html = $this->postJson('/api/carousel/preview', [
+            'ratio' => '4:5',
+            'theme' => ['overlay' => '#101820'],
+            'slides' => [['brick' => 'photo-title-bl', 'data' => ['title' => 'X']]],
+        ])->assertOk()->getContent();
+
+        // Le voile n'est pas noir par principe : il part de la couleur choisie,
+        // à laquelle Anchor concatène un canal alpha.
+        $this->assertStringContainsString('#101820e6', $html);
+    }
+
+    public function test_une_couleur_invalide_est_refusee(): void
+    {
+        $this->actAsApiUser();
+
+        // Hex 3 chiffres : casserait la concaténation du canal alpha du dégradé.
+        $this->postJson('/api/carousel/preview', [
+            'ratio' => '4:5',
+            'theme' => ['overlay' => '#000'],
+            'slides' => [['brick' => 'bold-text', 'data' => ['title' => 'X']]],
+        ])->assertStatus(422);
+
+        $this->postJson('/api/carousel/preview', [
+            'ratio' => '4:5',
+            'theme' => ['title_font' => 'Comic Sans MS'],
+            'slides' => [['brick' => 'bold-text', 'data' => ['title' => 'X']]],
+        ])->assertStatus(422);
+    }
+
     public function test_lapi_exige_une_authentification(): void
     {
         $this->postJson('/api/carousel/preview', [
