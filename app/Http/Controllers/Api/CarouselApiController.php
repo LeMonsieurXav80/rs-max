@@ -8,6 +8,7 @@ use App\Models\MediaFile;
 use App\Services\Carousel\BrickRegistry;
 use App\Services\Carousel\CarouselRenderService;
 use App\Services\Carousel\FontLibrary;
+use App\Services\Carousel\StudioDefaults;
 use App\Services\Carousel\TemplateRenderer;
 use App\Services\Media\ThumbnailService;
 use Illuminate\Http\JsonResponse;
@@ -309,6 +310,9 @@ class CarouselApiController extends Controller
             'width' => $dim[0],
             'height' => $dim[1],
             'source' => 'api',
+            // Même dossier de dépôt que le Studio (Paramètres → Studio) : l'image
+            // ne doit pas atterrir ailleurs selon qu'elle vient de l'API ou du web.
+            'folder_id' => StudioDefaults::folderId(),
         ]);
 
         try {

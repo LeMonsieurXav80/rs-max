@@ -67,6 +67,11 @@
                             class="px-4 py-3 text-sm font-medium border-b-2 transition-colors whitespace-nowrap">
                         Messagerie
                     </button>
+                    <button type="button" @click="activeTab = 'studio'"
+                            :class="activeTab === 'studio' ? 'border-indigo-500 text-indigo-600' : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'"
+                            class="px-4 py-3 text-sm font-medium border-b-2 transition-colors whitespace-nowrap">
+                        Studio
+                    </button>
                     <button type="button" @click="activeTab = 'notifications'"
                             :class="activeTab === 'notifications' ? 'border-indigo-500 text-indigo-600' : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'"
                             class="px-4 py-3 text-sm font-medium border-b-2 transition-colors whitespace-nowrap">
@@ -775,6 +780,54 @@
                         @error('inbox_reply_prompt')
                             <p class="text-xs text-red-600 mt-1">{{ $message }}</p>
                         @enderror
+                    </div>
+                </div>
+            </div>
+
+            {{-- ═══════════════════════════════════════ --}}
+            {{-- TAB: Studio                            --}}
+            {{-- ═══════════════════════════════════════ --}}
+            <div x-show="activeTab === 'studio'" x-cloak class="space-y-4">
+
+                <div class="bg-white rounded-2xl border border-gray-100 shadow-sm p-6">
+                    <div class="flex items-center gap-3 mb-1">
+                        <svg class="w-5 h-5 text-indigo-500" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1.5">
+                            <path stroke-linecap="round" stroke-linejoin="round" d="M2.25 12.75V12A2.25 2.25 0 0 1 4.5 9.75h15A2.25 2.25 0 0 1 21.75 12v.75m-8.69-6.44-2.12-2.12a1.5 1.5 0 0 0-1.061-.44H4.5A2.25 2.25 0 0 0 2.25 6v12a2.25 2.25 0 0 0 2.25 2.25h15A2.25 2.25 0 0 0 21.75 18V9a2.25 2.25 0 0 0-2.25-2.25h-5.379a1.5 1.5 0 0 1-1.06-.44Z" />
+                        </svg>
+                        <h2 class="text-base font-semibold text-gray-900">Studio carrousel</h2>
+                    </div>
+                    <p class="text-sm text-gray-500 mb-5">
+                        Réglages de la fabrication d'images : compositeur web et API partagent les mêmes.
+                    </p>
+
+                    <div class="max-w-md">
+                        <label for="{{ \App\Services\Carousel\StudioDefaults::FOLDER_KEY }}" class="block text-sm font-medium text-gray-700 mb-1">
+                            Dossier des images générées
+                        </label>
+                        <select id="{{ \App\Services\Carousel\StudioDefaults::FOLDER_KEY }}"
+                                name="{{ \App\Services\Carousel\StudioDefaults::FOLDER_KEY }}"
+                                class="w-full rounded-xl border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 text-sm">
+                            @php($currentFolder = old(\App\Services\Carousel\StudioDefaults::FOLDER_KEY, $settings[\App\Services\Carousel\StudioDefaults::FOLDER_KEY]))
+                            <option value="">Racine de la médiathèque</option>
+                            @foreach ($mediaFolders as $folder)
+                                <option value="{{ $folder['id'] }}" @selected((string) $currentFolder === (string) $folder['id'])>
+                                    {{ $folder['label'] }}
+                                </option>
+                            @endforeach
+                        </select>
+                        <p class="text-xs text-gray-400 mt-1">
+                            S'applique aux slides du Studio comme aux images de l'API. Les images déjà générées ne bougent pas.
+                        </p>
+                        @error(\App\Services\Carousel\StudioDefaults::FOLDER_KEY)
+                            <p class="text-sm text-red-600 mt-1">{{ $message }}</p>
+                        @enderror
+
+                        @if ($mediaFolders->isEmpty())
+                            <p class="text-xs text-amber-600 mt-2">
+                                Aucun dossier dans la médiathèque pour l'instant — créez-en un depuis
+                                <a href="{{ route('media.index') }}" class="underline">la médiathèque</a>.
+                            </p>
+                        @endif
                     </div>
                 </div>
             </div>

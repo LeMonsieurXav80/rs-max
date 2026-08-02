@@ -2,7 +2,10 @@
 
 namespace Tests\Feature;
 
+use App\Models\MediaFolder;
+use App\Models\Setting;
 use App\Models\User;
+use App\Services\Carousel\StudioDefaults;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
 
@@ -72,5 +75,49 @@ class CarouselStudioTest extends TestCase
 
         $response->assertOk();
         $this->assertStringNotContainsString('169.254.169.254', $response->getContent());
+    }
+
+    public function test_le_dossier_de_depot_se_regle_dans_les_parametres(): void
+    {
+        $folder = MediaFolder::create(['name' => 'Visuels', 'slug' => 'visuels']);
+
+        $this->actingAs($this->user())
+            ->patch(route('settings.update'), $this->settingsPayload([
+                StudioDefaults::FOLDER_KEY => $folder->id,
+            ]))
+            ->assertSessionHasNoErrors();
+
+        $this->assertSame($folder->id, StudioDefaults::folderId());
+    }
+
+    public function test_un_dossier_supprime_renvoie_a_la_racine(): void
+    {
+        $folder = MediaFolder::create(['name' => 'Éphémère', 'slug' => 'ephemere']);
+        Setting::set(StudioDefaults::FOLDER_KEY, $folder->id);
+        $folder->delete();
+
+        // Sinon le rendu échouerait sur la clé étrangère APRÈS la minute de Chromium.
+        $this->assertNull(StudioDefaults::folderId());
+    }
+
+    public function test_un_dossier_inconnu_est_refuse(): void
+    {
+        $this->actingAs($this->user())
+            ->patch(route('settings.update'), $this->settingsPayload([
+                StudioDefaults::FOLDER_KEY => 999999,
+            ]))
+            ->assertSessionHasErrors(StudioDefaults::FOLDER_KEY);
+    }
+
+    /**
+     * La page Paramètres poste tous ses onglets d'un coup : les champs `required`
+     * des autres onglets doivent être présents sinon la validation recale tout.
+     */
+    private function settingsPayload(array $overrides = []): array
+    {
+        $reflection = new \ReflectionClass(\App\Http\Controllers\SettingsController::class);
+
+        // `+` garde la gauche en cas de collision : les surcharges d'abord.
+        return $overrides + $reflection->getConstant('DEFAULTS');
     }
 }

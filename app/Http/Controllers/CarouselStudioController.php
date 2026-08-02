@@ -7,6 +7,7 @@ use App\Models\MediaFile;
 use App\Services\Carousel\BrickRegistry;
 use App\Services\Carousel\CarouselRenderService;
 use App\Services\Carousel\FontLibrary;
+use App\Services\Carousel\StudioDefaults;
 use App\Services\Carousel\Typography;
 use App\Services\Media\ThumbnailService;
 use Illuminate\Http\JsonResponse;
@@ -138,6 +139,8 @@ class CarouselStudioController extends Controller
                 'width' => $dim[0],
                 'height' => $dim[1],
                 'source' => 'studio',
+                // Dossier de dépôt choisi dans Paramètres → Studio (null = racine).
+                'folder_id' => StudioDefaults::folderId(),
             ]);
 
             try {

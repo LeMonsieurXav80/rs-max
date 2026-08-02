@@ -248,6 +248,11 @@ curl -X POST https://<domaine>/api/carousel/image \
 L'image est ajoutée à la médiathèque (`source: "api"`), avec sa vignette. Son `id`
 est directement réutilisable pour publier (§ 9).
 
+Elle atterrit dans le dossier choisi dans **Paramètres → Studio** (racine par
+défaut) — le même que celui du compositeur web, pour qu'une image ne change pas
+de place selon son point de départ. Le réglage n'est pas surchargeable par
+requête ; pour ranger ailleurs, déplacer après coup via l'API médiathèque.
+
 ### Exemple — image sans photo, texte seul
 
 ```json

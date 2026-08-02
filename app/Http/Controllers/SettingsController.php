@@ -3,7 +3,9 @@
 namespace App\Http\Controllers;
 
 use App\Models\FreeLlmModel;
+use App\Models\MediaFolder;
 use App\Models\Setting;
+use App\Services\Carousel\StudioDefaults;
 use App\Services\Llm\FreeLlmDiscoveryService;
 use App\Services\Llm\FreeLlmTestService;
 use App\Services\TelegramNotificationService;
@@ -83,6 +85,8 @@ class SettingsController extends Controller
         'free_llms_default_text_model',
         'free_llms_default_vision_model',
         'free_llms_last_refresh_at',
+        // Studio carrousel
+        StudioDefaults::FOLDER_KEY,
     ];
 
     private const DEFAULTS = [
@@ -151,6 +155,8 @@ class SettingsController extends Controller
         'free_llms_default_text_model' => '',
         'free_llms_default_vision_model' => '',
         'free_llms_last_refresh_at' => '',
+        // Studio carrousel : vide = racine de la médiathèque
+        StudioDefaults::FOLDER_KEY => '',
         'inbox_reply_prompt' => "Tu reponds a des commentaires et messages sur les reseaux sociaux. Adapte la longueur et le style de ta reponse au message recu :\n- Emoji seul ou reaction simple (coeur, flamme, applaudissements...) → reponds par 1-2 emojis adaptes, rien d'autre\n- Compliment court (\"bravo\", \"top\", \"j'adore\", \"genial\") → remercie en 2-5 mots max, tu peux ajouter un emoji\n- Question → reponds brievement et precisement, 1-2 phrases max\n- Commentaire developpe ou avis → 1-2 phrases engageantes max\n- Message prive → reponds de maniere naturelle et conversationnelle\n\nRegles absolues :\n- Ne fais JAMAIS une reponse plus longue que le message original\n- Pas de hashtags\n- Pas de formule de politesse generique (\"Merci pour votre commentaire !\")\n- Sois authentique, pas corporate\n- Garde le ton et la personnalite definis dans ton profil",
     ];
 
@@ -207,7 +213,14 @@ class SettingsController extends Controller
             'last_refresh_at' => Setting::get('free_llms_last_refresh_at'),
         ];
 
-        return view('settings.index', compact('settings', 'hasOpenaiKey', 'availableModels', 'hasNotifyBotToken', 'freeLlm'));
+        // Dossiers de la médiathèque, affichés avec leur chemin complet : deux
+        // sous-dossiers peuvent porter le même nom sous des parents différents.
+        $mediaFolders = MediaFolder::with('parent')->get()
+            ->map(fn (MediaFolder $f) => ['id' => $f->id, 'label' => $f->pathLabel()])
+            ->sortBy('label', SORT_NATURAL | SORT_FLAG_CASE)
+            ->values();
+
+        return view('settings.index', compact('settings', 'hasOpenaiKey', 'availableModels', 'hasNotifyBotToken', 'freeLlm', 'mediaFolders'));
     }
 
     public function update(Request $request)
@@ -294,6 +307,8 @@ class SettingsController extends Controller
             'together_api_key' => 'nullable|string|min:10|max:200',
             'free_llms_default_text_model' => 'nullable|string|max:200',
             'free_llms_default_vision_model' => 'nullable|string|max:200',
+            // Studio : dossier de dépôt des images générées (vide = racine).
+            StudioDefaults::FOLDER_KEY => 'nullable|integer|exists:media_folders,id',
         ]);
 
         // Handle encrypted keys separately
