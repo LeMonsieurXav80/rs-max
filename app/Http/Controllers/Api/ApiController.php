@@ -53,6 +53,10 @@ class ApiController extends Controller
                 'name' => $a->name,
                 'platform' => $a->platform->slug,
                 'platform_name' => $a->platform->name,
+                // Identifiant côté plateforme (Facebook = page_id, Telegram = chat_id…).
+                // Exposé pour que l'extension Chrome rattache toute seule la page
+                // consultée au bon compte, sans que l'utilisateur ait à le choisir.
+                'platform_account_id' => $a->platform_account_id,
                 'persona' => $a->persona ? [
                     'id' => $a->persona->id,
                     'name' => $a->persona->name,

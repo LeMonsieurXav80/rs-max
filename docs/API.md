@@ -24,7 +24,8 @@ API REST d'orchestration multi-plateformes : publication, planification, génér
 12. [Endpoints — Partenaires (marques)](#12-endpoints--partenaires-marques)
 13. [Endpoints — Statistiques et calendrier](#13-endpoints--statistiques-et-calendrier)
 14. [Annexes : plateformes, langues, statuts](#14-annexes--plateformes-langues-statuts)
-15. [Endpoints en session web (PAS accessibles par token)](#15-endpoints-en-session-web-pas-accessibles-par-token)
+15. [Endpoints — Extension Chrome (RS-Max Companion)](#15-endpoints--extension-chrome-rs-max-companion)
+16. [Endpoints en session web (PAS accessibles par token)](#16-endpoints-en-session-web-pas-accessibles-par-token)
 
 ---
 
@@ -239,6 +240,7 @@ Liste les comptes sociaux actifs liés à l'utilisateur courant (admin = tous).
       "name": "Mon compte Twitter",
       "platform": "twitter",
       "platform_name": "Twitter/X",
+      "platform_account_id": "1234567890",
       "persona": { "id": 1, "name": "Tech Writer" },
       "languages": ["fr", "en"],
       "followers_count": 1250
@@ -246,6 +248,11 @@ Liste les comptes sociaux actifs liés à l'utilisateur courant (admin = tous).
   ]
 }
 ```
+
+`platform_account_id` est l'identifiant côté plateforme (Facebook = `page_id`,
+Instagram = `account_id`, Telegram = `chat_id`). L'extension Chrome
+([§15](#15-endpoints--extension-chrome-rs-max-companion)) s'en sert pour rattacher
+toute seule la page consultée au bon compte, sans choix manuel.
 
 ---
 
@@ -878,7 +885,76 @@ D'autres codes sont acceptés (tout ce qu'OpenAI peut traduire), mais seuls ceux
 
 ---
 
-## 15. Endpoints en session web (PAS accessibles par token)
+## 15. Endpoints — Extension Chrome (RS-Max Companion)
+
+L'extension Chrome (`DEV/Chrome/rs-max-companion`) effectue dans le navigateur de
+l'utilisateur les actions que les API officielles interdisent (inviter à aimer une
+Page, remplir un composer natif…), puis les remonte ici pour qu'elles comptent
+dans les statistiques.
+
+Les actions atterrissent dans **`bot_action_logs`** avec `source = 'extension'` —
+la même table que le bot de prospection (`source = 'bot'`).
+
+### `POST /api/extension/actions`
+
+Remontée en lot. L'extension bufferise puis pousse ; si l'API est injoignable,
+elle conserve localement et réessaie.
+
+**Corps**
+```json
+{
+  "actions": [
+    {
+      "social_account_id": 3,
+      "action_type": "fb_invite_to_like",
+      "target_uri": "https://facebook.com/…",
+      "target_author": "Jean Dupont",
+      "target_text": null,
+      "success": true,
+      "error": null,
+      "metadata": {"post_id": 42},
+      "performed_at": "2026-08-03T10:00:00Z"
+    }
+  ]
+}
+```
+
+- `actions` : 200 max par requête. Throttle : 120 req/min.
+- `performed_at` : horodatage **réel** de l'action côté navigateur. La remontée
+  pouvant être différée, `created_at` ne suffit pas.
+- `success: false` sert à tracer les actions **non confirmées** (le réseau a
+  limité le débit). C'est délibéré : compter les clics au lieu des effets donne
+  des statistiques fausses.
+
+**Réponse `201`**
+```json
+{ "stored": 12, "rejected": 0 }
+```
+
+`rejected` compte les actions dont le `social_account_id` n'est pas rattaché à
+l'utilisateur du token — elles sont ignorées, jamais enregistrées. Le
+`social_account_id` venant du navigateur n'est **jamais** cru sur parole.
+
+### `GET /api/extension/summary`
+
+Compte rendu agrégé des actions de l'extension.
+
+**Query params** : `days` (défaut 30, max 365), `account_id`.
+
+**Réponse**
+```json
+{
+  "days": 30,
+  "total": 214,
+  "actions": [
+    { "action_type": "fb_invite_to_like", "success": 198, "failed": 14 }
+  ]
+}
+```
+
+---
+
+## 16. Endpoints en session web (PAS accessibles par token)
 
 Quatre endpoints commencent par `/api/` alors qu'ils sont déclarés dans
 `routes/web.php` : ils tournent sous le middleware `web` (cookie de session +

@@ -2,6 +2,7 @@
 
 use App\Http\Controllers\Api\ApiController;
 use App\Http\Controllers\Api\CarouselApiController;
+use App\Http\Controllers\Api\ExtensionApiController;
 use App\Http\Controllers\Api\GenerateApiController;
 use App\Http\Controllers\Api\MediaApiController;
 use App\Http\Controllers\Api\PartnerApiController;
@@ -100,4 +101,10 @@ Route::middleware('auth:sanctum')->group(function () {
 
     // ── Banques d'images externes (Pexels, Pixabay, Unsplash) ──
     Route::get('/stock-photos/search', [MediaApiController::class, 'stockPhotosSearch']);
+
+    // ── Extension Chrome (RS-Max Companion) ──
+    // Remontée en lot : l'extension bufferise puis pousse, d'où le plafond large.
+    Route::post('/extension/actions', [ExtensionApiController::class, 'actions'])
+        ->middleware('throttle:120,1');
+    Route::get('/extension/summary', [ExtensionApiController::class, 'summary']);
 });
