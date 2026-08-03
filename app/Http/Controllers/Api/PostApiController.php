@@ -7,6 +7,7 @@ use App\Models\Partner;
 use App\Models\Post;
 use App\Models\PostPlatform;
 use App\Services\PartnerTagService;
+use App\Services\PostUrlBuilder;
 use App\Services\PublishingService;
 use Carbon\Carbon;
 use Illuminate\Http\JsonResponse;
@@ -23,7 +24,7 @@ class PostApiController extends Controller
     {
         $user = $request->user();
 
-        $query = Post::with(['postPlatforms.platform', 'postPlatforms.socialAccount', 'partners'])
+        $query = Post::with(['postPlatforms.platform', 'postPlatforms.socialAccount.platform', 'partners'])
             ->where('user_id', $user->id)
             ->orderByDesc('created_at');
 
@@ -84,7 +85,7 @@ class PostApiController extends Controller
     public function show(Request $request, Post $post): JsonResponse
     {
         $this->authorizePost($request, $post);
-        $post->load(['postPlatforms.platform', 'postPlatforms.socialAccount', 'postPlatforms.logs', 'partners']);
+        $post->load(['postPlatforms.platform', 'postPlatforms.socialAccount.platform', 'postPlatforms.logs', 'partners']);
 
         return response()->json(['post' => $this->formatPost($post, true)]);
     }
@@ -155,7 +156,7 @@ class PostApiController extends Controller
             return $post;
         });
 
-        $post->load(['postPlatforms.platform', 'postPlatforms.socialAccount', 'partners']);
+        $post->load(['postPlatforms.platform', 'postPlatforms.socialAccount.platform', 'partners']);
 
         return response()->json(['post' => $this->formatPost($post)], 201);
     }
@@ -229,7 +230,7 @@ class PostApiController extends Controller
             app(PartnerTagService::class)->syncPost($post, $validated['partners'] ?? null);
         });
 
-        $post->refresh()->load(['postPlatforms.platform', 'postPlatforms.socialAccount', 'partners']);
+        $post->refresh()->load(['postPlatforms.platform', 'postPlatforms.socialAccount.platform', 'partners']);
 
         return response()->json(['post' => $this->formatPost($post)]);
     }
@@ -377,6 +378,12 @@ class PostApiController extends Controller
                 'platform' => $pp->platform?->slug,
                 'status' => $pp->status,
                 'external_id' => $pp->external_id,
+                // URL web permanente de la publication, quand la plateforme
+                // permet de la construire. Sert notamment à rediffuser un post
+                // déjà publié (partage du lien plutôt que duplication du texte).
+                'url' => $pp->external_id && $pp->socialAccount
+                    ? PostUrlBuilder::build($pp->socialAccount, $pp->external_id)
+                    : null,
                 'metrics' => $pp->metrics,
                 'published_at' => $pp->published_at?->toIso8601String(),
             ]),
