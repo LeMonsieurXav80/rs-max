@@ -2,5 +2,11 @@
 !private/
 !public/
 !fonts/
-!fonts/**
+# Polices du manifeste (config/carousel.fonts) UNIQUEMENT : socle du thème par
+# défaut, embarqué dans l'image Docker pour qu'un déploiement neuf rende juste
+# sans réseau sortant. Toute autre police choisie dans le Studio est du cache —
+# GoogleFontsService la retélécharge à la première utilisation.
+!fonts/Montserrat-*.ttf
+!fonts/Poppins-*.ttf
+!fonts/PlayfairDisplay-*.ttf
 !.gitignore
