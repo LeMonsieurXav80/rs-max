@@ -46,9 +46,11 @@ class CarouselApiTest extends TestCase
         $this->assertSame('bottom-left', $slots['position']['default']);
         $this->assertSame('range', $slots['offset']['type']);
 
-        // La brique image seule n'expose QUE le slot image.
+        // La brique image seule n'expose pas de texte : l'image, et la continuité
+        // qui la prolonge sur la slide suivante.
         $imageFull = $bricks->firstWhere('slug', 'image-full');
-        $this->assertSame(['image'], array_column($imageFull['slots'], 'key'));
+        $this->assertSame(['image', 'extend_image'], array_column($imageFull['slots'], 'key'));
+        $this->assertSame('toggle', collect($imageFull['slots'])->firstWhere('key', 'extend_image')['type']);
     }
 
     public function test_lapercu_applique_lancre_et_le_decalage(): void

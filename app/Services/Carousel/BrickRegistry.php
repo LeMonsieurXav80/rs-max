@@ -18,7 +18,7 @@ use Illuminate\Support\Facades\Storage;
  *   'title' => 'Titre'                              // raccourci = champ texte
  *   'title' => ['label' => 'Titre', 'type' => ...]  // forme complète
  *
- * Types : text, textarea, image, position, range, select.
+ * Types : text, textarea, image, position, range, select, toggle.
  * Le type est inféré si absent (`image` => image, `body` => textarea, sinon text),
  * ce qui garde les briques déclarées à l'ancienne parfaitement valides.
  */
@@ -173,6 +173,49 @@ class BrickRegistry
     }
 
     /**
+     * La brique sait-elle afficher une image de fond ? Sert à la continuité
+     * d'image : inutile de prolonger une photo sur une slide qui ne saurait pas
+     * la peindre (texte plein, tableau…).
+     */
+    public function hasImageSlot(string $slug): bool
+    {
+        if (! $this->exists($slug)) {
+            return false;
+        }
+
+        foreach ($this->get($slug)['slots'] as $slot) {
+            if ($slot['type'] === 'image') {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /**
+     * Palette réglable : clé => {label, hint, default, fallback}. Sert à la fois
+     * aux règles de validation, au nettoyage et aux champs du Studio.
+     *
+     * @return array<string, array{label: string, hint: string, default: ?string, fallback: ?string}>
+     */
+    public function themeColors(): array
+    {
+        $colors = [];
+
+        foreach (config('carousel.theme_colors', []) as $key => $color) {
+            $colors[$key] = [
+                'key' => $key,
+                'label' => $color['label'] ?? $key,
+                'hint' => $color['hint'] ?? '',
+                'default' => $color['default'] ?? null,
+                'fallback' => $color['fallback'] ?? null,
+            ];
+        }
+
+        return $colors;
+    }
+
+    /**
      * @return array<int, string>
      */
     public function ratioKeys(): array
@@ -228,7 +271,7 @@ class BrickRegistry
 
             $value = match ($slot['type']) {
                 'image' => $this->sampleImage(),
-                'position', 'select', 'range' => $slot['default'],
+                'position', 'select', 'range', 'toggle' => $slot['default'],
                 'textarea' => $this->sampleList($key),
                 default => $this->sampleText($key),
             };
@@ -349,12 +392,14 @@ class BrickRegistry
         // téléchargée à l'usage (FontLibrary::ensureTheme), pas avant.
         $fonts = app(FontLibrary::class)->catalogueFamilies();
 
-        return [
-            'theme' => ['nullable', 'array'],
-            'theme.background' => ['nullable', 'string', 'regex:/^#[0-9a-fA-F]{6}$/'],
-            'theme.text' => ['nullable', 'string', 'regex:/^#[0-9a-fA-F]{6}$/'],
-            'theme.accent' => ['nullable', 'string', 'regex:/^#[0-9a-fA-F]{6}$/'],
-            'theme.overlay' => ['nullable', 'string', 'regex:/^#[0-9a-fA-F]{6}$/'],
+        $rules = ['theme' => ['nullable', 'array']];
+
+        // Une couleur ajoutée au manifeste devient réglable sans toucher ici.
+        foreach (array_keys($this->themeColors()) as $key) {
+            $rules["theme.{$key}"] = ['nullable', 'string', 'regex:/^#[0-9a-fA-F]{6}$/'];
+        }
+
+        return $rules + [
             'theme.title_font' => ['nullable', 'string', \Illuminate\Validation\Rule::in($fonts)],
             'theme.body_font' => ['nullable', 'string', \Illuminate\Validation\Rule::in($fonts)],
             // Échelle typographique : 1 = tailles natives des briques. Bornée des
@@ -375,7 +420,7 @@ class BrickRegistry
      */
     public function normalizeTheme(?array $theme): array
     {
-        $strings = ['background', 'text', 'accent', 'overlay', 'title_font', 'body_font'];
+        $strings = [...array_keys($this->themeColors()), 'title_font', 'body_font'];
         $scales = ['title_scale', 'body_scale'];
 
         $normalized = array_filter(
@@ -529,6 +574,8 @@ class BrickRegistry
                 'default' => $slot['default'] ?? array_key_first($this->positions()),
             ],
             'select' => $normalized + ['options' => $slot['options'] ?? []],
+            // Case à cocher : le défaut est false tant que le manifeste ne dit rien.
+            'toggle' => $normalized + ['default' => (bool) ($slot['default'] ?? false)],
             'range' => $normalized + [
                 'min' => (float) ($slot['min'] ?? 0),
                 'max' => (float) ($slot['max'] ?? 100),
@@ -554,6 +601,7 @@ class BrickRegistry
             // (ex. nombre de colonnes) et arriver en entier dans du JSON.
             'position', 'select' => ['nullable', 'in:'.implode(',', array_keys($slot['options']))],
             'range' => ['nullable', 'numeric', 'between:'.$slot['min'].','.$slot['max']],
+            'toggle' => ['nullable', 'boolean'],
             default => ['nullable'],
         };
     }
@@ -566,6 +614,9 @@ class BrickRegistry
             'position', 'select' => is_scalar($value) && isset($slot['options'][(string) $value])
                 ? $value
                 : $slot['default'],
+
+            // JSON envoie true/false, un formulaire "1"/"on" : les deux comptent.
+            'toggle' => filter_var($value, FILTER_VALIDATE_BOOLEAN),
 
             'range' => $this->clamp(
                 is_numeric($value) ? (float) $value : (float) $slot['default'],

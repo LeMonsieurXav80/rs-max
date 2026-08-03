@@ -113,6 +113,137 @@ class CarouselRenderTest extends TestCase
         }
     }
 
+    /**
+     * L'ajout de couleurs à la palette ne doit RIEN changer aux rendus existants :
+     * une couleur non réglée hérite, et garde l'atténuation historique.
+     */
+    public function test_une_couleur_non_reglee_herite_et_garde_son_attenuation(): void
+    {
+        $slide = ['brick' => 'photo-title-bl', 'data' => ['title' => 'Titre', 'subtitle' => 'Sous-titre']];
+
+        // Thème d'origine (4 couleurs) : le sous-titre reste le texte principal atténué.
+        $avant = $this->service()->buildHtml('4:5', [$slide + ['theme' => [
+            'background' => '#0f0f1a', 'text' => '#ffffff', 'accent' => '#0083ff', 'overlay' => '#000000',
+        ]]]);
+        $this->assertStringContainsString('color:#ffffff; opacity:0.88', $avant);
+
+        // Couleur dédiée fournie : elle porte la nuance, plus d'atténuation.
+        $apres = $this->service()->buildHtml('4:5', [$slide + ['theme' => [
+            'text' => '#ffffff', 'text_secondary' => '#a1a1aa',
+        ]]]);
+        $this->assertStringContainsString('color:#a1a1aa; opacity:1', $apres);
+        $this->assertStringNotContainsString('opacity:0.88', $apres);
+    }
+
+    /**
+     * Les barres sont proportionnelles à la plus grande valeur de la série, lue
+     * dans le texte saisi (espaces = milliers, virgule = décimale).
+     */
+    public function test_lhistogramme_dimensionne_les_barres_sur_la_plus_grande_valeur(): void
+    {
+        $html = $this->service()->buildHtml('4:5', [[
+            'brick' => 'bar-chart',
+            'data' => ['items' => "Instagram | 42 %\nFacebook | 30 %\nThreads | 8 %"],
+        ]]);
+
+        preg_match_all('/width:([\d.]+)%/', $html, $m);
+        $this->assertSame(['100', '71.43', '19.05'], $m[1]);
+
+        // Séparateur de milliers et décimale : « 1 036,5 » vaut bien 1036,5.
+        $html = $this->service()->buildHtml('4:5', [[
+            'brick' => 'bar-chart',
+            'data' => ['items' => "A | 1 036,5 €\nB | 518,25 €"],
+        ]]);
+        preg_match_all('/width:([\d.]+)%/', $html, $m);
+        $this->assertSame(['100', '50'], $m[1]);
+
+        // Aucune valeur exploitable : barres à zéro, pas de division par zéro.
+        $html = $this->service()->buildHtml('4:5', [[
+            'brick' => 'bar-chart',
+            'data' => ['items' => "Sans valeur\nAutre"],
+        ]]);
+        preg_match_all('/width:([\d.]+)%/', $html, $m);
+        $this->assertSame(['0', '0'], $m[1]);
+    }
+
+    /**
+     * Le texte long se resserre quand il s'allonge, et les lignes vides font des
+     * paragraphes plutôt qu'un pavé unique.
+     */
+    public function test_le_texte_long_sadapte_a_sa_longueur(): void
+    {
+        $taille = function (string $body): int {
+            $html = $this->service()->buildHtml('4:5', [['brick' => 'long-text', 'data' => ['body' => $body]]]);
+            preg_match('/font-size:(\d+)px; line-height:1\.\d+;\s+color/', $html, $m);
+
+            return (int) ($m[1] ?? 0);
+        };
+
+        $court = $taille(str_repeat('a ', 50));       // ~100 signes
+        $long = $taille(str_repeat('a ', 700));       // ~1400 signes
+        $this->assertGreaterThan(0, $long);
+        $this->assertGreaterThan($long, $court, 'un texte long doit être composé plus petit');
+
+        // Une ligne vide sépare deux paragraphes => deux <p>.
+        $html = $this->service()->buildHtml('4:5', [[
+            'brick' => 'long-text',
+            'data' => ['body' => "Premier paragraphe.\n\nSecond paragraphe."],
+        ]]);
+        $this->assertSame(2, substr_count($html, '<p style='));
+    }
+
+    /**
+     * Continuité d'image : une photo cochée « prolonger » couvre le groupe entier,
+     * chaque slide n'en montrant que sa part (cadre large, décalé de sa position).
+     */
+    public function test_une_photo_peut_se_prolonger_sur_les_slides_suivantes(): void
+    {
+        $image = '/media/'.($f = 'test_span_'.uniqid().'.png');
+        \Illuminate\Support\Facades\Storage::disk('local')->put(
+            "media/{$f}",
+            base64_decode('iVBORw0KGgoAAAANSUhEUgAAAAIAAAACCAYAAACgL26xAAAAF0lEQVR4nGP8//8/AzJgYkAD5AswMDAAAA0OAgOfEE2OAAAAAElFTkSuQmCC'),
+        );
+
+        // Cadres de l'image : [left, width] par slide qui en porte une.
+        $frames = function (array $slides) {
+            $html = $this->service()->buildHtml('4:5', $slides);
+            preg_match_all('/top:0; left:(-?\d+)px; width:(\d+)px/', $html, $m, PREG_SET_ORDER);
+
+            return array_map(fn ($x) => [(int) $x[1], (int) $x[2]], $m);
+        };
+
+        try {
+            // Deux slides : un cadre de 2×1080, décalé d'un slide sur la seconde.
+            $this->assertSame([[0, 2160], [-1080, 2160]], $frames([
+                ['brick' => 'photo-title-bl', 'data' => ['image' => $image, 'extend_image' => true, 'title' => 'A']],
+                ['brick' => 'photo-title-bl', 'data' => ['title' => 'B']],
+            ]));
+
+            // Chaînage : la 2e prolonge à son tour => panorama sur 3 slides.
+            $this->assertSame([[0, 3240], [-1080, 3240], [-2160, 3240]], $frames([
+                ['brick' => 'photo-title-bl', 'data' => ['image' => $image, 'extend_image' => true]],
+                ['brick' => 'image-full', 'data' => ['image' => $image, 'extend_image' => true]],
+                ['brick' => 'photo-title-bl', 'data' => ['title' => 'C']],
+            ]));
+
+            // Cas où il n'y a rien à prolonger : aucun cadre étendu, pas d'erreur.
+            $this->assertSame([], $frames([                       // dernière slide
+                ['brick' => 'photo-title-bl', 'data' => ['title' => 'A']],
+                ['brick' => 'photo-title-bl', 'data' => ['image' => $image, 'extend_image' => true]],
+            ]));
+            $this->assertSame([], $frames([                       // brique suivante sans image
+                ['brick' => 'photo-title-bl', 'data' => ['image' => $image, 'extend_image' => true]],
+                ['brick' => 'stat-grid', 'data' => ['items' => '42 % | des lecteurs']],
+            ]));
+            $this->assertSame([], $frames([                       // coché mais sans photo
+                ['brick' => 'photo-title-bl', 'data' => ['extend_image' => true, 'title' => 'A']],
+                ['brick' => 'photo-title-bl', 'data' => ['title' => 'B']],
+            ]));
+        } finally {
+            \Illuminate\Support\Facades\Storage::disk('local')->delete("media/{$f}");
+        }
+    }
+
     public function test_une_brique_inconnue_leve_une_exception(): void
     {
         $this->expectException(\InvalidArgumentException::class);

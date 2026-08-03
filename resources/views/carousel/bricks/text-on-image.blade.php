@@ -8,8 +8,11 @@
     $body = trim((string) ($data['body'] ?? ''));
     $image = $data['image'] ?? null;
 
-    $text = $theme['text'] ?? '#ffffff';
-    $overlay = $theme['overlay'] ?? '#000000';
+    $text = \App\Services\Carousel\Palette::text($theme);
+    // Couleur dédiée si réglée, sinon le texte principal atténué (rendu d'origine).
+    $textSecondary = \App\Services\Carousel\Palette::textSecondary($theme);
+    $fadeSecondary = \App\Services\Carousel\Palette::fade($theme, 'text_secondary', 0.9);
+    $overlay = \App\Services\Carousel\Palette::overlay($theme);
     $titleFont = $theme['title_font'] ?? 'Montserrat';
     $bodyFont = $theme['body_font'] ?? 'Poppins';
 
@@ -28,8 +31,12 @@
 
 <div style="position:absolute; inset:0; background:{{ $overlay }};">
     @if ($image)
-        <img src="{{ $image }}" alt=""
-             style="position:absolute; inset:0; width:100%; height:100%; object-fit:cover;">
+        {{-- Cadre de l'image : la slide entière, ou tout le groupe quand la photo
+             se prolonge sur la ou les slides suivantes (Backdrop). --}}
+        <div style="{{ \App\Services\Carousel\Backdrop::frame($data, $w, $h) }}">
+            <img src="{{ $image }}" alt=""
+                 style="display:block; width:100%; height:100%; object-fit:cover;">
+        </div>
     @endif
 
     {{-- Voile de lisibilité, orienté selon l'ancre verticale --}}
@@ -49,7 +56,7 @@
                 <p style="margin:{{ (int) round($h * 0.03) }}px 0 0; max-width:{{ (int) round($w * 0.78) }}px;
                           font-family:'{{ $bodyFont }}',sans-serif; font-weight:400;
                           font-size:{{ $bodySize }}px; line-height:1.4;
-                          color:{{ $text }}; opacity:0.9;
+                          color:{{ $textSecondary }}; opacity:{{ $fadeSecondary }};
                           {{ $anchor['horizontal'] === 'center' ? 'margin-left:auto; margin-right:auto;' : '' }}">{{ $body }}</p>
             @endif
         </div>

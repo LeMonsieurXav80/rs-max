@@ -30,7 +30,7 @@ base URL, l'authentification et les conventions.
 
 **Brique** (ou *template*) — un gabarit de slide : une mise en page nommée, qui
 déclare les champs qu'elle attend. `photo-title-bl` = une photo plein cadre avec un
-titre positionnable ; `stat-grid` = une grille de chiffres. Neuf briques sont
+titre positionnable ; `stat-grid` = une grille de chiffres. Onze briques sont
 fournies ; on peut en créer d'autres (§ 8).
 
 **Slot** — un champ d'une brique, **typé**. C'est le type qui dicte la validation :
@@ -43,22 +43,47 @@ fournies ; on peut en créer d'autres (§ 8).
 | `position` | une des 9 ancres (`bottom-left`, `middle-center`…) | grille 3×3 |
 | `range` | nombre borné | ex. `offset` = décalage vertical en % de la hauteur |
 | `select` | une des options annoncées | ex. `columns` |
+| `toggle` | booléen | ex. `extend_image` (continuité d'image) |
 
-**Thème** — l'apparence, commune à toute la production : 4 couleurs, 2 polices et
+**Thème** — l'apparence, commune à toute la production : 8 couleurs, 2 polices et
 2 échelles typographiques. Identique pour l'image seule et pour le carrousel.
 
 ```json
 {
-  "background":  "#0f0f1a",
-  "text":        "#ffffff",
-  "accent":      "#0083ff",
-  "overlay":     "#000000",
-  "title_font":  "Montserrat",
-  "body_font":   "Poppins",
-  "title_scale": 1,
-  "body_scale":  1
+  "accent":           "#0083ff",
+  "accent_secondary": "#7c3aed",
+  "text":             "#ffffff",
+  "text_secondary":   "#d4d4d8",
+  "text_muted":       "#a1a1aa",
+  "background":       "#0f0f1a",
+  "background_alt":   "#1c1c2b",
+  "overlay":          "#000000",
+  "title_font":       "Montserrat",
+  "body_font":        "Poppins",
+  "title_scale":      1,
+  "body_scale":       1
 }
 ```
+
+| Couleur | Rôle | Défaut |
+|---|---|---|
+| `accent` | couleur de marque : chiffres, filets, pastilles, barres | `#0083ff` |
+| `accent_secondary` | seconde couleur : fin des dégradés, dégradé des barres | hérite de `accent` |
+| `text` | titres et texte courant | `#ffffff` |
+| `text_secondary` | sous-titres, paragraphes, libellés | hérite de `text` |
+| `text_muted` | notes, sources, signatures | hérite de `text_secondary` |
+| `background` | fond des slides sans image | `#0f0f1a` |
+| `background_alt` | cartes, filets, piste des barres | hérite de `background` |
+| `overlay` | voile posé sur les photos | `#000000` |
+
+**Héritage** : une couleur non transmise prend celle dont elle dérive, et la
+nuance historique est conservée — un sous-titre non réglé reste le texte principal
+atténué, comme avant. Un thème qui ne connaît que les quatre couleurs d'origine
+(`background`, `text`, `accent`, `overlay`) rend donc **exactement** comme avant.
+Dès qu'une couleur dédiée est fournie, elle porte la nuance elle-même et
+l'atténuation cesse — sinon la couleur choisie ressortirait délavée.
+
+Pas de `*_hover` : une image est statique.
 
 > ⚠️ **Les couleurs doivent être en hexadécimal à 6 chiffres.** `#000` ou
 > `rgb(0,0,0)` sont refusés (422) : le dégradé de lisibilité concatène un canal
@@ -488,19 +513,57 @@ Pour un carrousel, reprendre les `items[]` **dans l'ordre** — c'est celui des 
 
 | Slug | Nom | Slots |
 |---|---|---|
-| `photo-title-bl` | Photo + titre positionnable | `image`, `title`, `subtitle`, `position`, `offset` |
-| `image-full` | Image seule (plein cadre) | `image` |
-| `text-on-image` | Texte sur image de fond | `image`, `title`, `body`, `position`, `offset` |
+| `photo-title-bl` | Photo + titre positionnable | `image`, `extend_image`, `title`, `subtitle`, `position`, `offset` |
+| `image-full` | Image seule (plein cadre) | `image`, `extend_image` |
+| `text-on-image` | Texte sur image de fond | `image`, `extend_image`, `title`, `body`, `position`, `offset` |
 | `bold-text` | Texte plein (sans image) | `title`, `subtitle`, `position`, `offset` |
+| `long-text` | Texte long | `title`, `body` (1800), `align`, `image`, `extend_image`, `position`, `offset` |
+| `bar-chart` | Histogramme | `title`, `items`, `direction`, `note` |
 | `stat-grid` | Grille de chiffres | `title`, `items`, `columns` |
-| `quote` | Citation | `quote`, `author`, `image`, `position`, `offset` |
+| `quote` | Citation | `quote`, `author`, `image`, `extend_image`, `position`, `offset` |
 | `table-rows` | Tableau | `title`, `rows`, `note` |
-| `numbered` | Slide numérotée | `number`, `number_style`, `title`, `body`, `image`, `position`, `offset` |
-| `cta-end` | Slide de fin (appel à l'action) | `title`, `subtitle`, `handle`, `image`, `position`, `offset` |
+| `numbered` | Slide numérotée | `number`, `number_style`, `title`, `body`, `image`, `extend_image`, `position`, `offset` |
+| `cta-end` | Slide de fin (appel à l'action) | `title`, `subtitle`, `handle`, `image`, `extend_image`, `position`, `offset` |
 
 Défauts notables : `photo-title-bl` ancre en `bottom-left`, `text-on-image` et
 `cta-end` en `middle-center`, `bold-text`/`quote`/`numbered` en `middle-left`,
 `stat-grid` sur 2 colonnes. Le manifeste fait foi.
+
+### Continuité d'image entre slides (`extend_image`)
+
+Toutes les briques à image de fond portent une case `extend_image` (booléen).
+Cochée, la photo de la slide **se prolonge sur la suivante** : au swipe, on
+parcourt une seule image au lieu d'en changer. Si la suivante coche à son tour,
+le panorama continue (3 slides et plus).
+
+```json
+{"brick": "photo-title-bl", "data": {"image": 4213, "extend_image": true, "title": "Jour 1"}},
+{"brick": "photo-title-bl", "data": {"title": "Jour 2"}}
+```
+
+Toutes les slides du groupe reçoivent l'image du **premier** ; celle qu'elles
+portaient éventuellement est remplacée — c'est le sens de « prolonger ». Chaque
+slide affiche l'image entière dans un cadre large de `span × largeur`, décalé de
+son rang, et n'en montre que sa part : aperçu et export produisent donc
+exactement la même découpe.
+
+Le groupe s'arrête sans erreur si la slide suivante ne sait pas peindre d'image
+(brique sans slot image), si la case est cochée sur la **dernière** slide, ou si
+la slide n'a pas de photo. Le rendu vaut surtout pour des photos **paysage** :
+l'image est recadrée en `cover` sur un cadre 2 à 3 fois plus large que haut, donc
+un portrait s'y ferait sévèrement rogner.
+
+`long-text` prend le relais de `text-on-image` quand c'est le TEXTE qui commande :
+jusqu'à 1800 signes, la taille et l'interligne descendent par paliers selon la
+longueur, et une **ligne vide** dans le champ sépare deux paragraphes. Le titre
+est optionnel.
+
+`bar-chart` déduit la longueur des barres du **nombre contenu dans la valeur
+écrite** (`« 1 036,5 € »` → 1036,5 ; espaces = milliers, virgule = décimale), et
+affiche la valeur telle quelle. Tout est proportionnel à la plus grande de la
+série — donc une série qui mélange des unités (`42 %` et `1 036 €`) produit un
+graphique exact mais absurde. `direction: "columns"` bascule en colonnes (6 items
+max, libellés courts) ; `bars` laisse toute la largeur aux libellés (8 max).
 
 `numbered.number_style` décide de l'habillage du numéro sans changer de brique :
 `both` (défaut, pastille + filigrane géant), `badge` (pastille seule),

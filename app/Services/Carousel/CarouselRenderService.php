@@ -112,6 +112,10 @@ class CarouselRenderService
     {
         [$w, $h] = $this->dimensions($ratio);
 
+        // Continuité d'image : chaque slide d'un groupe reçoit l'image du groupe
+        // et sa position dedans, AVANT d'être rasterisée isolément.
+        $slides = $this->linkSpans($slides);
+
         $filenames = [];
         foreach ($slides as $slide) {
             // Une rasterisation par slide : toujours net (supersampling), aucune
@@ -270,6 +274,10 @@ class CarouselRenderService
      */
     private function buildHtmlWithDims(int $w, int $h, array $slides, bool $embedFonts = true): string
     {
+        // Même préparation qu'à l'export : l'aperçu montre la continuité telle
+        // qu'elle sortira, découpe comprise.
+        $slides = $this->linkSpans($slides);
+
         $resolved = array_map(function (array $slide) {
             $brick = $this->brick($slide['brick']);
 
@@ -289,6 +297,66 @@ class CarouselRenderService
             'fontFaces' => $this->fontFaceBlock($embedFonts),
             'slides' => $resolved,
         ])->render();
+    }
+
+    /**
+     * Continuité d'image : regroupe les slides voisines qui prolongent leur photo.
+     *
+     * Une slide dont `extend_image` est coché forme un groupe avec la suivante ;
+     * si celle-ci l'a coché aussi, le groupe continue (panorama sur 3 slides et
+     * plus). Chaque membre reçoit l'image du PREMIER de son groupe, la taille du
+     * groupe (`_span`) et son rang dedans (`_span_index`) — Backdrop::frame() en
+     * déduit le cadrage.
+     *
+     * Le groupe s'arrête net si la slide suivante ne peut pas peindre d'image
+     * (brique sans slot image) : mieux vaut une continuité qui s'interrompt qu'une
+     * photo qui disparaît sans explication. Sa propre image, si elle en avait une,
+     * est remplacée par celle du groupe — c'est le sens même de « prolonger ».
+     *
+     * @param  array<int, array{brick: string, data?: array, theme?: array}>  $slides
+     * @return array<int, array{brick: string, data?: array, theme?: array}>
+     */
+    private function linkSpans(array $slides): array
+    {
+        $slides = array_values($slides);
+        $count = count($slides);
+        $registry = app(BrickRegistry::class);
+
+        $extends = function (int $i) use ($slides, $count, $registry): bool {
+            if ($i >= $count - 1) {
+                return false; // rien après la dernière slide
+            }
+            if (empty($slides[$i]['data']['extend_image'])) {
+                return false;
+            }
+
+            // Sans image à prolonger, ni brique capable de l'afficher, on ne fait rien.
+            return ! empty($slides[$i]['data']['image'])
+                && $registry->hasImageSlot((string) ($slides[$i + 1]['brick'] ?? ''));
+        };
+
+        for ($start = 0; $start < $count; $start++) {
+            $end = $start;
+            while ($extends($end)) {
+                $end++;
+            }
+
+            $span = $end - $start + 1;
+            if ($span < 2) {
+                continue;
+            }
+
+            $image = $slides[$start]['data']['image'];
+            for ($i = $start; $i <= $end; $i++) {
+                $slides[$i]['data']['image'] = $image;
+                $slides[$i]['data']['_span'] = $span;
+                $slides[$i]['data']['_span_index'] = $i - $start;
+            }
+
+            $start = $end; // le groupe consommé, on reprend après lui
+        }
+
+        return $slides;
     }
 
     /**

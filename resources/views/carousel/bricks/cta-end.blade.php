@@ -9,10 +9,15 @@
     $handle = trim((string) ($data['handle'] ?? ''));
     $image = $data['image'] ?? null;
 
-    $bg = $theme['background'] ?? '#0f0f1a';
-    $text = $theme['text'] ?? '#ffffff';
-    $accent = $theme['accent'] ?? '#0083ff';
-    $overlay = $theme['overlay'] ?? '#000000';
+    $bg = \App\Services\Carousel\Palette::background($theme);
+    $text = \App\Services\Carousel\Palette::text($theme);
+    // Couleur dédiée si réglée, sinon le texte principal atténué (rendu d'origine).
+    $textSecondary = \App\Services\Carousel\Palette::textSecondary($theme);
+    $fadeSecondary = \App\Services\Carousel\Palette::fade($theme, 'text_secondary', 0.85);
+    $accent = \App\Services\Carousel\Palette::accent($theme);
+    // Le dégradé de fond part vers la seconde couleur de marque quand elle existe.
+    $accentAlt = \App\Services\Carousel\Palette::accentSecondary($theme);
+    $overlay = \App\Services\Carousel\Palette::overlay($theme);
     $titleFont = $theme['title_font'] ?? 'Montserrat';
     $bodyFont = $theme['body_font'] ?? 'Poppins';
 
@@ -31,10 +36,14 @@
 @endphp
 
 <div style="position:absolute; inset:0;
-            background:{{ $image ? $overlay : 'linear-gradient(160deg, '.$bg.' 0%, '.$bg.' 55%, '.$accent.'2b 100%)' }};">
+            background:{{ $image ? $overlay : 'linear-gradient(160deg, '.$bg.' 0%, '.$bg.' 55%, '.$accentAlt.'2b 100%)' }};">
     @if ($image)
-        <img src="{{ $image }}" alt=""
-             style="position:absolute; inset:0; width:100%; height:100%; object-fit:cover;">
+        {{-- Cadre de l'image : la slide entière, ou tout le groupe quand la photo
+             se prolonge sur la ou les slides suivantes (Backdrop). --}}
+        <div style="{{ \App\Services\Carousel\Backdrop::frame($data, $w, $h) }}">
+            <img src="{{ $image }}" alt=""
+                 style="display:block; width:100%; height:100%; object-fit:cover;">
+        </div>
         <div style="{{ $anchor['scrim'] }}"></div>
     @endif
 
@@ -52,7 +61,7 @@
                 <p style="margin:{{ (int) round($h * 0.028) }}px 0 0; max-width:{{ (int) round($w * 0.80) }}px;
                           font-family:'{{ $bodyFont }}',sans-serif; font-weight:400;
                           font-size:{{ $subSize }}px; line-height:1.4;
-                          color:{{ $text }}; opacity:0.85;
+                          color:{{ $textSecondary }}; opacity:{{ $fadeSecondary }};
                           {{ $anchor['horizontal'] === 'center' ? 'margin-left:auto; margin-right:auto;' : '' }}">{{ $subtitle }}</p>
             @endif
 

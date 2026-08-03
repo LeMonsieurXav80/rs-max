@@ -8,9 +8,14 @@
     $title = trim((string) ($data['title'] ?? ''));
     $subtitle = trim((string) ($data['subtitle'] ?? ''));
 
-    $bg = $theme['background'] ?? '#0f0f1a';
-    $text = $theme['text'] ?? '#ffffff';
-    $accent = $theme['accent'] ?? '#0083ff';
+    $bg = \App\Services\Carousel\Palette::background($theme);
+    $text = \App\Services\Carousel\Palette::text($theme);
+    // Couleur dédiée si réglée, sinon le texte principal atténué (rendu d'origine).
+    $textSecondary = \App\Services\Carousel\Palette::textSecondary($theme);
+    $fadeSecondary = \App\Services\Carousel\Palette::fade($theme, 'text_secondary', 0.82);
+    $accent = \App\Services\Carousel\Palette::accent($theme);
+    // Le dégradé de fond part vers la seconde couleur de marque quand elle existe.
+    $accentAlt = \App\Services\Carousel\Palette::accentSecondary($theme);
     $titleFont = $theme['title_font'] ?? 'Montserrat';
     $bodyFont = $theme['body_font'] ?? 'Poppins';
 
@@ -29,7 +34,7 @@
 
 {{-- Fond : dégradé très léger plutôt qu'aplat, pour éviter l'effet « bloc mort ». --}}
 <div style="position:absolute; inset:0;
-            background:linear-gradient(160deg, {{ $bg }} 0%, {{ $bg }} 55%, {{ $accent }}22 100%);
+            background:linear-gradient(160deg, {{ $bg }} 0%, {{ $bg }} 55%, {{ $accentAlt }}22 100%);
             display:flex; flex-direction:column;
             justify-content:{{ $anchor['justify'] }}; align-items:{{ $anchor['align'] }};
             padding:{{ $pad }}px; {{ $shift }}">
@@ -49,7 +54,7 @@
             <p style="margin:{{ (int) round($h * 0.035) }}px 0 0; max-width:{{ (int) round($w * 0.88) }}px;
                       font-family:'{{ $bodyFont }}',sans-serif; font-weight:400;
                       font-size:{{ $subSize }}px; line-height:1.4;
-                      color:{{ $text }}; opacity:0.82;
+                      color:{{ $textSecondary }}; opacity:{{ $fadeSecondary }};
                       {{ $anchor['horizontal'] === 'center' ? 'margin-left:auto; margin-right:auto;' : '' }}">{{ $subtitle }}</p>
         @endif
     </div>

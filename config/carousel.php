@@ -1,5 +1,57 @@
 <?php
 
+/*
+| Palette du thème (registre ouvert) — détail et rôle de chaque entrée plus bas,
+| sous la clé `theme_colors`. Déclarée ici en variable pour que le thème par
+| défaut en dérive : une couleur, une seule définition.
+*/
+$themeColors = [
+    'accent' => [
+        'label' => 'Primaire',
+        'hint' => 'Couleur de marque : chiffres, filets, pastilles, barres',
+        'default' => '#0083ff',
+    ],
+    'accent_secondary' => [
+        'label' => 'Secondaire',
+        'hint' => 'Seconde couleur de marque : dégradés, séries d’un graphique',
+        'default' => null,
+        'fallback' => 'accent',
+    ],
+    'text' => [
+        'label' => 'Texte principal',
+        'hint' => 'Titres et texte courant',
+        'default' => '#ffffff',
+    ],
+    'text_secondary' => [
+        'label' => 'Texte secondaire',
+        'hint' => 'Sous-titres, paragraphes, libellés',
+        'default' => null,
+        'fallback' => 'text',
+    ],
+    'text_muted' => [
+        'label' => 'Texte discret',
+        'hint' => 'Notes, sources, légendes',
+        'default' => null,
+        'fallback' => 'text_secondary',
+    ],
+    'background' => [
+        'label' => 'Arrière-plan',
+        'hint' => 'Slides sans image',
+        'default' => '#0f0f1a',
+    ],
+    'background_alt' => [
+        'label' => 'Arrière-plan secondaire',
+        'hint' => 'Cartes, filets, pistes des barres',
+        'default' => null,
+        'fallback' => 'background',
+    ],
+    'overlay' => [
+        'label' => 'Voile',
+        'hint' => 'Dégradé posé sur les photos',
+        'default' => '#000000',
+    ],
+];
+
 return [
 
     /*
@@ -122,6 +174,11 @@ return [
             'ratios' => ['*'],
             'slots' => [
                 'image' => ['label' => 'Photo de fond', 'type' => 'image'],
+                'extend_image' => [
+                    'label' => 'Prolonger la photo sur la slide suivante',
+                    'type' => 'toggle',
+                    'default' => false,
+                ],
                 'title' => ['label' => 'Titre', 'type' => 'text', 'max_length' => 200],
                 'subtitle' => ['label' => 'Sous-titre (optionnel)', 'type' => 'text', 'max_length' => 300],
                 'position' => ['label' => 'Emplacement du titre', 'type' => 'position', 'default' => 'bottom-left'],
@@ -140,6 +197,11 @@ return [
             'ratios' => ['*'],
             'slots' => [
                 'image' => 'Image',
+                'extend_image' => [
+                    'label' => 'Prolonger la photo sur la slide suivante',
+                    'type' => 'toggle',
+                    'default' => false,
+                ],
             ],
         ],
 
@@ -150,6 +212,11 @@ return [
             'ratios' => ['*'],
             'slots' => [
                 'image' => ['label' => 'Image de fond', 'type' => 'image'],
+                'extend_image' => [
+                    'label' => 'Prolonger la photo sur la slide suivante',
+                    'type' => 'toggle',
+                    'default' => false,
+                ],
                 'title' => ['label' => 'Titre', 'type' => 'text', 'max_length' => 200],
                 'body' => ['label' => 'Paragraphe (optionnel)', 'type' => 'textarea', 'max_length' => 600],
                 'position' => ['label' => 'Emplacement du texte', 'type' => 'position', 'default' => 'middle-center'],
@@ -175,6 +242,61 @@ return [
                     'type' => 'range',
                     'min' => -25, 'max' => 25, 'step' => 1, 'default' => 0, 'unit' => '%',
                 ],
+            ],
+        ],
+
+        'long-text' => [
+            'name' => 'Texte long',
+            'description' => 'Un vrai bloc de texte (jusqu’à ~1800 signes), avec ou sans titre. La taille et l’interligne s’adaptent à la longueur ; une ligne vide sépare deux paragraphes. Image de fond optionnelle.',
+            'view' => 'carousel.bricks.long-text',
+            'ratios' => ['*'],
+            'slots' => [
+                'title' => ['label' => 'Titre (optionnel)', 'type' => 'text', 'max_length' => 160],
+                'body' => [
+                    'label' => 'Texte — laisser une ligne vide entre deux paragraphes',
+                    'type' => 'textarea',
+                    'max_length' => 1800,
+                ],
+                'align' => [
+                    'label' => 'Alignement',
+                    'type' => 'select',
+                    'options' => ['left' => 'À gauche', 'center' => 'Centré', 'justify' => 'Justifié'],
+                    'default' => 'left',
+                ],
+                'image' => ['label' => 'Image de fond (optionnelle)', 'type' => 'image'],
+                'extend_image' => [
+                    'label' => 'Prolonger la photo sur la slide suivante',
+                    'type' => 'toggle',
+                    'default' => false,
+                ],
+                'position' => ['label' => 'Emplacement du bloc', 'type' => 'position', 'default' => 'middle-left'],
+                'offset' => [
+                    'label' => 'Décalage vertical',
+                    'type' => 'range',
+                    'min' => -25, 'max' => 25, 'step' => 1, 'default' => 0, 'unit' => '%',
+                ],
+            ],
+        ],
+
+        'bar-chart' => [
+            'name' => 'Histogramme',
+            'description' => 'Barres proportionnelles à la plus grande valeur de la série. Une ligne = « libellé | valeur » ; la valeur s’affiche telle qu’écrite (42 %, 1 036 €). En barres horizontales (libellés longs) ou en colonnes.',
+            'view' => 'carousel.bricks.bar-chart',
+            'ratios' => ['*'],
+            'slots' => [
+                'title' => ['label' => 'Titre (optionnel)', 'type' => 'text', 'max_length' => 120],
+                'items' => [
+                    'label' => 'Barres — une ligne par item : « Instagram | 42 % »',
+                    'type' => 'textarea',
+                    'max_length' => 600,
+                ],
+                'direction' => [
+                    'label' => 'Sens',
+                    'type' => 'select',
+                    'options' => ['bars' => 'Barres horizontales', 'columns' => 'Colonnes'],
+                    'default' => 'bars',
+                ],
+                'note' => ['label' => 'Note de bas de slide (optionnelle)', 'type' => 'text', 'max_length' => 200],
             ],
         ],
 
@@ -208,6 +330,11 @@ return [
                 'quote' => ['label' => 'Citation', 'type' => 'textarea', 'max_length' => 400],
                 'author' => ['label' => 'Auteur / source (optionnel)', 'type' => 'text', 'max_length' => 120],
                 'image' => ['label' => 'Image de fond (optionnelle)', 'type' => 'image'],
+                'extend_image' => [
+                    'label' => 'Prolonger la photo sur la slide suivante',
+                    'type' => 'toggle',
+                    'default' => false,
+                ],
                 'position' => ['label' => 'Emplacement du texte', 'type' => 'position', 'default' => 'middle-left'],
                 'offset' => [
                     'label' => 'Décalage vertical',
@@ -254,6 +381,11 @@ return [
                 'title' => ['label' => 'Titre', 'type' => 'text', 'max_length' => 160],
                 'body' => ['label' => 'Texte (optionnel)', 'type' => 'textarea', 'max_length' => 400],
                 'image' => ['label' => 'Image de fond (optionnelle)', 'type' => 'image'],
+                'extend_image' => [
+                    'label' => 'Prolonger la photo sur la slide suivante',
+                    'type' => 'toggle',
+                    'default' => false,
+                ],
                 'position' => ['label' => 'Emplacement du texte', 'type' => 'position', 'default' => 'middle-left'],
                 'offset' => [
                     'label' => 'Décalage vertical',
@@ -273,6 +405,11 @@ return [
                 'subtitle' => ['label' => 'Précision (optionnelle)', 'type' => 'text', 'max_length' => 300],
                 'handle' => ['label' => 'Compte (ex. @monsuper.compte)', 'type' => 'text', 'max_length' => 60],
                 'image' => ['label' => 'Image de fond (optionnelle)', 'type' => 'image'],
+                'extend_image' => [
+                    'label' => 'Prolonger la photo sur la slide suivante',
+                    'type' => 'toggle',
+                    'default' => false,
+                ],
                 'position' => ['label' => 'Emplacement du texte', 'type' => 'position', 'default' => 'middle-center'],
                 'offset' => [
                     'label' => 'Décalage vertical',
@@ -297,14 +434,35 @@ return [
     'draft_ttl_hours' => (int) env('CAROUSEL_DRAFT_TTL_HOURS', 24),
 
     /*
-    | Thème par défaut appliqué aux briques (surchargeable slide par slide via
-    | les données `theme`). Couleurs en hex.
+    |--------------------------------------------------------------------------
+    | Palette du thème (registre ouvert)
+    |--------------------------------------------------------------------------
+    |
+    | Une entrée = une couleur réglable dans Apparence. Ajouter une ligne suffit :
+    | validation (hex 6 chiffres), nettoyage et champ du Studio en sont dérivés
+    | (BrickRegistry::themeRules/normalizeTheme, CarouselStudioController).
+    |
+    | `fallback` = la couleur dont celle-ci hérite tant qu'elle n'est pas réglée.
+    | C'est ce qui permet d'enrichir la palette SANS changer les rendus existants :
+    | une brique demande `text_secondary`, et reçoit `text` si personne ne l'a
+    | définie (voir App\Services\Carousel\Palette).
+    |
+    | Pas d'équivalent « hover » ici : une image est statique, un état de survol
+    | n'a rien à y faire.
+    |
     */
-    'theme' => [
-        'background' => '#0f0f1a',
-        'text' => '#ffffff',
-        'accent' => '#0083ff',
-        'overlay' => '#000000',
+    'theme_colors' => $themeColors,
+
+    /*
+    | Thème par défaut appliqué aux briques (surchargeable slide par slide via
+    | les données `theme`). Les couleurs sont les `default` de `theme_colors`
+    | ci-dessus (celles qui n'en ont pas héritent à l'usage, via Palette) ; ne
+    | sont écrites ici que les polices et les échelles.
+    */
+    'theme' => array_filter(array_map(
+        fn (array $color) => $color['default'] ?? null,
+        $themeColors,
+    )) + [
         'title_font' => 'Montserrat',
         'body_font' => 'Poppins',
         // Échelle typographique : 1 = tailles natives des briques (fractions de

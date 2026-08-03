@@ -8,10 +8,14 @@
     $author = trim((string) ($data['author'] ?? ''));
     $image = $data['image'] ?? null;
 
-    $bg = $theme['background'] ?? '#0f0f1a';
-    $text = $theme['text'] ?? '#ffffff';
-    $accent = $theme['accent'] ?? '#0083ff';
-    $overlay = $theme['overlay'] ?? '#000000';
+    $bg = \App\Services\Carousel\Palette::background($theme);
+    $text = \App\Services\Carousel\Palette::text($theme);
+    // Signature : couleur discrète si elle est réglée, sinon le texte principal
+    // atténué — le rendu d'origine tant que la palette n'en dit pas plus.
+    $textMuted = \App\Services\Carousel\Palette::textMuted($theme);
+    $fadeMuted = \App\Services\Carousel\Palette::fade($theme, 'text_muted', 0.7);
+    $accent = \App\Services\Carousel\Palette::accent($theme);
+    $overlay = \App\Services\Carousel\Palette::overlay($theme);
     $titleFont = $theme['title_font'] ?? 'Montserrat';
     $bodyFont = $theme['body_font'] ?? 'Poppins';
 
@@ -32,8 +36,12 @@
 
 <div style="position:absolute; inset:0; background:{{ $image ? $overlay : $bg }};">
     @if ($image)
-        <img src="{{ $image }}" alt=""
-             style="position:absolute; inset:0; width:100%; height:100%; object-fit:cover;">
+        {{-- Cadre de l'image : la slide entière, ou tout le groupe quand la photo
+             se prolonge sur la ou les slides suivantes (Backdrop). --}}
+        <div style="{{ \App\Services\Carousel\Backdrop::frame($data, $w, $h) }}">
+            <img src="{{ $image }}" alt=""
+                 style="display:block; width:100%; height:100%; object-fit:cover;">
+        </div>
         <div style="{{ $anchor['scrim'] }}"></div>
     @endif
 
@@ -55,7 +63,7 @@
             @if ($author !== '')
                 <p style="margin:{{ (int) round($h * 0.035) }}px 0 0; font-family:'{{ $bodyFont }}',sans-serif;
                           font-weight:400; font-size:{{ $authorSize }}px; line-height:1.3;
-                          color:{{ $text }}; opacity:0.7;">— {{ $author }}</p>
+                          color:{{ $textMuted }}; opacity:{{ $fadeMuted }};">— {{ $author }}</p>
             @endif
         </div>
     </div>

@@ -37,6 +37,9 @@ class CarouselStudioController extends Controller
         return view('carousel.studio', [
             'ratios' => config('carousel.ratios', []),
             'theme' => config('carousel.theme', []),
+            // Palette réglable : même source que la validation API. Une couleur
+            // ajoutée au manifeste apparaît dans Apparence sans toucher au Blade.
+            'themeColors' => array_values($registry->themeColors()),
             // Composition déposée par l'API (?draft=…) : le compositeur s'ouvre
             // pré-rempli au lieu de sa slide vierge. Null si absent ou expiré.
             'draft' => $this->draft($request->query('draft'), $registry),

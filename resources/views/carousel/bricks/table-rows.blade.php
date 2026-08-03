@@ -8,9 +8,16 @@
     $note = trim((string) ($data['note'] ?? ''));
     $rows = \App\Services\Carousel\Lines::parse($data['rows'] ?? null, 8);
 
-    $bg = $theme['background'] ?? '#0f0f1a';
-    $text = $theme['text'] ?? '#ffffff';
-    $accent = $theme['accent'] ?? '#0083ff';
+    $bg = \App\Services\Carousel\Palette::background($theme);
+    $text = \App\Services\Carousel\Palette::text($theme);
+    // Couleurs dédiées si réglées, sinon texte principal atténué (rendu d'origine).
+    $textSecondary = \App\Services\Carousel\Palette::textSecondary($theme);
+    $fadeSecondary = \App\Services\Carousel\Palette::fade($theme, 'text_secondary', 0.85);
+    $textMuted = \App\Services\Carousel\Palette::textMuted($theme);
+    $fadeMuted = \App\Services\Carousel\Palette::fade($theme, 'text_muted', 0.55);
+    $accent = \App\Services\Carousel\Palette::accent($theme);
+    // Le voile de fond part vers la seconde couleur de marque quand elle existe.
+    $accentAlt = \App\Services\Carousel\Palette::accentSecondary($theme);
     $titleFont = $theme['title_font'] ?? 'Montserrat';
     $bodyFont = $theme['body_font'] ?? 'Poppins';
 
@@ -29,7 +36,7 @@
 @endphp
 
 <div style="position:absolute; inset:0;
-            background:linear-gradient(160deg, {{ $bg }} 0%, {{ $bg }} 60%, {{ $accent }}1f 100%);
+            background:linear-gradient(160deg, {{ $bg }} 0%, {{ $bg }} 60%, {{ $accentAlt }}1f 100%);
             display:flex; flex-direction:column; justify-content:center;
             padding:{{ $pad }}px;">
 
@@ -46,7 +53,7 @@
                         {{ $i > 0 ? 'border-top:1px solid '.$text.'1f;' : '' }}">
                 <span style="font-family:'{{ $bodyFont }}',sans-serif; font-weight:400;
                              font-size:{{ $rowSize }}px; line-height:1.3;
-                             color:{{ $text }}; opacity:0.85;">{{ $label }}</span>
+                             color:{{ $textSecondary }}; opacity:{{ $fadeSecondary }};">{{ $label }}</span>
                 <span style="flex:0 0 auto; font-family:'{{ $titleFont }}',sans-serif; font-weight:700;
                              font-size:{{ $rowSize }}px; line-height:1.3;
                              color:{{ $accent }}; white-space:nowrap;">{{ $value }}</span>
@@ -57,6 +64,6 @@
     @if ($note !== '')
         <p style="margin:{{ (int) round($h * 0.03) }}px 0 0; font-family:'{{ $bodyFont }}',sans-serif;
                   font-weight:400; font-size:{{ (int) round($h * 0.021 * $bs) }}px; line-height:1.35;
-                  color:{{ $text }}; opacity:0.55;">{{ $note }}</p>
+                  color:{{ $textMuted }}; opacity:{{ $fadeMuted }};">{{ $note }}</p>
     @endif
 </div>

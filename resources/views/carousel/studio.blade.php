@@ -45,17 +45,33 @@
                     </button>
                 </div>
 
-                <div class="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-4">
+                {{--
+                    Une couleur non réglée HÉRITE de celle dont elle dérive (texte
+                    secondaire → texte, etc.) : le sélecteur montre la couleur
+                    effective, le champ texte reste vide et dit d'où elle vient.
+                    Le ✕ rend la couleur à son héritage.
+                --}}
+                {{-- 2 colonnes, quel que soit le nombre de couleurs : au-delà, la
+                     colonne d'édition s'élargit et pousse l'aperçu hors écran. --}}
+                <div class="grid grid-cols-2 gap-3 mb-4">
                     <template x-for="c in colorFields" :key="c.key">
                         <div>
-                            <label class="block text-xs text-gray-500 mb-1" x-text="c.label"></label>
-                            <div class="flex items-center gap-2">
-                                <input type="color" x-model="theme[c.key]" @input="queuePreview()"
-                                       class="w-8 h-8 rounded border border-gray-200 cursor-pointer bg-white p-0.5">
-                                <input type="text" x-model="theme[c.key]" @input="queuePreview()"
+                            <div class="flex items-center justify-between mb-1 gap-1">
+                                <label class="block text-xs text-gray-500 truncate" x-text="c.label"></label>
+                                <button type="button" x-show="c.fallback && theme[c.key]" @click="clearColor(c.key)"
+                                        class="text-[10px] text-gray-300 hover:text-indigo-600 shrink-0"
+                                        title="Revenir à la couleur héritée">✕</button>
+                            </div>
+                            {{-- min-w-0 : sans lui le champ hex refuse de rétrécir et
+                                 élargit toute la colonne d'édition. --}}
+                            <div class="flex items-center gap-2 min-w-0">
+                                <input type="color" :value="resolveColor(c.key)" @input="setColor(c.key, $event.target.value)"
+                                       class="w-8 h-8 shrink-0 rounded border border-gray-200 cursor-pointer bg-white p-0.5">
+                                <input type="text" :value="theme[c.key] || ''" :placeholder="resolveColor(c.key)"
+                                       @input="setColor(c.key, $event.target.value)"
                                        class="w-full rounded-lg border-gray-300 text-xs font-mono focus:border-indigo-500 focus:ring-indigo-500">
                             </div>
-                            <p class="text-[10px] text-gray-400 mt-1" x-text="c.hint"></p>
+                            <p class="text-[10px] text-gray-400 mt-1" x-text="theme[c.key] ? c.hint : (inheritedFrom(c) || c.hint)"></p>
                         </div>
                     </template>
                 </div>
@@ -159,11 +175,21 @@
                             {{-- Champs générés à partir des slots TYPÉS du manifeste. --}}
                             <template x-for="slot in brickDef(slide.brick).slots" :key="slot.key">
                                 <div>
-                                    <label class="block text-xs font-medium text-gray-600 mb-1">
+                                    {{-- Une case à cocher porte son propre libellé, à côté d'elle. --}}
+                                    <label x-show="slot.type !== 'toggle'" class="block text-xs font-medium text-gray-600 mb-1">
                                         <span x-text="slot.label"></span>
                                         <span x-show="slot.type === 'range'" class="text-gray-400"
                                               x-text="'· ' + (slide.data[slot.key] ?? 0) + (slot.unit || '')"></span>
                                     </label>
+
+                                    {{-- Slot case à cocher (continuité d'image…) --}}
+                                    <template x-if="slot.type === 'toggle'">
+                                        <label class="flex items-start gap-2 cursor-pointer">
+                                            <input type="checkbox" x-model="slide.data[slot.key]" @change="queuePreview()"
+                                                   class="mt-0.5 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500">
+                                            <span class="text-xs text-gray-600" x-text="slot.label"></span>
+                                        </label>
+                                    </template>
 
                                     {{-- Slot image --}}
                                     <template x-if="slot.type === 'image'">
@@ -336,12 +362,8 @@
             fontCatalogue: @json($fontCatalogue),
             fontSearch: '',
             openPicker: null,
-            colorFields: [
-                { key: 'background', label: 'Fond', hint: 'Slides sans image' },
-                { key: 'text', label: 'Texte', hint: 'Tous les textes' },
-                { key: 'accent', label: 'Accent', hint: 'Chiffres, filets, pastilles' },
-                { key: 'overlay', label: 'Voile', hint: 'Dégradé sur les photos' },
-            ],
+            // Palette servie par le manifeste (config/carousel.theme_colors).
+            colorFields: @json($themeColors),
             scaleMin: @json($scaleRange['min']),
             scaleMax: @json($scaleRange['max']),
             scaleFields: [
@@ -455,6 +477,34 @@
 
             // ── Aperçu live (pas de Chromium) ──
             // ── Apparence ──
+            // Couleur effective : valeur réglée, sinon on remonte la chaîne
+            // d'héritage du manifeste (même logique que Palette côté serveur).
+            resolveColor(key) {
+                const seen = new Set();
+                while (key && !seen.has(key)) {
+                    seen.add(key);
+                    if (this.theme[key]) return this.theme[key];
+                    const c = this.colorFields.find(f => f.key === key);
+                    if (!c) break;
+                    if (c.default) return c.default;
+                    key = c.fallback;
+                }
+                return '#000000';
+            },
+            inheritedFrom(c) {
+                const src = c.fallback && this.colorFields.find(f => f.key === c.fallback);
+                return src ? `Hérite de « ${src.label} »` : '';
+            },
+            setColor(key, value) {
+                this.theme[key] = value;
+                this.queuePreview();
+            },
+            // Rendre la couleur à son héritage : on retire la clé plutôt que d'y
+            // recopier la couleur héritée, sinon elle cesserait de suivre.
+            clearColor(key) {
+                delete this.theme[key];
+                this.queuePreview();
+            },
             resetTheme() {
                 this.theme = { ...this.defaultTheme };
                 this.queuePreview();
