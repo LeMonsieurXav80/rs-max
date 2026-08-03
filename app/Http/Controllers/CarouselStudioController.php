@@ -9,6 +9,7 @@ use App\Services\Carousel\CarouselRenderService;
 use App\Services\Carousel\FontLibrary;
 use App\Services\Carousel\StudioDefaults;
 use App\Services\Carousel\Typography;
+use App\Services\Media\MediaDerivationService;
 use App\Services\Media\ThumbnailService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -120,8 +121,12 @@ class CarouselStudioController extends Controller
         return response($html, 200, ['Content-Type' => 'text/html; charset=UTF-8']);
     }
 
-    public function render(Request $request, CarouselRenderService $carousel, ThumbnailService $thumbnails): JsonResponse
-    {
+    public function render(
+        Request $request,
+        CarouselRenderService $carousel,
+        ThumbnailService $thumbnails,
+        MediaDerivationService $derivations,
+    ): JsonResponse {
         $data = $this->validated($request);
 
         $filenames = $carousel->render($data['ratio'], $data['slides'], 'jpg');
@@ -139,9 +144,14 @@ class CarouselStudioController extends Controller
                 'width' => $dim[0],
                 'height' => $dim[1],
                 'source' => 'studio',
+                'is_generated' => true,
                 // Dossier de dépôt choisi dans Paramètres → Studio (null = racine).
                 'folder_id' => StudioDefaults::folderId(),
             ]);
+
+            // Filiation : la slide garde le lien vers les photos qui l'ont composée,
+            // pour que leur usage remonte à la publication (voir MediaPublicationTracker).
+            $sources = $derivations->linkSlide($media, $data['slides'][$i] ?? []);
 
             try {
                 if ($tp = $thumbnails->generate($media)) {
@@ -156,6 +166,8 @@ class CarouselStudioController extends Controller
                 'filename' => $media->filename,
                 'url' => $media->url,
                 'thumbnail_url' => $media->thumbnail_url,
+                'is_generated' => true,
+                'sources' => array_map(fn (MediaFile $s) => ['id' => $s->id, 'filename' => $s->filename], $sources),
             ];
         }
 

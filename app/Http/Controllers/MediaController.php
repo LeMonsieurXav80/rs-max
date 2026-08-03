@@ -38,7 +38,13 @@ class MediaController extends Controller
         // indépendant du dossier. Remplace l'ancien pool=never_publish.
         $intimacyFilter = $request->input('intimacy');
 
-        $query = MediaFile::with('folder')->latest();
+        // sources/derivatives : filiation des images générées (slides de carrousel)
+        // — le panneau de détail affiche la photo d'origine et l'inverse.
+        // Colonnes qualifiées : le pivot media_derivations porte aussi un `id`,
+        // un simple `id` rendrait la requête ambiguë.
+        $query = MediaFile::with(['folder', 'sources:media_files.id,media_files.filename,media_files.thumbnail_path'])
+            ->withCount('derivatives')
+            ->latest();
 
         if ($folderId === 'uncategorized') {
             $this->scopeUncategorized($query);
@@ -103,6 +109,15 @@ class MediaController extends Controller
                 'taken_at' => $mf->taken_at?->format('Y-m-d'),
                 'taken_at_label' => $mf->taken_at?->locale('fr')->isoFormat('MMMM YYYY'),
                 'publication_count' => (int) $mf->publication_count,
+                // Image fabriquée par le Studio / l'API carrousel : elle a des photos
+                // « parentes » dans la médiathèque, dont l'usage suit sa publication.
+                'is_generated' => (bool) $mf->is_generated,
+                'sources' => $mf->sources->map(fn (MediaFile $src) => [
+                    'id' => $src->id,
+                    'filename' => $src->filename,
+                    'thumbnail_url' => $src->thumbnail_url,
+                ])->values()->all(),
+                'derivative_count' => (int) ($mf->derivatives_count ?? 0),
                 // Vignette légère pour images ET vidéos (grille /media).
                 'thumbnail_url' => $mf->thumbnail_url,
             ];
@@ -242,6 +257,7 @@ class MediaController extends Controller
             'folder_is_private' => $mf->folder?->is_private ?? false,
             'intimacy_level' => $mf->intimacy_level,
             'publication_count' => (int) $mf->publication_count,
+            'is_generated' => (bool) $mf->is_generated,
         ])->values();
 
         $folders = MediaFolder::ordered()->withCount('files')->get();
@@ -1019,6 +1035,7 @@ class MediaController extends Controller
                 'folder_id' => $mf->folder_id,
                 'folder_name' => $mf->folder?->name,
                 'publication_count' => (int) $mf->publication_count,
+                'is_generated' => (bool) $mf->is_generated,
                 // Vignette légère pour images ET vidéos (grille du picker).
                 'thumbnail_url' => $mf->thumbnail_url,
                 // Partenaires tagués : le formulaire de post s'en sert pour afficher

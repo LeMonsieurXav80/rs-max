@@ -9,6 +9,7 @@ class MediaPublication extends Model
 {
     protected $fillable = [
         'media_file_id',
+        'via_media_file_id',
         'post_id',
         'thread_segment_id',
         'post_platform_id',
@@ -33,6 +34,15 @@ class MediaPublication extends Model
     public function mediaFile(): BelongsTo
     {
         return $this->belongsTo(MediaFile::class);
+    }
+
+    /**
+     * Image générée par laquelle cette photo a été publiée (slide de carrousel).
+     * Null pour une publication directe du fichier lui-même.
+     */
+    public function via(): BelongsTo
+    {
+        return $this->belongsTo(MediaFile::class, 'via_media_file_id');
     }
 
     public function post(): BelongsTo

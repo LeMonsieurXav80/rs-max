@@ -19,6 +19,7 @@ class MediaFile extends Model
         'height',
         'thumbnail_path',
         'source',
+        'is_generated',
         'source_url',
         'description_fr',
         'thematic_tags',
@@ -51,6 +52,7 @@ class MediaFile extends Model
         'ai_metadata' => 'array',
         'brands' => 'array',
         'pending_analysis' => 'boolean',
+        'is_generated' => 'boolean',
         'ingested_at' => 'datetime',
         'taken_at' => 'datetime',
         'publication_count' => 'integer',
@@ -74,6 +76,27 @@ class MediaFile extends Model
     public function partners(): BelongsToMany
     {
         return $this->belongsToMany(Partner::class, 'media_file_partner')->withTimestamps();
+    }
+
+    /**
+     * Photos du catalogue employées pour fabriquer CETTE image (slots image de la
+     * brique). Vide pour un fichier importé normalement.
+     */
+    public function sources(): BelongsToMany
+    {
+        return $this->belongsToMany(self::class, 'media_derivations', 'derived_media_file_id', 'source_media_file_id')
+            ->withPivot(['slot', 'brick', 'match_method', 'match_confidence'])
+            ->withTimestamps();
+    }
+
+    /**
+     * Images générées fabriquées À PARTIR de cette photo (l'inverse de sources()).
+     */
+    public function derivatives(): BelongsToMany
+    {
+        return $this->belongsToMany(self::class, 'media_derivations', 'source_media_file_id', 'derived_media_file_id')
+            ->withPivot(['slot', 'brick', 'match_method', 'match_confidence'])
+            ->withTimestamps();
     }
 
     public function getUrlAttribute(): string

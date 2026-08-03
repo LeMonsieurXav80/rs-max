@@ -25,6 +25,7 @@ php artisan tinker
 - [Banques d'images externes (Pexels, Pixabay, Unsplash)](#banques-dimages)
 - [Génération de threads avec auto-attach photos](#génération-threads)
 - [Tracking des publications](#tracking-publications)
+- [Filiation des images générées (carrousel)](#filiation-des-images-générées)
 - [Garde-fous serveur](#garde-fous)
 
 ---
@@ -129,6 +130,7 @@ Retourne **tous les champs** d'une photo : techniques (mime, size, dimensions, u
   "folder": { "id": 7, "name": "Espagne_2025", "slug": "espagne-2025", "path": "PdC / Espagne_2025" },
 
   "source": "mac_pipeline",
+  "is_generated": false,          // true = image fabriquee par le Studio / l'API carrousel
   "source_url": null,
   "source_path": "/Volumes/T5/Photos/...",
   "source_context": null,
@@ -152,13 +154,55 @@ Retourne **tous les champs** d'une photo : techniques (mime, size, dimensions, u
       "match_method": "manual",       // "manual" | "phash"
       "match_confidence": 100,
       "context": "article:plages-algarve",
+      "via": null,                  // renseigné si l'usage vient d'une image générée
       "published_at": "2026-07-05T14:30:00+00:00"
+    },
+    {
+      "id": 58,
+      "wp_site": null,
+      "context": "carrousel",
+      // La photo n'a pas été publiée telle quelle : c'est la slide #310, composée
+      // à partir d'elle, qui est partie sur le réseau. L'usage compte quand même.
+      "via": { "id": 310, "filename": "20260803_101500_Kd82mZ.jpg", "url": "/media/..." },
+      "published_at": "2026-08-03T10:20:00+00:00"
+    }
+  ],
+
+  // Photos du catalogue employées pour composer CETTE image.
+  // Non vide uniquement quand "is_generated" vaut true.
+  "derived_from": [
+    {
+      "id": 142,
+      "filename": "20260425_143022_X8aB3kLm.jpg",
+      "url": "/media/20260425_143022_X8aB3kLm.jpg",
+      "thumbnail_url": "/media/thumb/...",
+      "slot": "image",              // slot de la brique qui portait la photo
+      "brick": "photo-title-bl",
+      "match_method": "render",     // "render" (certain) | "phash" (rattrapage rétroactif)
+      "match_confidence": null      // 0-100, null pour "render"
+    }
+  ],
+
+  // Images générées fabriquées À PARTIR de cette photo (l'inverse de derived_from).
+  "derivatives": [
+    {
+      "id": 310,
+      "filename": "20260803_101500_Kd82mZ.jpg",
+      "url": "/media/...",
+      "thumbnail_url": "/media/thumb/...",
+      "slot": "image",
+      "brick": "photo-title-bl",
+      "match_method": "render",
+      "match_confidence": null,
+      "publication_count": 2
     }
   ]
 
   // "embedding": [...] présent uniquement si ?include_embedding=1
 }
 ```
+
+**Filiation (août 2026)** : une slide de carrousel produite par le Studio ou l'API n'est pas un fichier orphelin — elle garde le lien vers les photos qui l'ont composée. Conséquence directe : **publier la slide compte comme un usage de ses photos sources** (une ligne `media_publications` leur est créée, marquée `via`, avec le même post et le même compte social), donc `publication_count`, `used`, `exclude_recently_published_days` et `account_publication_count` les voient publiées. Le lien est écrit au moment du rendu ; pour l'historique antérieur, voir `media:reconcile-derivations`.
 
 **Garde-fou** : pas de restriction de pool sur cet endpoint (même politique que `/validate` et `/enrich`). Si tu as l'id, tu as déjà été autorisé en amont. Les filtres de pool ne s'appliquent qu'à `/search` (qui fait de la découverte).
 
@@ -291,6 +335,7 @@ Recherche dans la médiathèque locale.
 - `used` : `0|1` — **OPTIONNEL**, filtre d'usage **global**. `used=1` → photos ayant au moins une publication (sociale **ou** WP). `used=0` → jamais publiées nulle part. Absent → pas de filtre.
 - `used_on` : `<wp_source_id>` — **OPTIONNEL**, photos déjà publiées **sur ce site WP**. L'usage est par-site : une photo publiée sur PDC mais pas sur Vantour n'apparaît pas avec `used_on=<vantour>`.
 - `unused_on` : `<wp_source_id>` — **OPTIONNEL**, photos **jamais** publiées sur ce site WP (candidates idéales pour ce site).
+- `generated` : `0|1` — **OPTIONNEL**, nature du fichier. `generated=1` → uniquement les images fabriquées par le Studio / l'API carrousel ; `generated=0` → uniquement les photos d'origine. Absent → les deux (une slide reste un média de la bibliothèque). Utile pour un agent qui cherche une **photo** à illustrer et ne veut pas se voir proposer un visuel déjà composé.
 
 **Filtres hardcodés non-contournables** :
 - Dossier **public** uniquement (403 si privé) ; descente limitée aux sous-dossiers publics
@@ -319,6 +364,7 @@ Recherche dans la médiathèque locale.
       "event": "Voyage Portugal 2004",
       "taken_at": "2004-07-15T14:30:00+00:00",
       "folder_id": 7,
+      "is_generated": false,
       "publication_count": 3
     }
   ],
@@ -329,7 +375,8 @@ Recherche dans la médiathèque locale.
     "exclude_recently_published_days": 0,
     "used": null,
     "used_on": null,
-    "unused_on": 2
+    "unused_on": 2,
+    "generated": null
   }
 }
 ```
@@ -563,6 +610,39 @@ php artisan media:reconcile-wp pdc --commit --threshold=8
 **Fonctionnement** : pagine `GET /wp/v2/media?media_type=image` (Basic App Password + User-Agent obligatoire), télécharge la taille **medium** de chaque image, calcule le phash, cherche le `media_file` le plus proche sous le seuil. Résout l'article via `post_parent`, puis `featured_media`, puis référence de l'URL/ID dans le `content`. Écrit via la même sémantique idempotente que `mark-wp-used`, avec `match_method: "phash"` et `match_confidence = 100 - distance*8`.
 
 **Sécurité** : les cas **ambigus** (≥ 2 candidats sous le seuil) et **sans match** ne sont jamais écrits, seulement listés. Résumé final : *X scannés · Y matchés · Z ambigus · W sans match*.
+
+---
+
+## Filiation des images générées
+
+Une image produite par le Studio carrousel ou par `POST /api/carousel/render|image` porte `is_generated: true` et **garde le lien vers les photos de la médiathèque qui l'ont composée** (table `media_derivations`). Ce lien est écrit **au moment du rendu**, là où l'information est certaine.
+
+Conséquence à la publication : quand la slide part sur un réseau, `MediaPublicationTracker` crée aussi une ligne `media_publications` **pour chacune de ses photos sources**, avec le même post, la même plateforme, le même compte social, et `via_media_file_id` = la slide. Une photo employée dans plusieurs slides du même carrousel n'est comptée **qu'une fois** par publication.
+
+Ce que ça débloque, sans rien changer aux requêtes existantes :
+- `publication_count` d'une photo reflète aussi ses usages « à travers » un visuel généré ;
+- `used`, `used_on`, `exclude_recently_published_days`, `account_publication_count` la voient publiée ;
+- `GET /api/media/{id}` expose `derived_from`, `derivatives`, et `via` sur chaque publication.
+
+### `media:reconcile-derivations` (commande artisan, pas HTTP)
+
+Rattrapage **rétroactif** pour les slides produites AVANT la mise en place du lien (elles n'ont gardé aucune trace de leur composition). Retrouve la photo source par phash perceptuel, comme `media:reconcile-wp`.
+
+```bash
+# Dry-run (défaut) : liste les rapprochements trouvés, n'écrit rien
+php artisan media:reconcile-derivations
+
+# Écriture : liens + report des publications passées sur les photos retrouvées
+php artisan media:reconcile-derivations --commit
+```
+
+**Options** : `--threshold=12` (distance de Hamming max — plus permissif que `reconcile-wp`), `--margin=2` (écart minimal avec le 2e candidat, sinon le cas est déclaré ambigu et ignoré), `--force` (réexamine les images déjà rattachées), `--no-publications` (écrit les liens sans reporter l'historique d'usage), `--limit=<n>`, `--python=<bin>`, `--commit`.
+
+**Prérequis** : `media:backfill-phash --commit` (le catalogue doit être hashé).
+
+> ⚠️ **Rappel faible attendu.** Une slide est un **recadrage** de la photo, surchargé de texte et de dégradés : le phash encaisse la compression, pas le recadrage. Beaucoup de « sans match » est normal. Ce qui ressort au-dessus du seuil et sans ambiguïté reste fiable ; le reste est simplement laissé de côté. Les liens rétroactifs portent `match_method: "phash"` et une `match_confidence`, ce qui permet de les distinguer des liens certains (`"render"`).
+
+Le report des publications est **idempotent** : relancer la commande ne recrée pas une ligne déjà présente et ne regonfle donc pas les compteurs.
 
 ---
 

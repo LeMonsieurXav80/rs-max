@@ -101,6 +101,11 @@
                                 <div class="absolute top-1.5 left-1.5 px-1.5 py-0.5 text-[10px] font-semibold rounded-full leading-tight"
                                      :class="item.status_class" x-text="item.status_label"></div>
                             </template>
+                            {{-- Image generee (Studio / API carrousel), pas une photo brute --}}
+                            <template x-if="item.is_generated">
+                                <div class="absolute bottom-1 right-1 px-1.5 py-0.5 bg-violet-600 text-white text-[10px] font-semibold rounded-full leading-tight"
+                                     title="Image generee par le studio carrousel">Generee</div>
+                            </template>
                             <div class="absolute bottom-1 left-1 px-1.5 py-0.5 bg-black/60 text-white text-xs rounded" x-text="item.size_human"></div>
                         </div>
                     </template>

@@ -276,6 +276,10 @@ class MediaApiController extends Controller
             // (la photo doit porter tous les partenaires demandés).
             'partners' => 'nullable|array',
             'partners.*' => 'string',
+            // Nature du fichier : 1 = uniquement les images fabriquées par le moteur
+            // de rendu (slides de carrousel), 0 = uniquement les photos d'origine.
+            // Par défaut les deux sortent — une slide reste une image de la médiathèque.
+            'generated' => 'nullable|boolean',
         ]);
 
         $folder = MediaFolder::where('slug', $params['folder'])->firstOrFail();
@@ -349,6 +353,10 @@ class MediaApiController extends Controller
                 });
             }
         }
+        // Nature : exclure (ou isoler) les images générées par le Studio / l'API.
+        if ($request->has('generated')) {
+            $query->where('is_generated', $request->boolean('generated'));
+        }
         // Usage global : used=1 → au moins une publication (social OU WP) ; used=0 → jamais publiée.
         // whereHas plutôt que publication_count (le compteur est un cache dénormalisé).
         if ($request->has('used')) {
@@ -383,7 +391,7 @@ class MediaApiController extends Controller
             'id', 'filename', 'mime_type', 'width', 'height',
             'description_fr', 'thematic_tags', 'people_ids',
             'city', 'region', 'country', 'brands', 'event', 'taken_at',
-            'folder_id', 'publication_count',
+            'folder_id', 'publication_count', 'is_generated',
         ];
 
         $serialize = fn ($row): array => [
@@ -403,6 +411,7 @@ class MediaApiController extends Controller
             'event' => $row->event,
             'taken_at' => $row->taken_at?->toIso8601String(),
             'folder_id' => $row->folder_id,
+            'is_generated' => (bool) $row->is_generated,
             'publication_count' => $row->publication_count,
             // null si pas de filtre par compte, sinon count restreint aux comptes ciblés.
             'account_publication_count' => $row->account_publication_count ?? null,
@@ -468,6 +477,7 @@ class MediaApiController extends Controller
                 'used' => $request->has('used') ? $request->boolean('used') : null,
                 'used_on' => $params['used_on'] ?? null,
                 'unused_on' => $params['unused_on'] ?? null,
+                'generated' => $request->has('generated') ? $request->boolean('generated') : null,
             ],
         ]);
     }
@@ -627,7 +637,9 @@ class MediaApiController extends Controller
             'brands' => $media->brands,
             // Même information que `brands`, mais sous forme de fiches identifiables
             // (c'est la relation qui fait foi ; `brands` en est le miroir de noms).
-            'partners' => $media->partners()->orderBy('name')->get(['id', 'name', 'slug'])
+            // `partners.id` explicite : le pivot porte aussi une colonne `id`,
+            // un simple 'id' rend la requête ambiguë et fait échouer l'endpoint.
+            'partners' => $media->partners()->orderBy('name')->get(['partners.id', 'name', 'slug'])
                 ->map(fn (Partner $p) => ['id' => $p->id, 'name' => $p->name, 'slug' => $p->slug]),
             'event' => $media->event,
             'taken_at' => $media->taken_at?->toIso8601String(),
@@ -641,6 +653,9 @@ class MediaApiController extends Controller
             ] : null,
 
             'source' => $media->source,
+            // Image fabriquée par le moteur de rendu (Studio / API carrousel) plutôt
+            // qu'un fichier importé tel quel. Voir `derived_from` pour ses sources.
+            'is_generated' => (bool) $media->is_generated,
             'source_url' => $media->source_url,
             'source_path' => $media->source_path,
             'source_context' => $media->source_context,
@@ -656,7 +671,7 @@ class MediaApiController extends Controller
             // Historique d'usage : où cette image a été publiée (WP + social).
             // wp_source est null pour les publications sociales.
             'publications' => $media->publications()
-                ->with('wpSource:id,name,url')
+                ->with(['wpSource:id,name,url', 'via:id,filename'])
                 ->orderByDesc('published_at')
                 ->get()
                 ->map(fn ($pub) => [
@@ -670,9 +685,44 @@ class MediaApiController extends Controller
                     'match_method' => $pub->match_method,
                     'match_confidence' => $pub->match_confidence,
                     'context' => $pub->context,
+                    // Renseigné quand l'usage vient d'une image générée à partir de
+                    // cette photo (slide de carrousel) plutôt que d'un post direct.
+                    'via' => $pub->via ? [
+                        'id' => $pub->via->id,
+                        'filename' => $pub->via->filename,
+                        'url' => $pub->via->url,
+                    ] : null,
                     'published_at' => $pub->published_at?->toIso8601String(),
                 ])
                 ->all(),
+
+            // Photos du catalogue employées pour composer CETTE image (non vide
+            // seulement pour une image générée).
+            'derived_from' => $media->sources()->get()
+                ->map(fn (MediaFile $s) => [
+                    'id' => $s->id,
+                    'filename' => $s->filename,
+                    'url' => $s->url,
+                    'thumbnail_url' => $s->thumbnail_url,
+                    'slot' => $s->pivot->slot,
+                    'brick' => $s->pivot->brick,
+                    'match_method' => $s->pivot->match_method,
+                    'match_confidence' => $s->pivot->match_confidence,
+                ])->all(),
+
+            // Images générées fabriquées À PARTIR de cette photo.
+            'derivatives' => $media->derivatives()->get()
+                ->map(fn (MediaFile $d) => [
+                    'id' => $d->id,
+                    'filename' => $d->filename,
+                    'url' => $d->url,
+                    'thumbnail_url' => $d->thumbnail_url,
+                    'slot' => $d->pivot->slot,
+                    'brick' => $d->pivot->brick,
+                    'match_method' => $d->pivot->match_method,
+                    'match_confidence' => $d->pivot->match_confidence,
+                    'publication_count' => $d->publication_count,
+                ])->all(),
         ];
 
         if ($request->boolean('include_embedding')) {

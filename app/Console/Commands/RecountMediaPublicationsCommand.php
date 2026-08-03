@@ -120,7 +120,13 @@ class RecountMediaPublicationsCommand extends Command
 
         $this->info("Backfill : $created créées · $skipped déjà présentes · $unknown URLs sans MediaFile correspondant");
 
-        // 3) Resync publication_count = COUNT(media_publications)
+        // 3) Report des images GÉNÉRÉES sur leurs photos sources. posts.media ne
+        // contient que la slide : sans cette passe, la photo qui l'a composée
+        // repartirait à zéro après un --reset (voir media_derivations).
+        $derived = $this->backfillDerivedSources($dry);
+        $this->info("Filiation : $derived ligne(s) reportée(s) sur les photos sources.");
+
+        // 4) Resync publication_count = COUNT(media_publications)
         if (! $dry) {
             $driver = DB::connection()->getDriverName();
             if ($driver === 'mysql') {
@@ -145,6 +151,58 @@ class RecountMediaPublicationsCommand extends Command
         }
 
         return self::SUCCESS;
+    }
+
+    /**
+     * Recrée, pour chaque publication d'une image générée, la ligne correspondante
+     * sur ses photos sources (marquée via_media_file_id) — la même sémantique que
+     * MediaPublicationTracker au moment de publier. Idempotent.
+     */
+    private function backfillDerivedSources(bool $dry): int
+    {
+        $count = 0;
+
+        MediaFile::where('is_generated', true)
+            ->whereHas('sources')
+            ->with('sources:media_files.id')
+            ->chunkById(100, function ($generated) use (&$count, $dry) {
+                foreach ($generated as $slide) {
+                    $sourceIds = $slide->sources->pluck('id')->all();
+
+                    foreach ($slide->publications()->whereNull('via_media_file_id')->get() as $pub) {
+                        foreach ($sourceIds as $sourceId) {
+                            $exists = MediaPublication::where('media_file_id', $sourceId)
+                                ->where('via_media_file_id', $slide->id)
+                                ->where('post_id', $pub->post_id)
+                                ->where('thread_segment_id', $pub->thread_segment_id)
+                                ->where('social_account_id', $pub->social_account_id)
+                                ->exists();
+
+                            if ($exists) {
+                                continue;
+                            }
+                            $count++;
+                            if ($dry) {
+                                continue;
+                            }
+
+                            MediaPublication::create([
+                                'media_file_id' => $sourceId,
+                                'via_media_file_id' => $slide->id,
+                                'post_id' => $pub->post_id,
+                                'thread_segment_id' => $pub->thread_segment_id,
+                                'post_platform_id' => $pub->post_platform_id,
+                                'social_account_id' => $pub->social_account_id,
+                                'external_url' => $pub->external_url,
+                                'published_at' => $pub->published_at,
+                                'context' => $pub->context,
+                            ]);
+                        }
+                    }
+                }
+            });
+
+        return $count;
     }
 
     /**

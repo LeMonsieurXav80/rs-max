@@ -30,6 +30,10 @@ class MediaPublicationTracker
         }
 
         $count = 0;
+        // Une même photo source peut alimenter plusieurs slides du même carrousel :
+        // on ne lui compte qu'UNE publication par appel (= par post/segment/plateforme).
+        $sourcesSeen = [];
+
         foreach ($media as $item) {
             $url = $item['url'] ?? null;
             if (! is_string($url) || $url === '') {
@@ -61,11 +65,75 @@ class MediaPublicationTracker
                 // Incrémente le compteur dénormalisé (cache pour tri/affichage).
                 $mediaFile->increment('publication_count');
                 $count++;
+                // Publiée en direct : ne pas la recompter si une slide s'en sert aussi.
+                $sourcesSeen[$mediaFile->id] = true;
+
+                // Publier une slide de carrousel, c'est publier les photos qui la
+                // composent : elles reçoivent la même ligne, marquée `via`, pour que
+                // les filtres d'usage (used, exclude_recently_published_days, compte
+                // par réseau) les voient comme réellement publiées.
+                $count += $this->trackSources(
+                    $mediaFile, $sourcesSeen, $postId, $threadSegmentId,
+                    $postPlatformId, $socialAccountId, $externalUrl, $context,
+                );
             } catch (\Throwable $e) {
                 Log::warning('MediaPublicationTracker: failed to record publication', [
                     'media_file_id' => $mediaFile->id,
                     'post_id' => $postId,
                     'thread_segment_id' => $threadSegmentId,
+                    'error' => $e->getMessage(),
+                ]);
+            }
+        }
+
+        return $count;
+    }
+
+    /**
+     * Répercute la publication d'une image générée sur ses photos sources.
+     *
+     * @param  array<int, true>  $seen  Ids déjà tracés dans cet appel (modifié sur place)
+     * @return int Nombre de lignes créées
+     */
+    private function trackSources(
+        MediaFile $derived,
+        array &$seen,
+        ?int $postId,
+        ?int $threadSegmentId,
+        ?int $postPlatformId,
+        ?int $socialAccountId,
+        ?string $externalUrl,
+        ?string $context,
+    ): int {
+        if (! $derived->is_generated) {
+            return 0;
+        }
+
+        $count = 0;
+        foreach ($derived->sources()->get() as $source) {
+            if (isset($seen[$source->id])) {
+                continue;
+            }
+            $seen[$source->id] = true;
+
+            try {
+                MediaPublication::create([
+                    'media_file_id' => $source->id,
+                    'via_media_file_id' => $derived->id,
+                    'post_id' => $postId,
+                    'thread_segment_id' => $threadSegmentId,
+                    'post_platform_id' => $postPlatformId,
+                    'social_account_id' => $socialAccountId,
+                    'external_url' => $externalUrl,
+                    'published_at' => now(),
+                    'context' => $context,
+                ]);
+                $source->increment('publication_count');
+                $count++;
+            } catch (\Throwable $e) {
+                Log::warning('MediaPublicationTracker: échec du report sur la photo source', [
+                    'source_media_file_id' => $source->id,
+                    'derived_media_file_id' => $derived->id,
                     'error' => $e->getMessage(),
                 ]);
             }

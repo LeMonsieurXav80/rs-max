@@ -284,6 +284,14 @@
             }
             this.selected = (this.selected && this.selected.filename === item.filename) ? null : item;
         },
+        // Ouvre la fiche d'une photo depuis sa vignette de filiation (image generee
+        // -> photo source). Sans effet si la photo n'est pas dans le dossier affiche.
+        selectByFilename(filename) {
+            const target = this.items.find(i => i.filename === filename);
+            if (target) {
+                this.selected = target;
+            }
+        },
         isMultiSelected(item) {
             return this.multiSelected.includes(item.id);
         },
@@ -1664,6 +1672,31 @@
                                 {{-- ID badge --}}
                                 <div class="absolute bottom-1.5 left-1.5 px-1.5 py-0.5 bg-black/60 text-white text-[10px] font-mono rounded" x-text="'#' + item.id"></div>
 
+                                {{-- Badge image generee (Studio / API carrousel) : distingue un
+                                     visuel fabrique d'une photo envoyee telle quelle. --}}
+                                <template x-if="item.is_generated">
+                                    <div class="absolute top-1.5 left-1.5 inline-flex items-center gap-0.5 px-1.5 py-0.5 bg-violet-600 text-white text-[10px] font-semibold rounded-full leading-tight"
+                                         :title="item.sources && item.sources.length
+                                            ? 'Image generee a partir de ' + item.sources.length + ' photo(s) de la mediatheque'
+                                            : 'Image generee (aucune photo source enregistree)'">
+                                        <svg class="w-2.5 h-2.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2">
+                                            <path stroke-linecap="round" stroke-linejoin="round" d="M9.813 15.904 9 18.75l-.813-2.846a4.5 4.5 0 0 0-3.09-3.09L2.25 12l2.846-.813a4.5 4.5 0 0 0 3.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 0 0 3.09 3.09L15.75 12l-2.846.813a4.5 4.5 0 0 0-3.09 3.09ZM18.259 8.715 18 9.75l-.259-1.035a3.375 3.375 0 0 0-2.455-2.456L14.25 6l1.036-.259a3.375 3.375 0 0 0 2.455-2.456L18 2.25l.259 1.035a3.375 3.375 0 0 0 2.456 2.456L21.75 6l-1.035.259a3.375 3.375 0 0 0-2.456 2.456Z" />
+                                        </svg>
+                                        <span>Generee</span>
+                                    </div>
+                                </template>
+
+                                {{-- Badge photo source : cette photo a servi a fabriquer N visuels. --}}
+                                <template x-if="!item.is_generated && item.derivative_count > 0">
+                                    <div class="absolute bottom-1.5 right-1.5 inline-flex items-center gap-0.5 px-1.5 py-0.5 bg-violet-100 text-violet-700 text-[10px] font-semibold rounded-full leading-tight"
+                                         :title="'Utilisee dans ' + item.derivative_count + ' image(s) generee(s)'">
+                                        <svg class="w-2.5 h-2.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2">
+                                            <path stroke-linecap="round" stroke-linejoin="round" d="M9.813 15.904 9 18.75l-.813-2.846a4.5 4.5 0 0 0-3.09-3.09L2.25 12l2.846-.813a4.5 4.5 0 0 0 3.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 0 0 3.09 3.09L15.75 12l-2.846.813a4.5 4.5 0 0 0-3.09 3.09Z" />
+                                        </svg>
+                                        <span x-text="item.derivative_count"></span>
+                                    </div>
+                                </template>
+
                                 {{-- Badge usage article WP (bas-droite) --}}
                                 <template x-if="item.wp_article_count > 0">
                                     <div class="absolute bottom-1.5 right-1.5 inline-flex items-center gap-0.5 px-1.5 py-0.5 bg-emerald-500 text-white text-[10px] font-semibold rounded-full leading-tight"
@@ -2010,6 +2043,38 @@
                                                     </span>
                                                 </div>
                                             </div>
+
+                                            {{-- Filiation : image generee <-> photos sources.
+                                                 Publier la slide compte aussi comme un usage de ses
+                                                 photos parentes (media_publications.via_media_file_id). --}}
+                                            <template x-if="selected.is_generated">
+                                                <div class="rounded border border-violet-200 bg-violet-50 p-2">
+                                                    <span class="text-[10px] font-semibold text-violet-700 block mb-1">Image générée</span>
+                                                    <template x-if="selected.sources && selected.sources.length">
+                                                        <div>
+                                                            <span class="text-[10px] text-gray-500 block mb-1">Composée à partir de :</span>
+                                                            <div class="flex flex-wrap gap-1">
+                                                                <template x-for="src in selected.sources" :key="src.id">
+                                                                    <button type="button" @click="selectByFilename(src.filename)"
+                                                                            class="w-10 h-10 rounded overflow-hidden border border-violet-200 hover:border-violet-500"
+                                                                            :title="'#' + src.id + ' — ' + src.filename">
+                                                                        <img :src="src.thumbnail_url" class="w-full h-full object-cover" loading="lazy">
+                                                                    </button>
+                                                                </template>
+                                                            </div>
+                                                        </div>
+                                                    </template>
+                                                    <template x-if="!selected.sources || !selected.sources.length">
+                                                        <span class="text-[10px] text-gray-500 italic">Aucune photo source enregistrée (image générée avant la mise en place du suivi).</span>
+                                                    </template>
+                                                </div>
+                                            </template>
+                                            <template x-if="!selected.is_generated && selected.derivative_count > 0">
+                                                <div class="rounded border border-violet-200 bg-violet-50 p-2 text-[11px] text-violet-700">
+                                                    Utilisée dans <span class="font-semibold" x-text="selected.derivative_count"></span> image(s) générée(s) —
+                                                    leurs publications comptent aussi pour cette photo.
+                                                </div>
+                                            </template>
 
                                             {{-- Personnes (éditables) --}}
                                             <div>

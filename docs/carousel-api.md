@@ -22,6 +22,7 @@ base URL, l'authentification et les conventions.
 9. [Enchaîner avec une publication](#9-enchaîner-avec-une-publication)
 10. [Référence : briques fournies](#10-référence--briques-fournies)
 11. [Erreurs, limites et performance](#11-erreurs-limites-et-performance)
+12. [Filiation : la photo source reste tracée](#12-filiation--la-photo-source-reste-tracée)
 
 ---
 
@@ -240,13 +241,18 @@ curl -X POST https://<domaine>/api/carousel/image \
     "url": "/media/carousel_h7ZWNjtnMD6kvuyTwWdIQu71.jpg",
     "thumbnail_url": "/media/thumb/…",
     "width": 1080,
-    "height": 566
+    "height": 566,
+    "is_generated": true,
+    "sources": [
+      { "id": 4213, "filename": "20260425_143022_X8aB3kLm.jpg", "url": "/media/…" }
+    ]
   }
 }
 ```
 
-L'image est ajoutée à la médiathèque (`source: "api"`), avec sa vignette. Son `id`
-est directement réutilisable pour publier (§ 9).
+L'image est ajoutée à la médiathèque (`is_generated: true`, `source: "api"`), avec
+sa vignette. Son `id` est directement réutilisable pour publier (§ 9). `sources`
+liste les photos du catalogue consommées par les slots image — voir § 12.
 
 Elle atterrit dans le dossier choisi dans **Paramètres → Studio** (racine par
 défaut) — le même que celui du compositeur web, pour qu'une image ne change pas
@@ -320,7 +326,9 @@ curl -X POST https://<domaine>/api/carousel/render \
 {
   "ratio": "4:5",
   "items": [
-    { "id": 4878, "filename": "carousel_….jpg", "url": "/media/…", "thumbnail_url": "/media/thumb/…", "width": 1080, "height": 1350 },
+    { "id": 4878, "filename": "carousel_….jpg", "url": "/media/…", "thumbnail_url": "/media/thumb/…",
+      "width": 1080, "height": 1350, "is_generated": true,
+      "sources": [{ "id": 4213, "filename": "20260425_143022_X8aB3kLm.jpg", "url": "/media/…" }] },
     { "id": 4879, "…": "…" }
   ]
 }
@@ -526,6 +534,32 @@ Un slot `image` n'accepte qu'un **id de MediaFile** ou une référence locale
 **silencieusement écartée** — la slide est rendue sans image. C'est délibéré :
 aucune URL fournie par un client n'atteint le navigateur de rendu (anti-SSRF).
 Pour utiliser une image externe, l'importer d'abord dans la médiathèque.
+
+---
+
+## 12. Filiation : la photo source reste tracée
+
+Une slide n'est pas un fichier orphelin. À chaque rendu (`/carousel/render`,
+`/carousel/image` et le Studio web), RS-Max enregistre **quelles photos de la
+médiathèque ont composé l'image** — ce sont les `sources` renvoyées dans la réponse.
+
+Ce lien sert au moment de **publier** : quand la slide part sur un réseau, ses
+photos sources reçoivent elles aussi une ligne de publication (même post, même
+compte social, marquée `via`). Autrement dit, une photo employée dans un carrousel
+est comptée comme **publiée**, et ne ressortira donc pas en tête des suggestions
+« jamais utilisée » le lendemain. Une photo présente dans plusieurs slides du même
+carrousel n'est comptée qu'une fois.
+
+Côté médiathèque :
+
+- `GET /api/media/{id}` d'une slide → `is_generated: true` + `derived_from[]` (ses photos) ;
+- `GET /api/media/{id}` d'une photo → `derivatives[]` (les visuels qu'elle a servi à fabriquer)
+  et, dans `publications[]`, un champ `via` non nul quand l'usage est passé par un visuel ;
+- `GET /api/media/search?generated=0` → ne renvoie que les photos d'origine (pratique
+  pour un agent qui cherche de la matière première, pas un visuel déjà composé).
+
+Détail complet dans [`media-catalog-api.md`](media-catalog-api.md#filiation-des-images-générées),
+y compris la commande de rattrapage rétroactif `media:reconcile-derivations`.
 
 ---
 

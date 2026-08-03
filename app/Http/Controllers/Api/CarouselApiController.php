@@ -10,6 +10,7 @@ use App\Services\Carousel\CarouselRenderService;
 use App\Services\Carousel\FontLibrary;
 use App\Services\Carousel\StudioDefaults;
 use App\Services\Carousel\TemplateRenderer;
+use App\Services\Media\MediaDerivationService;
 use App\Services\Media\ThumbnailService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -160,8 +161,12 @@ class CarouselApiController extends Controller
         );
     }
 
-    public function render(Request $request, CarouselRenderService $carousel, ThumbnailService $thumbnails): JsonResponse
-    {
+    public function render(
+        Request $request,
+        CarouselRenderService $carousel,
+        ThumbnailService $thumbnails,
+        MediaDerivationService $derivations,
+    ): JsonResponse {
         $data = $this->composition($request);
 
         $options = $request->validate([
@@ -185,7 +190,9 @@ class CarouselApiController extends Controller
         return response()->json([
             'ratio' => $data['ratio'],
             'items' => array_map(
-                fn (string $filename, int $i) => $this->persist($filename, $format, $i, $thumbnails),
+                fn (string $filename, int $i) => $this->persist(
+                    $filename, $format, $i, $thumbnails, $derivations, $data['slides'][$i] ?? [],
+                ),
                 $filenames,
                 array_keys($filenames),
             ),
@@ -242,8 +249,12 @@ class CarouselApiController extends Controller
      * NATIF de l'image de fond (plafonné à 1080), comme l'incrustation de titre
      * à la publication — utile quand recadrer la photo n'est pas souhaitable.
      */
-    public function image(Request $request, CarouselRenderService $carousel, ThumbnailService $thumbnails): JsonResponse
-    {
+    public function image(
+        Request $request,
+        CarouselRenderService $carousel,
+        ThumbnailService $thumbnails,
+        MediaDerivationService $derivations,
+    ): JsonResponse {
         $registry = app(BrickRegistry::class);
         $slug = $request->input('brick');
 
@@ -288,7 +299,7 @@ class CarouselApiController extends Controller
         return response()->json([
             'brick' => $validated['brick'],
             'ratio' => $requested,
-            'image' => $this->persist($filename, $format, 0, $thumbnails, 'image'),
+            'image' => $this->persist($filename, $format, 0, $thumbnails, $derivations, $slide, 'image'),
         ], 201);
     }
 
@@ -297,8 +308,15 @@ class CarouselApiController extends Controller
      *
      * @return array<string, mixed>
      */
-    private function persist(string $filename, string $format, int $index, ThumbnailService $thumbnails, string $label = 'carrousel'): array
-    {
+    private function persist(
+        string $filename,
+        string $format,
+        int $index,
+        ThumbnailService $thumbnails,
+        MediaDerivationService $derivations,
+        array $slide = [],
+        string $label = 'carrousel',
+    ): array {
         $path = Storage::disk('local')->path("media/{$filename}");
         $dim = @getimagesize($path) ?: [null, null];
 
@@ -310,10 +328,15 @@ class CarouselApiController extends Controller
             'width' => $dim[0],
             'height' => $dim[1],
             'source' => 'api',
+            'is_generated' => true,
             // Même dossier de dépôt que le Studio (Paramètres → Studio) : l'image
             // ne doit pas atterrir ailleurs selon qu'elle vient de l'API ou du web.
             'folder_id' => StudioDefaults::folderId(),
         ]);
+
+        // Filiation : quelles photos du catalogue ont composé cette image. Sans
+        // elle, publier la slide laisserait ses sources marquees « jamais publiées ».
+        $sources = $derivations->linkSlide($media, $slide);
 
         try {
             if ($tp = $thumbnails->generate($media)) {
@@ -325,6 +348,13 @@ class CarouselApiController extends Controller
 
         return [
             'id' => $media->id,
+            'is_generated' => true,
+            // Photos du catalogue employées : le client sait ce qui a été consommé,
+            // et l'usage leur sera reporté à la publication.
+            'sources' => array_map(
+                fn (MediaFile $s) => ['id' => $s->id, 'filename' => $s->filename, 'url' => $s->url],
+                $sources,
+            ),
             'filename' => $media->filename,
             'url' => $media->url,
             'thumbnail_url' => $media->thumbnail_url,
