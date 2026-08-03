@@ -130,7 +130,9 @@
             {{-- Slides --}}
             <div class="space-y-4">
                 <template x-for="(slide, i) in slides" :key="slide._id">
-                    <div class="bg-white rounded-2xl shadow-sm border border-gray-100 p-5">
+                    {{-- Éditer une slide amène l'aperçu dessus : avec 8 slides, on ne cherche plus. --}}
+                    <div class="bg-white rounded-2xl shadow-sm border border-gray-100 p-5"
+                         @focusin="scrollPreviewTo(i)">
                         <div class="flex items-center justify-between mb-4">
                             <div class="flex items-center gap-2">
                                 <span class="inline-flex items-center justify-center w-6 h-6 rounded-full bg-indigo-100 text-indigo-700 text-xs font-semibold" x-text="i + 1"></span>
@@ -257,20 +259,39 @@
                 </div>
 
                 <div class="relative" x-ref="previewBox">
-                    {{-- Toutes les slides côte à côte, ajustées pour tenir dans la largeur (pas de défilement). --}}
-                    <div class="mx-auto bg-gray-100 rounded-lg overflow-hidden"
-                         :style="`width:${previewW}px; height:${slideVisualHeight()}px`">
-                        <div class="relative" :style="`width:${previewW}px; height:${slideVisualHeight()}px`">
+                    {{--
+                        Une slide = toute la largeur de la colonne, quel qu'en soit le nombre :
+                        on DÉFILE horizontalement dans la bande au lieu de la rétrécir.
+                        Le scroll s'aimante sur chaque couture (scroll-snap).
+                    --}}
+                    <div class="mx-auto bg-gray-100 rounded-lg overflow-x-auto overflow-y-hidden" x-ref="previewScroll"
+                         @scroll.debounce.80ms="onPreviewScroll()"
+                         :style="`width:${viewportW}px; height:${slideVisualHeight()}px; scroll-snap-type:x mandatory; scroll-behavior:smooth;`">
+                        <div class="relative" :style="`width:${slides.length * slideW}px; height:${slideVisualHeight()}px`">
                             <iframe :srcdoc="previewHtml" scrolling="no"
                                     class="border-0 origin-top-left pointer-events-none absolute top-0 left-0"
                                     :style="`width:${bandCssWidth()}px; height:${ratios[ratio].h}px; transform:scale(${previewScale()});`"></iframe>
-                            {{-- Guides de découpe entre slides (couture verticale) --}}
-                            <template x-for="n in Math.max(0, slides.length - 1)" :key="n">
-                                <div class="absolute top-0 bottom-0 border-l border-dashed border-white/70 pointer-events-none"
-                                     :style="`left:${n * (previewW / slides.length)}px`"></div>
-                            </template>
+                            {{-- Une zone par slide : porte l'aimant de défilement et la couture verticale --}}
+                            <div class="absolute inset-0 flex pointer-events-none">
+                                <template x-for="(s, n) in slides" :key="s._id">
+                                    <div class="h-full shrink-0" :style="`width:${slideW}px; scroll-snap-align:start;`"
+                                         :class="n ? 'border-l border-dashed border-white/70' : ''"></div>
+                                </template>
+                            </div>
                         </div>
                     </div>
+
+                    {{-- Navigation slide par slide (le trackpad défile déjà, la barre reste discrète sur Mac) --}}
+                    <template x-if="slides.length > 1">
+                        <div class="flex items-center justify-center gap-2 mt-2">
+                            <button type="button" @click="scrollPreviewBy(-1)"
+                                    class="px-2 py-0.5 rounded-lg border border-gray-200 text-gray-500 hover:bg-gray-50 text-sm">‹</button>
+                            <span class="text-[11px] text-gray-400" x-text="`slide ${previewIndex + 1} / ${slides.length}`"></span>
+                            <button type="button" @click="scrollPreviewBy(1)"
+                                    class="px-2 py-0.5 rounded-lg border border-gray-200 text-gray-500 hover:bg-gray-50 text-sm">›</button>
+                        </div>
+                    </template>
+
                     <div x-show="previewLoading" class="absolute top-2 right-2 text-[10px] px-2 py-0.5 rounded-full bg-black/50 text-white">…</div>
                 </div>
             </div>
@@ -330,7 +351,9 @@
             slides: [],
             previewHtml: '',
             previewLoading: false,
-            previewW: 348,
+            slideW: 348,      // largeur d'affichage d'UNE slide
+            viewportW: 348,   // fenêtre visible de l'aperçu (= largeur de la colonne)
+            previewIndex: 0,  // slide actuellement au centre du défilement
             rendering: false,
             renderError: '',
             generated: [],
@@ -360,7 +383,8 @@
                     this.addSlide(this.bricks[0]?.slug, false);
                 }
 
-                this.$watch('ratio', () => this.queuePreview());
+                // Le ratio change la largeur/hauteur d'affichage d'une slide : re-fit.
+                this.$watch('ratio', () => { this.fitPreview(); this.queuePreview(); });
                 window.addEventListener('resize', () => this.fitPreview());
                 this.$nextTick(() => this.fitPreview());
                 this.updatePreview();
@@ -382,7 +406,11 @@
             addSlide(slug, refresh = true) {
                 if (!slug) return;
                 this.slides.push({ _id: ++this._seq, brick: slug, data: this.defaultsFor(slug) });
-                if (refresh) this.queuePreview();
+                // L'aperçu suit : on amène la slide qu'on vient d'ajouter sous les yeux.
+                if (refresh) {
+                    this.queuePreview();
+                    this.$nextTick(() => this.scrollPreviewTo(this.slides.length - 1));
+                }
             },
             // Changement de brique : on complète avec les défauts de la nouvelle
             // (les slots devenus inutiles sont ignorés côté serveur).
@@ -394,6 +422,7 @@
                 if (this.slides.length === 1) return;
                 this.slides.splice(i, 1);
                 this.queuePreview();
+                this.$nextTick(() => this.scrollPreviewTo(Math.min(i, this.slides.length - 1)));
             },
             moveSlide(i, dir) {
                 const j = i + dir;
@@ -534,21 +563,38 @@
                 }
             },
 
-            // ── Helpers présentation (bande horizontale, toutes les slides tiennent dans previewW) ──
-            // La bande occupe toute la largeur disponible de la colonne, sauf si
-            // un portrait la ferait dépasser de l'écran : on repasse alors par la
-            // hauteur pour qu'elle reste visible d'un seul coup d'œil.
+            // ── Helpers présentation (bande horizontale défilante) ──
+            // UNE slide occupe toute la largeur de la colonne : la taille d'aperçu ne
+            // dépend donc PAS du nombre de slides (on défile pour voir les suivantes).
+            // Seul un format très haut (9:16) est rétréci, pour tenir dans la fenêtre.
             fitPreview() {
                 const avail = this.$refs.previewBox?.clientWidth || 348;
-                const byWidth = avail / this.bandCssWidth();
-                const byHeight = (window.innerHeight * 0.72) / this.ratioH();
-                this.previewW = this.bandCssWidth() * Math.min(byWidth, byHeight);
+                const maxH = window.innerHeight * 0.72;
+                this.viewportW = avail;
+                this.slideW = Math.min(avail, maxH * this.ratioW() / this.ratioH());
             },
             ratioW() { return this.ratios[this.ratio]?.w || 1080; },
             ratioH() { return this.ratios[this.ratio]?.h || 1350; },
             bandCssWidth() { return this.slides.length * this.ratioW(); },
-            previewScale() { return this.previewW / this.bandCssWidth(); },
+            previewScale() { return this.slideW / this.ratioW(); },
             slideVisualHeight() { return this.ratioH() * this.previewScale(); },
+
+            // Défilement aimanté d'une slide, dans un sens ou dans l'autre.
+            scrollPreviewBy(dir) {
+                this.scrollPreviewTo(this.previewIndex + dir);
+            },
+            scrollPreviewTo(i) {
+                const box = this.$refs.previewScroll;
+                if (!box) return;
+                const target = Math.max(0, Math.min(this.slides.length - 1, i));
+                box.scrollTo({ left: target * this.slideW, behavior: 'smooth' });
+                this.previewIndex = target;
+            },
+            // Le défilement peut aussi venir du trackpad : l'indicateur suit.
+            onPreviewScroll() {
+                if (!this.slideW) return;
+                this.previewIndex = Math.round(this.$refs.previewScroll.scrollLeft / this.slideW);
+            },
             headers() {
                 return {
                     'Content-Type': 'application/json',
