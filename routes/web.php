@@ -22,6 +22,7 @@ use App\Http\Controllers\LinkedInOAuthController;
 use App\Http\Controllers\LocationController;
 use App\Http\Controllers\MediaController;
 use App\Http\Controllers\MediaFolderController;
+use App\Http\Controllers\PartnerController;
 use App\Http\Controllers\PersonaController;
 use App\Http\Controllers\PinterestFeedController;
 use App\Http\Controllers\PinterestOAuthController;
@@ -76,6 +77,9 @@ Route::middleware(['auth', 'verified', 'throttle:600,1'])->group(function () {
     Route::post('posts/ai-assist-photo-infos', [AiAssistController::class, 'generateFromPhotoInfos'])->name('posts.aiAssistPhotoInfos');
 
     // Posts (resource CRUD)
+    // Le tag partenaire a sa propre route : contrairement a update(), il reste
+    // possible sur un post deja publie (metadonnee interne, pas du contenu).
+    Route::put('posts/{post}/partners', [PostController::class, 'updatePartners'])->name('posts.partners.update');
     Route::resource('posts', PostController::class);
 
     // Social accounts (listing, editing, toggle)
@@ -148,6 +152,8 @@ Route::middleware(['auth', 'verified', 'throttle:600,1'])->group(function () {
     Route::post('threads/generate-from-url', [ThreadController::class, 'generateFromUrl'])->name('threads.generateFromUrl');
     Route::post('threads/regenerate-segment', [ThreadController::class, 'regenerateSegment'])->name('threads.regenerateSegment');
     Route::post('threads/overlay-preview', [ThreadController::class, 'overlayPreview'])->name('threads.overlayPreview');
+    // Idem pour les fils : taguable retroactivement, meme publie.
+    Route::put('threads/{thread}/partners', [ThreadController::class, 'updatePartners'])->name('threads.partners.update');
     Route::resource('threads', ThreadController::class);
     Route::post('threads/{thread}/compile-instagram', [ThreadController::class, 'compileInstagram'])->name('threads.compileInstagram');
     Route::post('threads/{thread}/publish', [ThreadController::class, 'publishAll'])->name('threads.publish');
@@ -185,6 +191,10 @@ Route::middleware(['auth', 'verified', 'throttle:600,1'])->group(function () {
     Route::get('carousel/studio', [CarouselStudioController::class, 'index'])->name('carousel.studio');
     Route::post('carousel/studio/preview', [CarouselStudioController::class, 'preview'])->name('carousel.studio.preview');
     Route::post('carousel/studio/render', [CarouselStudioController::class, 'render'])->name('carousel.studio.render');
+
+    // Partenaires : liste lisible par tous (selecteur des formulaires de post et de la
+    // mediatheque) ; le CRUD reste dans le groupe manager plus bas.
+    Route::get('partners/options', [PartnerController::class, 'options'])->name('partners.options');
 
     // Media library
     Route::get('media', [MediaController::class, 'index'])->name('media.index');
@@ -257,6 +267,10 @@ Route::middleware(['auth', 'verified', 'throttle:600,1'])->group(function () {
         Route::get('carousel/templates/{template}/edit', [CarouselTemplateController::class, 'edit'])->name('carousel.templates.edit');
         Route::put('carousel/templates/{template}', [CarouselTemplateController::class, 'update'])->name('carousel.templates.update');
         Route::delete('carousel/templates/{template}', [CarouselTemplateController::class, 'destroy'])->name('carousel.templates.destroy');
+
+        // Partenaires / marques (tag des photos et des publications)
+        Route::get('partners/{partner}/posts', [PartnerController::class, 'posts'])->name('partners.posts');
+        Route::resource('partners', PartnerController::class)->except(['show']);
 
         // Personas
         Route::resource('personas', PersonaController::class)->except(['show']);

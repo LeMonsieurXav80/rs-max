@@ -7,11 +7,13 @@ use App\Jobs\GenerateMediaThumbnailJob;
 use App\Models\MediaFile;
 use App\Models\MediaFolder;
 use App\Models\MediaPublication;
+use App\Models\Partner;
 use App\Models\Post;
 use App\Models\Setting;
 use App\Services\AiAssistService;
 use App\Services\Media\ThumbnailService;
 use App\Services\Media\VideoNormalizer;
+use App\Services\PartnerTagService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
@@ -274,31 +276,19 @@ class MediaController extends Controller
         ]);
 
         $addClean = collect($data['add'] ?? [])->map(fn ($b) => trim((string) $b))->filter()->all();
-        $removeKeys = collect($data['remove'] ?? [])->map(fn ($b) => mb_strtolower(trim((string) $b)))->filter()->all();
+        $remove = $data['remove'] ?? [];
 
-        $files = MediaFile::whereIn('id', $data['ids'])->get();
+        $service = app(PartnerTagService::class);
+        $files = MediaFile::with('partners')->whereIn('id', $data['ids'])->get();
+
         foreach ($files as $mf) {
-            $current = collect($mf->brands ?? [])->filter(fn ($b) => is_string($b) && trim($b) !== '');
-            // remove
-            if ($removeKeys) {
-                $current = $current->reject(fn ($b) => in_array(mb_strtolower(trim($b)), $removeKeys, true));
-            }
-            // add
-            $seen = $current->mapWithKeys(fn ($b) => [mb_strtolower(trim($b)) => true])->all();
-            foreach ($addClean as $b) {
-                $key = mb_strtolower($b);
-                if (! isset($seen[$key])) {
-                    $current->push($b);
-                    $seen[$key] = true;
-                }
-            }
-            $mf->update(['brands' => $current->values()->all()]);
+            $service->amendMediaNames($mf, $addClean, $remove);
         }
 
         return response()->json([
             'count' => $files->count(),
             'added' => $addClean,
-            'removed' => $data['remove'] ?? [],
+            'removed' => $remove,
         ]);
     }
 
@@ -424,9 +414,6 @@ class MediaController extends Controller
         if ($result['country'] !== null) {
             $update['country'] = $result['country'];
         }
-        if (! empty($result['brands'])) {
-            $update['brands'] = $result['brands'];
-        }
         if ($result['event'] !== null) {
             $update['event'] = $result['event'];
         }
@@ -447,6 +434,13 @@ class MediaController extends Controller
         $update['pending_analysis'] = false;
 
         $media->update($update);
+
+        // Les marques detectees deviennent des fiches partenaires (origine 'vision'),
+        // que le manager peut ensuite renommer, fusionner ou desactiver.
+        if (! empty($result['brands'])) {
+            app(PartnerTagService::class)->syncMediaNames($media, $result['brands'], 'vision');
+        }
+
         $media->refresh();
 
         // Renvoie la photo mise à jour pour que le frontend puisse refresh sans reload.
@@ -817,28 +811,18 @@ class MediaController extends Controller
             $val = $data['description_fr'];
             $update['description_fr'] = is_string($val) && trim($val) !== '' ? trim($val) : null;
         }
-        if (array_key_exists('brands', $data)) {
-            $seen = [];
-            $brands = [];
-            foreach ($data['brands'] ?? [] as $b) {
-                $clean = trim((string) $b);
-                if ($clean === '') {
-                    continue;
-                }
-                $key = mb_strtolower($clean);
-                if (isset($seen[$key])) {
-                    continue;
-                }
-                $seen[$key] = true;
-                $brands[] = $clean;
-            }
-            $update['brands'] = $brands;
-        }
         if (array_key_exists('taken_at', $data)) {
             $update['taken_at'] = $data['taken_at'] ?: null;
         }
 
         $media->update($update);
+
+        // Les marques sont une relation : le service resout les noms en fiches
+        // partenaires (creation a la volee) et remet a jour le miroir `brands`.
+        if (array_key_exists('brands', $data)) {
+            app(PartnerTagService::class)->syncMediaNames($media, $data['brands'] ?? []);
+            $media->refresh();
+        }
 
         return response()->json([
             'id' => $media->id,
@@ -866,24 +850,8 @@ class MediaController extends Controller
         $countries = MediaFile::whereNotNull('country')->where('country', '!=', '')
             ->distinct()->orderBy('country')->limit(500)->pluck('country');
 
-        // Marques : agréger les valeurs JSON distinctes (case-insensitive) sans dépendre du SQL JSON.
-        $brandSet = [];
-        MediaFile::whereNotNull('brands')->select('brands')->chunk(500, function ($rows) use (&$brandSet) {
-            foreach ($rows as $row) {
-                foreach ($row->brands ?? [] as $b) {
-                    $clean = trim((string) $b);
-                    if ($clean === '') {
-                        continue;
-                    }
-                    $key = mb_strtolower($clean);
-                    if (! isset($brandSet[$key])) {
-                        $brandSet[$key] = $clean;
-                    }
-                }
-            }
-        });
-        $brands = array_values($brandSet);
-        sort($brands, SORT_NATURAL | SORT_FLAG_CASE);
+        // Marques : desormais une vraie table, l'autocomplete lit le referentiel.
+        $brands = Partner::active()->orderBy('name')->pluck('name')->all();
 
         // Tags thematiques : meme approche que les marques.
         $tagSet = [];
@@ -1026,7 +994,7 @@ class MediaController extends Controller
     {
         $folderId = $request->input('folder');
 
-        $query = MediaFile::with('folder')->latest();
+        $query = MediaFile::with(['folder', 'partners:id,name,color'])->latest();
 
         if ($folderId === 'uncategorized') {
             $query->whereNull('folder_id');
@@ -1053,6 +1021,13 @@ class MediaController extends Controller
                 'publication_count' => (int) $mf->publication_count,
                 // Vignette légère pour images ET vidéos (grille du picker).
                 'thumbnail_url' => $mf->thumbnail_url,
+                // Partenaires tagués : le formulaire de post s'en sert pour afficher
+                // les tags hérités dès la sélection, avant même l'enregistrement.
+                'partners' => $mf->partners->map(fn (Partner $p) => [
+                    'id' => $p->id,
+                    'name' => $p->name,
+                    'color' => $p->color,
+                ])->values()->all(),
             ];
 
             return $item;

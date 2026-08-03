@@ -8,6 +8,7 @@ use App\Models\Post;
 use App\Models\PostPlatform;
 use App\Models\Setting;
 use App\Models\SocialAccount;
+use App\Services\PartnerTagService;
 use App\Services\Stats\StatsSyncService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
@@ -163,8 +164,9 @@ class PostController extends Controller
         $defaultAccountIds = $user->default_accounts ?? [];
         $charLimits = $this->getPlatformCharLimits();
         $accountGroups = $user->accountGroups()->with('socialAccounts')->get();
+        $partnerOptions = app(PartnerTagService::class)->options();
 
-        return view('posts.create', compact('accounts', 'platforms', 'defaultAccountIds', 'charLimits', 'accountGroups'));
+        return view('posts.create', compact('accounts', 'platforms', 'defaultAccountIds', 'charLimits', 'accountGroups', 'partnerOptions'));
     }
 
     /**
@@ -181,6 +183,8 @@ class PostController extends Controller
             'auto_translate' => 'nullable|boolean',
             'media' => 'nullable|array',
             'media.*' => 'nullable|string|max:2000',
+            'partners' => 'nullable|array',
+            'partners.*' => 'integer|exists:partners,id',
             'link_url' => 'nullable|url|max:2048',
             'location_name' => 'nullable|string|max:255',
             'location_id' => 'nullable|string|max:255',
@@ -252,6 +256,9 @@ class PostController extends Controller
                 ]);
             }
 
+            // Tags partenaires : ceux coches a la main + ceux herites des photos.
+            app(PartnerTagService::class)->syncPost($post, $validated['partners'] ?? []);
+
             return $post;
         });
 
@@ -298,6 +305,7 @@ class PostController extends Controller
             'postPlatforms.platform',
             'postPlatforms.socialAccount',
             'postPlatforms.logs',
+            'partners',
             'user',
         ])->findOrFail($id);
 
@@ -315,7 +323,9 @@ class PostController extends Controller
             ->get()
             ->groupBy(fn (SocialAccount $account) => $account->platform->slug);
 
-        return view('posts.show', compact('post', 'availableAccounts'));
+        $partnerOptions = app(PartnerTagService::class)->options();
+
+        return view('posts.show', compact('post', 'availableAccounts', 'partnerOptions'));
     }
 
     /**
@@ -395,8 +405,13 @@ class PostController extends Controller
         $selectedAccountIds = $post->postPlatforms->pluck('social_account_id')->toArray();
         $charLimits = $this->getPlatformCharLimits();
         $accountGroups = $user->accountGroups()->with('socialAccounts')->get();
+        $partnerTags = app(PartnerTagService::class);
+        $partnerOptions = $partnerTags->options();
+        // Seuls les tags manuels sont re-cochables : les 'auto' sont recalcules au save.
+        $selectedPartnerIds = $post->partners()->wherePivot('source', 'manual')->pluck('partners.id')->all();
+        $mediaPartnerMap = $partnerTags->partnersByMediaUrl($post->media);
 
-        return view('posts.edit', compact('post', 'accounts', 'platforms', 'selectedAccountIds', 'charLimits', 'accountGroups'));
+        return view('posts.edit', compact('post', 'accounts', 'platforms', 'selectedAccountIds', 'charLimits', 'accountGroups', 'partnerOptions', 'selectedPartnerIds', 'mediaPartnerMap'));
     }
 
     /**
@@ -425,6 +440,8 @@ class PostController extends Controller
             'auto_translate' => 'nullable|boolean',
             'media' => 'nullable|array',
             'media.*' => 'nullable|string|max:2000',
+            'partners' => 'nullable|array',
+            'partners.*' => 'integer|exists:partners,id',
             'link_url' => 'nullable|url|max:2048',
             'location_name' => 'nullable|string|max:255',
             'location_id' => 'nullable|string|max:255',
@@ -496,6 +513,10 @@ class PostController extends Controller
                     'status' => 'pending',
                 ]);
             }
+
+            // Les tags 'auto' suivent les photos actuelles ; les tags manuels sont
+            // ceux du formulaire (le champ est toujours soumis, meme vide).
+            app(PartnerTagService::class)->syncPost($post, $validated['partners'] ?? []);
         });
 
         // Record hashtag usage
@@ -505,6 +526,34 @@ class PostController extends Controller
 
         return redirect()->route('posts.show', $post->id)
             ->with('success', 'Post updated successfully.');
+    }
+
+    /**
+     * Met à jour les seuls tags partenaires d'un post.
+     *
+     * Volontairement séparé de update() : ce dernier refuse les posts publiés,
+     * alors qu'un tag partenaire est une métadonnée interne de reporting, qu'on
+     * doit pouvoir poser rétroactivement sur une publication déjà partie.
+     */
+    public function updatePartners(Request $request, int $id): RedirectResponse
+    {
+        $post = Post::findOrFail($id);
+        $user = $request->user();
+
+        // Le propriétaire, ou un manager qui prépare un compte rendu.
+        if (! $user->isManager() && $post->user_id !== $user->id) {
+            abort(403, 'Unauthorized.');
+        }
+
+        $validated = $request->validate([
+            'partners' => 'nullable|array',
+            'partners.*' => 'integer|exists:partners,id',
+        ]);
+
+        app(PartnerTagService::class)->syncPost($post, $validated['partners'] ?? []);
+
+        return redirect()->route('posts.show', $post->id)
+            ->with('success', 'Partenaires mis à jour.');
     }
 
     /**

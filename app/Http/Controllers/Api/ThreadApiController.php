@@ -3,9 +3,11 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
+use App\Models\Partner;
 use App\Models\Thread;
 use App\Models\ThreadSegment;
 use App\Models\ThreadSegmentPlatform;
+use App\Services\PartnerTagService;
 use App\Services\ThreadBoostService;
 use App\Services\ThreadPublishingService;
 use Carbon\Carbon;
@@ -24,7 +26,7 @@ class ThreadApiController extends Controller
     {
         $user = $request->user();
 
-        $query = Thread::with(['segments', 'socialAccounts.platform'])
+        $query = Thread::with(['segments', 'socialAccounts.platform', 'partners'])
             ->where('user_id', $user->id)
             ->orderByDesc('created_at');
 
@@ -67,7 +69,7 @@ class ThreadApiController extends Controller
     public function show(Request $request, Thread $thread): JsonResponse
     {
         $this->authorizeThread($request, $thread);
-        $thread->load(['segments.segmentPlatforms.socialAccount.platform', 'socialAccounts.platform']);
+        $thread->load(['segments.segmentPlatforms.socialAccount.platform', 'socialAccounts.platform', 'partners']);
 
         return response()->json(['thread' => $this->formatThread($thread, true)]);
     }
@@ -89,6 +91,8 @@ class ThreadApiController extends Controller
             'segments.*.translations' => 'nullable|array',
             'segments.*.translations.*' => 'nullable|string|max:10000',
             'segments.*.media' => 'nullable|array',
+            'partners' => 'nullable|array',
+            'partners.*' => 'integer|exists:partners,id',
             'status' => 'required|in:draft,scheduled',
             'scheduled_at' => 'required_if:status,scheduled|nullable|date|after_or_equal:now',
             'boost' => 'nullable|array',
@@ -157,10 +161,13 @@ class ThreadApiController extends Controller
                 );
             }
 
+            // Tags partenaires hérités des photos des segments.
+            app(PartnerTagService::class)->syncThread($thread, $validated['partners'] ?? []);
+
             return $thread;
         });
 
-        $thread->load(['segments', 'socialAccounts.platform']);
+        $thread->load(['segments', 'socialAccounts.platform', 'partners']);
 
         return response()->json(['thread' => $this->formatThread($thread)], 201);
     }
@@ -187,6 +194,8 @@ class ThreadApiController extends Controller
             'segments.*.translations' => 'nullable|array',
             'segments.*.translations.*' => 'nullable|string|max:10000',
             'segments.*.media' => 'nullable|array',
+            'partners' => 'nullable|array',
+            'partners.*' => 'integer|exists:partners,id',
         ]);
 
         DB::transaction(function () use ($thread, $validated) {
@@ -226,11 +235,43 @@ class ThreadApiController extends Controller
                     }
                 }
             }
+            // `partners` absent = les tags manuels existants sont conservés.
+            app(PartnerTagService::class)->syncThread($thread, $validated['partners'] ?? null);
         });
 
-        $thread->refresh()->load(['segments', 'socialAccounts.platform']);
+        $thread->refresh()->load(['segments', 'socialAccounts.platform', 'partners']);
 
         return response()->json(['thread' => $this->formatThread($thread)]);
+    }
+
+    /**
+     * PUT /api/threads/{id}/partners — Poser les tags partenaires, quel que soit le statut.
+     *
+     * Séparé de PUT /api/threads/{id}, qui refuse les fils déjà publiés.
+     */
+    public function updatePartners(Request $request, Thread $thread): JsonResponse
+    {
+        $this->authorizeThread($request, $thread);
+
+        $validated = $request->validate([
+            'partners' => 'present|array',
+            'partners.*' => 'integer|exists:partners,id',
+        ]);
+
+        app(PartnerTagService::class)->syncThread($thread, $validated['partners']);
+
+        $thread->load('partners');
+
+        return response()->json([
+            'success' => true,
+            'thread_id' => $thread->id,
+            'partners' => $thread->partners->map(fn (Partner $p) => [
+                'id' => $p->id,
+                'name' => $p->name,
+                'slug' => $p->slug,
+                'source' => $p->pivot->source,
+            ]),
+        ]);
     }
 
     /**
@@ -308,6 +349,15 @@ class ThreadApiController extends Controller
                 'publish_mode' => $a->pivot->publish_mode,
                 'status' => $a->pivot->status,
             ]),
+            // 'auto' = hérité d'une photo d'un segment, 'manual' = posé à la main.
+            'partners' => $thread->relationLoaded('partners')
+                ? $thread->partners->map(fn (Partner $p) => [
+                    'id' => $p->id,
+                    'name' => $p->name,
+                    'slug' => $p->slug,
+                    'source' => $p->pivot->source,
+                ])->values()
+                : null,
         ];
 
         if ($detailed) {

@@ -21,9 +21,10 @@ API REST d'orchestration multi-plateformes : publication, planification, génér
 9. [Endpoints — Génération IA (preview, ne persiste pas)](#9-endpoints--génération-ia-preview-ne-persiste-pas)
 10. [Endpoints — Génération IA + planification (bulk, persiste)](#10-endpoints--génération-ia--planification-bulk-persiste)
 11. [Endpoints — Personas](#11-endpoints--personas)
-12. [Endpoints — Statistiques et calendrier](#12-endpoints--statistiques-et-calendrier)
-13. [Annexes : plateformes, langues, statuts](#13-annexes--plateformes-langues-statuts)
-14. [Endpoints en session web (PAS accessibles par token)](#14-endpoints-en-session-web-pas-accessibles-par-token)
+12. [Endpoints — Partenaires (marques)](#12-endpoints--partenaires-marques)
+13. [Endpoints — Statistiques et calendrier](#13-endpoints--statistiques-et-calendrier)
+14. [Annexes : plateformes, langues, statuts](#14-annexes--plateformes-langues-statuts)
+15. [Endpoints en session web (PAS accessibles par token)](#15-endpoints-en-session-web-pas-accessibles-par-token)
 
 ---
 
@@ -613,7 +614,132 @@ Impossible si la persona est utilisée par un ou plusieurs comptes (422 avec le 
 
 ---
 
-## 12. Endpoints — Statistiques et calendrier
+## 12. Endpoints — Partenaires (marques)
+
+Un **partenaire** est une marque taguée en interne, sur les photos et sur les
+publications. Sert aux comptes rendus ; **rien n'est jamais publié** sur les réseaux.
+
+### Le tag se propage tout seul
+
+Une photo est taguée d'un ou plusieurs partenaires (médiathèque, ou champ `brands`
+de l'API média). Toute publication **et tout fil de discussion** qui utilise cette
+photo hérite du tag — pour un fil, les photos de tous ses segments comptent.
+
+Chaque tag de publication porte une **origine** :
+
+| `source` | Sens | Cycle de vie |
+|---|---|---|
+| `auto` | Hérité d'une photo taguée | **Recalculé à chaque enregistrement** du post d'après les photos réellement attachées. Retirer la photo retire le tag. |
+| `manual` | Posé explicitement via `partners[]` | Jamais écrasé par le recalcul. |
+
+Un partenaire présent des deux côtés est enregistré `manual`.
+
+### `GET /api/partners`
+
+Liste complète (non paginée). `?active=1` pour ne garder que les partenaires actifs.
+
+```json
+{"partners": [
+  {"id": 3, "name": "Nike", "slug": "nike", "color": "#f59e0b",
+   "is_active": true, "origin": "manual", "media_count": 42, "posts_count": 17}
+]}
+```
+
+`origin` vaut `manual` (créé à la main), `import` (repris des anciennes marques texte
+ou de `/api/media/ingest`) ou `vision` (détecté par l'IA sur une photo) — les deux
+derniers sont à vérifier avant d'en faire un compte rendu.
+
+### `GET /api/partners/{id}`
+
+Détail : ajoute `contact_name`, `contact_email`, `website`, `notes`, `created_at`.
+
+### `POST /api/partners`
+
+**Body** : `name` (requis, ≤ 80 car., unique), `contact_name`, `contact_email`,
+`website`, `notes`, `color` (hex), `is_active`.
+
+Réponse `201`. Le `slug` est dérivé du nom et sert de clé de dédup : « Coca-Cola »,
+« coca cola » et « COCA COLA » désignent la même fiche.
+
+### `PUT|PATCH /api/partners/{id}`
+
+Mêmes champs, tous facultatifs. Renommer met à jour le miroir `brands` de toutes les
+photos taguées.
+
+### `DELETE /api/partners/{id}`
+
+Supprime la fiche et retire le tag de toutes les photos et publications.
+
+### `GET /api/partners/{id}/posts`
+
+**Le compte rendu.** Publications taguées de ce partenaire, paginées.
+
+**Query params** : `status` (`draft|scheduled|publishing|published|failed`),
+`source` (`auto|manual`), `from`, `to` (dates), `per_page` (défaut 25, max 100).
+
+**Exemple** : `GET /api/partners/3/posts?status=published&from=2026-01-01&to=2026-06-30`
+
+```json
+{
+  "partner": {"id": 3, "name": "Nike", "slug": "nike"},
+  "posts": [
+    {"id": 812, "content_preview": "…", "status": "published",
+     "tag_source": "auto", "media_count": 3,
+     "scheduled_at": null, "published_at": "2026-03-14T09:00:00+00:00",
+     "created_at": "2026-03-13T18:22:00+00:00",
+     "accounts": [{"id": 5, "name": "…", "platform": "instagram",
+                   "status": "published", "external_id": "…",
+                   "published_at": "2026-03-14T09:00:04+00:00"}]}
+  ],
+  "pagination": {"current_page": 1, "last_page": 1, "per_page": 25, "total": 1}
+}
+```
+
+### `GET /api/partners/{id}/threads`
+
+Symétrique de `/posts`, pour les fils de discussion. Mêmes filtres et même pagination.
+Un fil hérite des partenaires des photos de **tous** ses segments (segment de boost inclus).
+
+### Taguer rétroactivement une publication déjà publiée
+
+`PUT /api/posts/{id}` et `PUT /api/threads/{id}` **refusent** tout contenu déjà publié
+(`422`). Le tag partenaire, lui, est une métadonnée interne de reporting, pas du
+contenu : il dispose donc de sa propre route, acceptée **quel que soit le statut**.
+
+```
+PUT /api/posts/{id}/partners
+PUT /api/threads/{id}/partners
+```
+
+**Body** : `{"partners": [3, 7]}` — le champ est **requis** (`present`). Une liste vide
+efface les tags manuels. Les tags `auto` sont recalculés depuis les photos dans tous
+les cas et ne se pilotent pas d'ici.
+
+```json
+{"success": true, "post_id": 812,
+ "partners": [{"id": 3, "name": "Nike", "slug": "nike", "source": "auto"},
+              {"id": 7, "name": "Decathlon", "slug": "decathlon", "source": "manual"}]}
+```
+
+Côté web, le même geste se fait depuis la fiche du post ou du fil (bouton « Modifier »
+du bloc Partenaires), y compris sur un contenu publié.
+
+### Taguer depuis les autres endpoints
+
+| Endpoint | Champ | Comportement |
+|---|---|---|
+| `POST /api/posts`, `POST /api/threads` | `partners[]` (ids) | Tags `manual`, en plus des `auto` hérités des photos. |
+| `PUT /api/posts/{id}`, `PUT /api/threads/{id}` | `partners[]` (ids) | **Absent** = les tags manuels existants sont conservés. **Présent** = remplace la liste manuelle (`[]` les efface). Les `auto` sont recalculés dans tous les cas. Refusé si le contenu est publié — utiliser alors `/partners` (ci-dessus). |
+| `GET /api/posts` | `?partner=3` ou `?partner=nike` | Filtre les publications taguées. |
+| `GET /api/posts`, `GET /api/posts/{id}` | — | Chaque post expose `partners[]` avec `id`, `name`, `slug`, `source`. |
+| `GET /api/threads`, `GET /api/threads/{id}` | — | Idem pour les fils. |
+| `POST /api/media/ingest`, `POST /api/media/{id}/validate`, `POST /api/media/{id}/enrich` | `brands[]` (noms) | Les noms sont résolus en fiches partenaires, créées à la volée si inconnues. |
+| `GET /api/media/{id}` | — | Expose `partners[]` (`id`, `name`, `slug`) à côté de `brands[]`. |
+| `GET /api/media/search` | `?partners[]=nike&partners[]=3` | ET logique : la photo doit porter tous les partenaires demandés. |
+
+---
+
+## 13. Endpoints — Statistiques et calendrier
 
 Tous ces endpoints acceptent `?period=<jours>` (défaut 30, `all` possible) et `?accounts[]=3&accounts[]=5` pour filtrer.
 
@@ -705,7 +831,7 @@ Vue calendrier d'un mois donné. Regroupe posts et threads par date.
 
 ---
 
-## 13. Annexes : plateformes, langues, statuts
+## 14. Annexes : plateformes, langues, statuts
 
 ### Plateformes supportées
 
@@ -752,7 +878,7 @@ D'autres codes sont acceptés (tout ce qu'OpenAI peut traduire), mais seuls ceux
 
 ---
 
-## 14. Endpoints en session web (PAS accessibles par token)
+## 15. Endpoints en session web (PAS accessibles par token)
 
 Quatre endpoints commencent par `/api/` alors qu'ils sont déclarés dans
 `routes/web.php` : ils tournent sous le middleware `web` (cookie de session +

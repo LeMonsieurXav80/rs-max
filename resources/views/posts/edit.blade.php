@@ -96,10 +96,14 @@
                 this.mediaItems.splice(index, 1);
             } else {
                 const mediaItem = {
+                    id: item.id,
                     url: item.url,
                     mimetype: item.mimetype,
                     size: item.size,
                     title: item.filename,
+                    // Cache d'affichage pour les tags partenaires hérités ; la relation
+                    // en base fait foi, ces noms ne sont jamais relus côté serveur.
+                    partners: item.partners || [],
                 };
                 if (item.thumbnail_url) {
                     mediaItem.thumbnail_url = item.thumbnail_url;
@@ -337,6 +341,9 @@
 
             {{-- Library modal --}}
             @include('posts._media-library')
+
+            {{-- Partenaires (tag interne, hérité des photos + ajouts manuels) --}}
+            @include('posts._partners')
 
             {{-- Link URL --}}
             <div class="mt-6">

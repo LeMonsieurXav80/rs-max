@@ -4,6 +4,7 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class MediaFile extends Model
@@ -63,6 +64,16 @@ class MediaFile extends Model
     public function publications(): HasMany
     {
         return $this->hasMany(MediaPublication::class);
+    }
+
+    /**
+     * Marques / partenaires tagues sur la photo. Source de verite : ce pivot.
+     * La colonne `brands` en est le miroir denormalise (noms canoniques), tenu
+     * a jour par PartnerTagService et conserve pour les prompts IA et l'API.
+     */
+    public function partners(): BelongsToMany
+    {
+        return $this->belongsToMany(Partner::class, 'media_file_partner')->withTimestamps();
     }
 
     public function getUrlAttribute(): string

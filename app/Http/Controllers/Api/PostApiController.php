@@ -3,8 +3,10 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
+use App\Models\Partner;
 use App\Models\Post;
 use App\Models\PostPlatform;
+use App\Services\PartnerTagService;
 use App\Services\PublishingService;
 use Carbon\Carbon;
 use Illuminate\Http\JsonResponse;
@@ -21,9 +23,19 @@ class PostApiController extends Controller
     {
         $user = $request->user();
 
-        $query = Post::with(['postPlatforms.platform', 'postPlatforms.socialAccount'])
+        $query = Post::with(['postPlatforms.platform', 'postPlatforms.socialAccount', 'partners'])
             ->where('user_id', $user->id)
             ->orderByDesc('created_at');
+
+        // ?partner=12 ou ?partner=coca-cola — publications taguées de ce partenaire.
+        if ($request->filled('partner')) {
+            $needle = trim((string) $request->input('partner'));
+            $query->whereHas('partners', function ($q) use ($needle) {
+                ctype_digit($needle)
+                    ? $q->where('partners.id', (int) $needle)
+                    : $q->where('partners.slug', Partner::slugFor($needle));
+            });
+        }
 
         if ($request->filled('status')) {
             $query->where('status', $request->input('status'));
@@ -72,7 +84,7 @@ class PostApiController extends Controller
     public function show(Request $request, Post $post): JsonResponse
     {
         $this->authorizePost($request, $post);
-        $post->load(['postPlatforms.platform', 'postPlatforms.socialAccount', 'postPlatforms.logs']);
+        $post->load(['postPlatforms.platform', 'postPlatforms.socialAccount', 'postPlatforms.logs', 'partners']);
 
         return response()->json(['post' => $this->formatPost($post, true)]);
     }
@@ -91,6 +103,8 @@ class PostApiController extends Controller
             'translations.*' => 'nullable|string|max:10000',
             'hashtags' => 'nullable|string|max:1000',
             'media' => 'nullable|array',
+            'partners' => 'nullable|array',
+            'partners.*' => 'integer|exists:partners,id',
             'link_url' => 'nullable|url|max:2048',
             'status' => 'required|in:draft,scheduled',
             'scheduled_at' => 'required_if:status,scheduled|nullable|date|after_or_equal:now',
@@ -135,10 +149,13 @@ class PostApiController extends Controller
                 ]);
             }
 
+            // Tags partenaires : ceux fournis + ceux hérités des photos attachées.
+            app(PartnerTagService::class)->syncPost($post, $validated['partners'] ?? []);
+
             return $post;
         });
 
-        $post->load(['postPlatforms.platform', 'postPlatforms.socialAccount']);
+        $post->load(['postPlatforms.platform', 'postPlatforms.socialAccount', 'partners']);
 
         return response()->json(['post' => $this->formatPost($post)], 201);
     }
@@ -163,6 +180,8 @@ class PostApiController extends Controller
             'translations.*' => 'nullable|string|max:10000',
             'hashtags' => 'nullable|string|max:1000',
             'media' => 'nullable|array',
+            'partners' => 'nullable|array',
+            'partners.*' => 'integer|exists:partners,id',
             'link_url' => 'nullable|url|max:2048',
             'status' => 'sometimes|in:draft,scheduled',
             'scheduled_at' => 'nullable|date|after_or_equal:now',
@@ -204,11 +223,46 @@ class PostApiController extends Controller
                     ]);
                 }
             }
+
+            // `partners` absent = on conserve les tags manuels existants ; les tags
+            // 'auto' sont de toute façon recalculés depuis les photos courantes.
+            app(PartnerTagService::class)->syncPost($post, $validated['partners'] ?? null);
         });
 
-        $post->refresh()->load(['postPlatforms.platform', 'postPlatforms.socialAccount']);
+        $post->refresh()->load(['postPlatforms.platform', 'postPlatforms.socialAccount', 'partners']);
 
         return response()->json(['post' => $this->formatPost($post)]);
+    }
+
+    /**
+     * PUT /api/posts/{id}/partners — Poser les tags partenaires, quel que soit le statut.
+     *
+     * Séparé de PUT /api/posts/{id}, qui refuse les posts déjà publiés : le tag est
+     * une métadonnée interne de reporting, donc posable rétroactivement.
+     */
+    public function updatePartners(Request $request, Post $post): JsonResponse
+    {
+        $this->authorizePost($request, $post);
+
+        $validated = $request->validate([
+            'partners' => 'present|array',
+            'partners.*' => 'integer|exists:partners,id',
+        ]);
+
+        app(PartnerTagService::class)->syncPost($post, $validated['partners']);
+
+        $post->load('partners');
+
+        return response()->json([
+            'success' => true,
+            'post_id' => $post->id,
+            'partners' => $post->partners->map(fn (Partner $p) => [
+                'id' => $p->id,
+                'name' => $p->name,
+                'slug' => $p->slug,
+                'source' => $p->pivot->source,
+            ]),
+        ]);
     }
 
     /**
@@ -326,6 +380,15 @@ class PostApiController extends Controller
                 'metrics' => $pp->metrics,
                 'published_at' => $pp->published_at?->toIso8601String(),
             ]),
+            // 'auto' = hérité d'une photo taguée, 'manual' = posé à la main.
+            'partners' => $post->relationLoaded('partners')
+                ? $post->partners->map(fn (Partner $p) => [
+                    'id' => $p->id,
+                    'name' => $p->name,
+                    'slug' => $p->slug,
+                    'source' => $p->pivot->source,
+                ])->values()
+                : null,
         ];
 
         if ($detailed) {

@@ -15,6 +15,7 @@ use App\Models\WpSource;
 use App\Models\YtSource;
 use App\Services\AiAssistService;
 use App\Services\Carousel\CarouselRenderService;
+use App\Services\PartnerTagService;
 use App\Services\ThreadBoostService;
 use App\Services\ThreadContentGenerationService;
 use App\Services\ThreadPublishingService;
@@ -270,6 +271,9 @@ class ThreadController extends Controller
                 );
             }
 
+            // Tags partenaires hérités des photos des segments (boost inclus).
+            app(PartnerTagService::class)->syncThread($thread, []);
+
             return $thread;
         });
 
@@ -306,6 +310,7 @@ class ThreadController extends Controller
         $thread->load([
             'segments.segmentPlatforms.socialAccount.platform',
             'socialAccounts.platform',
+            'partners',
             'user',
         ]);
 
@@ -317,7 +322,34 @@ class ThreadController extends Controller
             ->orderBy('name')
             ->get();
 
-        return view('threads.show', compact('thread', 'availableAccounts'));
+        $partnerOptions = app(PartnerTagService::class)->options();
+
+        return view('threads.show', compact('thread', 'availableAccounts', 'partnerOptions'));
+    }
+
+    /**
+     * Met à jour les seuls tags partenaires d'un fil.
+     *
+     * Comme pour les posts, séparé de update() : celui-ci refuse les fils publiés,
+     * alors qu'un tag partenaire doit rester posable rétroactivement.
+     */
+    public function updatePartners(Request $request, Thread $thread): RedirectResponse
+    {
+        $user = $request->user();
+
+        if (! $user->isManager() && $thread->user_id !== $user->id) {
+            abort(403);
+        }
+
+        $validated = $request->validate([
+            'partners' => 'nullable|array',
+            'partners.*' => 'integer|exists:partners,id',
+        ]);
+
+        app(PartnerTagService::class)->syncThread($thread, $validated['partners'] ?? []);
+
+        return redirect()->route('threads.show', $thread)
+            ->with('success', 'Partenaires mis à jour.');
     }
 
     /**
@@ -482,6 +514,10 @@ class ThreadController extends Controller
                     $validated['boost']['promo_text'],
                 );
             }
+
+            // Les tags 'auto' suivent les photos courantes ; les manuels sont conservés
+            // (ils se posent depuis la fiche du fil, pas depuis ce formulaire).
+            app(PartnerTagService::class)->syncThread($thread, null);
         });
 
         return redirect()->route('threads.show', $thread)

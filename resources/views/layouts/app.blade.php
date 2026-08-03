@@ -467,6 +467,18 @@
                         Groupes
                     </a>
 
+                    {{-- Partenaires : referentiel des marques taguees sur les photos et les publications --}}
+                    @if(auth()->user()->isManager())
+                    <a href="{{ url('/partners') }}"
+                       class="flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-colors {{ str_starts_with($currentRoute, 'partners') ? 'bg-indigo-50 text-indigo-600' : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900' }}">
+                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1.5">
+                            <path stroke-linecap="round" stroke-linejoin="round" d="M9.568 3H5.25A2.25 2.25 0 0 0 3 5.25v4.318c0 .597.237 1.17.659 1.591l9.581 9.581c.699.699 1.78.872 2.607.33a18.095 18.095 0 0 0 5.223-5.223c.542-.827.369-1.908-.33-2.607L11.16 3.66A2.25 2.25 0 0 0 9.568 3Z" />
+                            <path stroke-linecap="round" stroke-linejoin="round" d="M6 6h.008v.008H6V6Z" />
+                        </svg>
+                        Partenaires
+                    </a>
+                    @endif
+
                     {{-- Parametres (manager+) --}}
                     @if(auth()->user()->isManager())
                     <a href="{{ url('/settings') }}"

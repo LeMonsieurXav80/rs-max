@@ -7,7 +7,9 @@ use App\Http\Controllers\Controller;
 use App\Models\MediaFile;
 use App\Models\MediaFolder;
 use App\Models\MediaPublication;
+use App\Models\Partner;
 use App\Services\AiAssistService;
+use App\Services\PartnerTagService;
 use App\Services\StockPhotoService;
 use App\Support\TagNormalizer;
 use Illuminate\Http\JsonResponse;
@@ -150,6 +152,8 @@ class MediaApiController extends Controller
             'ingested_at' => now(),
         ]);
 
+        $this->syncPartners($mediaFile, $meta['brands'] ?? null, 'import');
+
         return response()->json([
             'id' => $mediaFile->id,
             'status' => 'created',
@@ -225,6 +229,10 @@ class MediaApiController extends Controller
 
         $media->update($update);
 
+        if (array_key_exists('brands', $data)) {
+            $this->syncPartners($media, $data['brands']);
+        }
+
         return response()->json([
             'id' => $media->id,
             'updated' => array_keys($update),
@@ -264,6 +272,10 @@ class MediaApiController extends Controller
             'used' => 'nullable|boolean',
             'used_on' => 'nullable|integer|exists:wp_sources,id',
             'unused_on' => 'nullable|integer|exists:wp_sources,id',
+            // Partenaires : id numérique ou slug/nom. Plusieurs valeurs = ET logique
+            // (la photo doit porter tous les partenaires demandés).
+            'partners' => 'nullable|array',
+            'partners.*' => 'string',
         ]);
 
         $folder = MediaFolder::where('slug', $params['folder'])->firstOrFail();
@@ -322,6 +334,19 @@ class MediaApiController extends Controller
         foreach (['country', 'city', 'region'] as $geoField) {
             if (! empty($params[$geoField])) {
                 $query->whereRaw("LOWER({$geoField}) = ?", [strtolower(trim($params[$geoField]))]);
+            }
+        }
+        // Partenaires : filtre sur la relation, pas sur le miroir JSON `brands`.
+        if (! empty($params['partners'])) {
+            foreach ($params['partners'] as $partner) {
+                $needle = trim((string) $partner);
+                $query->whereHas('partners', function ($q) use ($needle) {
+                    if (ctype_digit($needle)) {
+                        $q->where('partners.id', (int) $needle);
+                    } else {
+                        $q->where('partners.slug', Partner::slugFor($needle));
+                    }
+                });
             }
         }
         // Usage global : used=1 → au moins une publication (social OU WP) ; used=0 → jamais publiée.
@@ -600,6 +625,10 @@ class MediaApiController extends Controller
             'region' => $media->region,
             'country' => $media->country,
             'brands' => $media->brands,
+            // Même information que `brands`, mais sous forme de fiches identifiables
+            // (c'est la relation qui fait foi ; `brands` en est le miroir de noms).
+            'partners' => $media->partners()->orderBy('name')->get(['id', 'name', 'slug'])
+                ->map(fn (Partner $p) => ['id' => $p->id, 'name' => $p->name, 'slug' => $p->slug]),
             'event' => $media->event,
             'taken_at' => $media->taken_at?->toIso8601String(),
 
@@ -759,6 +788,10 @@ class MediaApiController extends Controller
             'pending_analysis' => false,
             'ingested_at' => $media->ingested_at ?? now(),
         ]);
+
+        if (array_key_exists('brands', $data)) {
+            $this->syncPartners($media, $data['brands'], 'import');
+        }
 
         // Recharge la relation folder pour confirmer côté client le placement actuel
         // (utile en mode --redo : le script vérifie que rien n'a bougé après l'enrich).
@@ -939,6 +972,10 @@ class MediaApiController extends Controller
             if (! empty($update)) {
                 $media->update($update);
             }
+
+            if (! empty($result['brands'])) {
+                $this->syncPartners($media, $result['brands'], 'vision');
+            }
         }
 
         return response()->json([
@@ -1031,6 +1068,20 @@ class MediaApiController extends Controller
     private function normalizeTags(?array $tags): ?array
     {
         return TagNormalizer::normalize($tags);
+    }
+
+    /**
+     * Aligne la relation partenaires d'une photo sur les marques qui viennent d'être
+     * écrites, et réécrit `brands` avec les noms canoniques du référentiel.
+     * Ne fait rien si l'appelant n'a pas touché aux marques.
+     */
+    private function syncPartners(MediaFile $media, ?array $brands, string $origin = 'manual'): void
+    {
+        if ($brands === null) {
+            return;
+        }
+
+        app(PartnerTagService::class)->syncMediaNames($media, $brands, $origin);
     }
 
     /**

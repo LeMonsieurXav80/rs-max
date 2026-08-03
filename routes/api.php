@@ -4,6 +4,7 @@ use App\Http\Controllers\Api\ApiController;
 use App\Http\Controllers\Api\CarouselApiController;
 use App\Http\Controllers\Api\GenerateApiController;
 use App\Http\Controllers\Api\MediaApiController;
+use App\Http\Controllers\Api\PartnerApiController;
 use App\Http\Controllers\Api\PersonaApiController;
 use App\Http\Controllers\Api\PostApiController;
 use App\Http\Controllers\Api\ReshareApiController;
@@ -21,6 +22,8 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::post('/posts', [PostApiController::class, 'store']);
     Route::get('/posts/{post}', [PostApiController::class, 'show']);
     Route::put('/posts/{post}', [PostApiController::class, 'update']);
+    // Tag partenaire : accepté quel que soit le statut, y compris sur un post déjà publié.
+    Route::put('/posts/{post}/partners', [PostApiController::class, 'updatePartners']);
     Route::delete('/posts/{post}', [PostApiController::class, 'destroy']);
     Route::post('/posts/{post}/publish', [PostApiController::class, 'publish']);
     Route::post('/posts/{post}/reshare', [ReshareApiController::class, 'fromPost']);
@@ -33,6 +36,7 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::post('/threads', [ThreadApiController::class, 'store']);
     Route::get('/threads/{thread}', [ThreadApiController::class, 'show']);
     Route::put('/threads/{thread}', [ThreadApiController::class, 'update']);
+    Route::put('/threads/{thread}/partners', [ThreadApiController::class, 'updatePartners']);
     Route::delete('/threads/{thread}', [ThreadApiController::class, 'destroy']);
     Route::post('/threads/{thread}/publish', [ThreadApiController::class, 'publish']);
     Route::post('/bulk-schedule-threads', [ApiController::class, 'bulkScheduleThreads']);
@@ -43,6 +47,16 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::get('/personas/{persona}', [PersonaApiController::class, 'show']);
     Route::put('/personas/{persona}', [PersonaApiController::class, 'update']);
     Route::delete('/personas/{persona}', [PersonaApiController::class, 'destroy']);
+
+    // ── Partenaires / marques ──
+    Route::get('/partners', [PartnerApiController::class, 'index']);
+    Route::post('/partners', [PartnerApiController::class, 'store']);
+    Route::get('/partners/{partner}/posts', [PartnerApiController::class, 'posts']); // avant /{partner}
+    Route::get('/partners/{partner}/threads', [PartnerApiController::class, 'threads']);
+    Route::get('/partners/{partner}', [PartnerApiController::class, 'show']);
+    Route::put('/partners/{partner}', [PartnerApiController::class, 'update']);
+    Route::patch('/partners/{partner}', [PartnerApiController::class, 'update']);
+    Route::delete('/partners/{partner}', [PartnerApiController::class, 'destroy']);
 
     // ── Stats ──
     Route::get('/stats/overview', [StatsApiController::class, 'overview']);

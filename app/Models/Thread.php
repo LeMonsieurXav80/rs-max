@@ -54,6 +54,18 @@ class Thread extends Model
         return $this->hasMany(ThreadSegment::class)->orderBy('position');
     }
 
+    /**
+     * Partenaires tagues sur le fil (reporting interne).
+     * pivot.source : 'auto' (herite d'une photo d'un segment, recalcule a chaque
+     * enregistrement) ou 'manual' (pose a la main, jamais ecrase).
+     */
+    public function partners(): BelongsToMany
+    {
+        return $this->belongsToMany(Partner::class, 'partner_thread')
+            ->withPivot('source')
+            ->withTimestamps();
+    }
+
     public function socialAccounts(): BelongsToMany
     {
         return $this->belongsToMany(SocialAccount::class, 'thread_social_account')

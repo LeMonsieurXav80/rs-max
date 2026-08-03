@@ -338,6 +338,13 @@
                             </div>
                         </div>
                     @endif
+
+                    {{-- Partenaires : modifiable même après publication (métadonnée interne) --}}
+                    @include('partners._tag-panel', [
+                        'taggable' => $post,
+                        'action' => route('posts.partners.update', $post->id),
+                        'partnerOptions' => $partnerOptions,
+                    ])
                 </div>
             </div>
 
