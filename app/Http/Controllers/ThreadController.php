@@ -71,7 +71,15 @@ class ThreadController extends Controller
             $query->whereHas('socialAccounts', fn ($q) => $q->where('social_accounts.id', (int) $request->input('account_id')));
         }
 
-        $threads = $query->orderByDesc('created_at')->paginate(15)->withQueryString();
+        // Tri : en vue « programmés », le prochain à publier d'abord ;
+        // sinon, du plus récemment publié/programmé au plus ancien (cf. PostController).
+        if ($request->input('status') === 'scheduled') {
+            $query->orderBy('scheduled_at');
+        } else {
+            $query->orderByRaw('COALESCE(published_at, scheduled_at, created_at) DESC');
+        }
+
+        $threads = $query->paginate(15)->withQueryString();
 
         return view('threads.index', compact('threads', 'accountGroups', 'accounts'));
     }
