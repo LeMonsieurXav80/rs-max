@@ -487,4 +487,47 @@ class CarouselApiTest extends TestCase
             Storage::disk('local')->delete("media/{$filename}");
         }
     }
+
+    /**
+     * Le texte de la slide décrit l'image générée (description_fr) : c'est lui
+     * qui la rend trouvable dans la médiathèque et exploitable comme contexte IA.
+     */
+    public function test_le_texte_de_la_slide_compose_la_description_de_limage(): void
+    {
+        $registry = app(\App\Services\Carousel\BrickRegistry::class);
+
+        // Slots textuels dans l'ordre du manifeste ; image, position et décalage ignorés.
+        $this->assertSame(
+            'Le petit-déjeuner idéal — 3 erreurs à éviter',
+            $registry->plainText(['brick' => 'photo-title-bl', 'data' => [
+                'title' => 'Le petit-déjeuner idéal',
+                'subtitle' => '3 erreurs à éviter',
+                'image' => '/media/photo.jpg',
+                'position' => 'bottom-left',
+                'offset' => 12,
+            ]]),
+        );
+
+        // Les listes « valeur | libellé » deviennent lisibles, les retours à la ligne s'aplatissent.
+        $this->assertSame(
+            'Les chiffres — 42 % : des lecteurs abandonnent 8 s : temps d’attention moyen',
+            $registry->plainText(['brick' => 'stat-grid', 'data' => [
+                'title' => 'Les chiffres',
+                'items' => "42 % | des lecteurs abandonnent\n8 s | temps d’attention moyen",
+            ]]),
+        );
+
+        // Slide sans aucun texte (image seule) => pas de description inventée.
+        $this->assertSame('', $registry->plainText(['brick' => 'image-full', 'data' => ['image' => '/media/x.jpg']]));
+
+        // Brique inconnue : on ne lève pas, la génération ne doit pas échouer pour ça.
+        $this->assertSame('', $registry->plainText(['brick' => 'inconnue', 'data' => ['title' => 'x']]));
+
+        // Texte très long : tronqué proprement.
+        $long = $registry->plainText(
+            ['brick' => 'bold-text', 'data' => ['title' => str_repeat('a', 400), 'subtitle' => str_repeat('b', 400)]],
+        );
+        $this->assertSame(500, mb_strlen($long));
+        $this->assertStringEndsWith('…', $long);
+    }
 }

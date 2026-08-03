@@ -329,6 +329,9 @@ class CarouselApiController extends Controller
             'height' => $dim[1],
             'source' => 'api',
             'is_generated' => true,
+            // Le texte composé sur la slide décrit l'image : sans lui elle
+            // arriverait muette dans la médiathèque (ni recherche, ni contexte IA).
+            'description_fr' => app(BrickRegistry::class)->plainText($slide) ?: null,
             // Même dossier de dépôt que le Studio (Paramètres → Studio) : l'image
             // ne doit pas atterrir ailleurs selon qu'elle vient de l'API ou du web.
             'folder_id' => StudioDefaults::folderId(),

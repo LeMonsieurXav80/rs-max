@@ -254,6 +254,13 @@ L'image est ajoutée à la médiathèque (`is_generated: true`, `source: "api"`)
 sa vignette. Son `id` est directement réutilisable pour publier (§ 9). `sources`
 liste les photos du catalogue consommées par les slots image — voir § 12.
 
+Sa `description_fr` reprend **le texte composé sur la slide** (les slots texte du
+manifeste, dans l'ordre, joints par « — », tronqués à 500 caractères). L'image
+n'arrive donc pas muette dans le catalogue : elle est trouvable à la recherche et
+utilisable comme contexte par l'IA de rédaction. Une slide sans texte reste sans
+description — rien n'est inventé. La description peut être remplacée ensuite via
+`PATCH /api/media/{id}`.
+
 Elle atterrit dans le dossier choisi dans **Paramètres → Studio** (racine par
 défaut) — le même que celui du compositeur web, pour qu'une image ne change pas
 de place selon son point de départ. Le réglage n'est pas surchargeable par

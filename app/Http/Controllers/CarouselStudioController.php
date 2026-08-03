@@ -145,6 +145,9 @@ class CarouselStudioController extends Controller
                 'height' => $dim[1],
                 'source' => 'studio',
                 'is_generated' => true,
+                // Le texte composé sur la slide décrit l'image : sans lui elle
+                // arriverait muette dans la médiathèque (ni recherche, ni contexte IA).
+                'description_fr' => app(BrickRegistry::class)->plainText($data['slides'][$i] ?? []) ?: null,
                 // Dossier de dépôt choisi dans Paramètres → Studio (null = racine).
                 'folder_id' => StudioDefaults::folderId(),
             ]);

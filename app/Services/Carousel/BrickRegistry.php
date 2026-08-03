@@ -128,6 +128,51 @@ class BrickRegistry
     }
 
     /**
+     * Texte lisible d'une slide : la valeur de ses slots textuels, dans l'ordre
+     * du manifeste. Sert à décrire l'image générée dans la médiathèque plutôt que
+     * de la laisser muette — `description_fr` sert de contexte à l'IA de rédaction.
+     *
+     * Générique par construction : aucune liste de slots en dur, une nouvelle
+     * brique est décrite sans rien ajouter ici.
+     *
+     * @param  array{brick?: string, data?: array<string, mixed>}  $slide
+     */
+    public function plainText(array $slide, int $maxLength = 500): string
+    {
+        $slug = (string) ($slide['brick'] ?? '');
+        if ($slug === '' || ! $this->exists($slug)) {
+            return '';
+        }
+
+        $data = is_array($slide['data'] ?? null) ? $slide['data'] : [];
+        $parts = [];
+
+        foreach ($this->get($slug)['slots'] as $key => $slot) {
+            if (! in_array($slot['type'], ['text', 'textarea'], true)) {
+                continue;
+            }
+
+            $value = $data[$key] ?? null;
+            if (! is_scalar($value)) {
+                continue;
+            }
+
+            // Les briques en liste (« 42 % | des lecteurs ») deviennent lisibles ;
+            // les retours à la ligne s'aplatissent pour tenir sur une description.
+            $value = str_replace('|', ' :', (string) $value);
+            $value = trim(preg_replace('/\s+/u', ' ', $value));
+
+            if ($value !== '') {
+                $parts[] = $value;
+            }
+        }
+
+        $text = implode(' — ', $parts);
+
+        return mb_strlen($text) > $maxLength ? mb_substr($text, 0, $maxLength - 1).'…' : $text;
+    }
+
+    /**
      * @return array<int, string>
      */
     public function ratioKeys(): array
