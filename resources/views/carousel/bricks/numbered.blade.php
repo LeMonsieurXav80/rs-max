@@ -1,10 +1,17 @@
 {{--
     Brique « Slide numérotée ».
-    Slots : number (ex. 01), title, body (optionnel), image de fond (optionnelle),
-    position, offset. Le numéro est repris en très grand filigrane derrière le texte.
+    Slots : number (ex. 01), number_style, title, body (optionnel), image de fond
+    (optionnelle), position, offset.
+    `number_style` décide de l'habillage du numéro : pastille au-dessus du titre,
+    filigrane géant rogné par le cadre, les deux (défaut, rendu historique) ou aucun.
 --}}
 @php
     $number = trim((string) ($data['number'] ?? ''));
+    // Valeur vide ou inconnue => rendu historique (pastille + filigrane).
+    $numberStyle = (string) ($data['number_style'] ?? '');
+    $numberStyle = in_array($numberStyle, ['both', 'badge', 'watermark', 'none'], true) ? $numberStyle : 'both';
+    $showBadge = $number !== '' && in_array($numberStyle, ['both', 'badge'], true);
+    $showWatermark = $number !== '' && in_array($numberStyle, ['both', 'watermark'], true);
     $title = trim((string) ($data['title'] ?? ''));
     $body = trim((string) ($data['body'] ?? ''));
     $image = $data['image'] ?? null;
@@ -37,7 +44,7 @@
     @endif
 
     {{-- Filigrane : le numéro en très grand, volontairement rogné par le cadre --}}
-    @if ($number !== '')
+    @if ($showWatermark)
         <div style="position:absolute; right:{{ (int) round($w * -0.02) }}px; bottom:{{ (int) round($h * -0.06) }}px;
                     font-family:'{{ $titleFont }}',sans-serif; font-weight:800;
                     font-size:{{ (int) round($h * 0.42 * $ts) }}px; line-height:0.8; letter-spacing:-0.04em;
@@ -48,7 +55,7 @@
                 justify-content:{{ $anchor['justify'] }}; align-items:{{ $anchor['align'] }};
                 padding:{{ $pad }}px; {{ $shift }}">
         <div style="text-align:{{ $anchor['text_align'] }}; max-width:100%;">
-            @if ($number !== '')
+            @if ($showBadge)
                 <span style="display:inline-block; margin-bottom:{{ (int) round($h * 0.025) }}px;
                              padding:{{ (int) round($h * 0.008) }}px {{ (int) round($w * 0.030) }}px;
                              border-radius:999px; background:{{ $accent }};

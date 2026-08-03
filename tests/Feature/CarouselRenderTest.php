@@ -80,6 +80,39 @@ class CarouselRenderTest extends TestCase
         }
     }
 
+    /**
+     * `number_style` choisit l'habillage du numéro sans changer de brique.
+     * Repères dans le HTML : la pastille est le seul élément en `border-radius:999px`,
+     * le filigrane le seul en `opacity:0.16`.
+     */
+    public function test_le_style_du_numero_pilote_pastille_et_filigrane(): void
+    {
+        $cas = [
+            // [style, pastille attendue, filigrane attendu]
+            [null, true, true],     // slot absent => rendu historique
+            ['', true, true],       // valeur vide => idem, pas de slide muette
+            ['both', true, true],
+            ['badge', true, false],
+            ['watermark', false, true],
+            ['none', false, false],
+        ];
+
+        foreach ($cas as [$style, $pastille, $filigrane]) {
+            $data = ['number' => '07', 'title' => 'Étape sept'];
+            if ($style !== null) {
+                $data['number_style'] = $style;
+            }
+
+            $html = $this->service()->buildHtml('4:5', [['brick' => 'numbered', 'data' => $data]]);
+            $libelle = $style === null ? '(absent)' : ($style === '' ? '(vide)' : $style);
+
+            $this->assertSame($pastille, str_contains($html, 'border-radius:999px'), "pastille, style {$libelle}");
+            $this->assertSame($filigrane, str_contains($html, 'opacity:0.16'), "filigrane, style {$libelle}");
+            // Le titre reste rendu quel que soit le style retenu.
+            $this->assertStringContainsString('Étape sept', $html);
+        }
+    }
+
     public function test_une_brique_inconnue_leve_une_exception(): void
     {
         $this->expectException(\InvalidArgumentException::class);

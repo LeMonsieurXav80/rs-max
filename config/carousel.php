@@ -235,11 +235,22 @@ return [
 
         'numbered' => [
             'name' => 'Slide numérotée',
-            'description' => 'Numéro d’étape (pastille + filigrane géant) + titre et texte. Pour les carrousels en étapes.',
+            'description' => 'Numéro d’étape (pastille et/ou filigrane géant) + titre et texte. Pour les carrousels en étapes.',
             'view' => 'carousel.bricks.numbered',
             'ratios' => ['*'],
             'slots' => [
                 'number' => ['label' => 'Numéro (ex. 01)', 'type' => 'text', 'max_length' => 4],
+                'number_style' => [
+                    'label' => 'Style du numéro',
+                    'type' => 'select',
+                    'options' => [
+                        'both' => 'Pastille + filigrane',
+                        'badge' => 'Pastille seule',
+                        'watermark' => 'Filigrane seul',
+                        'none' => 'Aucun',
+                    ],
+                    'default' => 'both',
+                ],
                 'title' => ['label' => 'Titre', 'type' => 'text', 'max_length' => 160],
                 'body' => ['label' => 'Texte (optionnel)', 'type' => 'textarea', 'max_length' => 400],
                 'image' => ['label' => 'Image de fond (optionnelle)', 'type' => 'image'],

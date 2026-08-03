@@ -488,12 +488,18 @@ Pour un carrousel, reprendre les `items[]` **dans l'ordre** — c'est celui des 
 | `stat-grid` | Grille de chiffres | `title`, `items`, `columns` |
 | `quote` | Citation | `quote`, `author`, `image`, `position`, `offset` |
 | `table-rows` | Tableau | `title`, `rows`, `note` |
-| `numbered` | Slide numérotée | `number`, `title`, `body`, `image`, `position`, `offset` |
+| `numbered` | Slide numérotée | `number`, `number_style`, `title`, `body`, `image`, `position`, `offset` |
 | `cta-end` | Slide de fin (appel à l'action) | `title`, `subtitle`, `handle`, `image`, `position`, `offset` |
 
 Défauts notables : `photo-title-bl` ancre en `bottom-left`, `text-on-image` et
 `cta-end` en `middle-center`, `bold-text`/`quote`/`numbered` en `middle-left`,
 `stat-grid` sur 2 colonnes. Le manifeste fait foi.
+
+`numbered.number_style` décide de l'habillage du numéro sans changer de brique :
+`both` (défaut, pastille + filigrane géant), `badge` (pastille seule),
+`watermark` (filigrane seul), `none` (numéro saisi mais non affiché — utile pour
+garder la numérotation dans les données sans l'imprimer sur l'image). Valeur
+absente ou vide => `both`, donc les compositions existantes ne bougent pas.
 
 ---
 
