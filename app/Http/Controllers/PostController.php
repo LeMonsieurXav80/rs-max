@@ -96,6 +96,28 @@ class PostController extends Controller
         };
         $applyMediaTypeFilter($query);
 
+        // Groupes et comptes pour les filtres (mêmes données que le formulaire de création)
+        $accountGroups = $user->accountGroups()->with('socialAccounts:id')->orderBy('sort_order')->get();
+        $accounts = $user->activeSocialAccounts()
+            ->with('platform')
+            ->orderBy('name')
+            ->get()
+            ->groupBy(fn (SocialAccount $account) => $account->platform->slug);
+
+        // Filtre par groupe (au moins un compte du groupe) ou par compte individuel
+        $applyAccountFilter = function ($q) use ($request, $accountGroups) {
+            if ($request->filled('group_id')) {
+                $group = $accountGroups->firstWhere('id', (int) $request->input('group_id'));
+                $accountIds = $group ? $group->socialAccounts->pluck('id')->all() : [];
+                $q->whereHas('postPlatforms', fn ($ppq) => $ppq->whereIn('social_account_id', $accountIds));
+            }
+
+            if ($request->filled('account_id')) {
+                $q->whereHas('postPlatforms', fn ($ppq) => $ppq->where('social_account_id', (int) $request->input('account_id')));
+            }
+        };
+        $applyAccountFilter($query);
+
         // List view: paginated (scheduled posts sorted by next to publish first)
         $listQuery = clone $query;
         if ($request->input('status') === 'scheduled') {
@@ -128,6 +150,7 @@ class PostController extends Controller
             $calendarQuery->where('status', $request->input('status'));
         }
         $applyMediaTypeFilter($calendarQuery);
+        $applyAccountFilter($calendarQuery);
 
         $calendarPosts = $calendarQuery
             ->where(function ($q) use ($startOfMonth, $endOfMonth) {
@@ -142,7 +165,8 @@ class PostController extends Controller
         $nextMonth = $startOfMonth->copy()->addMonth()->format('Y-m');
 
         return view('posts.index', compact(
-            'posts', 'calendarPosts', 'startOfMonth', 'endOfMonth', 'month', 'prevMonth', 'nextMonth'
+            'posts', 'calendarPosts', 'startOfMonth', 'endOfMonth', 'month', 'prevMonth', 'nextMonth',
+            'accountGroups', 'accounts'
         ));
     }
 

@@ -78,6 +78,11 @@
         'carousel'  => 'Carrousel',
     ];
     $currentMediaType = request('media_type', 'all');
+
+    $currentGroup   = request('group_id');
+    $currentAccount = request('account_id');
+    // Paramètres conservés d'un filtre à l'autre (sans la pagination)
+    $baseParams = request()->except('page');
 @endphp
 
 <div x-data="calendarApp()" x-init="init()">
@@ -87,11 +92,13 @@
         {{-- Status filter pills --}}
         <div class="flex flex-wrap gap-2">
             @foreach($statusFilters as $key => $label)
-                <a href="{{ route('posts.index', array_merge(
-                        $key !== 'all' ? ['status' => $key] : [],
-                        request('month') ? ['month' => request('month')] : [],
-                        request('media_type') ? ['media_type' => request('media_type')] : []
-                    )) }}"
+                @php
+                    $statusParams = collect($baseParams)->except('status')->all();
+                    if ($key !== 'all') {
+                        $statusParams['status'] = $key;
+                    }
+                @endphp
+                <a href="{{ route('posts.index', $statusParams) }}"
                    class="px-4 py-2 text-sm font-medium rounded-xl transition-colors
                        {{ $currentStatus === $key
                            ? 'bg-indigo-600 text-white shadow-sm'
@@ -123,13 +130,15 @@
     </div>
 
     {{-- Media type filters --}}
-    <div class="flex flex-wrap gap-2 mb-6">
+    <div class="flex flex-wrap gap-2 mb-4">
         @foreach($mediaFilters as $key => $label)
-            <a href="{{ route('posts.index', array_merge(
-                    $key !== 'all' ? ['media_type' => $key] : [],
-                    request('status') ? ['status' => request('status')] : [],
-                    request('month') ? ['month' => request('month')] : []
-                )) }}"
+            @php
+                $mediaParams = collect($baseParams)->except('media_type')->all();
+                if ($key !== 'all') {
+                    $mediaParams['media_type'] = $key;
+                }
+            @endphp
+            <a href="{{ route('posts.index', $mediaParams) }}"
                class="px-3 py-1.5 text-xs font-medium rounded-lg transition-colors
                    {{ $currentMediaType === $key
                        ? 'bg-gray-800 text-white'
@@ -138,6 +147,61 @@
             </a>
         @endforeach
     </div>
+
+    {{-- Filtres par groupe / compte --}}
+    @if($accountGroups->count() || $accounts->count())
+        <div class="flex flex-wrap items-center gap-3 mb-6">
+            @if($accountGroups->count())
+                <div class="flex flex-wrap items-center gap-2">
+                    @php $allGroupsParams = collect($baseParams)->except(['group_id'])->all(); @endphp
+                    <a href="{{ route('posts.index', $allGroupsParams) }}"
+                       class="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg border transition-colors
+                           {{ ! $currentGroup
+                               ? 'bg-gray-900 text-white border-gray-900'
+                               : 'bg-white text-gray-600 hover:bg-gray-100 border-gray-200' }}">
+                        Tous les groupes
+                    </a>
+                    @foreach($accountGroups as $group)
+                        @php
+                            $isActive = (int) $currentGroup === $group->id;
+                            $groupParams = collect($baseParams)->except(['group_id'])->all();
+                            $groupParams['group_id'] = $group->id;
+                        @endphp
+                        <a href="{{ route('posts.index', $groupParams) }}"
+                           class="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg border transition-colors
+                               {{ $isActive ? 'text-white' : 'bg-white text-gray-600 hover:bg-gray-100 border-gray-200' }}"
+                           @if($isActive) style="background-color: {{ $group->color }}; border-color: {{ $group->color }};" @endif>
+                            <span class="w-2 h-2 rounded-full" style="background-color: {{ $isActive ? '#fff' : $group->color }};"></span>
+                            {{ $group->name }}
+                        </a>
+                    @endforeach
+                </div>
+            @endif
+
+            @if($accounts->count())
+                <select onchange="if (this.value) window.location.href = this.value;"
+                        class="text-xs font-medium rounded-lg border border-gray-200 bg-white text-gray-600 px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-indigo-200">
+                    <option value="{{ route('posts.index', collect($baseParams)->except(['account_id'])->all()) }}">
+                        Tous les comptes
+                    </option>
+                    @foreach($accounts as $platformSlug => $platformAccounts)
+                        <optgroup label="{{ ucfirst($platformSlug) }}">
+                            @foreach($platformAccounts as $account)
+                                @php
+                                    $accountParams = collect($baseParams)->except(['account_id'])->all();
+                                    $accountParams['account_id'] = $account->id;
+                                @endphp
+                                <option value="{{ route('posts.index', $accountParams) }}"
+                                    {{ (int) $currentAccount === $account->id ? 'selected' : '' }}>
+                                    {{ $account->name }}
+                                </option>
+                            @endforeach
+                        </optgroup>
+                    @endforeach
+                </select>
+            @endif
+        </div>
+    @endif
 
     {{-- ============================================================== --}}
     {{-- CALENDAR VIEW                                                   --}}
