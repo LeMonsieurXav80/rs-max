@@ -27,6 +27,10 @@ class ThreadsAdapter implements PlatformAdapterInterface, ThreadableAdapterInter
 
     private const CAROUSEL_ASSEMBLY_MAX_ATTEMPTS = 3;
 
+    // Meme parade pour les posts simples : le conteneur peut disparaitre entre le
+    // FINISHED et la finalisation, on le reconstruit de zero.
+    private const CONTAINER_REBUILD_MAX_ATTEMPTS = 3;
+
     private const INVALID_CHILDREN_SUBCODE = 4279004;
 
     private const EXPIRED_RESOURCE_SUBCODE = 4279009;
@@ -100,52 +104,56 @@ class ThreadsAdapter implements PlatformAdapterInterface, ThreadableAdapterInter
                 );
             }
 
-            $params = [
-                'text' => $content,
-                'media_type' => 'TEXT',
-                'reply_to_id' => $replyToId,
-                'access_token' => $accessToken,
-            ];
+            // Une reponse video n'est pas reconstruite : re-uploader et re-encoder la
+            // video a chaque tentative ferait exploser le temps de la requete.
+            $isVideoReply = ! empty($media) && count($media) === 1 && $this->isVideo($media[0]['mimetype']);
 
-            // Single image reply.
-            if (! empty($media) && count($media) === 1 && $this->isImage($media[0]['mimetype'])) {
-                $params['media_type'] = 'IMAGE';
-                $params['image_url'] = $this->resolveImageUrl($media[0]['url']);
-            }
+            $result = $this->createAndPublishWithRetry($userId, $accessToken, function () use ($userId, $accessToken, $content, $replyToId, $media, $options) {
+                $params = [
+                    'text' => $content,
+                    'media_type' => 'TEXT',
+                    'reply_to_id' => $replyToId,
+                    'access_token' => $accessToken,
+                ];
 
-            // Single video reply.
-            if (! empty($media) && count($media) === 1 && $this->isVideo($media[0]['mimetype'])) {
-                $params['media_type'] = 'VIDEO';
-                $params['video_url'] = $media[0]['url'];
-            }
-
-            $this->addLocationParams($params, $options);
-
-            $container = $this->postWithRetry(self::API_BASE."/{$userId}/threads", $params);
-            $containerId = $this->extractId($container, 'reply container creation');
-
-            if ($containerId === null) {
-                return $this->errorFromResponse($container, 'Failed to create reply container');
-            }
-
-            // Wait for video processing if needed.
-            if (($params['media_type'] ?? '') === 'VIDEO') {
-                $processingError = $this->waitForProcessing($containerId, $accessToken);
-
-                if ($processingError !== null) {
-                    return [
-                        'success' => false,
-                        'external_id' => null,
-                        'error' => $processingError,
-                    ];
+                // Single image reply.
+                if (! empty($media) && count($media) === 1 && $this->isImage($media[0]['mimetype'])) {
+                    $params['media_type'] = 'IMAGE';
+                    $params['image_url'] = $this->resolveImageUrl($media[0]['url']);
                 }
-            }
 
-            return $this->qualifyReplyFailure(
-                $this->publishContainer($userId, $accessToken, $containerId),
-                $replyToId,
-                $accessToken,
-            );
+                // Single video reply.
+                if (! empty($media) && count($media) === 1 && $this->isVideo($media[0]['mimetype'])) {
+                    $params['media_type'] = 'VIDEO';
+                    $params['video_url'] = $media[0]['url'];
+                }
+
+                $this->addLocationParams($params, $options);
+
+                $container = $this->postWithRetry(self::API_BASE."/{$userId}/threads", $params);
+                $containerId = $this->extractId($container, 'reply container creation');
+
+                if ($containerId === null) {
+                    return $this->errorFromResponse($container, 'Failed to create reply container');
+                }
+
+                // Wait for video processing if needed.
+                if ($params['media_type'] === 'VIDEO') {
+                    $processingError = $this->waitForProcessing($containerId, $accessToken);
+
+                    if ($processingError !== null) {
+                        return [
+                            'success' => false,
+                            'external_id' => null,
+                            'error' => $processingError,
+                        ];
+                    }
+                }
+
+                return ['success' => true, 'container_id' => $containerId];
+            }, $isVideoReply ? 1 : self::CONTAINER_REBUILD_MAX_ATTEMPTS);
+
+            return $this->qualifyReplyFailure($result, $replyToId, $accessToken);
 
         } catch (\Throwable $e) {
             Log::error('ThreadsAdapter: publishReply failed', [
@@ -183,14 +191,16 @@ class ThreadsAdapter implements PlatformAdapterInterface, ThreadableAdapterInter
             'media_type' => $params['media_type'],
         ]);
 
-        $container = $this->postWithRetry(self::API_BASE."/{$userId}/threads", $params);
-        $containerId = $this->extractId($container, 'text container creation');
+        return $this->createAndPublishWithRetry($userId, $accessToken, function () use ($userId, $params) {
+            $container = $this->postWithRetry(self::API_BASE."/{$userId}/threads", $params);
+            $containerId = $this->extractId($container, 'text container creation');
 
-        if ($containerId === null) {
-            return $this->errorFromResponse($container, 'Failed to create text container');
-        }
+            if ($containerId === null) {
+                return $this->errorFromResponse($container, 'Failed to create text container');
+            }
 
-        return $this->publishContainer($userId, $accessToken, $containerId);
+            return ['success' => true, 'container_id' => $containerId];
+        });
     }
 
     // -------------------------------------------------------------------------
@@ -199,23 +209,28 @@ class ThreadsAdapter implements PlatformAdapterInterface, ThreadableAdapterInter
 
     private function publishSingleImage(string $userId, string $accessToken, string $text, string $imageUrl, ?array $options): array
     {
-        $params = [
-            'text' => $text,
-            'image_url' => $this->resolveImageUrl($imageUrl),
-            'media_type' => 'IMAGE',
-            'access_token' => $accessToken,
-        ];
+        // L'URL image est re-resolue a CHAQUE tentative : si Threads a perdu le
+        // conteneur, on repart d'un media frais (comme publishCarousel() qui recree
+        // ses enfants) plutot que de recycler une URL peut-etre en cause.
+        return $this->createAndPublishWithRetry($userId, $accessToken, function () use ($userId, $accessToken, $text, $imageUrl, $options) {
+            $params = [
+                'text' => $text,
+                'image_url' => $this->resolveImageUrl($imageUrl),
+                'media_type' => 'IMAGE',
+                'access_token' => $accessToken,
+            ];
 
-        $this->addLocationParams($params, $options);
+            $this->addLocationParams($params, $options);
 
-        $container = $this->postWithRetry(self::API_BASE."/{$userId}/threads", $params);
-        $containerId = $this->extractId($container, 'image container creation');
+            $container = $this->postWithRetry(self::API_BASE."/{$userId}/threads", $params);
+            $containerId = $this->extractId($container, 'image container creation');
 
-        if ($containerId === null) {
-            return $this->errorFromResponse($container, 'Failed to create image container');
-        }
+            if ($containerId === null) {
+                return $this->errorFromResponse($container, 'Failed to create image container');
+            }
 
-        return $this->publishContainer($userId, $accessToken, $containerId);
+            return ['success' => true, 'container_id' => $containerId];
+        });
     }
 
     // -------------------------------------------------------------------------
@@ -331,7 +346,7 @@ class ThreadsAdapter implements PlatformAdapterInterface, ThreadableAdapterInter
 
                 // Threads can also lose the parent container between assembly and
                 // finalize (subcode 4279009). Rebuild the whole carousel and retry.
-                if ($publishResult['success'] || empty($publishResult['retryable_carousel']) || $attempt >= self::CAROUSEL_ASSEMBLY_MAX_ATTEMPTS) {
+                if ($publishResult['success'] || empty($publishResult['retryable_container']) || $attempt >= self::CAROUSEL_ASSEMBLY_MAX_ATTEMPTS) {
                     return $publishResult;
                 }
 
@@ -484,7 +499,50 @@ class ThreadsAdapter implements PlatformAdapterInterface, ThreadableAdapterInter
             'error_subcode' => $subcode,
             // Signals publishCarousel() to rebuild the carousel from scratch: the
             // parent/children vanished or expired between assembly and finalize.
-            'retryable_carousel' => in_array($subcode, [self::INVALID_CHILDREN_SUBCODE, self::EXPIRED_RESOURCE_SUBCODE], true),
+            'retryable_container' => in_array($subcode, [self::INVALID_CHILDREN_SUBCODE, self::EXPIRED_RESOURCE_SUBCODE], true),
+        ];
+    }
+
+    /**
+     * Cree un conteneur puis le publie, en reconstruisant le conteneur de zero quand
+     * Threads le perd entre le `FINISHED` et la finalisation (`threads_publish` en
+     * subcode 4279009 / 4279004). C'est la meme parade que publishCarousel(), etendue
+     * aux posts simples : sans elle, un post texte/image echoue definitivement sur un
+     * alea connu de l'API (fil 73, 04/08/2026).
+     *
+     * @param  callable():array  $createContainer  Renvoie soit ['success' => true, 'container_id' => string],
+     *                                             soit un tableau d'erreur standard.
+     */
+    private function createAndPublishWithRetry(string $userId, string $accessToken, callable $createContainer, ?int $maxAttempts = null): array
+    {
+        $maxAttempts ??= self::CONTAINER_REBUILD_MAX_ATTEMPTS;
+        $lastError = null;
+
+        for ($attempt = 1; $attempt <= $maxAttempts; $attempt++) {
+            $created = $createContainer();
+
+            if (! ($created['success'] ?? false)) {
+                return $created;
+            }
+
+            $result = $this->publishContainer($userId, $accessToken, $created['container_id']);
+
+            if ($result['success'] || empty($result['retryable_container']) || $attempt >= $maxAttempts) {
+                return $result;
+            }
+
+            Log::warning('ThreadsAdapter: container vanished at publish, rebuilding', [
+                'attempt' => $attempt,
+                'container_id' => $created['container_id'],
+            ]);
+
+            $lastError = $result;
+        }
+
+        return $lastError ?? [
+            'success' => false,
+            'external_id' => null,
+            'error' => 'Threads: failed after container rebuild retries',
         ];
     }
 

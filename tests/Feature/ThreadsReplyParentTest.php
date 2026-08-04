@@ -133,6 +133,77 @@ class ThreadsReplyParentTest extends TestCase
         $this->assertSame('REPLY_ID', $result['external_id']);
     }
 
+    public function test_single_image_post_rebuilds_its_container_when_it_vanishes_at_publish(): void
+    {
+        $containers = 0;
+        $publishAttempts = 0;
+
+        Http::fake(function (Request $request) use (&$containers, &$publishAttempts) {
+            if ($request->method() === 'GET') {
+                return Http::response(['status' => 'FINISHED', 'permalink' => 'https://threads.net/p/1']);
+            }
+
+            if (str_contains($request->url(), '/threads_publish')) {
+                $publishAttempts++;
+
+                if ($publishAttempts === 1) {
+                    return Http::response([
+                        'error' => [
+                            'message' => 'The requested resource does not exist',
+                            'type' => 'OAuthException',
+                            'code' => 24,
+                            'error_subcode' => 4279009,
+                            'is_transient' => false,
+                        ],
+                    ], 400);
+                }
+
+                return Http::response(['id' => 'PUBLISHED_ID']);
+            }
+
+            return Http::response(['id' => 'CONTAINER_'.(++$containers)]);
+        });
+
+        $media = [['type' => 'image', 'mimetype' => 'image/jpeg', 'url' => 'https://example.com/a.jpg']];
+        $result = (new ThreadsAdapter)->publish($this->account(), 'Premier segment', $media);
+
+        $this->assertTrue($result['success'], 'Un post mono-image doit être reconstruit puis republié après un 4279009');
+        $this->assertSame('PUBLISHED_ID', $result['external_id']);
+        $this->assertSame(2, $publishAttempts);
+        $this->assertSame(2, $containers, 'Un nouveau conteneur doit être créé au 2e essai');
+    }
+
+    public function test_single_image_post_gives_up_after_max_rebuilds(): void
+    {
+        $publishAttempts = 0;
+
+        Http::fake(function (Request $request) use (&$publishAttempts) {
+            if ($request->method() === 'GET') {
+                return Http::response(['status' => 'FINISHED']);
+            }
+
+            if (str_contains($request->url(), '/threads_publish')) {
+                $publishAttempts++;
+
+                return Http::response([
+                    'error' => [
+                        'message' => 'The requested resource does not exist',
+                        'code' => 24,
+                        'error_subcode' => 4279009,
+                    ],
+                ], 400);
+            }
+
+            return Http::response(['id' => 'CONTAINER']);
+        });
+
+        $media = [['type' => 'image', 'mimetype' => 'image/jpeg', 'url' => 'https://example.com/a.jpg']];
+        $result = (new ThreadsAdapter)->publish($this->account(), 'Premier segment', $media);
+
+        $this->assertFalse($result['success']);
+        $this->assertSame(3, $publishAttempts, 'La reconstruction doit être bornée à 3 tentatives');
+    }
+
     public function test_reply_is_not_blocked_when_existence_check_fails_transiently(): void
     {
         Http::fake(function (Request $request) {
