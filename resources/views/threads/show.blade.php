@@ -104,8 +104,18 @@
                             @endif
 
                             @if(in_array($account->pivot->status, ['failed', 'partial', 'published']))
+                                @php
+                                    $publishedSegments = 0;
+                                    foreach ($thread->segments as $segment) {
+                                        $publishedSegments += $segment->segmentPlatforms
+                                            ->where('social_account_id', $account->id)
+                                            ->where('status', 'published')
+                                            ->whereNotNull('external_id')
+                                            ->count();
+                                    }
+                                @endphp
                                 <button type="button"
-                                        @click="resetAccount({{ $thread->id }}, {{ $account->id }})"
+                                        @click="resetAccount({{ $thread->id }}, {{ $account->id }}, {{ $publishedSegments }})"
                                         class="inline-flex items-center gap-1 px-3 py-1.5 text-xs font-medium rounded-lg bg-gray-100 text-gray-600 hover:bg-gray-200 transition-colors">
                                     Reset
                                 </button>
@@ -338,7 +348,19 @@
                     }
                 },
 
-                async resetAccount(threadId, accountId) {
+                async resetAccount(threadId, accountId, publishedSegments = 0) {
+                    // Reinitialiser un segment deja publie ne supprime pas le post :
+                    // republier creerait un doublon. Par defaut on ne reinitialise que
+                    // les segments en echec / en attente.
+                    let force = false;
+                    if (publishedSegments > 0) {
+                        force = confirm(
+                            `${publishedSegments} segment(s) sont deja publies sur ce compte.\n\n` +
+                            `OK = tout reinitialiser, y compris ces segments (les posts existants ne sont PAS supprimes : republier creera des doublons).\n` +
+                            `Annuler = ne reinitialiser que les segments en echec.`
+                        );
+                    }
+
                     try {
                         await fetch(`/threads/${threadId}/reset/${accountId}`, {
                             method: 'POST',
@@ -347,6 +369,7 @@
                                 'X-CSRF-TOKEN': document.querySelector('meta[name=csrf-token]').getAttribute('content'),
                                 'Accept': 'application/json',
                             },
+                            body: JSON.stringify({ force }),
                         });
                         location.reload();
                     } catch (err) {

@@ -324,21 +324,42 @@ class ThreadPublishingService
 
     /**
      * Reset all segment platforms for a specific account back to pending.
+     *
+     * Par defaut les segments DEJA publies (statut `published` avec un external_id)
+     * sont laisses intacts : les remettre en attente ferait republier un post qui
+     * existe toujours sur le reseau, donc un doublon public. `$force = true` remet
+     * tout a zero — a n'utiliser que si les posts ont ete supprimes a la main ou
+     * n'existent plus cote plateforme.
+     *
+     * @return int Nombre de segments publies preserves (0 si $force).
      */
-    public function resetAccount(Thread $thread, SocialAccount $account): void
+    public function resetAccount(Thread $thread, SocialAccount $account, bool $force = false): int
     {
+        $preserved = 0;
+
         foreach ($thread->segments as $segment) {
-            $segment->segmentPlatforms()
-                ->where('social_account_id', $account->id)
-                ->update([
-                    'status' => 'pending',
-                    'external_id' => null,
-                    'error_message' => null,
-                    'published_at' => null,
-                ]);
+            $query = $segment->segmentPlatforms()->where('social_account_id', $account->id);
+
+            if (! $force) {
+                $preserved += (clone $query)
+                    ->where('status', 'published')
+                    ->whereNotNull('external_id')
+                    ->count();
+
+                $query->where(fn ($q) => $q->where('status', '!=', 'published')->orWhereNull('external_id'));
+            }
+
+            $query->update([
+                'status' => 'pending',
+                'external_id' => null,
+                'error_message' => null,
+                'published_at' => null,
+            ]);
         }
 
         $thread->socialAccounts()->updateExistingPivot($account->id, ['status' => 'pending']);
+
+        return $preserved;
     }
 
     /**

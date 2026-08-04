@@ -749,13 +749,20 @@ class ThreadController extends Controller
         }
 
         $service = app(ThreadPublishingService::class);
-        $service->resetAccount($thread, $socialAccount);
+        $force = $request->boolean('force');
+        $preserved = $service->resetAccount($thread, $socialAccount, $force);
 
         if (in_array($thread->status, ['published', 'failed', 'partial'])) {
             $thread->update(['status' => 'draft', 'published_at' => null]);
         }
 
-        return response()->json(['success' => true, 'message' => 'Remis en attente.']);
+        return response()->json([
+            'success' => true,
+            'preserved' => $preserved,
+            'message' => $preserved > 0
+                ? "Remis en attente ({$preserved} segment(s) deja publie(s) conserve(s))."
+                : 'Remis en attente.',
+        ]);
     }
 
     /**

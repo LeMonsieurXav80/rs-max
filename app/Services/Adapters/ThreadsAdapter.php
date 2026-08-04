@@ -31,6 +31,9 @@ class ThreadsAdapter implements PlatformAdapterInterface, ThreadableAdapterInter
 
     private const EXPIRED_RESOURCE_SUBCODE = 4279009;
 
+    // Renvoyé par Graph (code=100) quand l'objet interrogé n'existe pas/plus.
+    private const MISSING_OBJECT_SUBCODE = 33;
+
     public function publish(SocialAccount $account, string $content, ?array $media = null, ?array $options = null): array
     {
         try {
@@ -80,9 +83,21 @@ class ThreadsAdapter implements PlatformAdapterInterface, ThreadableAdapterInter
             $userId = $credentials['user_id'];
             $accessToken = $credentials['access_token'];
 
+            // Le parent a-t-il survecu ? Threads accepte parfois un post (id + permalink
+            // renvoyes, quota consomme) puis le supprime dans la minute. Sans ce controle
+            // la reponse echoue plus loin en code=24 / 4279009 en designant SON conteneur,
+            // ce qui masque completement la vraie cause.
+            if (! $this->mediaExists($replyToId, $accessToken)) {
+                return $this->parentMissingError($replyToId);
+            }
+
             // Multiple media reply — carousel (chained to the previous post).
             if (! empty($media) && count($media) > 1) {
-                return $this->publishCarousel($userId, $accessToken, $content, $media, $options, $replyToId);
+                return $this->qualifyReplyFailure(
+                    $this->publishCarousel($userId, $accessToken, $content, $media, $options, $replyToId),
+                    $replyToId,
+                    $accessToken,
+                );
             }
 
             $params = [
@@ -126,7 +141,11 @@ class ThreadsAdapter implements PlatformAdapterInterface, ThreadableAdapterInter
                 }
             }
 
-            return $this->publishContainer($userId, $accessToken, $containerId);
+            return $this->qualifyReplyFailure(
+                $this->publishContainer($userId, $accessToken, $containerId),
+                $replyToId,
+                $accessToken,
+            );
 
         } catch (\Throwable $e) {
             Log::error('ThreadsAdapter: publishReply failed', [
@@ -462,9 +481,78 @@ class ThreadsAdapter implements PlatformAdapterInterface, ThreadableAdapterInter
             'success' => false,
             'external_id' => null,
             'error' => $detail,
+            'error_subcode' => $subcode,
             // Signals publishCarousel() to rebuild the carousel from scratch: the
             // parent/children vanished or expired between assembly and finalize.
             'retryable_carousel' => in_array($subcode, [self::INVALID_CHILDREN_SUBCODE, self::EXPIRED_RESOURCE_SUBCODE], true),
+        ];
+    }
+
+    /**
+     * Verifie qu'un media Threads existe encore.
+     *
+     * Fail-open volontaire : sur erreur reseau ou erreur inattendue on renvoie true,
+     * pour ne jamais bloquer une publication valide a cause d'une lecture ratee. Seul
+     * un « n'existe pas » explicite de Graph fait renvoyer false.
+     */
+    private function mediaExists(string $mediaId, string $accessToken): bool
+    {
+        try {
+            $response = Http::get(self::API_BASE."/{$mediaId}", [
+                'fields' => 'id',
+                'access_token' => $accessToken,
+            ]);
+        } catch (\Throwable $e) {
+            return true;
+        }
+
+        if ($response->successful()) {
+            return true;
+        }
+
+        $code = (int) ($response->json('error.code') ?? 0);
+        $subcode = (int) ($response->json('error.error_subcode') ?? 0);
+
+        return ! (($code === 100 && $subcode === self::MISSING_OBJECT_SUBCODE) || $code === 24);
+    }
+
+    /**
+     * Requalifie l'echec d'une reponse : si Threads renvoie « ressource introuvable »
+     * (4279004 / 4279009) alors que c'est en fait le post parent qui a disparu, on
+     * remplace l'erreur brute — qui designe le conteneur de la reponse — par la cause
+     * reelle. Sans ca l'utilisateur voit « Contenu multimedia introuvable » sur un
+     * conteneur pourtant FINISHED.
+     */
+    private function qualifyReplyFailure(array $result, string $replyToId, string $accessToken): array
+    {
+        if ($result['success'] ?? false) {
+            return $result;
+        }
+
+        $subcode = (int) ($result['error_subcode'] ?? 0);
+
+        if (! in_array($subcode, [self::INVALID_CHILDREN_SUBCODE, self::EXPIRED_RESOURCE_SUBCODE], true)) {
+            return $result;
+        }
+
+        if ($this->mediaExists($replyToId, $accessToken)) {
+            return $result;
+        }
+
+        return $this->parentMissingError($replyToId);
+    }
+
+    private function parentMissingError(string $replyToId): array
+    {
+        Log::error('ThreadsAdapter: parent post missing', [
+            'reply_to_id' => $replyToId,
+        ]);
+
+        return [
+            'success' => false,
+            'external_id' => null,
+            'error' => "Threads : le post precedent du fil (id {$replyToId}) n'existe plus — il a ete accepte a la publication puis supprime cote Meta. Le fil ne peut pas etre poursuivi.",
+            'parent_missing' => true,
         ];
     }
 
@@ -644,6 +732,7 @@ class ThreadsAdapter implements PlatformAdapterInterface, ThreadableAdapterInter
             'success' => false,
             'external_id' => null,
             'error' => $detail,
+            'error_subcode' => (int) ($body['error']['error_subcode'] ?? 0),
         ];
     }
 
