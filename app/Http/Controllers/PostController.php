@@ -199,10 +199,13 @@ class PostController extends Controller
     public function store(Request $request): RedirectResponse|JsonResponse
     {
         $validated = $request->validate([
-            'content_fr' => 'required|string|max:10000',
-            'content_en' => 'nullable|string|max:10000',
+            // 30 000 : les posts longs X Premium montent à 25 000 caractères,
+            // et un Article davantage encore.
+            'content_fr' => 'required|string|max:30000',
+            'content_en' => 'nullable|string|max:30000',
+            'article_title' => 'nullable|string|max:255',
             'platform_contents' => 'nullable|array',
-            'platform_contents.*' => 'nullable|string|max:10000',
+            'platform_contents.*' => 'nullable|string|max:30000',
             'hashtags' => 'nullable|string|max:1000',
             'auto_translate' => 'nullable|boolean',
             'media' => 'nullable|array',
@@ -260,6 +263,7 @@ class PostController extends Controller
                 'user_id' => $user->id,
                 'content_fr' => $validated['content_fr'],
                 'content_en' => $validated['content_en'] ?? null,
+                'article_title' => $validated['article_title'] ?? null,
                 'platform_contents' => $this->filterPlatformContents($validated['platform_contents'] ?? null),
                 'hashtags' => $validated['hashtags'] ?? null,
                 'auto_translate' => true,
@@ -456,10 +460,13 @@ class PostController extends Controller
         }
 
         $validated = $request->validate([
-            'content_fr' => 'required|string|max:10000',
-            'content_en' => 'nullable|string|max:10000',
+            // 30 000 : les posts longs X Premium montent à 25 000 caractères,
+            // et un Article davantage encore.
+            'content_fr' => 'required|string|max:30000',
+            'content_en' => 'nullable|string|max:30000',
+            'article_title' => 'nullable|string|max:255',
             'platform_contents' => 'nullable|array',
-            'platform_contents.*' => 'nullable|string|max:10000',
+            'platform_contents.*' => 'nullable|string|max:30000',
             'hashtags' => 'nullable|string|max:1000',
             'auto_translate' => 'nullable|boolean',
             'media' => 'nullable|array',
@@ -514,6 +521,7 @@ class PostController extends Controller
             $post->update([
                 'content_fr' => $validated['content_fr'],
                 'content_en' => $validated['content_en'] ?? null,
+                'article_title' => $validated['article_title'] ?? null,
                 'platform_contents' => $this->filterPlatformContents($validated['platform_contents'] ?? null),
                 'translations' => null,
                 'hashtags' => $validated['hashtags'] ?? null,

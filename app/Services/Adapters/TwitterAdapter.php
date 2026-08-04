@@ -3,6 +3,7 @@
 namespace App\Services\Adapters;
 
 use App\Models\SocialAccount;
+use App\Services\Twitter\TwitterArticleService;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 
@@ -31,10 +32,19 @@ class TwitterAdapter implements PlatformAdapterInterface, ResharingAdapterInterf
      * @param  SocialAccount  $account  Credentials: api_key, api_secret, access_token, access_token_secret.
      * @param  string  $content  The tweet text.
      * @param  array|null  $media  Optional media items (each with url, mimetype, size, title).
+     * @param  array|null  $options  `article_title` non vide => publication en Article long format.
      * @return array{success: bool, external_id: string|null, error: string|null}
      */
     public function publish(SocialAccount $account, string $content, ?array $media = null, ?array $options = null): array
     {
+        // Article : brouillon puis publication, sur des endpoints distincts de /2/tweets.
+        // Le post_id renvoyé est celui du post créé dans la timeline, donc l'external_id
+        // reste de même nature qu'un tweet et le reste de la chaîne ne change pas.
+        $articleTitle = trim((string) ($options['article_title'] ?? ''));
+        if ($articleTitle !== '') {
+            return $this->publishArticle($account, $articleTitle, $content);
+        }
+
         try {
             $credentials = $account->credentials;
             $this->consumerKey = $credentials['api_key'];
@@ -71,6 +81,58 @@ class TwitterAdapter implements PlatformAdapterInterface, ResharingAdapterInterf
                 'error' => $e->getMessage(),
             ];
         }
+    }
+
+    /**
+     * Publie un Article X : POST /2/articles/draft puis /2/articles/{id}/publish.
+     *
+     * Les médias ne sont pas transmis : X les veut intégrés dans le content_state
+     * via son propre format d'entités, que la doc n'expose pas. Un article part
+     * donc en texte seul tant que ce format n'est pas connu.
+     *
+     * @return array{success: bool, external_id: string|null, error: string|null}
+     */
+    private function publishArticle(SocialAccount $account, string $title, string $body): array
+    {
+        if (! $account->hasPaidSubscription()) {
+            return [
+                'success' => false,
+                'external_id' => null,
+                'error' => "Les Articles X exigent un compte abonné ; « {$account->name} » ne l'est pas.",
+            ];
+        }
+
+        $articles = app(TwitterArticleService::class);
+
+        $draft = $articles->createDraft($account, $title, $body);
+        if (! $draft['success']) {
+            return [
+                'success' => false,
+                'external_id' => null,
+                'error' => 'Brouillon d\'article refusé : '.$draft['error'],
+            ];
+        }
+
+        $published = $articles->publishDraft($account, $draft['article_id']);
+        if (! $published['success']) {
+            // Le brouillon existe mais n'est pas publié : on le signale, il reste
+            // récupérable à la main sur X plutôt que perdu silencieusement.
+            return [
+                'success' => false,
+                'external_id' => null,
+                'error' => sprintf(
+                    'Article %s créé en brouillon mais non publié : %s',
+                    $draft['article_id'],
+                    $published['error']
+                ),
+            ];
+        }
+
+        return [
+            'success' => true,
+            'external_id' => $published['post_id'],
+            'error' => null,
+        ];
     }
 
     /**
@@ -242,7 +304,7 @@ class TwitterAdapter implements PlatformAdapterInterface, ResharingAdapterInterf
             if ($mediaId === null) {
                 return [
                     'media_ids' => [],
-                    'error' => "Twitter: failed to upload media ({$item['mimetype']}). URL: " . basename($item['url']),
+                    'error' => "Twitter: failed to upload media ({$item['mimetype']}). URL: ".basename($item['url']),
                 ];
             }
 
@@ -301,7 +363,7 @@ class TwitterAdapter implements PlatformAdapterInterface, ResharingAdapterInterf
      * Download a media file from the given URL and upload it to Twitter via v1.1.
      * Uses chunked upload for videos, simple upload for images.
      *
-     * @return string|null  The media_id_string on success, null on failure.
+     * @return string|null The media_id_string on success, null on failure.
      */
     private function uploadMedia(string $mediaUrl): ?string
     {
@@ -339,6 +401,7 @@ class TwitterAdapter implements PlatformAdapterInterface, ResharingAdapterInterf
                     if ($compressedFile && file_exists($compressedFile)) {
                         $result = $this->chunkedUpload($compressedFile, 'video/mp4');
                         @unlink($compressedFile);
+
                         return $result;
                     }
 
@@ -507,7 +570,7 @@ class TwitterAdapter implements PlatformAdapterInterface, ResharingAdapterInterf
     /**
      * Poll the media upload status until processing is complete.
      *
-     * @return string|null  Null on success, error message on failure.
+     * @return string|null Null on success, error message on failure.
      */
     private function pollMediaStatus(string $mediaId): ?string
     {
@@ -567,11 +630,11 @@ class TwitterAdapter implements PlatformAdapterInterface, ResharingAdapterInterf
      * Uses settings similar to n8n workflow: 800k video bitrate, 128k audio bitrate.
      *
      * @param  string  $inputPath  Path to the original video file
-     * @return string|null  Path to compressed file on success, null on failure
+     * @return string|null Path to compressed file on success, null on failure
      */
     private function compressVideo(string $inputPath): ?string
     {
-        $outputPath = tempnam(sys_get_temp_dir(), 'tw_compressed_') . '.mp4';
+        $outputPath = tempnam(sys_get_temp_dir(), 'tw_compressed_').'.mp4';
 
         // FFmpeg command: compress video to 800k bitrate (similar to n8n workflow)
         $command = sprintf(
@@ -598,7 +661,7 @@ class TwitterAdapter implements PlatformAdapterInterface, ResharingAdapterInterf
         Log::info('TwitterAdapter: video compressed successfully', [
             'original_size' => filesize($inputPath),
             'compressed_size' => $compressedSize,
-            'reduction' => round((1 - $compressedSize / filesize($inputPath)) * 100, 1) . '%',
+            'reduction' => round((1 - $compressedSize / filesize($inputPath)) * 100, 1).'%',
         ]);
 
         return $outputPath;
@@ -614,9 +677,9 @@ class TwitterAdapter implements PlatformAdapterInterface, ResharingAdapterInterf
      * @param  string  $method  HTTP method (GET, POST, etc.).
      * @param  string  $url  The full request URL (without query string for signing).
      * @param  array  $extraParams  Additional parameters to include in the signature base string
-     *                               (e.g. query params or form-encoded body params). Do NOT include
-     *                               JSON body params here -- OAuth 1.0a does not sign JSON payloads.
-     * @return string  The Authorization header value (e.g. "OAuth oauth_consumer_key=...").
+     *                              (e.g. query params or form-encoded body params). Do NOT include
+     *                              JSON body params here -- OAuth 1.0a does not sign JSON payloads.
+     * @return string The Authorization header value (e.g. "OAuth oauth_consumer_key=...").
      */
     private function buildOAuthHeader(string $method, string $url, array $extraParams = []): string
     {
@@ -646,7 +709,7 @@ class TwitterAdapter implements PlatformAdapterInterface, ResharingAdapterInterf
         ]);
 
         // Build the signing key.
-        $signingKey = rawurlencode($this->consumerSecret) . '&' . rawurlencode($this->accessTokenSecret);
+        $signingKey = rawurlencode($this->consumerSecret).'&'.rawurlencode($this->accessTokenSecret);
 
         // Compute the HMAC-SHA1 signature.
         $signature = base64_encode(hash_hmac('sha1', $signatureBaseString, $signingKey, true));
@@ -656,9 +719,9 @@ class TwitterAdapter implements PlatformAdapterInterface, ResharingAdapterInterf
         // Build the Authorization header.
         $headerParts = [];
         foreach ($oauthParams as $key => $value) {
-            $headerParts[] = rawurlencode($key) . '="' . rawurlencode($value) . '"';
+            $headerParts[] = rawurlencode($key).'="'.rawurlencode($value).'"';
         }
 
-        return 'OAuth ' . implode(', ', $headerParts);
+        return 'OAuth '.implode(', ', $headerParts);
     }
 }

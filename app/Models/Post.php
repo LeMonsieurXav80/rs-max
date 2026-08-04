@@ -13,6 +13,7 @@ class Post extends Model
         'user_id',
         'content_fr',
         'content_en',
+        'article_title',
         'translations',
         'platform_contents',
         'hashtags',

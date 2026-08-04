@@ -115,6 +115,27 @@
         {{-- Tab panels --}}
         <template x-for="slug in platforms" :key="'panel-' + slug">
             <div x-show="activeTab === slug" x-transition.opacity>
+                {{-- Article X : n'apparaît que si tous les comptes X sélectionnés sont abonnés,
+                     puisque l'API refuse l'article sur un compte gratuit. --}}
+                <template x-if="slug === 'twitter' && articleAvailable">
+                    <div class="mb-3 p-3 bg-amber-50/60 border border-amber-200 rounded-xl">
+                        <label class="block text-xs font-semibold text-amber-800 mb-1.5">
+                            Titre de l'Article X
+                            <span class="font-normal text-amber-600">— laisser vide pour publier un post normal</span>
+                        </label>
+                        <input type="text"
+                               name="article_title"
+                               x-model="articleTitle"
+                               maxlength="255"
+                               placeholder="Ex. : Ce que nous avons appris cette saison"
+                               class="w-full rounded-lg border-amber-300 shadow-sm focus:border-amber-500 focus:ring-amber-500 text-sm placeholder-amber-300">
+                        <p class="text-xs text-amber-700 mt-1.5" x-show="(articleTitle || '').trim().length > 0">
+                            Le contenu ci-dessous partira en Article long format. Les sauts de ligne font les
+                            paragraphes ; <code>#</code>, <code>##</code>, <code>-</code> et <code>&gt;</code> sont
+                            reconnus. Les médias ne sont pas encore pris en charge dans un article.
+                        </p>
+                    </div>
+                </template>
                 <textarea
                     :name="'platform_contents[' + slug + ']'"
                     x-model="platformContents[slug]"
@@ -155,6 +176,8 @@ function platformTabs() {
         platformContents: @js($initialPlatformContents ?? []),
         charLimits: @js($charLimits ?? []),
         effectiveLimits: {},
+        articleTitle: @js($articleTitle ?? ''),
+        articleAvailable: false,
         platformLabels: {
             facebook: 'Facebook',
             instagram: 'Instagram',
@@ -203,11 +226,21 @@ function platformTabs() {
             delete limits.twitter_premium;
 
             const twitterAccounts = checked.filter(el => el.dataset.platform === 'twitter');
-            if (twitterAccounts.length && twitterAccounts.every(el => el.dataset.premium === '1')) {
+            const allPremium = twitterAccounts.length > 0
+                && twitterAccounts.every(el => el.dataset.premium === '1');
+
+            if (allPremium) {
                 limits.twitter = this.charLimits.twitter_premium || limits.twitter;
             }
 
             this.effectiveLimits = limits;
+
+            // Même condition que la limite longue : un Article est refusé sur un
+            // compte gratuit, donc on n'ouvre pas la porte si l'un d'eux l'est.
+            this.articleAvailable = allPremium;
+            if (! allPremium) {
+                this.articleTitle = '';
+            }
         },
 
         async generateAllPlatforms() {

@@ -628,7 +628,10 @@
                 </div>
 
                 {{-- Platform-specific content tabs --}}
-                @include('posts._platform-tabs', ['initialPlatformContents' => old('platform_contents', [])])
+                @include('posts._platform-tabs', [
+                    'initialPlatformContents' => old('platform_contents', []),
+                    'articleTitle' => old('article_title', ''),
+                ])
 
                 {{-- Hashtags with tag input --}}
                 <div x-data="hashtagInput()" x-init="init()">

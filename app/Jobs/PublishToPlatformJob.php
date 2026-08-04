@@ -81,7 +81,11 @@ class PublishToPlatformJob implements ShouldQueue
         $media = $this->resolveMediaUrls($post->media);
 
         // Publish
-        $result = $adapter->publish($account, $content, $media);
+        // article_title n'est lu que par TwitterAdapter ; les autres adapters
+        // ignorent les options qu'ils ne connaissent pas.
+        $result = $adapter->publish($account, $content, $media, [
+            'article_title' => $post->article_title,
+        ]);
 
         if ($result['success']) {
             $externalId = $result['external_id'] ?? null;
