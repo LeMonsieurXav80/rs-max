@@ -14,6 +14,9 @@ Schedule::call(function () {
 // Publish scheduled posts every minute
 Schedule::command('posts:publish-scheduled')->everyMinute()->withoutOverlapping(5);
 
+// Publish scheduled threads every minute (verrou long : 35s entre segments Threads)
+Schedule::command('threads:publish-scheduled')->everyMinute()->withoutOverlapping(30);
+
 // Sync follower counts once daily at 6 AM (pay-per-use API cost optimization)
 Schedule::command('followers:sync')->dailyAt('06:00')->withoutOverlapping(30);
 
