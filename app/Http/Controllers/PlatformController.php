@@ -199,7 +199,7 @@ class PlatformController extends Controller
                         // Delete old local profile picture if it was stored locally
                         $oldUrl = $a->profile_picture_url;
                         if ($oldUrl && str_starts_with($oldUrl, '/storage/profile-pictures/')) {
-                            Storage::disk('public')->delete('profile-pictures/' . basename($oldUrl));
+                            Storage::disk('public')->delete('profile-pictures/'.basename($oldUrl));
                         }
 
                         $a->update([
@@ -406,7 +406,9 @@ class PlatformController extends Controller
         }
 
         $url = 'https://api.twitter.com/2/users/me';
-        $params = ['user.fields' => 'profile_image_url,username,name'];
+        // subscription_type : Basic | Premium | PremiumPlus — n'est renvoyé qu'en contexte
+        // utilisateur (OAuth 1.0a convient). Détermine l'accès aux posts longs (25k).
+        $params = ['user.fields' => 'profile_image_url,username,name,subscription_type'];
         $fullUrl = $url.'?'.http_build_query($params);
 
         $oauthHeader = $this->buildOAuth1Header('GET', $url, $params, $apiKey, $apiSecret, $accessToken, $accessTokenSecret);
@@ -433,6 +435,7 @@ class PlatformController extends Controller
 
             $account->update([
                 'platform_account_id' => $data['id'] ?? $account->platform_account_id,
+                'subscription_type' => $data['subscription_type'] ?? null,
                 'name' => $twitterName,
                 'profile_picture_url' => $localPic ?? $account->profile_picture_url,
             ]);
@@ -442,6 +445,8 @@ class PlatformController extends Controller
                 'username' => $twitterUsername,
                 'name' => $twitterName,
                 'profile_picture_url' => $localPic ?? $account->profile_picture_url,
+                'subscription_type' => $data['subscription_type'] ?? null,
+                'is_premium' => $account->fresh()->hasPaidSubscription(),
             ]);
         }
 
@@ -592,7 +597,7 @@ class PlatformController extends Controller
 
             // Store in the persistent media directory (covered by media_data Docker volume)
             $extension = pathinfo($filePath, PATHINFO_EXTENSION) ?: 'jpg';
-            $filename = 'pp_tg_' . abs(crc32($chatId)) . '.' . $extension;
+            $filename = 'pp_tg_'.abs(crc32($chatId)).'.'.$extension;
 
             // Delete old file if exists (same chat = same filename)
             if (Storage::disk('local')->exists("media/{$filename}")) {

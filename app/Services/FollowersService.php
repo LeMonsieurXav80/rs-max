@@ -3,7 +3,6 @@
 namespace App\Services;
 
 use App\Models\SocialAccount;
-use App\Services\YouTubeTokenHelper;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 
@@ -139,7 +138,9 @@ class FollowersService
 
         try {
             $url = 'https://api.twitter.com/2/users/me';
-            $params = ['user.fields' => 'public_metrics'];
+            // On profite du même appel pour rafraîchir l'abonnement : un compte peut
+            // passer Premium (ou le perdre) après sa connexion.
+            $params = ['user.fields' => 'public_metrics,subscription_type'];
 
             $authHeader = $this->buildTwitterOAuthHeader(
                 'GET',
@@ -156,6 +157,11 @@ class FollowersService
             ])->get($url, $params);
 
             if ($response->successful()) {
+                $subscription = $response->json('data.subscription_type');
+                if ($subscription !== $account->subscription_type) {
+                    $account->update(['subscription_type' => $subscription]);
+                }
+
                 return (int) ($response->json('data.public_metrics.followers_count') ?? 0);
             }
 
@@ -332,16 +338,16 @@ class FollowersService
             rawurlencode($parameterString),
         ]);
 
-        $signingKey = rawurlencode($consumerSecret) . '&' . rawurlencode($accessTokenSecret);
+        $signingKey = rawurlencode($consumerSecret).'&'.rawurlencode($accessTokenSecret);
         $signature = base64_encode(hash_hmac('sha1', $signatureBaseString, $signingKey, true));
 
         $oauthParams['oauth_signature'] = $signature;
 
         $headerParts = [];
         foreach ($oauthParams as $key => $value) {
-            $headerParts[] = rawurlencode($key) . '="' . rawurlencode($value) . '"';
+            $headerParts[] = rawurlencode($key).'="'.rawurlencode($value).'"';
         }
 
-        return 'OAuth ' . implode(', ', $headerParts);
+        return 'OAuth '.implode(', ', $headerParts);
     }
 }

@@ -108,7 +108,15 @@
                                             </div>
                                         @endif
                                         <div class="min-w-0">
-                                            <p class="text-sm font-medium text-gray-900 truncate">{{ $account->name }}</p>
+                                            <div class="flex items-center gap-1.5">
+                                                <p class="text-sm font-medium text-gray-900 truncate">{{ $account->name }}</p>
+                                                @if($account->hasPaidSubscription())
+                                                    <span class="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-semibold bg-amber-100 text-amber-700 flex-shrink-0"
+                                                          title="Abonnement {{ $account->subscription_type }} : posts longs autorisés">
+                                                        {{ $account->subscription_type }}
+                                                    </span>
+                                                @endif
+                                            </div>
                                             @if($account->platform_account_id)
                                                 <p class="text-xs text-gray-400">{{ '@' }}{{ $account->platform_account_id }}</p>
                                             @endif

@@ -125,10 +125,12 @@
                 <div class="mt-1.5 flex items-center justify-between">
                     <p class="text-xs text-gray-400">
                         <span x-text="(platformContents[slug] || '').length"></span> caractères
-                        <template x-if="charLimits[slug]">
+                        <template x-if="effectiveLimits[slug]">
                             <span>
-                                / <span x-text="charLimits[slug]"></span> max
-                                <span x-show="(platformContents[slug] || '').length > charLimits[slug]" class="text-red-500 font-medium ml-1">Dépassé !</span>
+                                / <span x-text="effectiveLimits[slug]"></span> max
+                                <span x-show="slug === 'twitter' && effectiveLimits[slug] > charLimits.twitter"
+                                      class="text-amber-600 font-medium ml-1">Premium</span>
+                                <span x-show="(platformContents[slug] || '').length > effectiveLimits[slug]" class="text-red-500 font-medium ml-1">Dépassé !</span>
                             </span>
                         </template>
                     </p>
@@ -152,6 +154,7 @@ function platformTabs() {
         hasPersona: false,
         platformContents: @js($initialPlatformContents ?? []),
         charLimits: @js($charLimits ?? []),
+        effectiveLimits: {},
         platformLabels: {
             facebook: 'Facebook',
             instagram: 'Instagram',
@@ -181,12 +184,30 @@ function platformTabs() {
             // Check if any selected account has a persona
             this.hasPersona = checked.some(el => el.dataset.hasPersona === '1');
 
+            this.updateEffectiveLimits(checked);
+
             if (this.platforms.length && !this.platforms.includes(this.activeTab)) {
                 this.activeTab = this.platforms[0];
             }
             if (!this.platforms.length) {
                 this.activeTab = null;
             }
+        },
+
+        // La limite X dépend du compte, pas de la plateforme : les 25 000 caractères
+        // ne sont acceptés par l'API que si le compte qui publie est Premium.
+        // Dès qu'un compte non-Premium est sélectionné on retombe sur 280, sinon la
+        // publication échouerait sur celui-là (erreur 111).
+        updateEffectiveLimits(checked) {
+            const limits = { ...this.charLimits };
+            delete limits.twitter_premium;
+
+            const twitterAccounts = checked.filter(el => el.dataset.platform === 'twitter');
+            if (twitterAccounts.length && twitterAccounts.every(el => el.dataset.premium === '1')) {
+                limits.twitter = this.charLimits.twitter_premium || limits.twitter;
+            }
+
+            this.effectiveLimits = limits;
         },
 
         async generateAllPlatforms() {

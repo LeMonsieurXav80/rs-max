@@ -81,13 +81,13 @@ class ContentGenerationService
             $userPrompt = "Voici une vidéo YouTube à transformer en publication pour les réseaux sociaux.\n\n";
             $userPrompt .= "Titre : {$item->title}\n";
             if ($item->duration) {
-                $userPrompt .= "Durée : " . YouTubeFetchService::formatDuration($item->duration) . "\n";
+                $userPrompt .= 'Durée : '.YouTubeFetchService::formatDuration($item->duration)."\n";
             }
             if ($item->view_count) {
-                $userPrompt .= "Vues : " . number_format($item->view_count, 0, ',', ' ') . "\n";
+                $userPrompt .= 'Vues : '.number_format($item->view_count, 0, ',', ' ')."\n";
             }
             if ($item->like_count) {
-                $userPrompt .= "Likes : " . number_format($item->like_count, 0, ',', ' ') . "\n";
+                $userPrompt .= 'Likes : '.number_format($item->like_count, 0, ',', ' ')."\n";
             }
             if ($item->published_at) {
                 $userPrompt .= "Date de publication : {$item->published_at->translatedFormat('j F Y')}\n";
@@ -148,10 +148,7 @@ class ContentGenerationService
             $userPrompt .= "\nRègles de formatage pour {$account->platform->name} :\n{$platformRules}\n";
         }
 
-        $charLimit = (int) Setting::get(
-            "platform_char_limit_{$account->platform->slug}",
-            $this->getDefaultCharLimit($account->platform->slug)
-        );
+        $charLimit = $account->charLimit($this->getDefaultCharLimit($account->platform->slug));
 
         // Instagram links are not clickable, so don't ask to include the URL
         if ($account->platform->slug !== 'instagram') {
@@ -272,34 +269,34 @@ class ContentGenerationService
             $monthYear = "{$month} {$year}";
 
             if ($diffMonths >= 24) {
-                $age = (int) floor($diffMonths / 12) . ' years';
+                $age = (int) floor($diffMonths / 12).' years';
             } elseif ($diffMonths >= 12) {
                 $age = 'a year';
             } else {
-                $age = $diffMonths . ' months';
+                $age = $diffMonths.' months';
             }
 
             $templates = [
-                "We posted this video {age} ago...",
-                "Remember this one? It was back in {month_year}.",
+                'We posted this video {age} ago...',
+                'Remember this one? It was back in {month_year}.',
                 "We stumbled back on this {year} video and it's worth a watch.",
-                "This video from {month_year} may be older, but its message still holds up.",
-                "Throwback to {month_year} with this video.",
-                "{month_year} — time flies, but this video is still relevant.",
-                "Quick flashback: this video is from {month_year}.",
-                "Bringing this video from {age} ago back into the spotlight.",
-                "That was {age} ago. Time flies!",
-                "Released in {month_year}, this video deserves to be (re)discovered.",
-                "A {year} video we wanted to share again.",
-                "Published in {month_year}, still relevant today.",
-                "{age} ago, we shared this video. Did you catch it?",
-                "Diving back into our {month_year} archives.",
-                "Since {month_year}, this video has traveled far.",
+                'This video from {month_year} may be older, but its message still holds up.',
+                'Throwback to {month_year} with this video.',
+                '{month_year} — time flies, but this video is still relevant.',
+                'Quick flashback: this video is from {month_year}.',
+                'Bringing this video from {age} ago back into the spotlight.',
+                'That was {age} ago. Time flies!',
+                'Released in {month_year}, this video deserves to be (re)discovered.',
+                'A {year} video we wanted to share again.',
+                'Published in {month_year}, still relevant today.',
+                '{age} ago, we shared this video. Did you catch it?',
+                'Diving back into our {month_year} archives.',
+                'Since {month_year}, this video has traveled far.',
                 "This video is {age} old and hasn't aged a day.",
-                "Back in {month_year}, we shared this video. Here it is again!",
-                "A {year} classic worth (re)watching.",
+                'Back in {month_year}, we shared this video. Here it is again!',
+                'A {year} classic worth (re)watching.',
                 "It's already been {age} since this video came out.",
-                "A look back at {month_year}.",
+                'A look back at {month_year}.',
             ];
 
             $template = $templates[random_int(0, count($templates) - 1)];
@@ -316,33 +313,33 @@ class ContentGenerationService
         $mois_année = "{$mois} {$année}";
 
         if ($diffMonths >= 24) {
-            $age = (int) floor($diffMonths / 12) . ' ans';
+            $age = (int) floor($diffMonths / 12).' ans';
         } elseif ($diffMonths >= 12) {
             $age = 'un an';
         } else {
-            $age = $diffMonths . ' mois';
+            $age = $diffMonths.' mois';
         }
 
         $templates = [
-            "Il y a {age}, on publiait cette vidéo...",
+            'Il y a {age}, on publiait cette vidéo...',
             "Vous vous souvenez ? C'était en {mois_année}.",
-            "On est retombé sur cette vidéo de {année} et elle vaut le détour.",
-            "Cette vidéo de {mois_année} a peut-être un peu vieilli, mais pas son message.",
-            "Retour en {mois_année} avec cette vidéo.",
-            "{mois_année} — ça ne nous rajeunit pas, mais cette vidéo reste pertinente.",
-            "Petit flashback : cette vidéo date de {mois_année}.",
-            "On remet en lumière cette vidéo sortie il y a {age}.",
+            'On est retombé sur cette vidéo de {année} et elle vaut le détour.',
+            'Cette vidéo de {mois_année} a peut-être un peu vieilli, mais pas son message.',
+            'Retour en {mois_année} avec cette vidéo.',
+            '{mois_année} — ça ne nous rajeunit pas, mais cette vidéo reste pertinente.',
+            'Petit flashback : cette vidéo date de {mois_année}.',
+            'On remet en lumière cette vidéo sortie il y a {age}.',
             "C'était il y a {age}. Le temps passe vite !",
             "Sortie en {mois_année}, cette vidéo mérite d'être (re)découverte.",
             "Une vidéo de {année} qu'on avait envie de vous repartager.",
             "Publiée en {mois_année}, toujours d'actualité.",
             "Il y a {age}, on vous proposait cette vidéo. Vous l'aviez vue ?",
-            "On replonge dans nos archives de {mois_année}.",
-            "Depuis {mois_année}, cette vidéo a bien voyagé.",
+            'On replonge dans nos archives de {mois_année}.',
+            'Depuis {mois_année}, cette vidéo a bien voyagé.',
             "Cette vidéo a {age} et elle n'a pas pris une ride.",
-            "En {mois_année}, on partageait cette vidéo. La revoilà !",
-            "Un classique de {année} à (re)voir.",
-            "Ça fait déjà {age} que cette vidéo est sortie.",
+            'En {mois_année}, on partageait cette vidéo. La revoilà !',
+            'Un classique de {année} à (re)voir.',
+            'Ça fait déjà {age} que cette vidéo est sortie.',
             "Coup d'œil dans le rétro : {mois_année}.",
         ];
 
@@ -365,34 +362,34 @@ class ContentGenerationService
             $monthYear = "{$month} {$year}";
 
             if ($diffMonths >= 24) {
-                $age = (int) floor($diffMonths / 12) . ' years';
+                $age = (int) floor($diffMonths / 12).' years';
             } elseif ($diffMonths >= 12) {
                 $age = 'a year';
             } else {
-                $age = $diffMonths . ' months';
+                $age = $diffMonths.' months';
             }
 
             $templates = [
-                "This article is from {month_year}.",
-                "We published this article {age} ago...",
-                "It was back in {month_year}.",
-                "An article from {month_year} on this topic.",
-                "Published {age} ago.",
-                "We covered this back in {month_year}.",
-                "This goes back to {month_year}.",
-                "{age} ago already.",
-                "In {month_year}, we talked about this.",
-                "A {year} article worth reading again.",
-                "Released in {month_year}.",
-                "From {month_year}, but still relevant.",
-                "We wrote about this in {month_year}.",
-                "A quick look back at {month_year}.",
-                "{age} ago, we were talking about this.",
-                "{month_year}, already.",
-                "This article is {age} old.",
-                "From {month_year}.",
-                "Written {age} ago.",
-                "We told you about this in {month_year}.",
+                'This article is from {month_year}.',
+                'We published this article {age} ago...',
+                'It was back in {month_year}.',
+                'An article from {month_year} on this topic.',
+                'Published {age} ago.',
+                'We covered this back in {month_year}.',
+                'This goes back to {month_year}.',
+                '{age} ago already.',
+                'In {month_year}, we talked about this.',
+                'A {year} article worth reading again.',
+                'Released in {month_year}.',
+                'From {month_year}, but still relevant.',
+                'We wrote about this in {month_year}.',
+                'A quick look back at {month_year}.',
+                '{age} ago, we were talking about this.',
+                '{month_year}, already.',
+                'This article is {age} old.',
+                'From {month_year}.',
+                'Written {age} ago.',
+                'We told you about this in {month_year}.',
             ];
 
             $template = $templates[random_int(0, count($templates) - 1)];
@@ -409,34 +406,34 @@ class ContentGenerationService
         $mois_année = "{$mois} {$année}";
 
         if ($diffMonths >= 24) {
-            $age = (int) floor($diffMonths / 12) . ' ans';
+            $age = (int) floor($diffMonths / 12).' ans';
         } elseif ($diffMonths >= 12) {
             $age = 'un an';
         } else {
-            $age = $diffMonths . ' mois';
+            $age = $diffMonths.' mois';
         }
 
         $templates = [
-            "Cet article date de {mois_année}.",
-            "Il y a {age}, on publiait cet article...",
+            'Cet article date de {mois_année}.',
+            'Il y a {age}, on publiait cet article...',
             "C'était en {mois_année}.",
-            "Un article de {mois_année} sur le sujet.",
-            "Publié il y a {age}.",
-            "On avait abordé ça en {mois_année}.",
-            "Ça remonte à {mois_année}.",
-            "Il y a {age} déjà.",
-            "En {mois_année}, on en parlait.",
-            "Un article de {année} à relire.",
-            "Sorti en {mois_année}.",
+            'Un article de {mois_année} sur le sujet.',
+            'Publié il y a {age}.',
+            'On avait abordé ça en {mois_année}.',
+            'Ça remonte à {mois_année}.',
+            'Il y a {age} déjà.',
+            'En {mois_année}, on en parlait.',
+            'Un article de {année} à relire.',
+            'Sorti en {mois_année}.',
             "Ça date de {mois_année}, mais c'est toujours valable.",
-            "On avait écrit ça en {mois_année}.",
-            "Petit retour en {mois_année}.",
-            "Il y a {age}, on vous parlait de ça.",
-            "{mois_année}, déjà.",
-            "Cet article a {age}.",
-            "De {mois_année}.",
-            "Écrit il y a {age}.",
-            "On vous en parlait en {mois_année}.",
+            'On avait écrit ça en {mois_année}.',
+            'Petit retour en {mois_année}.',
+            'Il y a {age}, on vous parlait de ça.',
+            '{mois_année}, déjà.',
+            'Cet article a {age}.',
+            'De {mois_année}.',
+            'Écrit il y a {age}.',
+            'On vous en parlait en {mois_année}.',
         ];
 
         $template = $templates[random_int(0, count($templates) - 1)];

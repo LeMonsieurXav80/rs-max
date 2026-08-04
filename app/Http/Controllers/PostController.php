@@ -694,6 +694,11 @@ class PostController extends Controller
             $limits[$slug] = (int) Setting::get("platform_char_limit_{$slug}", $default);
         }
 
+        // Limite débloquée par un abonnement X Premium : POST /2/tweets accepte
+        // jusqu'à 25 000 caractères depuis août 2024, mais seulement si le compte
+        // qui publie est abonné (sinon erreur 111 « Tweet text is too long »).
+        $limits['twitter_premium'] = (int) Setting::get('platform_char_limit_twitter_premium', 25000);
+
         return $limits;
     }
 

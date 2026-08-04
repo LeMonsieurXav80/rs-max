@@ -40,6 +40,7 @@ class SettingsController extends Controller
         'stats_bluesky_max_days',
         // Platform character limits
         'platform_char_limit_twitter',
+        'platform_char_limit_twitter_premium',
         'platform_char_limit_facebook',
         'platform_char_limit_instagram',
         'platform_char_limit_threads',
@@ -108,6 +109,7 @@ class SettingsController extends Controller
         'stats_bluesky_max_days' => 30,
         // Platform character limits
         'platform_char_limit_twitter' => 280,
+        'platform_char_limit_twitter_premium' => 25000,
         'platform_char_limit_facebook' => 63206,
         'platform_char_limit_instagram' => 2200,
         'platform_char_limit_threads' => 500,
@@ -235,6 +237,7 @@ class SettingsController extends Controller
             'stats_bluesky_max_days' => 'required|integer|min:1|max:365',
             // Platform character limits
             'platform_char_limit_twitter' => 'required|integer|min:1|max:100000',
+            'platform_char_limit_twitter_premium' => 'required|integer|min:1|max:100000',
             'platform_char_limit_facebook' => 'required|integer|min:1|max:100000',
             'platform_char_limit_instagram' => 'required|integer|min:1|max:100000',
             'platform_char_limit_threads' => 'required|integer|min:1|max:100000',

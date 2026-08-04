@@ -203,6 +203,7 @@
                                 @php
                                     $charPlatforms = [
                                         ['slug' => 'twitter', 'name' => 'Twitter / X', 'official' => '280'],
+                                        ['slug' => 'twitter_premium', 'name' => 'Twitter / X (compte Premium)', 'official' => '25 000'],
                                         ['slug' => 'facebook', 'name' => 'Facebook', 'official' => '63 206'],
                                         ['slug' => 'instagram', 'name' => 'Instagram', 'official' => '2 200'],
                                         ['slug' => 'threads', 'name' => 'Threads', 'official' => '500'],

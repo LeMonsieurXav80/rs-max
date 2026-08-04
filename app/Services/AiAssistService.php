@@ -143,10 +143,7 @@ TXT;
         }
 
         if ($account) {
-            $charLimit = (int) Setting::get(
-                "platform_char_limit_{$account->platform->slug}",
-                $this->getDefaultCharLimit($account->platform->slug)
-            );
+            $charLimit = $account->charLimit($this->getDefaultCharLimit($account->platform->slug));
             if ($charLimit > 0) {
                 $userPrompt .= "\n\nLe contenu ne doit pas dépasser {$charLimit} caractères (limite {$account->platform->name}).";
             }
