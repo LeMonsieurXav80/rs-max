@@ -107,6 +107,7 @@ Route::middleware(['auth', 'verified', 'throttle:600,1'])->group(function () {
 
     // Save default account selection (shared across posts, inbox, stats)
     Route::post('accounts/save-defaults', [PostController::class, 'saveDefaultAccounts'])->name('accounts.saveDefaults');
+    Route::post('posts/benchmark', [PostController::class, 'benchmark'])->name('posts.benchmark');
 
     // Account groups
     Route::get('account-groups', [AccountGroupController::class, 'index'])->name('accountGroups.index');

@@ -9,6 +9,7 @@ use App\Models\PostPlatform;
 use App\Models\Setting;
 use App\Models\SocialAccount;
 use App\Services\PartnerTagService;
+use App\Services\Stats\PostBenchmarkService;
 use App\Services\Stats\StatsSyncService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
@@ -18,6 +19,46 @@ use Illuminate\View\View;
 
 class PostController extends Controller
 {
+    /**
+     * Compare un brouillon à l'historique publié de chaque compte sélectionné.
+     *
+     * Répond toujours 200 avec un tableau (éventuellement vide) : c'est un
+     * indicateur d'aide à la rédaction, il ne doit jamais bloquer le composer.
+     */
+    public function benchmark(Request $request, PostBenchmarkService $benchmark): JsonResponse
+    {
+        $validated = $request->validate([
+            'accounts' => 'required|array|min:1',
+            'accounts.*' => 'integer|exists:social_accounts,id',
+            'content_fr' => 'nullable|string',
+            'link_url' => 'nullable|string',
+            'has_media' => 'nullable|boolean',
+            'scheduled_at' => 'nullable|date',
+        ]);
+
+        // Seuls les comptes réellement accessibles à l'utilisateur.
+        $accounts = $request->user()->activeSocialAccounts()
+            ->whereIn('social_accounts.id', $validated['accounts'])
+            ->get();
+
+        $scheduledAt = ! empty($validated['scheduled_at'])
+            ? \Illuminate\Support\Carbon::parse($validated['scheduled_at'])
+            : null;
+
+        $draft = [
+            'length' => mb_strlen((string) ($validated['content_fr'] ?? '')),
+            'has_media' => (bool) ($validated['has_media'] ?? false),
+            'has_link' => ! empty($validated['link_url']),
+            'hour' => $scheduledAt ? (int) $scheduledAt->format('G') : (int) now()->format('G'),
+        ];
+
+        $results = $accounts
+            ->map(fn (SocialAccount $account) => $benchmark->forDraft($account, $draft))
+            ->values();
+
+        return response()->json(['accounts' => $results]);
+    }
+
     /**
      * Save the user's default account selection for post creation.
      */

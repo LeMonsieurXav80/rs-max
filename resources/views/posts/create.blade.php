@@ -759,6 +759,9 @@
             </div>
         </div>
 
+        {{-- Repères issus de l'historique du compte --}}
+        @include('posts._benchmark')
+
         {{-- Submit --}}
         <div x-show="!isPublishing" class="flex items-center justify-end gap-4">
             <a href="{{ route('posts.index') }}" class="px-4 py-2 text-sm font-medium text-gray-700 hover:text-gray-900 transition-colors">
