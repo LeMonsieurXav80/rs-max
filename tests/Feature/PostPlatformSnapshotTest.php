@@ -102,8 +102,6 @@ class PostPlatformSnapshotTest extends TestCase
         $this->assertSame(100, (int) $snap->views);
         $this->assertSame(5, (int) $snap->likes);
         $this->assertSame(1000, (int) $snap->followers);
-        // Le payload complet est conservé pour les métriques spécifiques à une plateforme.
-        $this->assertSame(100, $snap->metrics['views']);
     }
 
     public function test_les_releves_successifs_construisent_la_courbe(): void

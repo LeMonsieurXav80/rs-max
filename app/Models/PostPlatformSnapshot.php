@@ -18,14 +18,12 @@ class PostPlatformSnapshot extends Model
         'shares',
         'bookmarks',
         'followers',
-        'metrics',
     ];
 
     protected function casts(): array
     {
         return [
             'measured_at' => 'datetime',
-            'metrics' => 'array',
         ];
     }
 

@@ -73,7 +73,6 @@ class StatsSyncService
                 'shares' => $metrics['shares'] ?? null,
                 'bookmarks' => $metrics['bookmarks'] ?? null,
                 'followers' => $metrics['followers'] ?? null,
-                'metrics' => $metrics,
             ]);
         } catch (\Throwable $e) {
             // La synchro des métriques a réussi : on ne la fait pas échouer pour l'historique.
