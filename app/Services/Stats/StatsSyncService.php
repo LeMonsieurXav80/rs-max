@@ -9,6 +9,15 @@ use Illuminate\Support\Facades\Log;
 class StatsSyncService
 {
     /**
+     * Métriques d'engagement retenues pour détecter un changement.
+     *
+     * `followers` en est exclu à dessein : il évolue en continu et
+     * indépendamment du post, et déclencherait un snapshot à chaque sync
+     * même sur une publication figée.
+     */
+    private const ENGAGEMENT_KEYS = ['views', 'likes', 'comments', 'shares', 'bookmarks'];
+
+    /**
      * Sync metrics for a specific post platform.
      */
     public function syncPostPlatform(PostPlatform $postPlatform): bool
@@ -30,12 +39,66 @@ class StatsSyncService
             return false;
         }
 
+        $previous = $postPlatform->metrics;
+
         $postPlatform->update([
             'metrics' => $metrics,
             'metrics_synced_at' => now(),
         ]);
 
+        $this->recordSnapshot($postPlatform, $metrics, $previous);
+
         return true;
+    }
+
+    /**
+     * Conserve le relevé courant si l'engagement a bougé depuis le précédent.
+     *
+     * `post_platform.metrics` est écrasé à chaque sync : sans cet historique on
+     * perd la courbe de montée du post, qui n'est pas reconstituable après coup.
+     * Aucun appel API supplémentaire, on stocke ce qui vient d'être récupéré.
+     */
+    private function recordSnapshot(PostPlatform $postPlatform, array $metrics, ?array $previous): void
+    {
+        if ($previous !== null && ! $this->engagementChanged($metrics, $previous)) {
+            return;
+        }
+
+        try {
+            $postPlatform->snapshots()->create([
+                'measured_at' => $postPlatform->metrics_synced_at ?? now(),
+                'views' => $metrics['views'] ?? null,
+                'likes' => $metrics['likes'] ?? null,
+                'comments' => $metrics['comments'] ?? null,
+                'shares' => $metrics['shares'] ?? null,
+                'bookmarks' => $metrics['bookmarks'] ?? null,
+                'followers' => $metrics['followers'] ?? null,
+                'metrics' => $metrics,
+            ]);
+        } catch (\Throwable $e) {
+            // La synchro des métriques a réussi : on ne la fait pas échouer pour l'historique.
+            Log::error('StatsSyncService: Failed to record snapshot', [
+                'post_platform_id' => $postPlatform->id,
+                'error' => $e->getMessage(),
+            ]);
+        }
+    }
+
+    /**
+     * Une des métriques d'engagement a-t-elle changé depuis le relevé précédent ?
+     */
+    private function engagementChanged(array $metrics, array $previous): bool
+    {
+        foreach (self::ENGAGEMENT_KEYS as $key) {
+            $new = isset($metrics[$key]) ? (int) $metrics[$key] : null;
+            $old = isset($previous[$key]) ? (int) $previous[$key] : null;
+
+            if ($new !== $old) {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     /**
@@ -53,6 +116,7 @@ class StatsSyncService
             // Check if we should sync based on platform and age
             if (! $this->shouldSync($postPlatform)) {
                 $skipped++;
+
                 continue;
             }
 

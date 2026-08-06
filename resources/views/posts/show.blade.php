@@ -192,6 +192,17 @@
                                     $ppComments = (int) ($m['comments'] ?? 0);
                                     $ppShares = (int) ($m['shares'] ?? 0);
                                     $ppBookmarks = isset($m['bookmarks']) ? (int) $m['bookmarks'] : (isset($m['saved']) ? (int) $m['saved'] : null);
+
+                                    // Courbe de montée : on suit les vues, ou les likes si la plateforme n'en fournit pas.
+                                    $snaps = $pp->snapshots;
+                                    $curveKey = $snaps->contains(fn ($s) => $s->views !== null) ? 'views' : 'likes';
+                                    $curveLabel = $curveKey === 'views' ? 'Vues' : 'Likes';
+                                    $curve = $snaps->pluck($curveKey)->map(fn ($v) => (int) $v)->all();
+                                    $curveTimes = $snaps->pluck('measured_at')->map(fn ($d) => $d?->format('d/m H\hi'))->all();
+
+                                    // Progression depuis le relevé précédent : le post monte-t-il encore ?
+                                    $curveCount = count($curve);
+                                    $delta = $curveCount >= 2 ? $curve[$curveCount - 1] - $curve[$curveCount - 2] : null;
                                 @endphp
                                 <div class="flex items-center gap-3 py-2">
                                     <x-platform-icon :platform="$pp->platform->slug" size="sm" />
@@ -229,6 +240,21 @@
                                             <span class="font-medium text-gray-900">{{ $ppBookmarks !== null ? number_format($ppBookmarks, 0, ',', ' ') : '-' }}</span>
                                         </span>
                                     </div>
+
+                                    {{-- Courbe de montée + progression depuis le relevé précédent --}}
+                                    <div class="flex items-center gap-2 flex-shrink-0" title="{{ $curveLabel }} au fil du temps">
+                                        @if($curveCount >= 2)
+                                            <x-sparkline :points="$curve" :labels="$curveTimes" :label="$curveLabel" />
+                                            @if($delta > 0)
+                                                <span class="text-xs font-medium text-green-600 w-16">+{{ number_format($delta, 0, ',', ' ') }}</span>
+                                            @else
+                                                <span class="text-xs text-gray-400 w-16">stabilisé</span>
+                                            @endif
+                                        @else
+                                            <span class="text-xs text-gray-300 w-[136px]">courbe en cours</span>
+                                        @endif
+                                    </div>
+
                                     @if($pp->metrics_synced_at)
                                         <span class="text-xs text-gray-400 flex-shrink-0">{{ $pp->metrics_synced_at->diffForHumans() }}</span>
                                     @endif

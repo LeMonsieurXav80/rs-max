@@ -51,4 +51,12 @@ class PostPlatform extends Model
     {
         return $this->hasMany(PostLog::class);
     }
+
+    /**
+     * Historique des relevés de métriques (courbe de montée du post).
+     */
+    public function snapshots(): HasMany
+    {
+        return $this->hasMany(PostPlatformSnapshot::class)->orderBy('measured_at');
+    }
 }

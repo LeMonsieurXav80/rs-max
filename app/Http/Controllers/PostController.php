@@ -333,6 +333,7 @@ class PostController extends Controller
             'postPlatforms.platform',
             'postPlatforms.socialAccount',
             'postPlatforms.logs',
+            'postPlatforms.snapshots',
             'partners',
             'user',
         ])->findOrFail($id);
