@@ -5,12 +5,16 @@ namespace App\Services\Import;
 use App\Models\ExternalPost;
 use App\Models\Platform;
 use App\Models\SocialAccount;
+use App\Services\Import\Concerns\ImportsIncrementally;
+use Carbon\CarbonImmutable;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 
 class BlueskyImportService implements PlatformImportInterface
 {
+    use ImportsIncrementally;
+
     private const API_BASE = 'https://public.api.bsky.app';
 
     /**
@@ -25,7 +29,7 @@ class BlueskyImportService implements PlatformImportInterface
             throw new \Exception('No DID found for Bluesky account');
         }
 
-        $posts = $this->fetchPosts($did, $limit);
+        $posts = $this->fetchPosts($did, $limit, $this->importSince($account));
 
         return $this->storeExternalPosts($account, $posts, $handle);
     }
@@ -33,7 +37,7 @@ class BlueskyImportService implements PlatformImportInterface
     /**
      * Fetch posts from Bluesky account via AT Protocol public API.
      */
-    private function fetchPosts(string $did, int $limit): Collection
+    private function fetchPosts(string $did, int $limit, CarbonImmutable $since): Collection
     {
         $posts = collect();
 
@@ -72,6 +76,12 @@ class BlueskyImportService implements PlatformImportInterface
                     // Skip reposts (only import original posts)
                     if (isset($item['reason']) && ($item['reason']['$type'] ?? '') === 'app.bsky.feed.defs#reasonRepost') {
                         continue;
+                    }
+
+                    // getAuthorFeed n'accepte aucun filtre de date : on coupe
+                    // des qu'on sort de la fenetre.
+                    if ($this->isBeforeWindow($post['record']['createdAt'] ?? null, $since)) {
+                        break 2;
                     }
 
                     $posts->push($post);

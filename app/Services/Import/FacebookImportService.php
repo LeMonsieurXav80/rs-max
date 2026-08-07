@@ -5,12 +5,16 @@ namespace App\Services\Import;
 use App\Models\ExternalPost;
 use App\Models\Platform;
 use App\Models\SocialAccount;
+use App\Services\Import\Concerns\ImportsIncrementally;
+use Carbon\CarbonImmutable;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 
 class FacebookImportService implements PlatformImportInterface
 {
+    use ImportsIncrementally;
+
     private const API_VERSION = 'v21.0';
 
     private const API_BASE = 'https://graph.facebook.com/'.self::API_VERSION;
@@ -28,7 +32,8 @@ class FacebookImportService implements PlatformImportInterface
             throw new \Exception('No access token found for Facebook account');
         }
 
-        $posts = $this->fetchPosts($pageId, $accessToken, $limit);
+        $since = $this->importSince($account);
+        $posts = $this->fetchPosts($pageId, $accessToken, $limit, $since);
         $videoViews = $this->fetchVideoViews($pageId, $accessToken);
 
         return $this->storeExternalPosts($account, $posts, $videoViews);
@@ -38,7 +43,7 @@ class FacebookImportService implements PlatformImportInterface
      * Fetch posts from Facebook page with engagement counts.
      * Falls back to basic fields if pages_read_engagement is not available.
      */
-    private function fetchPosts(string $pageId, string $accessToken, int $limit): Collection
+    private function fetchPosts(string $pageId, string $accessToken, int $limit, CarbonImmutable $since): Collection
     {
         // Try with engagement fields first
         $posts = $this->fetchPostsWithFields(
@@ -46,7 +51,8 @@ class FacebookImportService implements PlatformImportInterface
             $accessToken,
             'id,message,full_picture,permalink_url,created_time,likes.summary(true),comments.summary(true),shares,'
                 .'attachments{media_type,type,media,target,subattachments{media_type,type,media,target}}',
-            $limit
+            $limit,
+            $since
         );
 
         if ($posts !== null) {
@@ -60,11 +66,12 @@ class FacebookImportService implements PlatformImportInterface
             $pageId,
             $accessToken,
             'id,message,full_picture,permalink_url,created_time',
-            $limit
+            $limit,
+            $since
         ) ?? collect();
     }
 
-    private function fetchPostsWithFields(string $pageId, string $accessToken, string $fields, int $limit): ?Collection
+    private function fetchPostsWithFields(string $pageId, string $accessToken, string $fields, int $limit, CarbonImmutable $since): ?Collection
     {
         $posts = collect();
 
@@ -73,6 +80,7 @@ class FacebookImportService implements PlatformImportInterface
             $params = [
                 'fields' => $fields,
                 'limit' => min(100, $limit),
+                'since' => $since->getTimestamp(),
                 'access_token' => $accessToken,
             ];
 
@@ -91,6 +99,12 @@ class FacebookImportService implements PlatformImportInterface
                 $data = $response->json();
 
                 foreach ($data['data'] ?? [] as $post) {
+                    // Flux du plus recent au plus ancien : le premier hors
+                    // fenetre signale qu'il n'y a plus rien a prendre.
+                    if ($this->isBeforeWindow($post['created_time'] ?? null, $since)) {
+                        break 2;
+                    }
+
                     $posts->push($post);
 
                     if ($posts->count() >= $limit) {

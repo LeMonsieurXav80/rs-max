@@ -136,7 +136,7 @@ class ExternalFeedController extends Controller
      */
     public function refresh(Request $request, ImportService $importService): JsonResponse
     {
-        $limit = min(max((int) $request->input('limit', 50), 1), 200);
+        $limit = min(max((int) $request->input('limit', config('import.default_limit')), 1), 200);
 
         $results = [];
         $total = 0;

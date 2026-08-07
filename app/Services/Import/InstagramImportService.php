@@ -5,12 +5,16 @@ namespace App\Services\Import;
 use App\Models\ExternalPost;
 use App\Models\Platform;
 use App\Models\SocialAccount;
+use App\Services\Import\Concerns\ImportsIncrementally;
+use Carbon\CarbonImmutable;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 
 class InstagramImportService implements PlatformImportInterface
 {
+    use ImportsIncrementally;
+
     private const API_VERSION = 'v21.0';
 
     private const API_BASE = 'https://graph.facebook.com/'.self::API_VERSION;
@@ -28,7 +32,8 @@ class InstagramImportService implements PlatformImportInterface
             throw new \Exception('No access token found for Instagram account');
         }
 
-        $mediaList = $this->fetchMedia($instagramAccountId, $accessToken, $limit);
+        $since = $this->importSince($account);
+        $mediaList = $this->fetchMedia($instagramAccountId, $accessToken, $limit, $since);
 
         return $this->storeExternalPosts($account, $mediaList, $accessToken);
     }
@@ -36,7 +41,7 @@ class InstagramImportService implements PlatformImportInterface
     /**
      * Fetch media from Instagram account.
      */
-    private function fetchMedia(string $accountId, string $accessToken, int $limit): Collection
+    private function fetchMedia(string $accountId, string $accessToken, int $limit, CarbonImmutable $since): Collection
     {
         $media = collect();
 
@@ -45,6 +50,7 @@ class InstagramImportService implements PlatformImportInterface
             $params = [
                 'fields' => 'id,caption,media_type,media_product_type,media_url,thumbnail_url,permalink,timestamp,like_count,comments_count,children{id,media_type,media_url,thumbnail_url}',
                 'limit' => min(100, $limit),
+                'since' => $since->getTimestamp(),
                 'access_token' => $accessToken,
             ];
 
@@ -62,6 +68,12 @@ class InstagramImportService implements PlatformImportInterface
                 $data = $response->json();
 
                 foreach ($data['data'] ?? [] as $item) {
+                    // Le flux descend du plus recent au plus ancien : la premiere
+                    // publication hors fenetre signale qu'il n'y a plus rien a prendre.
+                    if ($this->isBeforeWindow($item['timestamp'] ?? null, $since)) {
+                        break 2;
+                    }
+
                     $media->push($item);
 
                     if ($media->count() >= $limit) {
@@ -98,7 +110,19 @@ class InstagramImportService implements PlatformImportInterface
             $basicComments = (int) ($media['comments_count'] ?? 0);
             $mediaType = $media['media_product_type'] ?? $media['media_type'] ?? 'FEED';
 
-            // Try to fetch insights (views, shares) - requires instagram_manage_insights
+            $existing = $this->existingPost($platform->id, $mediaId);
+            $mediaItems = $this->extractMedia($media);
+
+            // Les insights coutent UN APPEL PAR PUBLICATION : on ne les demande
+            // que si la reponse peut encore changer.
+            if (! $this->needsMetricsRefresh($existing)) {
+                if ($existing && $mediaItems && $mediaItems !== $existing->media) {
+                    $existing->update(['media' => $mediaItems]);
+                }
+
+                continue;
+            }
+
             $insights = $this->fetchMediaInsights($mediaId, $accessToken, $mediaType);
 
             $metricsData = [
@@ -107,13 +131,6 @@ class InstagramImportService implements PlatformImportInterface
                 'comments' => $insights['comments'] > 0 ? $insights['comments'] : $basicComments,
                 'shares' => $insights['shares'],
             ];
-
-            // Update existing or create new
-            $existing = ExternalPost::where('platform_id', $platform->id)
-                ->where('external_id', $mediaId)
-                ->first();
-
-            $mediaItems = $this->extractMedia($media);
 
             if ($existing) {
                 $existing->update([

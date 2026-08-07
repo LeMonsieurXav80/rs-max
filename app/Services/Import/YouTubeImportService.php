@@ -5,13 +5,17 @@ namespace App\Services\Import;
 use App\Models\ExternalPost;
 use App\Models\Platform;
 use App\Models\SocialAccount;
+use App\Services\Import\Concerns\ImportsIncrementally;
 use App\Services\YouTubeTokenHelper;
+use Carbon\CarbonImmutable;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 
 class YouTubeImportService implements PlatformImportInterface
 {
+    use ImportsIncrementally;
+
     private const API_BASE = 'https://www.googleapis.com/youtube/v3';
 
     /**
@@ -42,7 +46,8 @@ class YouTubeImportService implements PlatformImportInterface
         }
 
         // Step 2: Fetch video IDs from playlist (1 unit per 50 items)
-        $videoIds = $this->fetchPlaylistVideoIds($uploadsPlaylistId, $accessToken, $limit);
+        $since = $this->importSince($account);
+        $videoIds = $this->fetchPlaylistVideoIds($uploadsPlaylistId, $accessToken, $limit, $since);
 
         if ($videoIds->isEmpty()) {
             return collect();
@@ -90,7 +95,7 @@ class YouTubeImportService implements PlatformImportInterface
      * Fetch video IDs from the uploads playlist.
      * Cost: 1 quota unit per 50 items (maxResults=50).
      */
-    private function fetchPlaylistVideoIds(string $playlistId, string $accessToken, int $limit): Collection
+    private function fetchPlaylistVideoIds(string $playlistId, string $accessToken, int $limit, CarbonImmutable $since): Collection
     {
         $videoIds = collect();
         $pageToken = null;
@@ -98,7 +103,7 @@ class YouTubeImportService implements PlatformImportInterface
         try {
             do {
                 $params = [
-                    'part' => 'contentDetails',
+                    'part' => 'contentDetails,snippet',
                     'playlistId' => $playlistId,
                     'maxResults' => min(50, $limit - $videoIds->count()),
                 ];
@@ -120,6 +125,17 @@ class YouTubeImportService implements PlatformImportInterface
                 $data = $response->json();
 
                 foreach ($data['items'] ?? [] as $item) {
+                    // La playlist « uploads » n'accepte aucun filtre de date :
+                    // on coupe nous-memes des qu'on sort de la fenetre, ce qui
+                    // evite de payer la resolution des details de ces videos.
+                    $publishedAt = $item['contentDetails']['videoPublishedAt']
+                        ?? $item['snippet']['publishedAt']
+                        ?? null;
+
+                    if ($this->isBeforeWindow($publishedAt, $since)) {
+                        break 2;
+                    }
+
                     $videoIds->push($item['contentDetails']['videoId']);
                 }
 

@@ -25,7 +25,7 @@
         <svg class="w-4 h-4" :class="loading && 'animate-spin'" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2">
             <path stroke-linecap="round" stroke-linejoin="round" d="M16.023 9.348h4.992V4.356m-4.993 4.992-3.181-3.183a8.25 8.25 0 0 0-13.803 3.7M4.031 9.865v4.992m0 0h4.992m-4.993 0 3.181 3.183a8.25 8.25 0 0 0 13.803-3.7" />
         </svg>
-        <span x-text="loading ? 'Import en cours…' : 'Rafraichir le flux'"></span>
+        <span x-text="loading ? 'Recuperation en cours…' : 'Recuperer les dernieres publications'"></span>
     </button>
 @endsection
 

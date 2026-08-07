@@ -5,12 +5,15 @@ namespace App\Services\Import;
 use App\Models\ExternalPost;
 use App\Models\Platform;
 use App\Models\SocialAccount;
+use App\Services\Import\Concerns\ImportsIncrementally;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 
 class TwitterImportService implements PlatformImportInterface
 {
+    use ImportsIncrementally;
+
     private const API_BASE = 'https://api.twitter.com/2';
 
     /**
@@ -36,7 +39,11 @@ class TwitterImportService implements PlatformImportInterface
             throw new \Exception('Missing Twitter OAuth 1.0a credentials for import');
         }
 
-        $tweets = $this->fetchTweets($userId, $apiKey, $apiSecret, $accessToken, $accessTokenSecret, $limit);
+        $tweets = $this->fetchTweets(
+            $userId, $apiKey, $apiSecret, $accessToken, $accessTokenSecret, $limit,
+            $this->newestKnownExternalId($account),
+            $this->importSince($account)->toIso8601ZuluString()
+        );
 
         return $this->storeExternalPosts($account, $tweets);
     }
@@ -44,7 +51,7 @@ class TwitterImportService implements PlatformImportInterface
     /**
      * Fetch tweets from Twitter user timeline using OAuth 1.0a.
      */
-    private function fetchTweets(string $userId, string $apiKey, string $apiSecret, string $accessToken, string $accessTokenSecret, int $limit): Collection
+    private function fetchTweets(string $userId, string $apiKey, string $apiSecret, string $accessToken, string $accessTokenSecret, int $limit, ?string $sinceId, string $startTime): Collection
     {
         $tweets = collect();
 
@@ -56,6 +63,14 @@ class TwitterImportService implements PlatformImportInterface
                 'media.fields' => 'url,preview_image_url,type',
                 'expansions' => 'attachments.media_keys',
             ];
+
+            // `since_id` est le filtre le moins cher : X ne renvoie alors que
+            // les tweets posterieurs. Sans historique, on borne par la date.
+            if ($sinceId) {
+                $params['since_id'] = $sinceId;
+            } else {
+                $params['start_time'] = $startTime;
+            }
 
             $paginationToken = null;
 

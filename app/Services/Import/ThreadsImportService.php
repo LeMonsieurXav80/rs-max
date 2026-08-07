@@ -5,12 +5,16 @@ namespace App\Services\Import;
 use App\Models\ExternalPost;
 use App\Models\Platform;
 use App\Models\SocialAccount;
+use App\Services\Import\Concerns\ImportsIncrementally;
+use Carbon\CarbonImmutable;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 
 class ThreadsImportService implements PlatformImportInterface
 {
+    use ImportsIncrementally;
+
     private const API_BASE = 'https://graph.threads.net/v1.0';
 
     /**
@@ -26,7 +30,8 @@ class ThreadsImportService implements PlatformImportInterface
             throw new \Exception('No access token found for Threads account');
         }
 
-        $threads = $this->fetchThreads($userId, $accessToken, $limit);
+        $since = $this->importSince($account);
+        $threads = $this->fetchThreads($userId, $accessToken, $limit, $since);
 
         return $this->storeExternalPosts($account, $threads, $accessToken);
     }
@@ -34,7 +39,7 @@ class ThreadsImportService implements PlatformImportInterface
     /**
      * Fetch threads from Threads account.
      */
-    private function fetchThreads(string $userId, string $accessToken, int $limit): Collection
+    private function fetchThreads(string $userId, string $accessToken, int $limit, CarbonImmutable $since): Collection
     {
         $threads = collect();
 
@@ -43,6 +48,7 @@ class ThreadsImportService implements PlatformImportInterface
             $params = [
                 'fields' => 'id,text,media_type,media_url,thumbnail_url,permalink,timestamp,children{id,media_type,media_url,thumbnail_url}',
                 'limit' => min(100, $limit),
+                'since' => $since->toDateString(),
                 'access_token' => $accessToken,
             ];
 
@@ -60,6 +66,12 @@ class ThreadsImportService implements PlatformImportInterface
                 $data = $response->json();
 
                 foreach ($data['data'] ?? [] as $item) {
+                    // Flux du plus recent au plus ancien : le premier hors
+                    // fenetre signale qu'il n'y a plus rien a prendre.
+                    if ($this->isBeforeWindow($item['timestamp'] ?? null, $since)) {
+                        break 2;
+                    }
+
                     $threads->push($item);
 
                     if ($threads->count() >= $limit) {
@@ -91,7 +103,19 @@ class ThreadsImportService implements PlatformImportInterface
         foreach ($threadsList as $thread) {
             $threadId = $thread['id'];
 
-            // Fetch insights for this thread
+            $existing = $this->existingPost($platform->id, $threadId);
+            $mediaItems = $this->extractMedia($thread);
+
+            // Un appel d'insights PAR publication : on ne le paie que si la
+            // reponse peut encore changer.
+            if (! $this->needsMetricsRefresh($existing)) {
+                if ($existing && $mediaItems && $mediaItems !== $existing->media) {
+                    $existing->update(['media' => $mediaItems]);
+                }
+
+                continue;
+            }
+
             $insights = $this->fetchThreadInsights($threadId, $accessToken);
 
             $metricsData = [
@@ -100,13 +124,6 @@ class ThreadsImportService implements PlatformImportInterface
                 'comments' => $insights['comments'],
                 'shares' => $insights['shares'],
             ];
-
-            // Update existing or create new
-            $existing = ExternalPost::where('platform_id', $platform->id)
-                ->where('external_id', $threadId)
-                ->first();
-
-            $mediaItems = $this->extractMedia($thread);
 
             if ($existing) {
                 $existing->update([
