@@ -81,28 +81,35 @@ class PublishedPostEditTest extends TestCase
         $response->assertOk()
             ->assertSee('Publication déjà partie sur les réseaux')
             ->assertSee('Enregistrer dans RS-Max')
-            // Ni comptes de publication, ni programmation.
-            ->assertDontSee('Comptes de publication')
-            ->assertDontSee('Date et heure de publication');
+            // Les sections restent VISIBLES — on veut voir ce qui est parti —
+            // mais grisees et rendues inertes.
+            ->assertSee('Comptes de publication')
+            ->assertSee('Date et heure de publication')
+            ->assertSee('opacity-60 pointer-events-none select-none', false);
 
         $this->assertTrue($response->viewData('isPublished'));
     }
 
-    public function test_on_enregistre_le_texte_sans_toucher_aux_reseaux(): void
+    public function test_le_texte_ne_peut_pas_etre_modifie_meme_par_une_requete_forgee(): void
     {
         $user = $this->user();
         $post = $this->publishedPost($user);
 
         $this->actingAs($user)
             ->put(route('posts.published.update', $post), [
-                'content_fr' => 'Texte corrige apres coup',
-                'hashtags' => '#test',
+                // Champs grises cote formulaire : ils doivent etre ignores ici,
+                // sans quoi la fiche mentirait sur ce qui est en ligne.
+                'content_fr' => 'Texte reecrit en douce',
+                'hashtags' => '#pirate',
+                'location_name' => 'Ailleurs',
             ])
             ->assertRedirect(route('posts.show', $post->id));
 
         $post->refresh();
 
-        $this->assertSame('Texte corrige apres coup', $post->content_fr);
+        $this->assertSame('Texte original', $post->content_fr);
+        $this->assertNull($post->hashtags);
+        $this->assertNull($post->location_name);
         // Le statut et la date de publication ne bougent pas.
         $this->assertSame('published', $post->status);
         $this->assertNull($post->scheduled_at);
@@ -121,13 +128,29 @@ class PublishedPostEditTest extends TestCase
         $partner = Partner::create(['name' => 'Decathlon', 'slug' => Partner::slugFor('Decathlon')]);
 
         $this->actingAs($user)
-            ->put(route('posts.published.update', $post), [
-                'content_fr' => 'Texte original',
-                'partners' => [$partner->id],
-            ])
+            ->put(route('posts.published.update', $post), ['partners' => [$partner->id]])
             ->assertRedirect();
 
         $this->assertSame(['Decathlon'], $post->fresh()->partners->pluck('name')->all());
+    }
+
+    public function test_les_medias_rattaches_restent_modifiables(): void
+    {
+        $user = $this->user();
+        $post = $this->publishedPost($user);
+
+        // Les medias sont la reconstruction que RS-Max garde de la publication :
+        // pouvoir la completer alimente le suivi d'usage des photos.
+        $this->actingAs($user)
+            ->put(route('posts.published.update', $post), [
+                'media' => [json_encode(['url' => '/media/photo.jpg', 'mimetype' => 'image/jpeg'])],
+            ])
+            ->assertRedirect();
+
+        $this->assertSame(
+            [['url' => '/media/photo.jpg', 'mimetype' => 'image/jpeg']],
+            $post->fresh()->media
+        );
     }
 
     public function test_un_brouillon_passe_par_le_circuit_normal(): void

@@ -634,43 +634,30 @@ class PostController extends Controller
             ]);
         }
 
+        // Seuls les champs propres a RS-Max sont acceptes. Le texte, les comptes,
+        // le lieu et la programmation decrivent ce qui est REELLEMENT en ligne :
+        // les rendre modifiables ferait mentir la fiche. Ils sont grises cote
+        // formulaire, et ignores ici meme si une requete forgee les envoie.
         $validated = $request->validate([
-            'content_fr' => 'required|string|max:30000',
-            'content_en' => 'nullable|string|max:30000',
-            'article_title' => 'nullable|string|max:255',
-            'platform_contents' => 'nullable|array',
-            'platform_contents.*' => 'nullable|string|max:30000',
-            'hashtags' => 'nullable|string|max:1000',
             'media' => 'nullable|array',
             'media.*' => 'nullable|string|max:2000',
             'partners' => 'nullable|array',
             'partners.*' => 'integer|exists:partners,id',
-            'link_url' => 'nullable|url|max:2048',
-            'location_name' => 'nullable|string|max:255',
-            'location_id' => 'nullable|string|max:255',
         ]);
 
         DB::transaction(function () use ($post, $validated) {
             $post->update([
-                'content_fr' => $validated['content_fr'],
-                'content_en' => $validated['content_en'] ?? null,
-                'article_title' => $validated['article_title'] ?? null,
-                'platform_contents' => $this->filterPlatformContents($validated['platform_contents'] ?? null),
-                'translations' => null,
-                'hashtags' => $validated['hashtags'] ?? null,
                 'media' => $this->decodeMediaInput($validated['media'] ?? null),
-                'link_url' => $validated['link_url'] ?? null,
-                'location_name' => $validated['location_name'] ?? null,
-                'location_id' => $validated['location_id'] ?? null,
             ]);
 
             // Les post_platform ne sont PAS reconstruits : elles portent les
             // external_id des publications reellement parties.
+            // Les tags 'auto' se recalculent depuis les photos ci-dessus.
             app(PartnerTagService::class)->syncPost($post, $validated['partners'] ?? []);
         });
 
         return redirect()->route('posts.show', $post->id)
-            ->with('success', 'Publication mise à jour dans RS-Max. Les réseaux ne sont pas modifiés.');
+            ->with('success', 'Fiche mise à jour dans RS-Max. Les réseaux ne sont pas modifiés.');
     }
 
     /**

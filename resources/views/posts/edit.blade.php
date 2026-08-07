@@ -127,9 +127,11 @@
                 <div class="text-sm text-amber-800">
                     <p class="font-medium">Publication déjà partie sur les réseaux</p>
                     <p class="mt-0.5 text-amber-700">
-                        Vous modifiez la fiche <strong>dans RS-Max uniquement</strong> — compte rendu,
-                        partenaires, correction de texte. Rien n'est renvoyé aux réseaux sociaux,
-                        et les comptes de publication restent inchangés.
+                        Les comptes, le texte et la programmation sont <strong>grisés</strong> : ils
+                        décrivent ce qui est réellement en ligne, les modifier ici ferait mentir la
+                        fiche. Restent modifiables les informations propres à RS-Max —
+                        <strong>médias rattachés et partenaires</strong>, qui alimentent le compte
+                        rendu et le suivi d'usage des photos.
                     </p>
                 </div>
             </div>
@@ -161,7 +163,10 @@
             </div>
         @endif
 
-        @if(! $isPublished)
+        {{-- Fige ce qui reflete la publication reelle : le modifier ici ferait
+             mentir la fiche sur ce qui est en ligne. --}}
+        <div @class(['contents' => ! $isPublished, 'relative opacity-60 pointer-events-none select-none' => $isPublished])
+             @if($isPublished) aria-disabled="true" @endif>
         {{-- Section 1: Comptes de publication --}}
         @php
             $groupsData = $accountGroups->map(fn ($g) => [
@@ -274,7 +279,7 @@
             @enderror
         </div>
 
-        @endif
+        </div>
 
         {{-- Section 2: Médias --}}
         <div class="bg-white rounded-2xl shadow-sm border border-gray-100 p-6 lg:p-8">
@@ -486,6 +491,10 @@
             </div>
         </div>
 
+        {{-- Fige ce qui reflete la publication reelle : le modifier ici ferait
+             mentir la fiche sur ce qui est en ligne. --}}
+        <div @class(['contents' => ! $isPublished, 'relative opacity-60 pointer-events-none select-none' => $isPublished])
+             @if($isPublished) aria-disabled="true" @endif>
         {{-- Section 3: Contenu --}}
         <div class="bg-white rounded-2xl shadow-sm border border-gray-100 p-6 lg:p-8">
             <h2 class="text-base font-semibold text-gray-900 mb-6">Contenu</h2>
@@ -576,7 +585,11 @@
             </div>
         </div>
 
-        @if(! $isPublished)
+        </div>
+        {{-- Fige ce qui reflete la publication reelle : le modifier ici ferait
+             mentir la fiche sur ce qui est en ligne. --}}
+        <div @class(['contents' => ! $isPublished, 'relative opacity-60 pointer-events-none select-none' => $isPublished])
+             @if($isPublished) aria-disabled="true" @endif>
         {{-- Section 4: Publication --}}
         <div class="bg-white rounded-2xl shadow-sm border border-gray-100 p-6 lg:p-8">
             <h2 class="text-base font-semibold text-gray-900 mb-6">Publication</h2>
@@ -642,7 +655,7 @@
             </div>
         </div>
 
-        @endif
+        </div>
 
         {{-- Submit --}}
         <div class="flex items-center justify-end gap-4">
