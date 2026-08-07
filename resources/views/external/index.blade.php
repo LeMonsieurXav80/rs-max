@@ -235,11 +235,77 @@
                             </button>
                         </form>
 
-                        <button type="button" disabled
-                                title="Etape suivante : fusion des publications cochees en une publication RS-Max"
-                                class="px-4 py-2 bg-indigo-600 text-white text-sm font-medium rounded-xl opacity-40 cursor-not-allowed">
-                            Adopter la selection
+                        <button type="button" @click="openPanel()" :disabled="loadingPanel"
+                                class="px-4 py-2 bg-indigo-600 text-white text-sm font-medium rounded-xl hover:bg-indigo-700 transition-colors disabled:opacity-50">
+                            <span x-text="loadingPanel ? 'Preparation…' : 'Adopter la selection'"></span>
                         </button>
+                    </div>
+                </div>
+            </div>
+
+            {{-- Panneau de fusion : designer le texte qui fera foi --}}
+            <div x-show="panelOpen" x-cloak class="fixed inset-0 z-50 overflow-y-auto" style="display: none;">
+                <div class="fixed inset-0 bg-gray-900/50" @click="panelOpen = false"></div>
+
+                <div class="relative min-h-screen flex items-center justify-center p-4">
+                    <div class="relative bg-white rounded-2xl shadow-xl w-full max-w-3xl max-h-[85vh] flex flex-col">
+                        <div class="px-6 py-4 border-b border-gray-100">
+                            <h3 class="text-base font-semibold text-gray-900">Fusionner en une publication RS-Max</h3>
+                            <p class="text-sm text-gray-500 mt-1">
+                                Choisissez le texte qui fera reference. Les autres versions sont conservees,
+                                une par reseau.
+                            </p>
+                        </div>
+
+                        <div class="flex-1 overflow-y-auto px-6 py-4 space-y-3">
+                            <template x-for="p in panelPosts" :key="p.id">
+                                <label class="flex gap-3 p-3 rounded-xl border cursor-pointer transition-colors"
+                                       :class="referenceId === p.id ? 'border-indigo-500 bg-indigo-50/50' : 'border-gray-200 hover:border-gray-300'">
+                                    <input type="radio" :value="p.id" x-model.number="referenceId"
+                                           class="mt-1 text-indigo-600 focus:ring-indigo-500">
+
+                                    <img :src="p.thumbnail" x-show="p.thumbnail" alt=""
+                                         class="w-12 h-12 rounded-lg object-cover bg-gray-100 flex-shrink-0">
+
+                                    <div class="min-w-0 flex-1">
+                                        <div class="flex items-center gap-2 text-xs">
+                                            <span class="font-semibold text-gray-900" x-text="p.platform"></span>
+                                            <span class="text-gray-400" x-text="p.account"></span>
+                                            <span class="text-gray-300">·</span>
+                                            <span class="text-gray-400" x-text="p.published_at"></span>
+                                            <span class="ml-auto text-gray-400" x-text="p.length + ' car.'"></span>
+                                        </div>
+                                        <p class="mt-1 text-xs text-gray-600 whitespace-pre-line line-clamp-4"
+                                           x-text="p.content || '(sans texte)'"></p>
+                                    </div>
+                                </label>
+                            </template>
+
+                            <p class="text-xs text-gray-500 pt-2 border-t border-gray-100">
+                                <span x-text="distinctMedia"></span> media(s) distinct(s) reperé(s).
+                                Les photos ne sont telechargees qu'une fois, meme presentes sur plusieurs
+                                reseaux ; les videos ne sont pas rapatriees.
+                            </p>
+                        </div>
+
+                        <div class="px-6 py-4 border-t border-gray-100 flex items-center justify-end gap-2">
+                            <button type="button" @click="panelOpen = false"
+                                    class="px-4 py-2 text-sm text-gray-600 hover:text-gray-800">
+                                Annuler
+                            </button>
+
+                            <form method="POST" action="{{ route('external.adopt') }}">
+                                @csrf
+                                <template x-for="id in pickedIds" :key="id">
+                                    <input type="hidden" name="ids[]" :value="id">
+                                </template>
+                                <input type="hidden" name="reference_id" :value="referenceId">
+                                <button type="submit" :disabled="!referenceId"
+                                        class="px-4 py-2 bg-indigo-600 text-white text-sm font-medium rounded-xl hover:bg-indigo-700 transition-colors disabled:opacity-40">
+                                    Creer la publication
+                                </button>
+                            </form>
+                        </div>
                     </div>
                 </div>
             </div>
@@ -278,6 +344,43 @@ function externalBoard() {
 
         get count() {
             return Object.keys(this.picks).length;
+        },
+
+        // ── Panneau de fusion ──────────────────────────────────────────
+        panelOpen: false,
+        loadingPanel: false,
+        panelPosts: [],
+        distinctMedia: 0,
+        referenceId: null,
+
+        openPanel() {
+            this.loadingPanel = true;
+
+            const body = new FormData();
+            this.pickedIds.forEach(id => body.append('ids[]', id));
+
+            fetch('{{ route('external.adopt.preview') }}', {
+                method: 'POST',
+                headers: {
+                    'X-CSRF-TOKEN': document.querySelector('meta[name=csrf-token]').content,
+                    'Accept': 'application/json',
+                },
+                body,
+            })
+                .then(r => r.json())
+                .then(data => {
+                    this.panelPosts = data.posts;
+                    this.distinctMedia = data.distinct_media;
+                    // Par defaut, le texte le plus fourni : c'est presque
+                    // toujours celui du reseau sans limite de caracteres.
+                    this.referenceId = data.posts.reduce(
+                        (best, p) => (!best || p.length > best.length ? p : best),
+                        null
+                    )?.id ?? null;
+                    this.panelOpen = true;
+                })
+                .catch(() => alert('Impossible de preparer la fusion.'))
+                .finally(() => { this.loadingPanel = false; });
         },
     };
 }

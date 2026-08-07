@@ -31,6 +31,8 @@ class MediaFile extends Model
         'source_context',
         'source_path',
         'phash',
+        'content_hash',
+        'dhash',
         'pending_analysis',
         'ingested_at',
         'city',

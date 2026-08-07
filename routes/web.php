@@ -264,6 +264,8 @@ Route::middleware(['auth', 'verified', 'throttle:600,1'])->group(function () {
         // Flux des publications natives (postees hors RS-Max) a rattacher
         Route::get('external', [ExternalFeedController::class, 'index'])->name('external.index');
         Route::post('external/refresh', [ExternalFeedController::class, 'refresh'])->name('external.refresh');
+        Route::post('external/adopt/preview', [ExternalFeedController::class, 'adoptPreview'])->name('external.adopt.preview');
+        Route::post('external/adopt', [ExternalFeedController::class, 'adopt'])->name('external.adopt');
         Route::post('external/ignore', [ExternalFeedController::class, 'ignore'])->name('external.ignore');
         Route::post('external/restore', [ExternalFeedController::class, 'restore'])->name('external.restore');
 

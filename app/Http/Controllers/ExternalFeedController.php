@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use App\Models\ExternalPost;
 use App\Models\SocialAccount;
 use App\Services\Import\ImportService;
+use App\Services\Import\PostAdoptionService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -108,6 +109,81 @@ class ExternalFeedController extends Controller
             'showIgnored',
             'pendingCount',
         ));
+    }
+
+    /**
+     * Recapitulatif avant fusion : les textes de chaque reseau cote a cote,
+     * pour designer celui qui fera foi.
+     */
+    public function adoptPreview(Request $request): JsonResponse
+    {
+        $posts = ExternalPost::with(['platform', 'socialAccount'])
+            ->whereIn('id', $this->authorizedIds($request))
+            ->whereNull('adopted_post_id')
+            ->get();
+
+        $mediaCount = $posts->flatMap(fn (ExternalPost $p) => $p->mediaItems())
+            ->pluck('url')
+            ->unique()
+            ->count();
+
+        return response()->json([
+            'posts' => $posts->map(fn (ExternalPost $p) => [
+                'id' => $p->id,
+                'platform' => $p->platform->name,
+                'platform_slug' => $p->platform->slug,
+                'account' => $p->socialAccount?->name,
+                'content' => $p->content,
+                'length' => mb_strlen((string) $p->content),
+                'published_at' => $p->published_at?->format('d/m/Y H:i'),
+                'thumbnail' => $p->thumbnailUrl(),
+                'media_count' => count($p->mediaItems()),
+            ])->values(),
+            // Les URLs distinctes ne disent pas combien de fichiers seront
+            // reellement rapatries : la deduplication tranche au telechargement.
+            'distinct_media' => $mediaCount,
+        ]);
+    }
+
+    /**
+     * Fusionne les publications cochees en une publication RS-Max.
+     */
+    public function adopt(Request $request, PostAdoptionService $adoption): RedirectResponse
+    {
+        $referenceId = $request->integer('reference_id') ?: null;
+
+        $posts = ExternalPost::with(['platform', 'socialAccount'])
+            ->whereIn('id', $this->authorizedIds($request))
+            ->whereNull('adopted_post_id')
+            ->get();
+
+        if ($posts->isEmpty()) {
+            return back()->withErrors(['ids' => 'Aucune publication adoptable dans la selection.']);
+        }
+
+        // Un reseau ne peut apparaitre qu'une fois : la publication adoptee est
+        // LA meme vue sur plusieurs reseaux, pas plusieurs publications.
+        if ($posts->pluck('platform_id')->duplicates()->isNotEmpty()) {
+            return back()->withErrors(['ids' => 'Une seule publication par reseau.']);
+        }
+
+        $result = $adoption->adopt($posts, $request->user(), $referenceId);
+
+        $message = "Publication creee a partir de {$posts->count()} reseau(x).";
+
+        if ($result['downloaded'] > 0 || $result['reused'] > 0) {
+            $message .= " Photos : {$result['downloaded']} telechargee(s), {$result['reused']} deja connue(s).";
+        }
+
+        if ($result['skipped_videos'] > 0) {
+            $message .= " {$result['skipped_videos']} video(s) non rapatriee(s).";
+        }
+
+        // `posts.show` porte le panneau de tag partenaires et accepte le statut
+        // publie, contrairement a l'ecran d'edition reserve aux brouillons.
+        return redirect()
+            ->route('posts.show', $result['post'])
+            ->with('success', $message);
     }
 
     /**
