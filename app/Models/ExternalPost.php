@@ -165,7 +165,9 @@ class ExternalPost extends Model
             'views' => number_format($metrics['views'] ?? 0),
             'likes' => number_format($metrics['likes'] ?? 0),
             'comments' => number_format($metrics['comments'] ?? 0),
-            'shares' => $metrics['shares'] ? number_format($metrics['shares']) : null,
+            // `shares` est absent chez plusieurs reseaux (et null chez YouTube) :
+            // la cle n'est pas garantie, contrairement aux trois autres.
+            'shares' => ! empty($metrics['shares']) ? number_format($metrics['shares']) : null,
         ];
     }
 }

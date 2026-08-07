@@ -27,6 +27,12 @@ class ExternalFeedController extends Controller
         'facebook', 'instagram', 'twitter', 'youtube', 'threads', 'bluesky',
     ];
 
+    /**
+     * Nombre de publications remontees par colonne. Le tableau se parcourt a
+     * l'oeil, pas a la pagination : la profondeur se regle avec la periode.
+     */
+    private const PER_COLUMN = 60;
+
     public function index(Request $request): View
     {
         $accounts = $this->visibleAccounts($request);
@@ -37,41 +43,65 @@ class ExternalFeedController extends Controller
             $accountIds->all()
         ));
 
+        // Sans choix explicite, on part des comptes par defaut de l'utilisateur.
+        if (empty($selectedAccounts)) {
+            $selectedAccounts = array_values(array_intersect(
+                array_map('intval', (array) ($request->user()->default_accounts ?? [])),
+                $accountIds->all()
+            ));
+        }
+
+        $activeAccounts = ! empty($selectedAccounts)
+            ? $accounts->whereIn('id', $selectedAccounts)
+            : $accounts;
+
         $period = $request->input('period', '30');
         $search = trim((string) $request->input('search', ''));
         $showIgnored = $request->boolean('ignored');
 
-        $query = ExternalPost::with(['platform', 'socialAccount'])
-            ->whereIn('social_account_id', ! empty($selectedAccounts) ? $selectedAccounts : $accountIds)
-            ->whereNull('adopted_post_id')
-            ->notPublishedByRsMax();
+        // Une colonne par reseau, alimentee par les comptes retenus de ce reseau.
+        $columns = $activeAccounts
+            ->groupBy(fn (SocialAccount $a) => $a->platform->slug)
+            ->map(function ($platformAccounts) use ($period, $search, $showIgnored) {
+                $first = $platformAccounts->first();
 
-        $query->when($showIgnored, fn ($q) => $q->whereNotNull('ignored_at'))
-            ->when(! $showIgnored, fn ($q) => $q->whereNull('ignored_at'));
+                $query = ExternalPost::with(['platform', 'socialAccount'])
+                    ->whereIn('social_account_id', $platformAccounts->pluck('id'))
+                    ->whereNull('adopted_post_id')
+                    ->notPublishedByRsMax();
 
-        if ($period !== 'all') {
-            $query->where('published_at', '>=', now()->subDays((int) $period));
-        }
+                $query->when($showIgnored, fn ($q) => $q->whereNotNull('ignored_at'))
+                    ->when(! $showIgnored, fn ($q) => $q->whereNull('ignored_at'));
 
-        if ($search !== '') {
-            $query->where('content', 'like', '%'.$search.'%');
-        }
+                if ($period !== 'all') {
+                    $query->where('published_at', '>=', now()->subDays((int) $period));
+                }
 
-        $externalPosts = $query->orderByDesc('published_at')->paginate(60)->withQueryString();
+                if ($search !== '') {
+                    $query->where('content', 'like', '%'.$search.'%');
+                }
+
+                return [
+                    'platform' => $first->platform,
+                    'accounts' => $platformAccounts->values(),
+                    'importable' => in_array($first->platform->slug, self::IMPORTABLE_PLATFORMS, true),
+                    'posts' => $query->orderByDesc('published_at')->limit(self::PER_COLUMN)->get(),
+                ];
+            })
+            ->sortBy(fn ($column) => $column['platform']->name)
+            ->values();
 
         // Compteur d'attente, hors filtres, pour signaler le travail restant.
         $pendingCount = ExternalPost::whereIn('social_account_id', $accountIds)
             ->adoptable()
             ->count();
 
-        $importableAccounts = $accounts->filter(
-            fn (SocialAccount $a) => in_array($a->platform->slug, self::IMPORTABLE_PLATFORMS, true)
-        );
+        $groups = $request->user()->accountGroups()->with('socialAccounts')->get();
 
         return view('external.index', compact(
             'accounts',
-            'importableAccounts',
-            'externalPosts',
+            'groups',
+            'columns',
             'selectedAccounts',
             'period',
             'search',

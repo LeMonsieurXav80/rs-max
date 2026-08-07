@@ -192,6 +192,74 @@ class ExternalFeedTest extends TestCase
         );
     }
 
+    public function test_le_tableau_ouvre_une_colonne_par_reseau(): void
+    {
+        $instagram = Platform::create([
+            'slug' => 'instagram',
+            'name' => 'Instagram',
+            'auth_type' => 'oauth2',
+        ]);
+
+        $compteIg = SocialAccount::create([
+            'platform_id' => $instagram->id,
+            'platform_account_id' => '99',
+            'name' => 'Compte Insta',
+            'credentials' => ['access_token' => 't'],
+        ]);
+
+        $user = $this->manager();
+        $user->socialAccounts()->attach($compteIg->id, ['is_active' => true]);
+
+        $this->externalPost(['content' => 'Cote Facebook']);
+        ExternalPost::create([
+            'social_account_id' => $compteIg->id,
+            'platform_id' => $instagram->id,
+            'external_id' => 'ig-1',
+            'content' => 'Cote Instagram',
+            'published_at' => now()->subDay(),
+        ]);
+
+        $response = $this->actingAs($user)->get(route('external.index'));
+
+        $response->assertOk()
+            ->assertSee('Cote Facebook')
+            ->assertSee('Cote Instagram');
+
+        $columns = $response->viewData('columns');
+        $this->assertCount(2, $columns);
+        $this->assertSame(['Facebook', 'Instagram'], $columns->pluck('platform.name')->all());
+    }
+
+    public function test_ne_garder_qu_un_compte_ne_laisse_qu_une_colonne(): void
+    {
+        $instagram = Platform::create([
+            'slug' => 'instagram',
+            'name' => 'Instagram',
+            'auth_type' => 'oauth2',
+        ]);
+
+        $compteIg = SocialAccount::create([
+            'platform_id' => $instagram->id,
+            'platform_account_id' => '99',
+            'name' => 'Compte Insta',
+            'credentials' => ['access_token' => 't'],
+        ]);
+
+        $user = $this->manager();
+        $user->socialAccounts()->attach($compteIg->id, ['is_active' => true]);
+
+        $this->externalPost(['content' => 'Cote Facebook']);
+
+        $response = $this->actingAs($user)
+            ->get(route('external.index', ['accounts' => [$compteIg->id]]));
+
+        $columns = $response->assertOk()->viewData('columns');
+
+        $this->assertCount(1, $columns);
+        $this->assertSame('Instagram', $columns->first()['platform']->name);
+        $response->assertDontSee('Cote Facebook');
+    }
+
     public function test_un_simple_utilisateur_n_accede_pas_au_flux(): void
     {
         $this->actingAs(User::factory()->create(['role' => 'user']))
