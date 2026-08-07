@@ -304,9 +304,10 @@ class CarouselRenderService
      *
      * Une slide dont `extend_image` est coché forme un groupe avec la suivante ;
      * si celle-ci l'a coché aussi, le groupe continue (panorama sur 3 slides et
-     * plus). Chaque membre reçoit l'image du PREMIER de son groupe, la taille du
-     * groupe (`_span`) et son rang dedans (`_span_index`) — Backdrop::frame() en
-     * déduit le cadrage.
+     * plus) — SANS qu'elle ait à porter une photo, puisqu'elle reçoit celle du
+     * groupe. Seule la tête du groupe doit en avoir une. Chaque membre reçoit
+     * l'image du PREMIER de son groupe, la taille du groupe (`_span`) et son rang
+     * dedans (`_span_index`) — Backdrop::frame() en déduit le cadrage.
      *
      * Le groupe s'arrête net si la slide suivante ne peut pas peindre d'image
      * (brique sans slot image) : mieux vaut une continuité qui s'interrompt qu'une
@@ -330,12 +331,17 @@ class CarouselRenderService
                 return false;
             }
 
-            // Sans image à prolonger, ni brique capable de l'afficher, on ne fait rien.
-            return ! empty($slides[$i]['data']['image'])
-                && $registry->hasImageSlot((string) ($slides[$i + 1]['brick'] ?? ''));
+            // La photo n'est exigée que sur la TÊTE du groupe (vérifiée plus bas) :
+            // une slide du milieu reçoit celle du groupe, exiger la sienne
+            // interromprait le panorama là où l'utilisateur l'a justement prolongé.
+            return $registry->hasImageSlot((string) ($slides[$i + 1]['brick'] ?? ''));
         };
 
         for ($start = 0; $start < $count; $start++) {
+            if (empty($slides[$start]['data']['image'])) {
+                continue; // rien à prolonger depuis cette slide
+            }
+
             $end = $start;
             while ($extends($end)) {
                 $end++;

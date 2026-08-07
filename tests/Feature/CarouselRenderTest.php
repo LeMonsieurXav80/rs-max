@@ -226,6 +226,22 @@ class CarouselRenderTest extends TestCase
                 ['brick' => 'photo-title-bl', 'data' => ['title' => 'C']],
             ]));
 
+            // Même chaînage, mais la photo n'est posée QUE sur la 1re slide — le cas
+            // naturel dans le Studio : les suivantes reçoivent l'image du groupe,
+            // elles n'ont donc pas à en choisir une pour prolonger à leur tour.
+            $this->assertSame([[0, 3240], [-1080, 3240], [-2160, 3240]], $frames([
+                ['brick' => 'photo-title-bl', 'data' => ['image' => $image, 'extend_image' => true]],
+                ['brick' => 'photo-title-bl', 'data' => ['extend_image' => true]],
+                ['brick' => 'photo-title-bl', 'data' => ['title' => 'C']],
+            ]));
+
+            // La PREMIÈRE slide n'a rien de particulier : elle ouvre un groupe
+            // comme une autre (_span >= 2, _span_index = 0 => cadre non décalé).
+            $this->assertSame([[0, 2160], [-1080, 2160]], $frames([
+                ['brick' => 'photo-title-bl', 'data' => ['image' => $image, 'extend_image' => true, 'title' => 'A']],
+                ['brick' => 'image-full', 'data' => []],
+            ]));
+
             // Cas où il n'y a rien à prolonger : aucun cadre étendu, pas d'erreur.
             $this->assertSame([], $frames([                       // dernière slide
                 ['brick' => 'photo-title-bl', 'data' => ['title' => 'A']],
