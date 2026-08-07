@@ -24,14 +24,21 @@ trait ImportsIncrementally
      */
     protected function importSince(SocialAccount $account): CarbonImmutable
     {
+        $floor = CarbonImmutable::now()->subDays(config('import.first_run_days'));
+
         $latest = ExternalPost::where('social_account_id', $account->id)
             ->max('published_at');
 
         if (! $latest) {
-            return CarbonImmutable::now()->subDays(config('import.first_run_days'));
+            return $floor;
         }
 
-        return CarbonImmutable::parse($latest)->subHours(config('import.overlap_hours'));
+        $resume = CarbonImmutable::parse($latest)->subHours(config('import.overlap_hours'));
+
+        // Plancher indispensable : sur un compte endormi depuis deux ans, la
+        // derniere publication connue date de deux ans, et repartir de la
+        // reviendrait a repaginer tout l'intervalle pour ne rien trouver.
+        return $resume->gt($floor) ? $resume : $floor;
     }
 
     /**

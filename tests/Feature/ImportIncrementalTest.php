@@ -86,6 +86,19 @@ class ImportIncrementalTest extends TestCase
         $this->assertEqualsWithDelta(3.5, $since->diffInDays(now()), 0.2);
     }
 
+    public function test_un_compte_endormi_ne_fait_pas_remonter_l_import_a_des_annees(): void
+    {
+        config(['import.first_run_days' => 30]);
+
+        // Ce compte n'a plus rien publie depuis deux ans : repartir de sa
+        // derniere publication connue reviendrait a repaginer 800 jours.
+        $this->externalPost(['published_at' => now()->subDays(800)]);
+
+        $since = $this->service->importSince($this->account);
+
+        $this->assertEqualsWithDelta(30, $since->diffInDays(now()), 1);
+    }
+
     public function test_la_fenetre_coupe_les_publications_trop_anciennes(): void
     {
         $since = CarbonImmutable::now()->subDays(30);
