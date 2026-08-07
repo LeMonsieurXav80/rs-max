@@ -3,7 +3,7 @@
 @section('title', 'Modifier le post')
 
 @section('content')
-    <form method="POST" action="{{ route('posts.update', $post) }}" class="max-w-4xl space-y-6" x-data="{
+    <form method="POST" action="{{ $isPublished ? route('posts.published.update', $post) : route('posts.update', $post) }}" class="max-w-4xl space-y-6" x-data="{
         ...mediaLibraryData(),
         publishMode: '{{ old('publish_now') ? 'now' : ($post->scheduled_at ? 'schedule' : 'schedule') }}',
         mediaItems: [],
@@ -118,6 +118,23 @@
         @csrf
         @method('PUT')
 
+        @if($isPublished)
+            {{-- Sans cet avertissement, on croirait corriger la publication chez Meta. --}}
+            <div class="rounded-xl bg-amber-50 border border-amber-200 p-4 flex gap-3">
+                <svg class="w-5 h-5 text-amber-500 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1.5">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126ZM12 15.75h.007v.008H12v-.008Z" />
+                </svg>
+                <div class="text-sm text-amber-800">
+                    <p class="font-medium">Publication déjà partie sur les réseaux</p>
+                    <p class="mt-0.5 text-amber-700">
+                        Vous modifiez la fiche <strong>dans RS-Max uniquement</strong> — compte rendu,
+                        partenaires, correction de texte. Rien n'est renvoyé aux réseaux sociaux,
+                        et les comptes de publication restent inchangés.
+                    </p>
+                </div>
+            </div>
+        @endif
+
         {{-- Restore old media values on validation failure --}}
         @if(old('media'))
             @foreach(old('media') as $oldMedia)
@@ -144,6 +161,7 @@
             </div>
         @endif
 
+        @if(! $isPublished)
         {{-- Section 1: Comptes de publication --}}
         @php
             $groupsData = $accountGroups->map(fn ($g) => [
@@ -255,6 +273,8 @@
                 <p class="mt-3 text-sm text-red-600">{{ $message }}</p>
             @enderror
         </div>
+
+        @endif
 
         {{-- Section 2: Médias --}}
         <div class="bg-white rounded-2xl shadow-sm border border-gray-100 p-6 lg:p-8">
@@ -556,6 +576,7 @@
             </div>
         </div>
 
+        @if(! $isPublished)
         {{-- Section 4: Publication --}}
         <div class="bg-white rounded-2xl shadow-sm border border-gray-100 p-6 lg:p-8">
             <h2 class="text-base font-semibold text-gray-900 mb-6">Publication</h2>
@@ -621,6 +642,8 @@
             </div>
         </div>
 
+        @endif
+
         {{-- Submit --}}
         <div class="flex items-center justify-end gap-4">
             <a href="{{ route('posts.show', $post) }}" class="px-4 py-2 text-sm font-medium text-gray-700 hover:text-gray-900 transition-colors">
@@ -631,7 +654,7 @@
                 <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2">
                     <path stroke-linecap="round" stroke-linejoin="round" d="m4.5 12.75 6 6 9-13.5" />
                 </svg>
-                Mettre à jour
+                {{ $isPublished ? 'Enregistrer dans RS-Max' : 'Mettre à jour' }}
             </button>
         </div>
     </form>

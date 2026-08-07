@@ -81,6 +81,8 @@ Route::middleware(['auth', 'verified', 'throttle:600,1'])->group(function () {
     // Le tag partenaire a sa propre route : contrairement a update(), il reste
     // possible sur un post deja publie (metadonnee interne, pas du contenu).
     Route::put('posts/{post}/partners', [PostController::class, 'updatePartners'])->name('posts.partners.update');
+    // Edition d'une publication deja partie : metadonnees seules, rien n'est renvoye aux reseaux.
+    Route::put('posts/{post}/published', [PostController::class, 'updatePublished'])->name('posts.published.update');
     Route::resource('posts', PostController::class);
 
     // Social accounts (listing, editing, toggle)

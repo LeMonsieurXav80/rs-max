@@ -20,6 +20,25 @@
     partnerOptions: @js($partnerOptions),
     manualIds: @js($manualIds),
     initialIds: @js($manualIds),
+    search: '',
+    /** Insensible a la casse ET aux accents, comme Partner::slugFor(). */
+    normalize(value) {
+        return (value || '').toString().normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
+    },
+    get filteredPartners() {
+        const q = this.normalize(this.search).trim();
+        if (! q) { return this.partnerOptions; }
+        return this.partnerOptions
+            .filter(p => this.normalize(p.name).includes(q))
+            .sort((a, b) => this.normalize(b.name).startsWith(q) - this.normalize(a.name).startsWith(q));
+    },
+    pickFirst() {
+        const first = this.filteredPartners[0];
+        if (first) {
+            if (! this.manualIds.includes(first.id)) { this.toggle(first.id); }
+            this.search = '';
+        }
+    },
     get manualPartners() {
         return this.partnerOptions.filter(p => this.manualIds.includes(p.id));
     },
@@ -94,8 +113,13 @@
 
         <div>
             <p class="text-xs text-gray-400 mb-1.5">Ajoutés manuellement</p>
+
+            <input type="text" x-model="search" @keydown.enter.prevent="pickFirst()"
+                   placeholder="Taper le début d'un partenaire…"
+                   class="w-full mb-2 rounded-xl border-gray-200 text-sm focus:border-indigo-500 focus:ring-indigo-500">
+
             <div class="max-h-56 overflow-y-auto space-y-1">
-                <template x-for="p in partnerOptions" :key="'opt-' + p.id">
+                <template x-for="p in filteredPartners" :key="'opt-' + p.id">
                     <label class="flex items-center gap-2.5 px-2 py-1.5 rounded-lg hover:bg-gray-50 cursor-pointer">
                         <input type="checkbox" :checked="manualIds.includes(p.id)" @change="toggle(p.id)"
                                class="rounded border-gray-300 text-indigo-600 focus:ring-indigo-500">
@@ -103,6 +127,10 @@
                         <span class="text-sm text-gray-700" x-text="p.name"></span>
                     </label>
                 </template>
+
+                <p x-show="filteredPartners.length === 0" x-cloak class="px-2 py-3 text-sm text-gray-400">
+                    Aucun partenaire ne correspond.
+                </p>
             </div>
         </div>
 

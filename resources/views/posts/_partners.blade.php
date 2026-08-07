@@ -23,6 +23,30 @@
     manualIds: @js($selectedPartnerIds),
     partnerMapByUrl: @js($mediaPartnerMap),
     partnerListOpen: false,
+    partnerSearch: '',
+    /**
+     * Recherche insensible a la casse ET aux accents : « Decathlon » doit
+     * sortir en tapant « déca », comme Partner::slugFor() le fait cote serveur.
+     */
+    normalize(value) {
+        return (value || '').toString().normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
+    },
+    get filteredPartners() {
+        const q = this.normalize(this.partnerSearch).trim();
+        if (! q) { return this.partnerOptions; }
+        // Les partenaires qui COMMENCENT par la saisie remontent en premier.
+        return this.partnerOptions
+            .filter(p => this.normalize(p.name).includes(q))
+            .sort((a, b) => this.normalize(b.name).startsWith(q) - this.normalize(a.name).startsWith(q));
+    },
+    /** Entree valide la premiere proposition, sans quitter le clavier. */
+    pickFirst() {
+        const first = this.filteredPartners[0];
+        if (first) {
+            if (! this.manualIds.includes(first.id)) { this.toggleManual(first.id); }
+            this.partnerSearch = '';
+        }
+    },
     get autoPartners() {
         const found = {};
         (this.mediaItems || []).forEach(m => {
@@ -87,16 +111,27 @@
                 </div>
                 <p class="text-xs text-gray-300 mt-1.5" x-show="manualPartners.length === 0">Aucun</p>
 
-                <div x-show="partnerListOpen" x-cloak x-collapse class="mt-3 max-h-56 overflow-y-auto border-t border-gray-100 pt-3 space-y-1">
-                    <template x-for="p in partnerOptions" :key="'opt-' + p.id">
-                        <label class="flex items-center gap-2.5 px-2 py-1.5 rounded-lg hover:bg-gray-50 cursor-pointer">
-                            <input type="checkbox" :value="p.id" :checked="manualIds.includes(p.id)"
-                                   @change="toggleManual(p.id)"
-                                   class="rounded border-gray-300 text-indigo-600 focus:ring-indigo-500">
-                            <span class="w-2 h-2 rounded-full flex-shrink-0" :style="'background-color:' + (p.color || '#6366f1')"></span>
-                            <span class="text-sm text-gray-700" x-text="p.name"></span>
-                        </label>
-                    </template>
+                <div x-show="partnerListOpen" x-cloak x-collapse class="mt-3 border-t border-gray-100 pt-3">
+                    <input type="text" x-model="partnerSearch" @keydown.enter.prevent="pickFirst()"
+                           x-effect="partnerListOpen && $nextTick(() => $el.focus())"
+                           placeholder="Taper le debut d'un partenaire…"
+                           class="w-full mb-2 rounded-xl border-gray-200 text-sm focus:border-indigo-500 focus:ring-indigo-500">
+
+                    <div class="max-h-56 overflow-y-auto space-y-1">
+                        <template x-for="p in filteredPartners" :key="'opt-' + p.id">
+                            <label class="flex items-center gap-2.5 px-2 py-1.5 rounded-lg hover:bg-gray-50 cursor-pointer">
+                                <input type="checkbox" :value="p.id" :checked="manualIds.includes(p.id)"
+                                       @change="toggleManual(p.id)"
+                                       class="rounded border-gray-300 text-indigo-600 focus:ring-indigo-500">
+                                <span class="w-2 h-2 rounded-full flex-shrink-0" :style="'background-color:' + (p.color || '#6366f1')"></span>
+                                <span class="text-sm text-gray-700" x-text="p.name"></span>
+                            </label>
+                        </template>
+
+                        <p x-show="filteredPartners.length === 0" x-cloak class="px-2 py-3 text-sm text-gray-400">
+                            Aucun partenaire ne correspond.
+                        </p>
+                    </div>
                 </div>
             </div>
 

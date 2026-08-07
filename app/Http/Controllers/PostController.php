@@ -481,7 +481,11 @@ class PostController extends Controller
         $selectedPartnerIds = $post->partners()->wherePivot('source', 'manual')->pluck('partners.id')->all();
         $mediaPartnerMap = $partnerTags->partnersByMediaUrl($post->media);
 
-        return view('posts.edit', compact('post', 'accounts', 'platforms', 'selectedAccountIds', 'charLimits', 'accountGroups', 'partnerOptions', 'selectedPartnerIds', 'mediaPartnerMap'));
+        // Une publication deja partie s'edite en metadonnees seules : ni comptes,
+        // ni programmation, et surtout aucun renvoi vers les reseaux.
+        $isPublished = $post->status === 'published';
+
+        return view('posts.edit', compact('post', 'accounts', 'platforms', 'selectedAccountIds', 'charLimits', 'accountGroups', 'partnerOptions', 'selectedPartnerIds', 'mediaPartnerMap', 'isPublished'));
     }
 
     /**
@@ -600,6 +604,91 @@ class PostController extends Controller
 
         return redirect()->route('posts.show', $post->id)
             ->with('success', 'Post updated successfully.');
+    }
+
+    /**
+     * Met à jour le contenu d'une publication DÉJÀ PUBLIÉE.
+     *
+     * Séparé de update() à dessein : ce dernier reconstruit les post_platform et
+     * réenclenche une publication, ce qu'il ne faut surtout pas faire ici. On ne
+     * touche donc qu'aux métadonnées — texte, médias, lieu, partenaires — sans
+     * jamais rouvrir le circuit de publication ni changer le statut.
+     *
+     * **Rien n'est repoussé vers les réseaux** : la modification reste interne à
+     * RS-Max (compte rendu, tag partenaire, correction de texte a posteriori).
+     */
+    public function updatePublished(Request $request, int $id): RedirectResponse
+    {
+        $post = Post::findOrFail($id);
+        $user = $request->user();
+
+        if (! $user->isAdmin() && $post->user_id !== $user->id) {
+            abort(403, 'Unauthorized.');
+        }
+
+        // Une publication encore en cours d'envoi ne doit pas bouger sous les
+        // pieds du job ; un brouillon passe, lui, par update().
+        if ($post->status !== 'published') {
+            return back()->withErrors([
+                'status' => 'Cet écran ne modifie que les publications déjà publiées.',
+            ]);
+        }
+
+        $validated = $request->validate([
+            'content_fr' => 'required|string|max:30000',
+            'content_en' => 'nullable|string|max:30000',
+            'article_title' => 'nullable|string|max:255',
+            'platform_contents' => 'nullable|array',
+            'platform_contents.*' => 'nullable|string|max:30000',
+            'hashtags' => 'nullable|string|max:1000',
+            'media' => 'nullable|array',
+            'media.*' => 'nullable|string|max:2000',
+            'partners' => 'nullable|array',
+            'partners.*' => 'integer|exists:partners,id',
+            'link_url' => 'nullable|url|max:2048',
+            'location_name' => 'nullable|string|max:255',
+            'location_id' => 'nullable|string|max:255',
+        ]);
+
+        DB::transaction(function () use ($post, $validated) {
+            $post->update([
+                'content_fr' => $validated['content_fr'],
+                'content_en' => $validated['content_en'] ?? null,
+                'article_title' => $validated['article_title'] ?? null,
+                'platform_contents' => $this->filterPlatformContents($validated['platform_contents'] ?? null),
+                'translations' => null,
+                'hashtags' => $validated['hashtags'] ?? null,
+                'media' => $this->decodeMediaInput($validated['media'] ?? null),
+                'link_url' => $validated['link_url'] ?? null,
+                'location_name' => $validated['location_name'] ?? null,
+                'location_id' => $validated['location_id'] ?? null,
+            ]);
+
+            // Les post_platform ne sont PAS reconstruits : elles portent les
+            // external_id des publications reellement parties.
+            app(PartnerTagService::class)->syncPost($post, $validated['partners'] ?? []);
+        });
+
+        return redirect()->route('posts.show', $post->id)
+            ->with('success', 'Publication mise à jour dans RS-Max. Les réseaux ne sont pas modifiés.');
+    }
+
+    /**
+     * Décode les médias soumis par le formulaire (chaînes JSON) en tableau.
+     */
+    private function decodeMediaInput(?array $items): ?array
+    {
+        if (empty($items)) {
+            return null;
+        }
+
+        $media = array_values(array_filter(array_map(function ($item) {
+            $decoded = is_string($item) ? json_decode($item, true) : $item;
+
+            return is_array($decoded) && isset($decoded['url']) ? $decoded : null;
+        }, $items)));
+
+        return $media ?: null;
     }
 
     /**
