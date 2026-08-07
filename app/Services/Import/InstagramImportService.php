@@ -43,7 +43,7 @@ class InstagramImportService implements PlatformImportInterface
         try {
             $url = self::API_BASE."/{$accountId}/media";
             $params = [
-                'fields' => 'id,caption,media_type,media_product_type,media_url,permalink,timestamp,like_count,comments_count',
+                'fields' => 'id,caption,media_type,media_product_type,media_url,thumbnail_url,permalink,timestamp,like_count,comments_count,children{id,media_type,media_url,thumbnail_url}',
                 'limit' => min(100, $limit),
                 'access_token' => $accessToken,
             ];
@@ -113,10 +113,14 @@ class InstagramImportService implements PlatformImportInterface
                 ->where('external_id', $mediaId)
                 ->first();
 
+            $mediaItems = $this->extractMedia($media);
+
             if ($existing) {
                 $existing->update([
                     'metrics' => $metricsData,
                     'metrics_synced_at' => now(),
+                    // Rattrape les lignes importees avant l'ajout de la colonne.
+                    'media' => $mediaItems ?: $existing->media,
                 ]);
 
                 continue;
@@ -128,6 +132,7 @@ class InstagramImportService implements PlatformImportInterface
                 'external_id' => $mediaId,
                 'content' => $media['caption'] ?? null,
                 'media_url' => $media['media_url'] ?? null,
+                'media' => $mediaItems,
                 'post_url' => $media['permalink'] ?? null,
                 'published_at' => $media['timestamp'] ?? null,
                 'metrics' => $metricsData,
@@ -140,6 +145,40 @@ class InstagramImportService implements PlatformImportInterface
         $account->update(['last_history_import_at' => now()]);
 
         return $imported;
+    }
+
+    /**
+     * Liste des medias d'une publication : les enfants pour un carrousel,
+     * la publication elle-meme sinon. `media_url` d'une VIDEO Instagram est le
+     * fichier source, telechargeable — contrairement a Facebook.
+     *
+     * @return array<int, array{url: string, type: string, thumbnail_url: ?string, external_media_id: ?string}>
+     */
+    private function extractMedia(array $media): array
+    {
+        $children = $media['children']['data'] ?? [];
+        $nodes = ! empty($children) ? $children : [$media];
+
+        $items = [];
+
+        foreach ($nodes as $node) {
+            $url = $node['media_url'] ?? $node['thumbnail_url'] ?? null;
+
+            if (! $url) {
+                continue;
+            }
+
+            $type = strtoupper($node['media_type'] ?? 'IMAGE');
+
+            $items[] = [
+                'url' => $url,
+                'type' => in_array($type, ['VIDEO', 'REELS'], true) ? 'video' : 'image',
+                'thumbnail_url' => $node['thumbnail_url'] ?? null,
+                'external_media_id' => $node['id'] ?? null,
+            ];
+        }
+
+        return ExternalPost::normalizeMediaItems($items);
     }
 
     /**

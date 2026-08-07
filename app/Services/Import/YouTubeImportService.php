@@ -156,6 +156,7 @@ class YouTubeImportService implements PlatformImportInterface
                         'status' => $response->status(),
                         'body' => $response->body(),
                     ]);
+
                     continue;
                 }
 
@@ -202,15 +203,6 @@ class YouTubeImportService implements PlatformImportInterface
                 ->where('external_id', $videoId)
                 ->first();
 
-            if ($existing) {
-                $existing->update([
-                    'metrics' => $metricsData,
-                    'metrics_synced_at' => now(),
-                ]);
-
-                continue;
-            }
-
             // Get thumbnail URL (best quality available)
             $thumbnails = $snippet['thumbnails'] ?? [];
             $mediaUrl = $thumbnails['maxres']['url']
@@ -218,12 +210,34 @@ class YouTubeImportService implements PlatformImportInterface
                 ?? $thumbnails['medium']['url']
                 ?? null;
 
+            // Une video YouTube n'a qu'un media exploitable : sa miniature.
+            $mediaItems = $mediaUrl
+                ? ExternalPost::normalizeMediaItems([[
+                    'url' => $mediaUrl,
+                    'type' => 'video',
+                    'thumbnail_url' => $mediaUrl,
+                    'external_media_id' => $videoId,
+                ]])
+                : [];
+
+            if ($existing) {
+                $existing->update([
+                    'metrics' => $metricsData,
+                    'metrics_synced_at' => now(),
+                    // Rattrape les lignes importees avant l'ajout de la colonne.
+                    'media' => $mediaItems ?: $existing->media,
+                ]);
+
+                continue;
+            }
+
             $externalPost = ExternalPost::create([
                 'social_account_id' => $account->id,
                 'platform_id' => $platform->id,
                 'external_id' => $videoId,
                 'content' => $snippet['title'] ?? null,
                 'media_url' => $mediaUrl,
+                'media' => $mediaItems,
                 'post_url' => "https://www.youtube.com/watch?v={$videoId}",
                 'published_at' => $snippet['publishedAt'] ?? null,
                 'metrics' => $metricsData,

@@ -39,9 +39,9 @@ class ThreadsImportService implements PlatformImportInterface
         $threads = collect();
 
         try {
-            $url = self::API_BASE . "/{$userId}/threads";
+            $url = self::API_BASE."/{$userId}/threads";
             $params = [
-                'fields' => 'id,text,media_type,media_url,permalink,timestamp',
+                'fields' => 'id,text,media_type,media_url,thumbnail_url,permalink,timestamp,children{id,media_type,media_url,thumbnail_url}',
                 'limit' => min(100, $limit),
                 'access_token' => $accessToken,
             ];
@@ -106,10 +106,14 @@ class ThreadsImportService implements PlatformImportInterface
                 ->where('external_id', $threadId)
                 ->first();
 
+            $mediaItems = $this->extractMedia($thread);
+
             if ($existing) {
                 $existing->update([
                     'metrics' => $metricsData,
                     'metrics_synced_at' => now(),
+                    // Rattrape les lignes importees avant l'ajout de la colonne.
+                    'media' => $mediaItems ?: $existing->media,
                 ]);
 
                 continue;
@@ -121,6 +125,7 @@ class ThreadsImportService implements PlatformImportInterface
                 'external_id' => $threadId,
                 'content' => $thread['text'] ?? null,
                 'media_url' => $thread['media_url'] ?? null,
+                'media' => $mediaItems,
                 'post_url' => $thread['permalink'] ?? null,
                 'published_at' => $thread['timestamp'] ?? null,
                 'metrics' => $metricsData,
@@ -136,6 +141,38 @@ class ThreadsImportService implements PlatformImportInterface
     }
 
     /**
+     * Liste des medias d'un post Threads : les enfants pour un carrousel,
+     * le post lui-meme sinon. media_type vaut TEXT_POST, IMAGE, VIDEO,
+     * CAROUSEL_ALBUM, AUDIO ou REPOST_FACADE.
+     *
+     * @return array<int, array{url: string, type: string, thumbnail_url: ?string, external_media_id: ?string}>
+     */
+    private function extractMedia(array $thread): array
+    {
+        $children = $thread['children']['data'] ?? [];
+        $nodes = ! empty($children) ? $children : [$thread];
+
+        $items = [];
+
+        foreach ($nodes as $node) {
+            $url = $node['media_url'] ?? $node['thumbnail_url'] ?? null;
+
+            if (! $url) {
+                continue;
+            }
+
+            $items[] = [
+                'url' => $url,
+                'type' => strtoupper($node['media_type'] ?? '') === 'VIDEO' ? 'video' : 'image',
+                'thumbnail_url' => $node['thumbnail_url'] ?? null,
+                'external_media_id' => $node['id'] ?? null,
+            ];
+        }
+
+        return ExternalPost::normalizeMediaItems($items);
+    }
+
+    /**
      * Fetch insights for a specific thread.
      */
     private function fetchThreadInsights(string $threadId, string $accessToken): array
@@ -143,7 +180,7 @@ class ThreadsImportService implements PlatformImportInterface
         $defaults = ['views' => 0, 'likes' => 0, 'comments' => 0, 'shares' => 0];
 
         try {
-            $response = Http::get(self::API_BASE . "/{$threadId}/insights", [
+            $response = Http::get(self::API_BASE."/{$threadId}/insights", [
                 'metric' => 'views,likes,replies,reposts,quotes',
                 'access_token' => $accessToken,
             ]);
@@ -159,7 +196,7 @@ class ThreadsImportService implements PlatformImportInterface
                 'status' => $response->status(),
             ]);
         } catch (\Exception $e) {
-            Log::debug('Threads insights exception for ' . $threadId);
+            Log::debug('Threads insights exception for '.$threadId);
         }
 
         return $defaults;

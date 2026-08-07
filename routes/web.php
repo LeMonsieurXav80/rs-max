@@ -11,6 +11,7 @@ use App\Http\Controllers\CarouselStudioController;
 use App\Http\Controllers\CarouselTemplateController;
 use App\Http\Controllers\CrossPostController;
 use App\Http\Controllers\DashboardController;
+use App\Http\Controllers\ExternalFeedController;
 use App\Http\Controllers\FacebookOAuthController;
 use App\Http\Controllers\HashtagController;
 use App\Http\Controllers\HealthController;
@@ -259,6 +260,12 @@ Route::middleware(['auth', 'verified', 'throttle:600,1'])->group(function () {
         Route::get('accounts/{account}/import/info', [ImportController::class, 'info'])->name('accounts.import.info');
         Route::post('accounts/{account}/import', [ImportController::class, 'import'])->name('accounts.import');
         Route::post('accounts/sync-followers', [ImportController::class, 'syncFollowers'])->name('accounts.syncFollowers');
+
+        // Flux des publications natives (postees hors RS-Max) a rattacher
+        Route::get('external', [ExternalFeedController::class, 'index'])->name('external.index');
+        Route::post('external/refresh', [ExternalFeedController::class, 'refresh'])->name('external.refresh');
+        Route::post('external/ignore', [ExternalFeedController::class, 'ignore'])->name('external.ignore');
+        Route::post('external/restore', [ExternalFeedController::class, 'restore'])->name('external.restore');
 
         // Templates de carrousel (gabarits de slide stockés en base)
         Route::get('carousel/templates', [CarouselTemplateController::class, 'index'])->name('carousel.templates.index');

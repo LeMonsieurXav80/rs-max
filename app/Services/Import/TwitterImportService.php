@@ -53,7 +53,7 @@ class TwitterImportService implements PlatformImportInterface
             $params = [
                 'max_results' => min(100, $limit),
                 'tweet.fields' => 'created_at,public_metrics,attachments',
-                'media.fields' => 'url,preview_image_url',
+                'media.fields' => 'url,preview_image_url,type',
                 'expansions' => 'attachments.media_keys',
             ];
 
@@ -83,13 +83,14 @@ class TwitterImportService implements PlatformImportInterface
                 // Extract media info for reference
                 $mediaMap = [];
                 foreach ($data['includes']['media'] ?? [] as $media) {
-                    $mediaMap[$media['media_key']] = $media['url'] ?? $media['preview_image_url'] ?? null;
+                    $mediaMap[$media['media_key']] = $media;
                 }
 
                 foreach ($data['data'] ?? [] as $tweet) {
                     // Attach media URL if available
                     $mediaKeys = $tweet['attachments']['media_keys'] ?? [];
-                    $tweet['media_url'] = ! empty($mediaKeys) ? $mediaMap[$mediaKeys[0]] ?? null : null;
+                    $tweet['media_items'] = $this->buildMediaItems($mediaKeys, $mediaMap);
+                    $tweet['media_url'] = $tweet['media_items'][0]['url'] ?? null;
 
                     $tweets->push($tweet);
 
@@ -108,6 +109,42 @@ class TwitterImportService implements PlatformImportInterface
 
             return $tweets;
         }
+    }
+
+    /**
+     * Rapproche les media_keys d'un tweet des objets media renvoyes dans
+     * `includes`. Une video n'expose que sa miniature (`preview_image_url`) :
+     * le mp4 vit dans `variants`, non demande ici.
+     *
+     * @return array<int, array{url: string, type: string, thumbnail_url: ?string, external_media_id: ?string}>
+     */
+    private function buildMediaItems(array $mediaKeys, array $mediaMap): array
+    {
+        $items = [];
+
+        foreach ($mediaKeys as $key) {
+            $media = $mediaMap[$key] ?? null;
+
+            if (! $media) {
+                continue;
+            }
+
+            $isVideo = in_array($media['type'] ?? '', ['video', 'animated_gif'], true);
+            $url = $media['url'] ?? $media['preview_image_url'] ?? null;
+
+            if (! $url) {
+                continue;
+            }
+
+            $items[] = [
+                'url' => $url,
+                'type' => $isVideo ? 'video' : 'image',
+                'thumbnail_url' => $media['preview_image_url'] ?? null,
+                'external_media_id' => $key,
+            ];
+        }
+
+        return ExternalPost::normalizeMediaItems($items);
     }
 
     /**
@@ -134,10 +171,14 @@ class TwitterImportService implements PlatformImportInterface
                 ->where('external_id', $tweetId)
                 ->first();
 
+            $mediaItems = $tweet['media_items'] ?? [];
+
             if ($existing) {
                 $existing->update([
                     'metrics' => $metricsData,
                     'metrics_synced_at' => now(),
+                    // Rattrape les lignes importees avant l'ajout de la colonne.
+                    'media' => $mediaItems ?: $existing->media,
                 ]);
 
                 continue;
@@ -149,6 +190,7 @@ class TwitterImportService implements PlatformImportInterface
                 'external_id' => $tweetId,
                 'content' => $tweet['text'] ?? null,
                 'media_url' => $tweet['media_url'] ?? null,
+                'media' => $mediaItems,
                 'post_url' => "https://twitter.com/i/web/status/{$tweetId}",
                 'published_at' => $tweet['created_at'] ?? null,
                 'metrics' => $metricsData,

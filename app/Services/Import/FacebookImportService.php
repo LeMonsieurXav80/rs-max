@@ -44,7 +44,8 @@ class FacebookImportService implements PlatformImportInterface
         $posts = $this->fetchPostsWithFields(
             $pageId,
             $accessToken,
-            'id,message,full_picture,permalink_url,created_time,likes.summary(true),comments.summary(true),shares',
+            'id,message,full_picture,permalink_url,created_time,likes.summary(true),comments.summary(true),shares,'
+                .'attachments{media_type,type,media,target,subattachments{media_type,type,media,target}}',
             $limit
         );
 
@@ -196,10 +197,15 @@ class FacebookImportService implements PlatformImportInterface
                 ->where('external_id', $postId)
                 ->first();
 
+            $mediaItems = $this->extractMedia($post);
+
             if ($existing) {
                 $existing->update([
                     'metrics' => $metricsData,
                     'metrics_synced_at' => now(),
+                    // Rattrape les lignes importees avant l'ajout de la colonne ;
+                    // ne l'ecrase pas si le fallback sans engagement a repondu.
+                    'media' => $mediaItems ?: $existing->media,
                 ]);
 
                 continue;
@@ -211,6 +217,7 @@ class FacebookImportService implements PlatformImportInterface
                 'external_id' => $postId,
                 'content' => $post['message'] ?? null,
                 'media_url' => $post['full_picture'] ?? null,
+                'media' => $mediaItems,
                 'post_url' => $post['permalink_url'] ?? null,
                 'published_at' => $post['created_time'] ?? null,
                 'metrics' => $metricsData,
@@ -223,6 +230,58 @@ class FacebookImportService implements PlatformImportInterface
         $account->update(['last_history_import_at' => now()]);
 
         return $imported;
+    }
+
+    /**
+     * Liste des medias d'une publication Facebook. Un album expose ses photos
+     * dans `subattachments` ; sinon l'attachement lui-meme porte l'image.
+     *
+     * Attention : pour une video, Graph ne donne ici que l'image de couverture —
+     * le fichier source n'est pas accessible par ce champ. L'item est donc marque
+     * `video` avec la couverture en url ET en miniature.
+     *
+     * Le champ `attachments` demande `pages_read_engagement` : il est absent du
+     * fallback degrade, d'ou le repli sur `full_picture`.
+     *
+     * @return array<int, array{url: string, type: string, thumbnail_url: ?string, external_media_id: ?string}>
+     */
+    private function extractMedia(array $post): array
+    {
+        $items = [];
+
+        foreach ($post['attachments']['data'] ?? [] as $attachment) {
+            $subs = $attachment['subattachments']['data'] ?? [];
+            $nodes = ! empty($subs) ? $subs : [$attachment];
+
+            foreach ($nodes as $node) {
+                $src = $node['media']['image']['src'] ?? null;
+
+                if (! $src) {
+                    continue;
+                }
+
+                $kind = strtolower($node['media_type'] ?? $node['type'] ?? '');
+                $isVideo = str_contains($kind, 'video');
+
+                $items[] = [
+                    'url' => $src,
+                    'type' => $isVideo ? 'video' : 'image',
+                    'thumbnail_url' => $isVideo ? $src : null,
+                    'external_media_id' => $node['target']['id'] ?? null,
+                ];
+            }
+        }
+
+        if (empty($items) && ! empty($post['full_picture'])) {
+            $items[] = [
+                'url' => $post['full_picture'],
+                'type' => 'image',
+                'thumbnail_url' => null,
+                'external_media_id' => null,
+            ];
+        }
+
+        return ExternalPost::normalizeMediaItems($items);
     }
 
     /**

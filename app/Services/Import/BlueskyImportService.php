@@ -50,7 +50,7 @@ class BlueskyImportService implements PlatformImportInterface
                     $params['cursor'] = $cursor;
                 }
 
-                $response = Http::get(self::API_BASE . '/xrpc/app.bsky.feed.getAuthorFeed', $params);
+                $response = Http::get(self::API_BASE.'/xrpc/app.bsky.feed.getAuthorFeed', $params);
 
                 if (! $response->successful()) {
                     Log::error('Bluesky API error fetching posts', [
@@ -109,7 +109,7 @@ class BlueskyImportService implements PlatformImportInterface
                 continue;
             }
 
-            $externalId = $uri . '|' . $cid;
+            $externalId = $uri.'|'.$cid;
 
             $metricsData = [
                 'likes' => (int) ($post['likeCount'] ?? 0),
@@ -124,10 +124,14 @@ class BlueskyImportService implements PlatformImportInterface
                 ->where('external_id', $externalId)
                 ->first();
 
+            $mediaItems = $this->extractMedia($post);
+
             if ($existing) {
                 $existing->update([
                     'metrics' => $metricsData,
                     'metrics_synced_at' => now(),
+                    // Rattrape les lignes importees avant l'ajout de la colonne.
+                    'media' => $mediaItems ?: $existing->media,
                 ]);
 
                 continue;
@@ -138,6 +142,8 @@ class BlueskyImportService implements PlatformImportInterface
                 'platform_id' => $platform->id,
                 'external_id' => $externalId,
                 'content' => $post['record']['text'] ?? null,
+                'media_url' => $mediaItems[0]['url'] ?? null,
+                'media' => $mediaItems,
                 'post_url' => $postUrl,
                 'published_at' => $post['record']['createdAt'] ?? null,
                 'metrics' => $metricsData,
@@ -150,6 +156,51 @@ class BlueskyImportService implements PlatformImportInterface
         $account->update(['last_history_import_at' => now()]);
 
         return $imported;
+    }
+
+    /**
+     * Liste des medias d'un post Bluesky. Les vues hydratees exposent
+     * `embed.images[].fullsize` pour les photos et `embed.thumbnail` pour une
+     * video ; un `recordWithMedia` imbrique le tout sous `embed.media`.
+     *
+     * @return array<int, array{url: string, type: string, thumbnail_url: ?string, external_media_id: ?string}>
+     */
+    private function extractMedia(array $post): array
+    {
+        $embed = $post['embed'] ?? [];
+
+        // Citation + media : le media reel est un cran plus bas.
+        if (isset($embed['media'])) {
+            $embed = $embed['media'];
+        }
+
+        $items = [];
+
+        foreach ($embed['images'] ?? [] as $image) {
+            $url = $image['fullsize'] ?? $image['thumb'] ?? null;
+
+            if (! $url) {
+                continue;
+            }
+
+            $items[] = [
+                'url' => $url,
+                'type' => 'image',
+                'thumbnail_url' => $image['thumb'] ?? null,
+                'external_media_id' => null,
+            ];
+        }
+
+        if (empty($items) && ! empty($embed['thumbnail'])) {
+            $items[] = [
+                'url' => $embed['thumbnail'],
+                'type' => 'video',
+                'thumbnail_url' => $embed['thumbnail'],
+                'external_media_id' => $embed['cid'] ?? null,
+            ];
+        }
+
+        return ExternalPost::normalizeMediaItems($items);
     }
 
     /**
