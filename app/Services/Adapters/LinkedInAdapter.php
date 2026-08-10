@@ -10,6 +10,7 @@ use Illuminate\Support\Facades\Log;
 class LinkedInAdapter implements PlatformAdapterInterface
 {
     private const API_BASE = 'https://api.linkedin.com';
+
     private const API_VERSION = '202402';
 
     public function publish(SocialAccount $account, string $content, ?array $media = null, ?array $options = null): array
@@ -90,14 +91,14 @@ class LinkedInAdapter implements PlatformAdapterInterface
     {
         // Step 1: Initialize upload
         $initResponse = Http::withHeaders($this->headers($accessToken))
-            ->post(self::API_BASE . '/rest/images', [
+            ->post(self::API_BASE.'/rest/images?action=initializeUpload', [
                 'initializeUploadRequest' => [
                     'owner' => $authorUrn,
                 ],
             ]);
 
         if ($initResponse->failed()) {
-            return $this->errorResult('Image upload init failed: ' . $initResponse->body());
+            return $this->errorResult('Image upload init failed: '.$initResponse->body());
         }
 
         $initData = $initResponse->json('value') ?? $initResponse->json();
@@ -121,7 +122,7 @@ class LinkedInAdapter implements PlatformAdapterInterface
             ->put($uploadUrl);
 
         if ($uploadResponse->failed()) {
-            return $this->errorResult('Image upload failed: ' . $uploadResponse->body());
+            return $this->errorResult('Image upload failed: '.$uploadResponse->body());
         }
 
         // Step 3: Create the post with the uploaded image
@@ -160,7 +161,7 @@ class LinkedInAdapter implements PlatformAdapterInterface
         }
 
         $initResponse = Http::withHeaders($this->headers($accessToken))
-            ->post(self::API_BASE . '/rest/videos', [
+            ->post(self::API_BASE.'/rest/videos?action=initializeUpload', [
                 'initializeUploadRequest' => [
                     'owner' => $authorUrn,
                     'fileSizeBytes' => $fileSize,
@@ -168,7 +169,7 @@ class LinkedInAdapter implements PlatformAdapterInterface
             ]);
 
         if ($initResponse->failed()) {
-            return $this->errorResult('Video upload init failed: ' . $initResponse->body());
+            return $this->errorResult('Video upload init failed: '.$initResponse->body());
         }
 
         $initData = $initResponse->json('value') ?? $initResponse->json();
@@ -195,12 +196,12 @@ class LinkedInAdapter implements PlatformAdapterInterface
             ->put($uploadUrl);
 
         if ($uploadResponse->failed()) {
-            return $this->errorResult('Video upload failed: ' . $uploadResponse->body());
+            return $this->errorResult('Video upload failed: '.$uploadResponse->body());
         }
 
         // Step 3: Finalize video upload
         Http::withHeaders($this->headers($accessToken))
-            ->post(self::API_BASE . '/rest/videos', [
+            ->post(self::API_BASE.'/rest/videos?action=finalizeUpload', [
                 'finalizeUploadRequest' => [
                     'video' => $videoUrn,
                 ],
@@ -244,14 +245,14 @@ class LinkedInAdapter implements PlatformAdapterInterface
         foreach ($images as $mediaItem) {
             // Initialize upload
             $initResponse = Http::withHeaders($this->headers($accessToken))
-                ->post(self::API_BASE . '/rest/images', [
+                ->post(self::API_BASE.'/rest/images?action=initializeUpload', [
                     'initializeUploadRequest' => [
                         'owner' => $authorUrn,
                     ],
                 ]);
 
             if ($initResponse->failed()) {
-                return $this->errorResult('Multi-image init failed: ' . $initResponse->body());
+                return $this->errorResult('Multi-image init failed: '.$initResponse->body());
             }
 
             $initData = $initResponse->json('value') ?? $initResponse->json();
@@ -265,7 +266,7 @@ class LinkedInAdapter implements PlatformAdapterInterface
             // Upload binary
             $imageData = $this->fetchMediaContent($mediaItem);
             if (! $imageData) {
-                return $this->errorResult('Failed to download image: ' . ($mediaItem['url'] ?? 'unknown'));
+                return $this->errorResult('Failed to download image: '.($mediaItem['url'] ?? 'unknown'));
             }
 
             $uploadResponse = Http::withHeaders([
@@ -275,7 +276,7 @@ class LinkedInAdapter implements PlatformAdapterInterface
                 ->put($uploadUrl);
 
             if ($uploadResponse->failed()) {
-                return $this->errorResult('Image upload failed: ' . $uploadResponse->body());
+                return $this->errorResult('Image upload failed: '.$uploadResponse->body());
             }
 
             $imageUrns[] = $imageUrn;
@@ -308,7 +309,7 @@ class LinkedInAdapter implements PlatformAdapterInterface
     private function createPost(string $accessToken, array $body): array
     {
         $response = Http::withHeaders($this->headers($accessToken))
-            ->post(self::API_BASE . '/rest/posts', $body);
+            ->post(self::API_BASE.'/rest/posts', $body);
 
         if ($response->successful()) {
             // LinkedIn returns the post URN in the x-restli-id header
@@ -373,7 +374,7 @@ class LinkedInAdapter implements PlatformAdapterInterface
     }
 
     /**
-     * @return string|null  Null on success, error message on failure.
+     * @return string|null Null on success, error message on failure.
      */
     private function waitForVideoProcessing(string $accessToken, string $videoUrn, int $maxAttempts = 30): ?string
     {
@@ -383,7 +384,7 @@ class LinkedInAdapter implements PlatformAdapterInterface
             sleep(5);
 
             $response = Http::withHeaders($this->headers($accessToken))
-                ->get(self::API_BASE . '/rest/videos/' . urlencode($videoUrn));
+                ->get(self::API_BASE.'/rest/videos/'.urlencode($videoUrn));
 
             if ($response->failed()) {
                 continue;
@@ -396,14 +397,14 @@ class LinkedInAdapter implements PlatformAdapterInterface
                 return null;
             }
             if ($status === 'PROCESSING_FAILED') {
-                return "LinkedIn video processing failed (status: PROCESSING_FAILED)";
+                return 'LinkedIn video processing failed (status: PROCESSING_FAILED)';
             }
             if ($status === 'WAITING_UPLOAD') {
-                return "LinkedIn video upload incomplete (status: WAITING_UPLOAD)";
+                return 'LinkedIn video upload incomplete (status: WAITING_UPLOAD)';
             }
         }
 
-        return "LinkedIn video processing timed out after " . ($maxAttempts * 5) . "s (last status: {$lastStatus})";
+        return 'LinkedIn video processing timed out after '.($maxAttempts * 5)."s (last status: {$lastStatus})";
     }
 
     private function extractLink(string $content): ?string
