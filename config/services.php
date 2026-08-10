@@ -62,6 +62,9 @@ return [
         'client_id' => env('LINKEDIN_CLIENT_ID'),
         'client_secret' => env('LINKEDIN_CLIENT_SECRET'),
         'redirect' => env('APP_URL').'/auth/linkedin/callback',
+        // Versions supportées 1 an seulement (format YYYYMM) : à remonter
+        // avant sunset, sinon 426 NONEXISTENT_VERSION sur tous les appels.
+        'version' => env('LINKEDIN_API_VERSION', '202607'),
     ],
 
     'pinterest' => [

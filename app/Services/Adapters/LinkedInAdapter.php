@@ -11,8 +11,6 @@ class LinkedInAdapter implements PlatformAdapterInterface
 {
     private const API_BASE = 'https://api.linkedin.com';
 
-    private const API_VERSION = '202402';
-
     public function publish(SocialAccount $account, string $content, ?array $media = null, ?array $options = null): array
     {
         try {
@@ -355,7 +353,7 @@ class LinkedInAdapter implements PlatformAdapterInterface
     {
         return [
             'Authorization' => "Bearer {$accessToken}",
-            'LinkedIn-Version' => self::API_VERSION,
+            'LinkedIn-Version' => config('services.linkedin.version'),
             'X-Restli-Protocol-Version' => '2.0.0',
             'Content-Type' => 'application/json',
         ];

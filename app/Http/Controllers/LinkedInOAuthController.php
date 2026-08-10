@@ -14,7 +14,6 @@ use Illuminate\Support\Str;
 class LinkedInOAuthController extends Controller
 {
     private const API_BASE = 'https://api.linkedin.com';
-    private const API_VERSION = '202402';
 
     /**
      * Step 1: Redirect to LinkedIn OAuth authorization.
@@ -50,7 +49,7 @@ class LinkedInOAuthController extends Controller
 
         if ($request->has('error')) {
             return redirect()->route('platforms.linkedin')
-                ->with('error', 'Autorisation LinkedIn refusée : ' . $request->input('error_description', 'Erreur inconnue'));
+                ->with('error', 'Autorisation LinkedIn refusée : '.$request->input('error_description', 'Erreur inconnue'));
         }
 
         $code = $request->input('code');
@@ -78,7 +77,7 @@ class LinkedInOAuthController extends Controller
             }
 
             $personId = $profile['sub'];
-            $displayName = trim(($profile['given_name'] ?? '') . ' ' . ($profile['family_name'] ?? '')) ?: 'LinkedIn User';
+            $displayName = trim(($profile['given_name'] ?? '').' '.($profile['family_name'] ?? '')) ?: 'LinkedIn User';
             $remoteProfilePic = $profile['picture'] ?? null;
 
             // Try to fetch organization pages (requires org scopes — may return empty)
@@ -110,7 +109,7 @@ class LinkedInOAuthController extends Controller
             Log::error('LinkedIn OAuth error', ['message' => $e->getMessage()]);
 
             return redirect()->route('platforms.linkedin')
-                ->with('error', 'Erreur lors de la connexion LinkedIn : ' . $e->getMessage());
+                ->with('error', 'Erreur lors de la connexion LinkedIn : '.$e->getMessage());
         }
     }
 
@@ -239,12 +238,14 @@ class LinkedInOAuthController extends Controller
 
         if ($response->failed()) {
             Log::error('LinkedIn token exchange failed', ['body' => $response->body()]);
+
             return null;
         }
 
         $data = $response->json();
         if (empty($data['access_token'])) {
             Log::error('LinkedIn token exchange: missing access_token', ['data' => $data]);
+
             return null;
         }
 
@@ -262,6 +263,7 @@ class LinkedInOAuthController extends Controller
 
         if ($response->failed()) {
             Log::error('LinkedIn fetch profile failed', ['body' => $response->body()]);
+
             return [];
         }
 
@@ -275,9 +277,9 @@ class LinkedInOAuthController extends Controller
     {
         $response = Http::withHeaders([
             'Authorization' => "Bearer {$accessToken}",
-            'LinkedIn-Version' => self::API_VERSION,
+            'LinkedIn-Version' => config('services.linkedin.version'),
             'X-Restli-Protocol-Version' => '2.0.0',
-        ])->get(self::API_BASE . '/v2/organizationAcls', [
+        ])->get(self::API_BASE.'/v2/organizationAcls', [
             'q' => 'roleAssignee',
             'role' => 'ADMINISTRATOR',
             'projection' => '(elements*(organization~(id,localizedName,logoV2(cropped~:playableStreams))))',
@@ -285,6 +287,7 @@ class LinkedInOAuthController extends Controller
 
         if ($response->failed()) {
             Log::warning('LinkedIn fetch organizations failed', ['body' => $response->body()]);
+
             return [];
         }
 
@@ -345,6 +348,7 @@ class LinkedInOAuthController extends Controller
 
         if ($response->failed()) {
             Log::error('LinkedIn refresh token failed', ['body' => $response->body()]);
+
             return null;
         }
 
