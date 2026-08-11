@@ -22,6 +22,18 @@ class ThreadsCarouselTest extends TestCase
     use RefreshDatabase;
 
     /**
+     * Adapter sans backoff : on veut exercer les boucles de retry, pas attendre
+     * les ~50s de pauses reelles.
+     */
+    private function adapter(): ThreadsAdapter
+    {
+        return new class extends ThreadsAdapter
+        {
+            protected function pause(int $seconds): void {}
+        };
+    }
+
+    /**
      * SocialAccount non persisté : l'adapter lit seulement ->credentials.
      * On évite ainsi de dépendre du schéma complet de la table.
      */
@@ -83,7 +95,7 @@ class ThreadsCarouselTest extends TestCase
             return Http::response(['id' => 'child_'.(++$childSeq)]);
         });
 
-        $result = (new ThreadsAdapter)->publish($this->account(), 'Légende', $this->media());
+        $result = $this->adapter()->publish($this->account(), 'Légende', $this->media());
 
         $this->assertTrue($result['success'], 'Le carrousel doit réussir après reconstruction des enfants');
         $this->assertSame('PUBLISHED_ID', $result['external_id']);
@@ -133,7 +145,7 @@ class ThreadsCarouselTest extends TestCase
             return Http::response(['id' => 'child_'.(++$childSeq)]);
         });
 
-        $result = (new ThreadsAdapter)->publish($this->account(), 'Légende', $this->media());
+        $result = $this->adapter()->publish($this->account(), 'Légende', $this->media());
 
         $this->assertTrue($result['success'], 'Le carrousel doit être reconstruit puis republié après un conteneur introuvable (4279009)');
         $this->assertSame('PUBLISHED_ID', $result['external_id']);
@@ -171,10 +183,83 @@ class ThreadsCarouselTest extends TestCase
             return Http::response(['id' => 'child_'.$childPosts]);
         });
 
-        $result = (new ThreadsAdapter)->publish($this->account(), 'Légende', $this->media());
+        $result = $this->adapter()->publish($this->account(), 'Légende', $this->media());
 
         $this->assertTrue($result['success'], 'Une erreur transitoire code=1 doit être réessayée');
         $this->assertSame('PUBLISHED_ID', $result['external_id']);
         $this->assertGreaterThanOrEqual(3, $childPosts, 'Le 1er enfant doit être retenté puis les 2 enfants créés');
+    }
+
+    /**
+     * Cas réel du fil 82 (11/08/2026) : Threads renvoie HTTP 500 / code=1 sur la
+     * création d'un enfant pendant plus longtemps que toutes les tentatives
+     * rapprochées de postWithRetry(). Avant le correctif, publishCarousel()
+     * rendait la main immédiatement — ce qui condamnait le segment ET tous les
+     * suivants du fil (« Previous segment failed »). L'assemblage doit désormais
+     * repartir de zéro après une vraie pause.
+     */
+    public function test_carousel_rebuilds_when_child_creation_outage_outlasts_close_retries(): void
+    {
+        $childPosts = 0;
+
+        Http::fake(function (Request $request) use (&$childPosts) {
+            $data = $request->data();
+
+            if ($request->method() === 'GET') {
+                return Http::response(['status' => 'FINISHED', 'permalink' => 'https://threads.net/p/1']);
+            }
+
+            if (str_contains($request->url(), '/threads_publish')) {
+                return Http::response(['id' => 'PUBLISHED_ID']);
+            }
+
+            if (($data['media_type'] ?? null) === 'CAROUSEL') {
+                return Http::response(['id' => 'CAROUSEL_ID']);
+            }
+
+            $childPosts++;
+
+            // La panne couvre les 5 tentatives rapprochées de la 1re tentative
+            // d'assemblage ; elle est passée quand la 2e reconstruit les enfants.
+            if ($childPosts <= 5) {
+                return Http::response([
+                    'error' => [
+                        'message' => 'An unknown error has occurred.',
+                        'type' => 'OAuthException',
+                        'code' => 1,
+                    ],
+                ], 500);
+            }
+
+            return Http::response(['id' => 'child_'.$childPosts]);
+        });
+
+        $result = $this->adapter()->publish($this->account(), 'Légende', $this->media());
+
+        $this->assertTrue($result['success'], 'Une panne code=1 plus longue que postWithRetry() doit déclencher une reconstruction complète');
+        $this->assertSame('PUBLISHED_ID', $result['external_id']);
+        $this->assertSame(7, $childPosts, '5 échecs sur la 1re tentative, puis les 2 enfants créés à la 2e');
+    }
+
+    /**
+     * Même panne, mais qui ne passe jamais : on doit finir en échec propre après
+     * avoir épuisé les reconstructions, pas boucler indéfiniment.
+     */
+    public function test_carousel_gives_up_when_child_creation_never_recovers(): void
+    {
+        Http::fake(function (Request $request) {
+            if ($request->method() === 'GET') {
+                return Http::response(['status' => 'FINISHED']);
+            }
+
+            return Http::response([
+                'error' => ['message' => 'An unknown error has occurred.', 'type' => 'OAuthException', 'code' => 1],
+            ], 500);
+        });
+
+        $result = $this->adapter()->publish($this->account(), 'Légende', $this->media());
+
+        $this->assertFalse($result['success']);
+        $this->assertStringContainsString('code=1', $result['error']);
     }
 }

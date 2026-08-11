@@ -8,6 +8,9 @@ use Illuminate\Support\Facades\Log;
 
 class TelegramAdapter implements PlatformAdapterInterface
 {
+    /** Limite dure de l'API Bot pour sendMediaGroup. */
+    private const MEDIA_GROUP_MAX = 10;
+
     /**
      * Publish content to Telegram via the Bot API.
      *
@@ -162,6 +165,18 @@ class TelegramAdapter implements PlatformAdapterInterface
      */
     private function sendMediaGroup(string $baseUrl, string $chatId, array $media, string $caption): array
     {
+        // Telegram plafonne un album a 10 elements et repond « too many messages to
+        // send as an album » au-dela : le texte part, les images sont perdues. Un fil
+        // compile agrege les medias de tous ses segments et depasse vite (fil 82).
+        if (count($media) > self::MEDIA_GROUP_MAX) {
+            Log::warning('TelegramAdapter: album tronque a la limite Telegram', [
+                'received' => count($media),
+                'sent' => self::MEDIA_GROUP_MAX,
+            ]);
+
+            $media = array_slice($media, 0, self::MEDIA_GROUP_MAX);
+        }
+
         $inputMedia = [];
         $hasLocalFiles = false;
         $attachments = [];

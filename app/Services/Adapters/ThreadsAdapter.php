@@ -21,11 +21,19 @@ class ThreadsAdapter implements PlatformAdapterInterface, ThreadableAdapterInter
     // parent container between assembly and publish (subcode 4279009,
     // "resource does not exist" / « contenu multimédia introuvable »). We retry
     // those by rebuilding the whole carousel from scratch.
-    private const TRANSIENT_MAX_ATTEMPTS = 3;
+    // Les glitches `code=1` de Threads durent des dizaines de secondes, pas 9 :
+    // 5 tentatives avec un backoff lineaire de 5s donnent ~55s de fenetre
+    // (0s, +5s, +10s, +15s, +20s) au lieu des ~9s d'avant, qui abandonnaient
+    // pile au moment ou il aurait fallu attendre (fil 82, 11/08/2026).
+    private const TRANSIENT_MAX_ATTEMPTS = 5;
 
-    private const TRANSIENT_BACKOFF = 3;
+    private const TRANSIENT_BACKOFF = 5;
 
     private const CAROUSEL_ASSEMBLY_MAX_ATTEMPTS = 3;
+
+    // Pause entre deux reconstructions completes (enfants + parent). Multipliee
+    // par le numero de tentative : 15s puis 30s.
+    private const ASSEMBLY_BACKOFF = 15;
 
     // Meme parade pour les posts simples : le conteneur peut disparaitre entre le
     // FINISHED et la finalisation, on le reconstruit de zero.
@@ -296,6 +304,23 @@ class ThreadsAdapter implements PlatformAdapterInterface, ThreadableAdapterInter
             }
 
             if ($childError !== null) {
+                $lastError = $childError;
+
+                // Un 500 / code=1 sur la creation d'un enfant condamnait tout le
+                // carrousel — et, en mode fil, tous les segments suivants. On le
+                // traite comme les autres aleas Threads : pause, puis on repart de
+                // zero (nouveaux enfants, nouveau parent).
+                if (! empty($childError['retryable_transient']) && $attempt < self::CAROUSEL_ASSEMBLY_MAX_ATTEMPTS) {
+                    Log::warning('ThreadsAdapter: carousel child creation failed (transient), rebuilding', [
+                        'attempt' => $attempt,
+                        'error' => $childError['error'] ?? null,
+                    ]);
+
+                    $this->pause(self::ASSEMBLY_BACKOFF * $attempt);
+
+                    continue;
+                }
+
                 return $childError;
             }
 
@@ -522,6 +547,21 @@ class ThreadsAdapter implements PlatformAdapterInterface, ThreadableAdapterInter
             $created = $createContainer();
 
             if (! ($created['success'] ?? false)) {
+                // Meme parade que publishCarousel() : un alea serveur sur la creation
+                // du conteneur ne doit pas condamner le segment (et donc tout le fil).
+                if (! empty($created['retryable_transient']) && $attempt < $maxAttempts) {
+                    Log::warning('ThreadsAdapter: container creation failed (transient), rebuilding', [
+                        'attempt' => $attempt,
+                        'error' => $created['error'] ?? null,
+                    ]);
+
+                    $this->pause(self::ASSEMBLY_BACKOFF * $attempt);
+
+                    $lastError = $created;
+
+                    continue;
+                }
+
                 return $created;
             }
 
@@ -791,6 +831,10 @@ class ThreadsAdapter implements PlatformAdapterInterface, ThreadableAdapterInter
             'external_id' => null,
             'error' => $detail,
             'error_subcode' => (int) ($body['error']['error_subcode'] ?? 0),
+            // postWithRetry() a deja epuise ses tentatives rapprochees ; ce flag
+            // dit aux boucles appelantes que l'erreur reste un alea serveur et
+            // qu'il vaut la peine de tout reconstruire apres une vraie pause.
+            'retryable_transient' => $this->isTransientError($response),
         ];
     }
 
@@ -812,12 +856,21 @@ class ThreadsAdapter implements PlatformAdapterInterface, ThreadableAdapterInter
                 'error_message' => $response->json('error.message'),
             ]);
 
-            sleep(self::TRANSIENT_BACKOFF * $attempt);
+            $this->pause(self::TRANSIENT_BACKOFF * $attempt);
 
             $response = Http::post($url, $params);
         }
 
         return $response;
+    }
+
+    /**
+     * Pause entre deux tentatives. Surchargeable pour que les tests puissent
+     * exercer les boucles de retry sans attendre les backoffs reels.
+     */
+    protected function pause(int $seconds): void
+    {
+        sleep($seconds);
     }
 
     private function isTransientError(\Illuminate\Http\Client\Response $response): bool

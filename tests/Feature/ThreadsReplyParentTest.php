@@ -21,6 +21,15 @@ class ThreadsReplyParentTest extends TestCase
 {
     use RefreshDatabase;
 
+    /** Adapter sans backoff : on exerce les boucles de retry sans attendre les pauses. */
+    private function adapter(): ThreadsAdapter
+    {
+        return new class extends ThreadsAdapter
+        {
+            protected function pause(int $seconds): void {}
+        };
+    }
+
     private function account(): SocialAccount
     {
         $account = new SocialAccount;
@@ -56,7 +65,7 @@ class ThreadsReplyParentTest extends TestCase
             return $this->missingObjectResponse();
         });
 
-        $result = (new ThreadsAdapter)->publishReply($this->account(), 'Suite du fil', 'PARENT');
+        $result = $this->adapter()->publishReply($this->account(), 'Suite du fil', 'PARENT');
 
         $this->assertFalse($result['success']);
         $this->assertTrue($result['parent_missing']);
@@ -99,7 +108,7 @@ class ThreadsReplyParentTest extends TestCase
             return Http::response(['id' => 'REPLY_CONTAINER']);
         });
 
-        $result = (new ThreadsAdapter)->publishReply($this->account(), 'Suite du fil', 'PARENT');
+        $result = $this->adapter()->publishReply($this->account(), 'Suite du fil', 'PARENT');
 
         $this->assertFalse($result['success']);
         $this->assertTrue($result['parent_missing']);
@@ -127,7 +136,7 @@ class ThreadsReplyParentTest extends TestCase
             return Http::response(['id' => 'REPLY_CONTAINER']);
         });
 
-        $result = (new ThreadsAdapter)->publishReply($this->account(), 'Suite du fil', 'PARENT');
+        $result = $this->adapter()->publishReply($this->account(), 'Suite du fil', 'PARENT');
 
         $this->assertTrue($result['success']);
         $this->assertSame('REPLY_ID', $result['external_id']);
@@ -165,7 +174,7 @@ class ThreadsReplyParentTest extends TestCase
         });
 
         $media = [['type' => 'image', 'mimetype' => 'image/jpeg', 'url' => 'https://example.com/a.jpg']];
-        $result = (new ThreadsAdapter)->publish($this->account(), 'Premier segment', $media);
+        $result = $this->adapter()->publish($this->account(), 'Premier segment', $media);
 
         $this->assertTrue($result['success'], 'Un post mono-image doit être reconstruit puis republié après un 4279009');
         $this->assertSame('PUBLISHED_ID', $result['external_id']);
@@ -198,7 +207,7 @@ class ThreadsReplyParentTest extends TestCase
         });
 
         $media = [['type' => 'image', 'mimetype' => 'image/jpeg', 'url' => 'https://example.com/a.jpg']];
-        $result = (new ThreadsAdapter)->publish($this->account(), 'Premier segment', $media);
+        $result = $this->adapter()->publish($this->account(), 'Premier segment', $media);
 
         $this->assertFalse($result['success']);
         $this->assertSame(3, $publishAttempts, 'La reconstruction doit être bornée à 3 tentatives');
@@ -225,8 +234,44 @@ class ThreadsReplyParentTest extends TestCase
             return Http::response(['id' => 'REPLY_CONTAINER']);
         });
 
-        $result = (new ThreadsAdapter)->publishReply($this->account(), 'Suite du fil', 'PARENT');
+        $result = $this->adapter()->publishReply($this->account(), 'Suite du fil', 'PARENT');
 
         $this->assertTrue($result['success'], 'Une lecture ratée ne doit jamais bloquer une publication valide');
+    }
+
+    /**
+     * Pendant du cas carrousel du fil 82, côté réponse simple : une panne code=1
+     * qui survit aux tentatives rapprochées de postWithRetry() doit déclencher
+     * une reconstruction du conteneur, pas condamner le segment.
+     */
+    public function test_reply_rebuilds_container_when_creation_outage_outlasts_close_retries(): void
+    {
+        $containerPosts = 0;
+
+        Http::fake(function (Request $request) use (&$containerPosts) {
+            if ($request->method() === 'GET') {
+                return Http::response(['id' => 'PARENT', 'status' => 'FINISHED', 'permalink' => 'https://threads.net/p/2']);
+            }
+
+            if (str_contains($request->url(), '/threads_publish')) {
+                return Http::response(['id' => 'REPLY_ID']);
+            }
+
+            $containerPosts++;
+
+            if ($containerPosts <= 5) {
+                return Http::response([
+                    'error' => ['message' => 'An unknown error has occurred.', 'type' => 'OAuthException', 'code' => 1],
+                ], 500);
+            }
+
+            return Http::response(['id' => 'REPLY_CONTAINER']);
+        });
+
+        $result = $this->adapter()->publishReply($this->account(), 'Suite du fil', 'PARENT');
+
+        $this->assertTrue($result['success'], 'Une panne code=1 prolongée doit déclencher une reconstruction du conteneur');
+        $this->assertSame('REPLY_ID', $result['external_id']);
+        $this->assertSame(6, $containerPosts, '5 échecs sur la 1re tentative, puis le conteneur créé à la 2e');
     }
 }
