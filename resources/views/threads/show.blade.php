@@ -198,14 +198,40 @@
 
             <div class="space-y-4">
                 @foreach($thread->segments as $segment)
-                    <div class="border border-gray-200 rounded-xl overflow-hidden">
-                        <div class="flex items-center gap-3 px-4 py-3 bg-gray-50 border-b border-gray-200">
-                            <span class="flex items-center justify-center w-7 h-7 rounded-full bg-indigo-100 text-indigo-700 text-xs font-bold">{{ $segment->position }}</span>
-                            <span class="text-sm font-medium text-gray-700">Segment {{ $segment->position }}</span>
+                    <div class="border rounded-xl overflow-hidden {{ $segment->is_boost ? 'border-amber-300' : 'border-gray-200' }}">
+                        <div class="flex items-center gap-3 px-4 py-3 border-b {{ $segment->is_boost ? 'bg-amber-50 border-amber-200' : 'bg-gray-50 border-gray-200' }}">
+                            <span class="flex items-center justify-center w-7 h-7 rounded-full text-xs font-bold {{ $segment->is_boost ? 'bg-amber-100 text-amber-800' : 'bg-indigo-100 text-indigo-700' }}">{{ $segment->position }}</span>
+                            <span class="text-sm font-medium {{ $segment->is_boost ? 'text-amber-900' : 'text-gray-700' }}">Segment {{ $segment->position }}</span>
+                            @if($segment->is_boost)
+                                <span class="inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded bg-amber-100 text-amber-800 font-semibold">
+                                    <svg class="w-3 h-3" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" d="M13 10V3L4 14h7v7l9-11h-7z"/>
+                                    </svg>
+                                    Boost
+                                </span>
+                            @endif
                             <span class="text-xs text-gray-400 ml-auto">{{ mb_strlen($segment->content_fr) }} car.</span>
                         </div>
 
                         <div class="p-4">
+                            @if($segment->is_boost)
+                                @php $boostSource = $segment->boostSourceThread; @endphp
+                                <div class="mb-3 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-amber-900 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
+                                    <span class="font-semibold">Promotion du fil</span>
+                                    @if($boostSource)
+                                        <a href="{{ route('threads.show', $boostSource) }}" class="underline font-medium hover:text-amber-700">
+                                            #{{ $boostSource->id }} {{ $boostSource->title ?: '(sans titre)' }}
+                                        </a>
+                                    @else
+                                        <span class="font-medium">#{{ $segment->boost_source_thread_id }} (introuvable)</span>
+                                    @endif
+                                    <span class="text-amber-700">Quote natif sur X et Bluesky, lien ailleurs. L'URL est ajoutee a la publication.</span>
+                                    @if($segment->boost_source_url)
+                                        <a href="{{ $segment->boost_source_url }}" target="_blank" rel="noopener" class="underline hover:text-amber-700">voir le post source</a>
+                                    @endif
+                                </div>
+                            @endif
+
                             <p class="text-sm text-gray-700 whitespace-pre-wrap">{{ $segment->content_fr }}</p>
 
                             {{-- Media du segment --}}

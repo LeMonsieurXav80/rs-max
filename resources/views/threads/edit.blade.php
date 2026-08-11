@@ -291,7 +291,10 @@
         </div>
 
         {{-- Section: Boost (promotion d'un autre fil) --}}
-        @include('threads._boost-section', ['boostableThreads' => $boostableThreads ?? collect()])
+        @include('threads._boost-section', [
+            'boostableThreads' => $boostableThreads ?? collect(),
+            'existingBoost' => $existingBoost ?? null,
+        ])
 
         {{-- Section: Instagram compile (post unique / carrousel) --}}
         <template x-if="hasInstagramAccount">
@@ -626,7 +629,11 @@
     </form>
 
     @php
-        $segmentsJson = $thread->segments->map(function ($s) {
+        // Le segment de boost est exclu de l'editeur : il est regenere par
+        // ThreadBoostService::insertBoostSegment() a l'enregistrement, a partir du bloc
+        // "Booster un autre fil". Le laisser ici le reposterait comme segment ordinaire,
+        // donc en double avec le segment de boost reinsere (et sans le quote natif).
+        $segmentsJson = $thread->segments->where('is_boost', false)->map(function ($s) {
             $pc = $s->platform_contents ?? [];
             return [
                 'content_fr' => $s->content_fr,

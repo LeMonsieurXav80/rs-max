@@ -317,6 +317,7 @@ class ThreadController extends Controller
 
         $thread->load([
             'segments.segmentPlatforms.socialAccount.platform',
+            'segments.boostSourceThread',
             'socialAccounts.platform',
             'partners',
             'user',
@@ -378,6 +379,15 @@ class ThreadController extends Controller
 
         $thread->load(['segments', 'socialAccounts.platform']);
 
+        // Boost deja pose sur ce fil : sans ca, le bloc "Booster un autre fil" du
+        // formulaire s'affichait toujours decoche, et enregistrer faisait perdre le
+        // boost en silence (case decochee = inputs disabled = rien de poste).
+        $boostSegment = $thread->segments->firstWhere('is_boost', true);
+        $existingBoost = $boostSegment ? [
+            'source_thread_id' => $boostSegment->boost_source_thread_id,
+            'promo_text' => $boostSegment->content_fr,
+        ] : null;
+
         $accounts = $user->activeSocialAccounts()
             ->with(['platform', 'persona'])
             ->orderBy('name')
@@ -399,7 +409,7 @@ class ThreadController extends Controller
             ->limit(50)
             ->get();
 
-        return view('threads.edit', compact('thread', 'accounts', 'platforms', 'personas', 'selectedAccountIds', 'accountGroups', 'boostableThreads'));
+        return view('threads.edit', compact('thread', 'accounts', 'platforms', 'personas', 'selectedAccountIds', 'accountGroups', 'boostableThreads', 'existingBoost'));
     }
 
     /**
