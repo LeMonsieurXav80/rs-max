@@ -191,5 +191,4 @@ class InboxSyncService
             return (bool) Setting::get("inbox_platform_{$slug}_enabled", true);
         }));
     }
-
 }

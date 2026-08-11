@@ -17,6 +17,7 @@ class TranslateYouTubeVideoJob implements ShouldQueue
     use Dispatchable, InteractsWithQueue, Queueable, SerializesModels;
 
     public int $tries = 1;
+
     public int $timeout = 600;
 
     public function __construct(
@@ -51,6 +52,7 @@ class TranslateYouTubeVideoJob implements ShouldQueue
             $video = $service->getVideoDetails($this->account, $this->videoId);
             if (! $video) {
                 $this->markFailed(['title', 'description'], 'Impossible de récupérer les détails de la vidéo');
+
                 return;
             }
 
@@ -89,6 +91,7 @@ class TranslateYouTubeVideoJob implements ShouldQueue
 
         if (empty(trim($originalText))) {
             $record->update(['status' => 'translated', 'translated_text' => '']);
+
             return;
         }
 
@@ -160,6 +163,7 @@ class TranslateYouTubeVideoJob implements ShouldQueue
         $srt = $service->fetchSubtitles($this->videoId, $this->sourceLanguage);
         if (! $srt) {
             $record->update(['status' => 'failed', 'error_message' => 'Aucun sous-titre disponible']);
+
             return;
         }
 
@@ -170,6 +174,7 @@ class TranslateYouTubeVideoJob implements ShouldQueue
 
         if (! $translated) {
             $record->update(['status' => 'failed', 'error_message' => 'Échec de la traduction des sous-titres']);
+
             return;
         }
 
@@ -204,7 +209,7 @@ class TranslateYouTubeVideoJob implements ShouldQueue
                 $chunks[] = $current;
                 $current = $block;
             } else {
-                $current .= ($current ? "\n\n" : '') . $block;
+                $current .= ($current ? "\n\n" : '').$block;
             }
         }
         if ($current) {
@@ -217,7 +222,7 @@ class TranslateYouTubeVideoJob implements ShouldQueue
             if (! $result) {
                 return null;
             }
-            $translated .= ($translated ? "\n\n" : '') . $result;
+            $translated .= ($translated ? "\n\n" : '').$result;
         }
 
         return $translated;
@@ -243,6 +248,6 @@ class TranslateYouTubeVideoJob implements ShouldQueue
 
     public function failed(\Throwable $exception): void
     {
-        $this->markFailed($this->types, 'Job exception: ' . $exception->getMessage());
+        $this->markFailed($this->types, 'Job exception: '.$exception->getMessage());
     }
 }

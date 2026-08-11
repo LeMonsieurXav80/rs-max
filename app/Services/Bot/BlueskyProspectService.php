@@ -223,7 +223,7 @@ class BlueskyProspectService
     {
         try {
             $response = Http::timeout(self::HTTP_TIMEOUT)
-                ->get(self::PUBLIC_API . '/xrpc/app.bsky.feed.getAuthorFeed', [
+                ->get(self::PUBLIC_API.'/xrpc/app.bsky.feed.getAuthorFeed', [
                     'actor' => $did,
                     'limit' => 30,
                     'filter' => 'posts_no_replies',
@@ -282,7 +282,7 @@ class BlueskyProspectService
 
         try {
             $response = Http::timeout(self::HTTP_TIMEOUT)
-                ->get(self::PUBLIC_API . '/xrpc/app.bsky.feed.getLikes', $params);
+                ->get(self::PUBLIC_API.'/xrpc/app.bsky.feed.getLikes', $params);
         } catch (\Throwable $e) {
             Log::warning('BlueskyProspectService: getLikes exception', [
                 'uri' => $postUri,
@@ -315,7 +315,7 @@ class BlueskyProspectService
     {
         try {
             $response = Http::timeout(self::HTTP_TIMEOUT)
-                ->get(self::PUBLIC_API . '/xrpc/app.bsky.feed.getAuthorFeed', [
+                ->get(self::PUBLIC_API.'/xrpc/app.bsky.feed.getAuthorFeed', [
                     'actor' => $did,
                     'limit' => 15,
                     'filter' => 'posts_no_replies',
@@ -395,7 +395,7 @@ class BlueskyProspectService
         try {
             $response = Http::timeout(self::HTTP_TIMEOUT)
                 ->withToken($this->auth['accessJwt'])
-                ->post(self::PDS_BASE . '/xrpc/com.atproto.repo.createRecord', [
+                ->post(self::PDS_BASE.'/xrpc/com.atproto.repo.createRecord', [
                     'repo' => $this->auth['did'],
                     'collection' => 'app.bsky.graph.follow',
                     'record' => [
@@ -461,7 +461,7 @@ class BlueskyProspectService
         try {
             $response = Http::timeout(self::HTTP_TIMEOUT)
                 ->withToken($this->auth['accessJwt'])
-                ->post(self::PDS_BASE . '/xrpc/com.atproto.repo.createRecord', [
+                ->post(self::PDS_BASE.'/xrpc/com.atproto.repo.createRecord', [
                     'repo' => $this->auth['did'],
                     'collection' => 'app.bsky.feed.like',
                     'record' => [
@@ -502,7 +502,7 @@ class BlueskyProspectService
     {
         try {
             $response = Http::timeout(self::HTTP_TIMEOUT)
-                ->get(self::PUBLIC_API . '/xrpc/com.atproto.identity.resolveHandle', [
+                ->get(self::PUBLIC_API.'/xrpc/com.atproto.identity.resolveHandle', [
                     'handle' => $handle,
                 ]);
 
@@ -564,7 +564,7 @@ class BlueskyProspectService
             try {
                 $response = Http::timeout(self::HTTP_TIMEOUT)
                     ->withToken($refreshJwt)
-                    ->post(self::PDS_BASE . '/xrpc/com.atproto.server.refreshSession');
+                    ->post(self::PDS_BASE.'/xrpc/com.atproto.server.refreshSession');
 
                 if ($response->successful()) {
                     $data = $response->json();
@@ -585,7 +585,7 @@ class BlueskyProspectService
 
         try {
             $response = Http::timeout(self::HTTP_TIMEOUT)
-                ->post(self::PDS_BASE . '/xrpc/com.atproto.server.createSession', [
+                ->post(self::PDS_BASE.'/xrpc/com.atproto.server.createSession', [
                     'identifier' => $credentials['handle'],
                     'password' => $credentials['app_password'],
                 ]);

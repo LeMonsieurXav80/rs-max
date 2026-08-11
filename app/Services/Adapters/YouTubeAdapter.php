@@ -10,6 +10,7 @@ use Illuminate\Support\Facades\Log;
 class YouTubeAdapter implements PlatformAdapterInterface
 {
     private const API_BASE = 'https://www.googleapis.com/youtube/v3';
+
     private const UPLOAD_BASE = 'https://www.googleapis.com/upload/youtube/v3';
 
     /**
@@ -126,6 +127,7 @@ class YouTubeAdapter implements PlatformAdapterInterface
         $videoContent = @file_get_contents($videoUrl);
         if ($videoContent === false) {
             Log::error('YouTubeAdapter: Failed to download video', ['url' => $videoUrl]);
+
             return null;
         }
 
@@ -136,13 +138,14 @@ class YouTubeAdapter implements PlatformAdapterInterface
                 'X-Upload-Content-Type' => 'video/*',
                 'X-Upload-Content-Length' => strlen($videoContent),
             ])
-            ->post(self::UPLOAD_BASE . '/videos?uploadType=resumable&part=snippet,status', $metadata);
+            ->post(self::UPLOAD_BASE.'/videos?uploadType=resumable&part=snippet,status', $metadata);
 
         if (! $response->successful()) {
             Log::error('YouTubeAdapter: Upload initiation failed', [
                 'status' => $response->status(),
                 'body' => $response->body(),
             ]);
+
             return null;
         }
 
@@ -150,6 +153,7 @@ class YouTubeAdapter implements PlatformAdapterInterface
         $uploadUrl = $response->header('Location');
         if (! $uploadUrl) {
             Log::error('YouTubeAdapter: No upload URL in response');
+
             return null;
         }
 
@@ -163,6 +167,7 @@ class YouTubeAdapter implements PlatformAdapterInterface
                 'status' => $uploadResponse->status(),
                 'body' => $uploadResponse->body(),
             ]);
+
             return null;
         }
 

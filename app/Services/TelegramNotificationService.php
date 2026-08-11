@@ -28,9 +28,9 @@ class TelegramNotificationService
         $postLink = $postId ? "{$appUrl}/posts/{$postId}" : '';
 
         $message = "⚠️ *Erreur de publication*\n\n"
-            . "📱 *Plateforme :* {$platform}\n"
-            . "👤 *Compte :* {$account}\n"
-            . "❌ *Erreur :* {$error}";
+            ."📱 *Plateforme :* {$platform}\n"
+            ."👤 *Compte :* {$account}\n"
+            ."❌ *Erreur :* {$error}";
 
         if ($postLink) {
             $message .= "\n\n🔗 [Voir le post]({$postLink})";

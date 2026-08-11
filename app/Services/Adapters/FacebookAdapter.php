@@ -95,7 +95,7 @@ class FacebookAdapter implements PlatformAdapterInterface
             $params['link'] = $link;
         }
 
-        $response = Http::post(self::API_BASE . "/{$pageId}/feed", $params);
+        $response = Http::post(self::API_BASE."/{$pageId}/feed", $params);
 
         return $this->parseResponse($response);
     }
@@ -115,7 +115,7 @@ class FacebookAdapter implements PlatformAdapterInterface
             $params['place'] = $placeId;
         }
 
-        $response = Http::post(self::API_BASE . "/{$pageId}/photos", $params);
+        $response = Http::post(self::API_BASE."/{$pageId}/photos", $params);
 
         return $this->parseResponse($response);
     }
@@ -134,7 +134,7 @@ class FacebookAdapter implements PlatformAdapterInterface
         $fileSize = $mediaItem['size'] ?? null;
 
         // Step 1 -- initialize the upload session.
-        $initResponse = Http::post(self::API_BASE . "/{$pageId}/video_reels", [
+        $initResponse = Http::post(self::API_BASE."/{$pageId}/video_reels", [
             'upload_phase' => 'start',
             'access_token' => $accessToken,
         ]);
@@ -199,7 +199,7 @@ class FacebookAdapter implements PlatformAdapterInterface
             $publishParams['place'] = $placeId;
         }
 
-        $publishResponse = Http::post(self::API_BASE . "/{$pageId}/video_reels", $publishParams);
+        $publishResponse = Http::post(self::API_BASE."/{$pageId}/video_reels", $publishParams);
 
         $publishBody = $publishResponse->json();
 
@@ -228,7 +228,7 @@ class FacebookAdapter implements PlatformAdapterInterface
         $photoIds = [];
 
         foreach ($images as $image) {
-            $response = Http::post(self::API_BASE . "/{$pageId}/photos", [
+            $response = Http::post(self::API_BASE."/{$pageId}/photos", [
                 'url' => $image['url'],
                 'published' => 'false',
                 'access_token' => $accessToken,
@@ -270,7 +270,7 @@ class FacebookAdapter implements PlatformAdapterInterface
             $params["attached_media[{$index}]"] = json_encode(['media_fbid' => $photoId]);
         }
 
-        $response = Http::asForm()->post(self::API_BASE . "/{$pageId}/feed", $params);
+        $response = Http::asForm()->post(self::API_BASE."/{$pageId}/feed", $params);
 
         return $this->parseResponse($response);
     }
@@ -341,7 +341,7 @@ class FacebookAdapter implements PlatformAdapterInterface
             // Non-standard error format -- include raw body summary
             $raw = json_encode($body, JSON_UNESCAPED_UNICODE);
             if (strlen($raw) > 300) {
-                $raw = substr($raw, 0, 300) . '…';
+                $raw = substr($raw, 0, 300).'…';
             }
             $parts[] = $raw;
         }

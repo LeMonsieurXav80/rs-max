@@ -136,7 +136,7 @@ class ThreadsAdapter implements PlatformAdapterInterface, ThreadableAdapterInter
                     $params['video_url'] = $media[0]['url'];
                 }
 
-                $this->addLocationParams($params, $options);
+                $this->addOptionalParams($params, $options);
 
                 $container = $this->postWithRetry(self::API_BASE."/{$userId}/threads", $params);
                 $containerId = $this->extractId($container, 'reply container creation');
@@ -190,7 +190,7 @@ class ThreadsAdapter implements PlatformAdapterInterface, ThreadableAdapterInter
             'access_token' => $accessToken,
         ];
 
-        $this->addLocationParams($params, $options);
+        $this->addOptionalParams($params, $options);
 
         Log::info('ThreadsAdapter: creating text container', [
             'user_id' => $userId,
@@ -228,7 +228,7 @@ class ThreadsAdapter implements PlatformAdapterInterface, ThreadableAdapterInter
                 'access_token' => $accessToken,
             ];
 
-            $this->addLocationParams($params, $options);
+            $this->addOptionalParams($params, $options);
 
             $container = $this->postWithRetry(self::API_BASE."/{$userId}/threads", $params);
             $containerId = $this->extractId($container, 'image container creation');
@@ -254,7 +254,7 @@ class ThreadsAdapter implements PlatformAdapterInterface, ThreadableAdapterInter
             'access_token' => $accessToken,
         ];
 
-        $this->addLocationParams($params, $options);
+        $this->addOptionalParams($params, $options);
 
         $container = $this->postWithRetry(self::API_BASE."/{$userId}/threads", $params);
         $containerId = $this->extractId($container, 'video container creation');
@@ -361,7 +361,7 @@ class ThreadsAdapter implements PlatformAdapterInterface, ThreadableAdapterInter
                 $carouselParams['reply_to_id'] = $replyToId;
             }
 
-            $this->addLocationParams($carouselParams, $options);
+            $this->addOptionalParams($carouselParams, $options);
 
             $carouselResponse = $this->postWithRetry(self::API_BASE."/{$userId}/threads", $carouselParams);
             $carouselId = $this->extractId($carouselResponse, 'carousel container creation');
@@ -786,10 +786,24 @@ class ThreadsAdapter implements PlatformAdapterInterface, ThreadableAdapterInter
         return "status={$status} (API returned no error_message — see logs for raw body)";
     }
 
-    private function addLocationParams(array &$params, ?array $options): void
+    /**
+     * Options facultatives portees par le conteneur (jamais par un enfant de
+     * carrousel). `quote_to_id` est la convention interne de citation, partagee
+     * avec Twitter (`quote_tweet_id`) et Bluesky (`embed.record`) ; cote Threads
+     * elle se traduit en `quote_post_id`.
+     *
+     * Sonde du 11/08/2026 (`threads:test-quote`) : `quote_post_id` se combine
+     * bien avec `reply_to_id`, donc un segment de boost au milieu d'un fil peut
+     * etre a la fois une reponse et une citation native.
+     */
+    private function addOptionalParams(array &$params, ?array $options): void
     {
         if (! empty($options['location_id'])) {
             $params['location_id'] = $options['location_id'];
+        }
+
+        if (! empty($options['quote_to_id'])) {
+            $params['quote_post_id'] = $options['quote_to_id'];
         }
     }
 

@@ -9,7 +9,9 @@ use Illuminate\Support\Facades\Log;
 class PinterestApiService
 {
     private const API_BASE = 'https://api.pinterest.com/v5';
+
     private const OAUTH_URL = 'https://www.pinterest.com/oauth/';
+
     private const TOKEN_URL = 'https://api.pinterest.com/v5/oauth/token';
 
     public function getAuthorizationUrl(string $state): string
@@ -22,7 +24,7 @@ class PinterestApiService
             'state' => $state,
         ]);
 
-        return self::OAUTH_URL . '?' . $params;
+        return self::OAUTH_URL.'?'.$params;
     }
 
     public function exchangeCodeForTokens(string $code): ?array
@@ -73,7 +75,7 @@ class PinterestApiService
     public function getUserAccount(string $accessToken): ?array
     {
         $response = Http::withToken($accessToken)
-            ->get(self::API_BASE . '/user_account');
+            ->get(self::API_BASE.'/user_account');
 
         if (! $response->successful()) {
             return null;
@@ -99,7 +101,7 @@ class PinterestApiService
             }
 
             $response = Http::withToken($accessToken)
-                ->get(self::API_BASE . '/boards', $params);
+                ->get(self::API_BASE.'/boards', $params);
 
             if (! $response->successful()) {
                 break;
@@ -181,7 +183,7 @@ class PinterestApiService
         try {
             $response = Http::withToken($accessToken)
                 ->timeout(10)
-                ->get(self::API_BASE . "/trends/keywords/{$region}/top/{$trendType}", $params);
+                ->get(self::API_BASE."/trends/keywords/{$region}/top/{$trendType}", $params);
 
             if (! $response->successful()) {
                 Log::warning('Pinterest Trends API failed', [
@@ -223,7 +225,7 @@ class PinterestApiService
         }
 
         $response = Http::withToken($accessToken)
-            ->get(self::API_BASE . "/boards/{$boardId}/pins", [
+            ->get(self::API_BASE."/boards/{$boardId}/pins", [
                 'page_size' => min($limit, 25),
             ]);
 
@@ -246,7 +248,7 @@ class PinterestApiService
 
         // Try current token first via a lightweight call
         $test = Http::withToken($accessToken)
-            ->get(self::API_BASE . '/user_account');
+            ->get(self::API_BASE.'/user_account');
 
         if ($test->successful()) {
             return $accessToken;

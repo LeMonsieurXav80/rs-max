@@ -43,7 +43,7 @@ class TwitterInboxService implements PlatformInboxInterface
                 $params['since_id'] = $lastExternalId;
             }
 
-            $url = self::API_BASE . "/users/{$userId}/mentions";
+            $url = self::API_BASE."/users/{$userId}/mentions";
             $authHeader = $this->buildOAuthHeader('GET', $url, $params, $credentials);
 
             $response = Http::withHeaders(['Authorization' => $authHeader])
@@ -124,7 +124,7 @@ class TwitterInboxService implements PlatformInboxInterface
         }
 
         try {
-            $url = self::API_BASE . '/tweets';
+            $url = self::API_BASE.'/tweets';
             $body = [
                 'text' => $replyText,
                 'reply' => [
@@ -182,16 +182,16 @@ class TwitterInboxService implements PlatformInboxInterface
             rawurlencode($parameterString),
         ]);
 
-        $signingKey = rawurlencode($credentials['api_secret']) . '&' . rawurlencode($credentials['access_token_secret']);
+        $signingKey = rawurlencode($credentials['api_secret']).'&'.rawurlencode($credentials['access_token_secret']);
         $signature = base64_encode(hash_hmac('sha1', $signatureBaseString, $signingKey, true));
 
         $oauthParams['oauth_signature'] = $signature;
 
         $headerParts = [];
         foreach ($oauthParams as $key => $value) {
-            $headerParts[] = rawurlencode($key) . '="' . rawurlencode($value) . '"';
+            $headerParts[] = rawurlencode($key).'="'.rawurlencode($value).'"';
         }
 
-        return 'OAuth ' . implode(', ', $headerParts);
+        return 'OAuth '.implode(', ', $headerParts);
     }
 }

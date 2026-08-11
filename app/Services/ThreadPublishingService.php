@@ -112,19 +112,37 @@ class ThreadPublishingService
             if ($segment->is_boost && $segment->boost_source_thread_id) {
                 $boostSource = app(ThreadBoostService::class)
                     ->findSourceForPlatform($segment->boost_source_thread_id, $account->platform_id);
-                $platformUrl = ! empty($boostSource['url']) ? $boostSource['url'] : $segment->boost_source_url;
-                if ($platformUrl) {
-                    $content = rtrim($content)."\n\n".$platformUrl;
+
+                $quoteId = $boostSource['external_id'] ?? null;
+
+                // Threads cite via `quote_post_id` (cf. ThreadsAdapter::addOptionalParams)
+                // mais n'implemente volontairement PAS ResharingAdapterInterface, qui
+                // l'exposerait aussi dans la fonctionnalite de repartage.
+                $quotesNatively = $quoteId && (
+                    $adapter instanceof \App\Services\Adapters\ResharingAdapterInterface
+                    || $adapter instanceof ThreadsAdapter
+                );
+
+                if ($quotesNatively) {
+                    $options = ['quote_to_id' => $quoteId];
                 }
-                if ($boostSource && $adapter instanceof \App\Services\Adapters\ResharingAdapterInterface) {
-                    $options = ['quote_to_id' => $boostSource['external_id']];
+
+                // L'URL n'est collee que faute de citation native : sur Threads elle
+                // produisait un lien mort (URL forgee depuis l'id numerique, cf.
+                // PostUrlBuilder) au lieu de la carte de citation.
+                if (! $adapter instanceof ThreadsAdapter || ! $quotesNatively) {
+                    $platformUrl = ! empty($boostSource['url']) ? $boostSource['url'] : $segment->boost_source_url;
+                    if ($platformUrl) {
+                        $content = rtrim($content)."\n\n".$platformUrl;
+                    }
                 }
             }
 
             try {
                 if ($previousExternalId === null) {
-                    // First segment: standard publish.
-                    $result = $adapter->publish($account, $content, $media);
+                    // First segment: standard publish. $options compte aussi ici — un
+                    // fil peut commencer par son segment de boost.
+                    $result = $adapter->publish($account, $content, $media, $options);
                 } else {
                     // Subsequent segments: reply to previous (+ quote si boost).
                     $result = $adapter->publishReply($account, $content, $previousExternalId, $media, $options);
@@ -134,7 +152,13 @@ class ThreadPublishingService
                     $segmentPlatform->update([
                         'status' => 'published',
                         'external_id' => $result['external_id'],
-                        'platform_url' => PostUrlBuilder::build($account, $result['external_id']),
+                        // Le permalink renvoye par la plateforme fait foi : sur Threads,
+                        // PostUrlBuilder forge une URL a partir de l'id numerique alors
+                        // que les vraies URLs utilisent un shortcode — le lien obtenu
+                        // tombe sur un mur de connexion. Repli sur la construction
+                        // locale pour les plateformes qui ne renvoient pas de permalink.
+                        'platform_url' => $result['permalink']
+                            ?? PostUrlBuilder::build($account, $result['external_id']),
                         'published_at' => now(),
                     ]);
                     $previousExternalId = $result['external_id'];
@@ -252,7 +276,7 @@ class ThreadPublishingService
                     'status' => $result['success'] ? 'published' : 'failed',
                     'external_id' => $result['external_id'] ?? null,
                     'platform_url' => $result['success'] && ! empty($result['external_id'])
-                        ? PostUrlBuilder::build($account, $result['external_id'])
+                        ? ($result['permalink'] ?? PostUrlBuilder::build($account, $result['external_id']))
                         : null,
                     'published_at' => $result['success'] ? now() : null,
                     'error_message' => $result['error'] ?? null,

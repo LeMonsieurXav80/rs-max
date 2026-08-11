@@ -186,13 +186,14 @@ class TelegramInboxService implements PlatformInboxInterface
             $fileContent = Http::get($remoteUrl)->body();
 
             $extension = pathinfo($filePath, PATHINFO_EXTENSION) ?: 'bin';
-            $localName = 'tg_' . Str::random(16) . '.' . $extension;
+            $localName = 'tg_'.Str::random(16).'.'.$extension;
 
             Storage::disk('local')->put("media/{$localName}", $fileContent);
 
             return url("/media/{$localName}");
         } catch (\Throwable $e) {
             Log::warning('TelegramInboxService: file download failed', ['error' => $e->getMessage()]);
+
             return null;
         }
     }

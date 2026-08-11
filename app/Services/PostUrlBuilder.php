@@ -18,7 +18,7 @@ class PostUrlBuilder
 
         return match ($slug) {
             'twitter' => "https://x.com/{$account->platform_account_id}/status/{$externalId}",
-            'threads' => 'https://www.threads.net/@' . ($account->credentials['username'] ?? $account->name) . "/post/{$externalId}",
+            'threads' => 'https://www.threads.net/@'.($account->credentials['username'] ?? $account->name)."/post/{$externalId}",
             'bluesky' => BlueskyAdapter::buildPostUrl($account->credentials['handle'] ?? $account->name, $externalId),
             'facebook' => "https://www.facebook.com/{$externalId}",
             'instagram' => "https://www.instagram.com/p/{$externalId}/",

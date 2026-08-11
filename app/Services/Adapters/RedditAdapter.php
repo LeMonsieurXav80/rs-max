@@ -184,7 +184,7 @@ class RedditAdapter implements PlatformAdapterInterface
         $response = Http::withToken($token)
             ->withHeaders(['User-Agent' => $userAgent])
             ->asForm()
-            ->post(self::API_BASE . '/api/submit_gallery_post.json', [
+            ->post(self::API_BASE.'/api/submit_gallery_post.json', [
                 'api_type' => 'json',
                 'sr' => $subreddit,
                 'title' => $title,
@@ -196,7 +196,7 @@ class RedditAdapter implements PlatformAdapterInterface
         $data = $response->json();
 
         if ($response->successful() && isset($data['json']['data']['id'])) {
-            $postId = 't3_' . $data['json']['data']['id'];
+            $postId = 't3_'.$data['json']['data']['id'];
 
             return [
                 'success' => true,
@@ -209,7 +209,7 @@ class RedditAdapter implements PlatformAdapterInterface
         if ($response->successful() && isset($data['id'])) {
             return [
                 'success' => true,
-                'external_id' => 't3_' . $data['id'],
+                'external_id' => 't3_'.$data['id'],
                 'error' => null,
             ];
         }
@@ -263,7 +263,7 @@ class RedditAdapter implements PlatformAdapterInterface
         $url = $mediaItem['url'];
         $mimetype = $mediaItem['mimetype'] ?? 'image/jpeg';
         $extension = $this->mimeToExtension($mimetype);
-        $filename = 'rsmax_upload.' . $extension;
+        $filename = 'rsmax_upload.'.$extension;
 
         // Download the file locally first.
         $tempFile = tempnam(sys_get_temp_dir(), 'reddit_');
@@ -281,7 +281,7 @@ class RedditAdapter implements PlatformAdapterInterface
             $leaseResponse = Http::withToken($token)
                 ->withHeaders(['User-Agent' => $userAgent])
                 ->asForm()
-                ->post(self::API_BASE . '/api/media/asset.json', [
+                ->post(self::API_BASE.'/api/media/asset.json', [
                     'filepath' => $filename,
                     'mimetype' => $mimetype,
                 ]);
@@ -307,7 +307,7 @@ class RedditAdapter implements PlatformAdapterInterface
             }
 
             // Step 2: Upload file to S3 using the lease fields.
-            $uploadUrl = str_starts_with($action, '//') ? 'https:' . $action : $action;
+            $uploadUrl = str_starts_with($action, '//') ? 'https:'.$action : $action;
 
             $multipart = [];
             foreach ($fields as $field) {
@@ -339,7 +339,7 @@ class RedditAdapter implements PlatformAdapterInterface
             // Extract CDN URL from S3 XML response.
             $cdnUrl = $this->extractS3Location($s3Response->body());
 
-            return $cdnUrl ?? $uploadUrl . '/' . ($fields[0]['value'] ?? '');
+            return $cdnUrl ?? $uploadUrl.'/'.($fields[0]['value'] ?? '');
 
         } finally {
             if (file_exists($tempFile)) {
@@ -356,7 +356,7 @@ class RedditAdapter implements PlatformAdapterInterface
         $url = $mediaItem['url'];
         $mimetype = $mediaItem['mimetype'] ?? 'image/jpeg';
         $extension = $this->mimeToExtension($mimetype);
-        $filename = 'rsmax_upload.' . $extension;
+        $filename = 'rsmax_upload.'.$extension;
 
         $tempFile = tempnam(sys_get_temp_dir(), 'reddit_');
 
@@ -371,7 +371,7 @@ class RedditAdapter implements PlatformAdapterInterface
             $leaseResponse = Http::withToken($token)
                 ->withHeaders(['User-Agent' => $userAgent])
                 ->asForm()
-                ->post(self::API_BASE . '/api/media/asset.json', [
+                ->post(self::API_BASE.'/api/media/asset.json', [
                     'filepath' => $filename,
                     'mimetype' => $mimetype,
                 ]);
@@ -390,7 +390,7 @@ class RedditAdapter implements PlatformAdapterInterface
             }
 
             // Upload to S3.
-            $uploadUrl = str_starts_with($action, '//') ? 'https:' . $action : $action;
+            $uploadUrl = str_starts_with($action, '//') ? 'https:'.$action : $action;
 
             $multipart = [];
             foreach ($fields as $field) {
@@ -430,7 +430,7 @@ class RedditAdapter implements PlatformAdapterInterface
         $response = Http::withToken($token)
             ->withHeaders(['User-Agent' => $userAgent])
             ->asForm()
-            ->post(self::API_BASE . '/api/submit', $params);
+            ->post(self::API_BASE.'/api/submit', $params);
 
         $data = $response->json();
 
@@ -449,7 +449,7 @@ class RedditAdapter implements PlatformAdapterInterface
             $postId = $postData['name'] ?? null; // e.g. "t3_abc123"
 
             if (! $postId && isset($postData['id'])) {
-                $postId = 't3_' . $postData['id'];
+                $postId = 't3_'.$postData['id'];
             }
 
             if ($postId) {
@@ -508,9 +508,9 @@ class RedditAdapter implements PlatformAdapterInterface
         $lastSpace = mb_strrpos($truncated, ' ');
 
         if ($lastSpace && $lastSpace > 50) {
-            $title = mb_substr($content, 0, $lastSpace) . '...';
+            $title = mb_substr($content, 0, $lastSpace).'...';
         } else {
-            $title = mb_substr($content, 0, 100) . '...';
+            $title = mb_substr($content, 0, 100).'...';
         }
 
         return [$title, $content];
@@ -582,7 +582,7 @@ class RedditAdapter implements PlatformAdapterInterface
 
         $response = Http::withToken($token)
             ->withHeaders(['User-Agent' => $userAgent])
-            ->get(self::API_BASE . '/api/info', ['id' => $fullname]);
+            ->get(self::API_BASE.'/api/info', ['id' => $fullname]);
 
         if (! $response->successful()) {
             return null;

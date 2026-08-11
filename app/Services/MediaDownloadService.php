@@ -7,7 +7,6 @@ use App\Models\MediaFile;
 use App\Models\MediaFolder;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
-use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 
 class MediaDownloadService
@@ -18,7 +17,7 @@ class MediaDownloadService
      * Download an image from a URL, compress it, and store it locally.
      *
      * @param  string  $imageUrl  The remote image URL
-     * @param  string  $source    Source identifier (og_image, rss, wordpress)
+     * @param  string  $source  Source identifier (og_image, rss, wordpress)
      * @param  int|null  $folderId  Target folder ID (defaults to "Flux Pictures")
      */
     public function downloadAndStore(string $imageUrl, string $source = 'og_image', ?int $folderId = null): ?MediaFile
@@ -64,7 +63,7 @@ class MediaDownloadService
 
             // Determine extension and filename.
             $extension = $this->outputExtension($mimeType, $tempPath);
-            $filename = date('Ymd_His') . '_' . Str::random(8) . '.' . $extension;
+            $filename = date('Ymd_His').'_'.Str::random(8).'.'.$extension;
 
             // Compress and resize.
             $result = $this->processImage($tempPath, $mimeType, $filename);

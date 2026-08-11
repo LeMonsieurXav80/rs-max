@@ -28,7 +28,7 @@ class ThreadsInboxService implements PlatformInboxInterface
                 'limit' => 25,
             ];
 
-            $threadsResponse = Http::get(self::API_BASE . "/{$userId}/threads", $params);
+            $threadsResponse = Http::get(self::API_BASE."/{$userId}/threads", $params);
 
             if (! $threadsResponse->successful()) {
                 Log::warning('ThreadsInboxService: failed to fetch threads', [
@@ -46,7 +46,7 @@ class ThreadsInboxService implements PlatformInboxInterface
                 $permalink = $thread['permalink'] ?? null;
 
                 // Fetch replies for this thread
-                $repliesResponse = Http::get(self::API_BASE . "/{$threadId}/replies", [
+                $repliesResponse = Http::get(self::API_BASE."/{$threadId}/replies", [
                     'fields' => 'id,text,username,timestamp',
                     'access_token' => $accessToken,
                     'limit' => 50,
@@ -95,7 +95,7 @@ class ThreadsInboxService implements PlatformInboxInterface
             $accessToken = $credentials['access_token'];
 
             // Create reply container
-            $container = Http::post(self::API_BASE . "/{$userId}/threads", [
+            $container = Http::post(self::API_BASE."/{$userId}/threads", [
                 'media_type' => 'TEXT',
                 'text' => $replyText,
                 'reply_to_id' => $item->external_id,
@@ -114,7 +114,7 @@ class ThreadsInboxService implements PlatformInboxInterface
             sleep(2);
 
             // Publish the container
-            $publish = Http::post(self::API_BASE . "/{$userId}/threads_publish", [
+            $publish = Http::post(self::API_BASE."/{$userId}/threads_publish", [
                 'creation_id' => $containerId,
                 'access_token' => $accessToken,
             ]);

@@ -4,7 +4,6 @@ namespace App\Services;
 
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
-use Illuminate\Support\Facades\Storage;
 
 class GoogleFontsService
 {
@@ -88,9 +87,9 @@ class GoogleFontsService
      */
     public function getFontPath(string $family, string $weight = 'Regular'): string
     {
-        $filename = str_replace(' ', '', $family) . '-' . $weight . '.ttf';
+        $filename = str_replace(' ', '', $family).'-'.$weight.'.ttf';
 
-        return storage_path('app/fonts/' . $filename);
+        return storage_path('app/fonts/'.$filename);
     }
 
     /**
@@ -195,7 +194,7 @@ class GoogleFontsService
         }
 
         $fonts = [];
-        foreach (glob($fontsDir . '/*.ttf') as $file) {
+        foreach (glob($fontsDir.'/*.ttf') as $file) {
             $basename = basename($file, '.ttf');
             // Parse "FontFamily-Weight" format
             if (preg_match('/^(.+)-(\w+)$/', $basename, $matches)) {

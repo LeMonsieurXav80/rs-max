@@ -27,7 +27,7 @@ class FacebookInboxService implements PlatformInboxInterface
                 'limit' => 20,
             ];
 
-            $feedResponse = Http::get(self::API_BASE . "/{$pageId}/feed", $params);
+            $feedResponse = Http::get(self::API_BASE."/{$pageId}/feed", $params);
 
             if (! $feedResponse->successful()) {
                 Log::warning('FacebookInboxService: failed to fetch feed', [
@@ -90,7 +90,7 @@ class FacebookInboxService implements PlatformInboxInterface
         try {
             $accessToken = $account->credentials['access_token'];
 
-            $response = Http::asForm()->post(self::API_BASE . "/{$item->external_id}/comments", [
+            $response = Http::asForm()->post(self::API_BASE."/{$item->external_id}/comments", [
                 'message' => $replyText,
                 'access_token' => $accessToken,
             ]);

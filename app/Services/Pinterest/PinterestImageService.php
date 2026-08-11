@@ -6,41 +6,45 @@ use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Storage;
 use Intervention\Image\Drivers\Gd\Driver;
-use Intervention\Image\ImageManager;
 use Intervention\Image\Geometry\Factories\RectangleFactory;
+use Intervention\Image\ImageManager;
 use Intervention\Image\Typography\FontFactory;
 
 class PinterestImageService
 {
     private const WIDTH = 1000;
+
     private const HEIGHT = 1500;
 
     private ImageManager $manager;
 
     private string $fontBold;
+
     private string $fontExtraBold;
+
     private string $fontRegular;
+
     private string $fontSerif;
 
     public function __construct()
     {
         $this->manager = new ImageManager(new Driver);
         $fontsPath = storage_path('app/fonts');
-        $this->fontBold = $fontsPath . '/Montserrat-Bold.ttf';
-        $this->fontExtraBold = $fontsPath . '/Montserrat-ExtraBold.ttf';
-        $this->fontRegular = $fontsPath . '/Montserrat-Regular.ttf';
-        $this->fontSerif = $fontsPath . '/PlayfairDisplay-Bold.ttf';
+        $this->fontBold = $fontsPath.'/Montserrat-Bold.ttf';
+        $this->fontExtraBold = $fontsPath.'/Montserrat-ExtraBold.ttf';
+        $this->fontRegular = $fontsPath.'/Montserrat-Regular.ttf';
+        $this->fontSerif = $fontsPath.'/PlayfairDisplay-Bold.ttf';
     }
 
     /**
      * Generate a Pinterest pin image from a source image and title.
      *
-     * @param  string       $template  overlay|split|bold_text|numbered
-     * @param  string       $title     The generated pin title
+     * @param  string  $template  overlay|split|bold_text|numbered
+     * @param  string  $title  The generated pin title
      * @param  string|null  $imageUrl  Source image URL (can be null for bold_text)
-     * @param  array        $colors    ['background' => '#hex', 'text' => '#hex', 'overlay' => '#hex']
-     * @param  string|null  $number    Number prefix for numbered template
-     * @return string|null  Path relative to storage/app/public
+     * @param  array  $colors  ['background' => '#hex', 'text' => '#hex', 'overlay' => '#hex']
+     * @param  string|null  $number  Number prefix for numbered template
+     * @return string|null Path relative to storage/app/public
      */
     public function generate(
         string $template,
@@ -65,7 +69,7 @@ class PinterestImageService
                 return null;
             }
 
-            $filename = 'pinterest-pins/' . uniqid('pin_') . '.jpg';
+            $filename = 'pinterest-pins/'.uniqid('pin_').'.jpg';
             Storage::disk('public')->put($filename, $image->toJpeg(85)->toString());
 
             return $filename;
@@ -271,7 +275,7 @@ class PinterestImageService
             return null;
         }
 
-        $files = glob($defaultsPath . '/*.{jpg,jpeg,png,webp}', GLOB_BRACE);
+        $files = glob($defaultsPath.'/*.{jpg,jpeg,png,webp}', GLOB_BRACE);
         if (empty($files)) {
             return null;
         }

@@ -9,6 +9,7 @@ use Illuminate\Support\Facades\Log;
 class InstagramStatsService implements PlatformStatsInterface
 {
     private const GRAPH_API_VERSION = 'v21.0';
+
     private const GRAPH_API_BASE = 'https://graph.facebook.com';
 
     public function fetchMetrics(PostPlatform $postPlatform): ?array

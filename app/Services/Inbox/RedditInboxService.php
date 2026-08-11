@@ -40,7 +40,7 @@ class RedditInboxService implements PlatformInboxInterface
             // Fetch inbox (comment replies + DMs)
             $response = Http::withToken($accessToken)
                 ->withHeaders(['User-Agent' => $userAgent])
-                ->get(self::API_BASE . '/message/inbox', [
+                ->get(self::API_BASE.'/message/inbox', [
                     'limit' => 100,
                     'mark' => 'false',
                 ]);
@@ -114,7 +114,7 @@ class RedditInboxService implements PlatformInboxInterface
             $response = Http::withToken($accessToken)
                 ->withHeaders(['User-Agent' => $userAgent])
                 ->asForm()
-                ->post(self::API_BASE . '/api/comment', [
+                ->post(self::API_BASE.'/api/comment', [
                     'api_type' => 'json',
                     'thing_id' => $item->external_id,
                     'text' => $replyText,
@@ -148,7 +148,7 @@ class RedditInboxService implements PlatformInboxInterface
         $response = Http::withToken($accessToken)
             ->withHeaders(['User-Agent' => $userAgent])
             ->asForm()
-            ->post(self::API_BASE . '/api/compose', [
+            ->post(self::API_BASE.'/api/compose', [
                 'api_type' => 'json',
                 'to' => $item->author_username,
                 'subject' => 're: message',

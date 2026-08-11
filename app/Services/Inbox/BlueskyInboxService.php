@@ -4,7 +4,6 @@ namespace App\Services\Inbox;
 
 use App\Models\InboxItem;
 use App\Models\SocialAccount;
-use App\Services\Adapters\BlueskyAdapter;
 use Carbon\Carbon;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Http;
@@ -25,7 +24,7 @@ class BlueskyInboxService implements PlatformInboxInterface
 
         try {
             // Fetch author's original posts only (no replies/reposts)
-            $feedResponse = Http::get(self::PUBLIC_API . '/xrpc/app.bsky.feed.getAuthorFeed', [
+            $feedResponse = Http::get(self::PUBLIC_API.'/xrpc/app.bsky.feed.getAuthorFeed', [
                 'actor' => $did,
                 'limit' => 25,
                 'filter' => 'posts_no_replies',
@@ -59,7 +58,7 @@ class BlueskyInboxService implements PlatformInboxInterface
                 }
 
                 // Fetch thread to get replies
-                $threadResponse = Http::get(self::PUBLIC_API . '/xrpc/app.bsky.feed.getPostThread', [
+                $threadResponse = Http::get(self::PUBLIC_API.'/xrpc/app.bsky.feed.getPostThread', [
                     'uri' => $postUri,
                     'depth' => 2,
                     'parentHeight' => 0,
@@ -163,7 +162,7 @@ class BlueskyInboxService implements PlatformInboxInterface
             }
 
             $convosResponse = Http::withToken($auth['accessJwt'])
-                ->get(self::PDS_BASE . '/xrpc/chat.bsky.convo.listConvos', ['limit' => 20]);
+                ->get(self::PDS_BASE.'/xrpc/chat.bsky.convo.listConvos', ['limit' => 20]);
 
             if (! $convosResponse->successful()) {
                 return;
@@ -175,7 +174,7 @@ class BlueskyInboxService implements PlatformInboxInterface
                 $convoId = $convo['id'];
 
                 $messagesResponse = Http::withToken($auth['accessJwt'])
-                    ->get(self::PDS_BASE . '/xrpc/chat.bsky.convo.getMessages', [
+                    ->get(self::PDS_BASE.'/xrpc/chat.bsky.convo.getMessages', [
                         'convoId' => $convoId,
                         'limit' => 20,
                     ]);
@@ -225,7 +224,7 @@ class BlueskyInboxService implements PlatformInboxInterface
 
         if ($refreshJwt) {
             $response = Http::withToken($refreshJwt)
-                ->post(self::PDS_BASE . '/xrpc/com.atproto.server.refreshSession');
+                ->post(self::PDS_BASE.'/xrpc/com.atproto.server.refreshSession');
 
             if ($response->successful()) {
                 $data = $response->json();
@@ -242,7 +241,7 @@ class BlueskyInboxService implements PlatformInboxInterface
         }
 
         // Full re-login
-        $response = Http::post(self::PDS_BASE . '/xrpc/com.atproto.server.createSession', [
+        $response = Http::post(self::PDS_BASE.'/xrpc/com.atproto.server.createSession', [
             'identifier' => $credentials['handle'],
             'password' => $credentials['app_password'],
         ]);
@@ -321,14 +320,14 @@ class BlueskyInboxService implements PlatformInboxInterface
         ];
 
         $response = Http::withToken($auth['accessJwt'])
-            ->post(self::PDS_BASE . '/xrpc/com.atproto.repo.createRecord', [
+            ->post(self::PDS_BASE.'/xrpc/com.atproto.repo.createRecord', [
                 'repo' => $auth['did'],
                 'collection' => 'app.bsky.feed.post',
                 'record' => $record,
             ]);
 
         if ($response->successful() && $response->json('uri')) {
-            $externalId = $response->json('uri') . '|' . $response->json('cid');
+            $externalId = $response->json('uri').'|'.$response->json('cid');
 
             return ['success' => true, 'external_id' => $externalId, 'error' => null];
         }
@@ -343,7 +342,7 @@ class BlueskyInboxService implements PlatformInboxInterface
         $convoId = $item->external_post_id; // convo ID stored here
 
         $response = Http::withToken($auth['accessJwt'])
-            ->post(self::PDS_BASE . '/xrpc/chat.bsky.convo.sendMessage', [
+            ->post(self::PDS_BASE.'/xrpc/chat.bsky.convo.sendMessage', [
                 'convoId' => $convoId,
                 'message' => ['text' => $replyText],
             ]);

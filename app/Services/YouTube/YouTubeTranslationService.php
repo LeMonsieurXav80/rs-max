@@ -26,7 +26,7 @@ class YouTubeTranslationService
         $channelId = $account->platform_account_id;
 
         // Get uploads playlist
-        $response = Http::timeout(15)->withToken($accessToken)->get(self::API_BASE . '/channels', [
+        $response = Http::timeout(15)->withToken($accessToken)->get(self::API_BASE.'/channels', [
             'part' => 'contentDetails',
             'id' => $channelId,
         ]);
@@ -55,7 +55,7 @@ class YouTubeTranslationService
                 $params['pageToken'] = $pageToken;
             }
 
-            $response = Http::timeout(30)->withToken($accessToken)->get(self::API_BASE . '/playlistItems', $params);
+            $response = Http::timeout(30)->withToken($accessToken)->get(self::API_BASE.'/playlistItems', $params);
             if (! $response->successful()) {
                 break;
             }
@@ -76,7 +76,7 @@ class YouTubeTranslationService
         // Fetch video details in batches
         $videos = [];
         foreach (array_chunk($videoIds, 50) as $batch) {
-            $response = Http::timeout(30)->withToken($accessToken)->get(self::API_BASE . '/videos', [
+            $response = Http::timeout(30)->withToken($accessToken)->get(self::API_BASE.'/videos', [
                 'part' => 'snippet,contentDetails,statistics,localizations',
                 'id' => implode(',', $batch),
             ]);
@@ -119,7 +119,7 @@ class YouTubeTranslationService
             return null;
         }
 
-        $response = Http::timeout(15)->withToken($accessToken)->get(self::API_BASE . '/videos', [
+        $response = Http::timeout(15)->withToken($accessToken)->get(self::API_BASE.'/videos', [
             'part' => 'snippet,localizations',
             'id' => $videoId,
         ]);
@@ -151,7 +151,7 @@ class YouTubeTranslationService
             return [];
         }
 
-        $response = Http::timeout(15)->withToken($accessToken)->get(self::API_BASE . '/captions', [
+        $response = Http::timeout(15)->withToken($accessToken)->get(self::API_BASE.'/captions', [
             'part' => 'snippet',
             'videoId' => $videoId,
         ]);
@@ -221,7 +221,7 @@ class YouTubeTranslationService
         }
 
         // Step 2: Fetch the actual subtitles (SRT format)
-        $subtitleResponse = Http::timeout(15)->get($trackUrl . '&fmt=srv3');
+        $subtitleResponse = Http::timeout(15)->get($trackUrl.'&fmt=srv3');
         if (! $subtitleResponse->successful()) {
             return null;
         }
@@ -277,6 +277,7 @@ class YouTubeTranslationService
             return null;
         } catch (\Exception $e) {
             Log::error('YouTubeTranslationService: Translation failed', ['error' => $e->getMessage()]);
+
             return null;
         }
     }
@@ -314,7 +315,7 @@ class YouTubeTranslationService
 
         $response = Http::withToken($accessToken)
             ->timeout(15)
-            ->put(self::API_BASE . '/videos?part=localizations,snippet', [
+            ->put(self::API_BASE.'/videos?part=localizations,snippet', [
                 'id' => $videoId,
                 'snippet' => [
                     'title' => $video['title'],
@@ -363,20 +364,20 @@ class YouTubeTranslationService
             ],
         ]);
 
-        $boundary = 'yt_caption_' . uniqid();
+        $boundary = 'yt_caption_'.uniqid();
         $body = "--{$boundary}\r\n"
-            . "Content-Type: application/json; charset=UTF-8\r\n\r\n"
-            . $metadata . "\r\n"
-            . "--{$boundary}\r\n"
-            . "Content-Type: application/octet-stream\r\n\r\n"
-            . $srtContent . "\r\n"
-            . "--{$boundary}--";
+            ."Content-Type: application/json; charset=UTF-8\r\n\r\n"
+            .$metadata."\r\n"
+            ."--{$boundary}\r\n"
+            ."Content-Type: application/octet-stream\r\n\r\n"
+            .$srtContent."\r\n"
+            ."--{$boundary}--";
 
         $response = Http::withHeaders([
             'Authorization' => "Bearer {$accessToken}",
             'Content-Type' => "multipart/related; boundary={$boundary}",
         ])->timeout(30)->withBody($body, "multipart/related; boundary={$boundary}")
-            ->post(self::API_BASE . '/captions?part=snippet');
+            ->post(self::API_BASE.'/captions?part=snippet');
 
         if ($response->successful()) {
             return [
@@ -430,9 +431,9 @@ class YouTubeTranslationService
                     continue;
                 }
 
-                $srt .= $index . "\n";
-                $srt .= $this->msToSrtTime($start) . ' --> ' . $this->msToSrtTime($end) . "\n";
-                $srt .= $text . "\n\n";
+                $srt .= $index."\n";
+                $srt .= $this->msToSrtTime($start).' --> '.$this->msToSrtTime($end)."\n";
+                $srt .= $text."\n\n";
                 $index++;
             }
         } catch (\Exception $e) {

@@ -29,9 +29,9 @@ class YouTubeInboxService implements PlatformInboxInterface
 
         try {
             // Fetch recent videos via uploads playlist (1 quota unit vs 100 for /search)
-            $uploadsPlaylistId = 'UU' . substr($channelId, 2);
+            $uploadsPlaylistId = 'UU'.substr($channelId, 2);
 
-            $playlistResponse = Http::withToken($accessToken)->get(self::API_BASE . '/playlistItems', [
+            $playlistResponse = Http::withToken($accessToken)->get(self::API_BASE.'/playlistItems', [
                 'part' => 'contentDetails',
                 'playlistId' => $uploadsPlaylistId,
                 'maxResults' => 15,
@@ -52,7 +52,7 @@ class YouTubeInboxService implements PlatformInboxInterface
                 }
 
                 // Fetch comment threads for this video
-                $commentsResponse = Http::withToken($accessToken)->get(self::API_BASE . '/commentThreads', [
+                $commentsResponse = Http::withToken($accessToken)->get(self::API_BASE.'/commentThreads', [
                     'part' => 'snippet,replies',
                     'videoId' => $videoId,
                     'maxResults' => 50,
@@ -143,7 +143,7 @@ class YouTubeInboxService implements PlatformInboxInterface
             $parentId = $item->parent_id ?? $item->external_id;
 
             $response = Http::withToken($accessToken)
-                ->post(self::API_BASE . '/comments?part=snippet', [
+                ->post(self::API_BASE.'/comments?part=snippet', [
                     'snippet' => [
                         'parentId' => $parentId,
                         'textOriginal' => $replyText,

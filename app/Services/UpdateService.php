@@ -36,6 +36,7 @@ class UpdateService
             return $updateAvailable;
         } catch (\Throwable $e) {
             Log::warning('UpdateService: check failed', ['error' => $e->getMessage()]);
+
             return false;
         }
     }
@@ -93,12 +94,12 @@ class UpdateService
 
         if ($repo) {
             // Add/update temporary remote for fetching
-            Process::run("git remote remove _deploy 2>/dev/null");
+            Process::run('git remote remove _deploy 2>/dev/null');
             Process::run("git remote add _deploy {$repo}");
             Process::run("git fetch _deploy {$branch} --quiet 2>/dev/null");
 
             $result = Process::run("git log --oneline {$localHash}.._deploy/{$branch} 2>/dev/null");
-            Process::run("git remote remove _deploy 2>/dev/null");
+            Process::run('git remote remove _deploy 2>/dev/null');
 
             if ($result->successful() && trim($result->output())) {
                 return trim($result->output());
@@ -125,6 +126,7 @@ class UpdateService
             if ($response->successful()) {
                 Setting::set('update_available', '0');
                 Setting::set('update_deployed_at', now()->toIso8601String());
+
                 return ['success' => true, 'error' => null];
             }
 

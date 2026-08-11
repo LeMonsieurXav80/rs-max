@@ -34,7 +34,7 @@ class ExternalUrlResolverService
             if ($resolved) {
                 return [
                     'platform' => 'bluesky',
-                    'external_id' => $resolved['uri'] . '|' . $resolved['cid'],
+                    'external_id' => $resolved['uri'].'|'.$resolved['cid'],
                     'url' => $url,
                     'supports_native' => true,
                 ];

@@ -3,7 +3,6 @@
 namespace App\Services\Import;
 
 use App\Models\SocialAccount;
-use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Log;
 
 class ImportService
@@ -53,7 +52,6 @@ class ImportService
     /**
      * Get quota cost estimate for importing from an account.
      *
-     * @param  SocialAccount  $account
      * @param  int  $postCount  Number of posts to import
      * @return array ['cost' => int, 'description' => string]
      */
@@ -75,7 +73,6 @@ class ImportService
     /**
      * Check if import should be allowed based on cooldown rules.
      *
-     * @param  SocialAccount  $account
      * @return array ['allowed' => bool, 'reason' => ?string]
      */
     public function canImport(SocialAccount $account): array

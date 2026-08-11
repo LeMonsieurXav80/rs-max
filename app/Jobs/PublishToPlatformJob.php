@@ -89,7 +89,10 @@ class PublishToPlatformJob implements ShouldQueue
 
         if ($result['success']) {
             $externalId = $result['external_id'] ?? null;
-            $platformUrl = $externalId ? PostUrlBuilder::build($account, $externalId) : null;
+            // Le permalink de la plateforme prime : PostUrlBuilder forge l'URL Threads
+            // depuis l'id numerique, alors que les vraies URLs portent un shortcode.
+            $platformUrl = $result['permalink']
+                ?? ($externalId ? PostUrlBuilder::build($account, $externalId) : null);
 
             $postPlatform->update([
                 'status' => 'published',

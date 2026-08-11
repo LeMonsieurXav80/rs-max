@@ -33,7 +33,7 @@ class FacebookBotService
             'limit' => 25,
         ];
 
-        $response = Http::timeout(30)->get(self::API_BASE . "/{$pageId}/feed", $params);
+        $response = Http::timeout(30)->get(self::API_BASE."/{$pageId}/feed", $params);
 
         if (! $response->successful()) {
             $errorMsg = $response->json('error.message', 'Feed fetch failed');
@@ -115,7 +115,7 @@ class FacebookBotService
 
     private function likeComment(string $commentId, string $accessToken): bool
     {
-        $response = Http::asForm()->post(self::API_BASE . "/{$commentId}/likes", [
+        $response = Http::asForm()->post(self::API_BASE."/{$commentId}/likes", [
             'access_token' => $accessToken,
         ]);
 

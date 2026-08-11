@@ -11,12 +11,13 @@ class TranslationService
     public function translate(string $text, string $from = 'fr', string $to = 'en', ?string $apiKey = null): ?string
     {
         $key = $apiKey ?: config('services.openai.api_key');
-        if (!$key) {
+        if (! $key) {
             Log::warning('TranslationService: No OpenAI API key configured');
+
             return null;
         }
 
-        $prompt = match("{$from}->{$to}") {
+        $prompt = match ("{$from}->{$to}") {
             'fr->en' => "Reinterprete this French text to English. Keep the same tone, style and meaning. Do not add any explanation, just provide the English version. Keep emojis and formatting. Text:\n\n{$text}",
             'en->fr' => "Reinterprete ce texte anglais en francais. Garde le meme ton, style et sens. Ne fournis que la version francaise. Garde les emojis et le formatage. Texte:\n\n{$text}",
             default => "Translate this text from {$from} to {$to}. Keep the same tone, style and meaning. Only provide the translation:\n\n{$text}",
@@ -41,9 +42,11 @@ class TranslationService
             }
 
             Log::error('TranslationService: API error', ['status' => $response->status(), 'body' => $response->body()]);
+
             return null;
         } catch (\Exception $e) {
             Log::error('TranslationService: Exception', ['error' => $e->getMessage()]);
+
             return null;
         }
     }

@@ -81,7 +81,7 @@ class YouTubeFetchService
         if (! $accessToken) {
             return [
                 'success' => false,
-                'error' => "Aucun compte YouTube connecté. Connectez une chaîne YouTube dans Plateformes > YouTube.",
+                'error' => 'Aucun compte YouTube connecté. Connectez une chaîne YouTube dans Plateformes > YouTube.',
             ];
         }
 

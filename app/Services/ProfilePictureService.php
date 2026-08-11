@@ -43,7 +43,7 @@ class ProfilePictureService
             $contentType = $response->header('Content-Type');
             $extension = self::extensionFromMime($contentType) ?? self::extensionFromUrl($remoteUrl) ?? 'jpg';
 
-            $filename = 'pp_' . $platformSlug . '_' . abs(crc32($accountId)) . '.' . $extension;
+            $filename = 'pp_'.$platformSlug.'_'.abs(crc32($accountId)).'.'.$extension;
 
             // Delete old file if exists (same account = same filename)
             if (Storage::disk('local')->exists("media/{$filename}")) {

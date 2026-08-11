@@ -64,12 +64,12 @@ class PromptGeneratorService
                 'body' => $response->body(),
             ]);
 
-            return ['success' => false, 'error' => 'Erreur API OpenAI (code ' . $response->status() . ').'];
+            return ['success' => false, 'error' => 'Erreur API OpenAI (code '.$response->status().').'];
 
         } catch (\Exception $e) {
             Log::error('PromptGeneratorService: Exception', ['error' => $e->getMessage()]);
 
-            return ['success' => false, 'error' => 'Erreur: ' . $e->getMessage()];
+            return ['success' => false, 'error' => 'Erreur: '.$e->getMessage()];
         }
     }
 
@@ -85,17 +85,17 @@ class PromptGeneratorService
             return ['success' => false, 'error' => 'Clé API OpenAI non configurée.'];
         }
 
-        $systemPrompt = "Tu es un expert en animation vidéo et en direction artistique. "
-            . "Ton rôle est d'analyser une image pour identifier les éléments qui pourraient être animés dans une vidéo générée par IA (Runway ML, Pika Labs, Kling, etc.). "
-            . "Tu dois être précis et technique dans ton analyse.";
+        $systemPrompt = 'Tu es un expert en animation vidéo et en direction artistique. '
+            ."Ton rôle est d'analyser une image pour identifier les éléments qui pourraient être animés dans une vidéo générée par IA (Runway ML, Pika Labs, Kling, etc.). "
+            .'Tu dois être précis et technique dans ton analyse.';
 
         $userPrompt = "Analyse cette image et identifie :\n"
-            . "1. **Éléments mobiles** : personnes, animaux, véhicules, objets qui pourraient bouger\n"
-            . "2. **Éléments statiques** : arrière-plan, bâtiments, paysage\n"
-            . "3. **Atmosphère** : lumière, couleurs, ambiance, météo\n"
-            . "4. **Composition** : premier plan, arrière-plan, profondeur\n"
-            . "5. **Potentiel d'animation** : quels mouvements seraient naturels et réalistes\n\n"
-            . "Sois concis mais précis. Réponds en français.";
+            ."1. **Éléments mobiles** : personnes, animaux, véhicules, objets qui pourraient bouger\n"
+            ."2. **Éléments statiques** : arrière-plan, bâtiments, paysage\n"
+            ."3. **Atmosphère** : lumière, couleurs, ambiance, météo\n"
+            ."4. **Composition** : premier plan, arrière-plan, profondeur\n"
+            ."5. **Potentiel d'animation** : quels mouvements seraient naturels et réalistes\n\n"
+            .'Sois concis mais précis. Réponds en français.';
 
         $contentBlocks = [
             ['type' => 'text', 'text' => $userPrompt],
@@ -144,7 +144,7 @@ class PromptGeneratorService
         } catch (\Exception $e) {
             Log::error('PromptGeneratorService: Vision exception', ['error' => $e->getMessage()]);
 
-            return ['success' => false, 'error' => 'Erreur: ' . $e->getMessage()];
+            return ['success' => false, 'error' => 'Erreur: '.$e->getMessage()];
         }
     }
 
@@ -203,12 +203,12 @@ class PromptGeneratorService
                 return ['success' => false, 'error' => 'Erreur de parsing de la réponse IA.'];
             }
 
-            return ['success' => false, 'error' => 'Erreur API OpenAI (code ' . $response->status() . ').'];
+            return ['success' => false, 'error' => 'Erreur API OpenAI (code '.$response->status().').'];
 
         } catch (\Exception $e) {
             Log::error('PromptGeneratorService: Video prompt exception', ['error' => $e->getMessage()]);
 
-            return ['success' => false, 'error' => 'Erreur: ' . $e->getMessage()];
+            return ['success' => false, 'error' => 'Erreur: '.$e->getMessage()];
         }
     }
 
@@ -274,7 +274,7 @@ class PromptGeneratorService
      */
     private function buildVideoSystemPrompt(string $mode, string $movementType, string $videoStyle): string
     {
-        $prompt = "Tu es un expert en animation vidéo IA et en direction de mouvement. ";
+        $prompt = 'Tu es un expert en animation vidéo IA et en direction de mouvement. ';
         $prompt .= "Tu crées des prompts pour des outils comme Runway ML Gen-3, Pika Labs, Kling, et Luma Dream Machine.\n\n";
 
         if ($mode === 'advanced') {
@@ -297,7 +297,7 @@ class PromptGeneratorService
             'cinematic' => 'Mouvements cinématographiques (slow motion, transitions, dramatic)',
         ];
 
-        $prompt .= "TYPE DE MOUVEMENT : " . ($movementLabels[$movementType] ?? $movementLabels['subtle']) . "\n";
+        $prompt .= 'TYPE DE MOUVEMENT : '.($movementLabels[$movementType] ?? $movementLabels['subtle'])."\n";
 
         $styleLabels = [
             'realistic' => 'Réaliste et naturel',
@@ -307,7 +307,7 @@ class PromptGeneratorService
             'slow_motion' => 'Ralenti artistique',
         ];
 
-        $prompt .= "STYLE VIDÉO : " . ($styleLabels[$videoStyle] ?? $styleLabels['realistic']) . "\n\n";
+        $prompt .= 'STYLE VIDÉO : '.($styleLabels[$videoStyle] ?? $styleLabels['realistic'])."\n\n";
 
         $prompt .= "RÈGLES :\n";
         $prompt .= "- Chaque prompt en anglais\n";

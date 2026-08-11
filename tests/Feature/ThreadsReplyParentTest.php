@@ -274,4 +274,66 @@ class ThreadsReplyParentTest extends TestCase
         $this->assertSame('REPLY_ID', $result['external_id']);
         $this->assertSame(6, $containerPosts, '5 échecs sur la 1re tentative, puis le conteneur créé à la 2e');
     }
+
+    /**
+     * Citation native : un segment de boost au milieu d'un fil est à la fois une
+     * réponse et une citation. Sonde `threads:test-quote` du 11/08/2026 : Threads
+     * accepte `reply_to_id` + `quote_post_id` sur le même conteneur.
+     */
+    public function test_reply_carries_quote_post_id_when_boosting(): void
+    {
+        $params = null;
+
+        Http::fake(function (Request $request) use (&$params) {
+            if ($request->method() === 'GET') {
+                return Http::response(['id' => 'PARENT', 'status' => 'FINISHED', 'permalink' => 'https://www.threads.com/@x/post/AbC']);
+            }
+
+            if (str_contains($request->url(), '/threads_publish')) {
+                return Http::response(['id' => 'REPLY_ID']);
+            }
+
+            $params = $request->data();
+
+            return Http::response(['id' => 'REPLY_CONTAINER']);
+        });
+
+        $result = $this->adapter()->publishReply(
+            $this->account(),
+            'On avait fait le tour des fêtes',
+            'PARENT',
+            null,
+            ['quote_to_id' => 'SOURCE_MEDIA_ID'],
+        );
+
+        $this->assertTrue($result['success']);
+        $this->assertSame('SOURCE_MEDIA_ID', $params['quote_post_id'] ?? null, 'quote_to_id doit être traduit en quote_post_id');
+        $this->assertSame('PARENT', $params['reply_to_id'] ?? null, 'la citation ne doit pas casser le chaînage du fil');
+        $this->assertSame('https://www.threads.com/@x/post/AbC', $result['permalink'], 'le vrai permalink doit remonter au service');
+    }
+
+    public function test_first_segment_carries_quote_post_id_when_boosting(): void
+    {
+        $params = null;
+
+        Http::fake(function (Request $request) use (&$params) {
+            if ($request->method() === 'GET') {
+                return Http::response(['status' => 'FINISHED', 'permalink' => 'https://www.threads.com/@x/post/AbC']);
+            }
+
+            if (str_contains($request->url(), '/threads_publish')) {
+                return Http::response(['id' => 'POST_ID']);
+            }
+
+            $params = $request->data();
+
+            return Http::response(['id' => 'CONTAINER']);
+        });
+
+        $result = $this->adapter()->publish($this->account(), 'Texte de promo', null, ['quote_to_id' => 'SOURCE_MEDIA_ID']);
+
+        $this->assertTrue($result['success']);
+        $this->assertSame('SOURCE_MEDIA_ID', $params['quote_post_id'] ?? null);
+        $this->assertArrayNotHasKey('reply_to_id', $params, 'un boost en tête de fil cite sans répondre');
+    }
 }

@@ -28,7 +28,7 @@ class InstagramInboxService implements PlatformInboxInterface
                 'limit' => 20,
             ];
 
-            $mediaResponse = Http::get(self::API_BASE . "/{$accountId}/media", $params);
+            $mediaResponse = Http::get(self::API_BASE."/{$accountId}/media", $params);
 
             if (! $mediaResponse->successful()) {
                 Log::warning('InstagramInboxService: failed to fetch media', [
@@ -45,7 +45,7 @@ class InstagramInboxService implements PlatformInboxInterface
                 $permalink = $media['permalink'] ?? null;
 
                 // Fetch comments for this media
-                $commentsResponse = Http::get(self::API_BASE . "/{$mediaId}/comments", [
+                $commentsResponse = Http::get(self::API_BASE."/{$mediaId}/comments", [
                     'fields' => 'id,text,username,timestamp,replies{id,text,username,timestamp}',
                     'access_token' => $accessToken,
                     'limit' => 50,
@@ -105,7 +105,7 @@ class InstagramInboxService implements PlatformInboxInterface
         try {
             $accessToken = $account->credentials['access_token'];
 
-            $response = Http::asForm()->post(self::API_BASE . "/{$item->external_id}/replies", [
+            $response = Http::asForm()->post(self::API_BASE."/{$item->external_id}/replies", [
                 'message' => $replyText,
                 'access_token' => $accessToken,
             ]);

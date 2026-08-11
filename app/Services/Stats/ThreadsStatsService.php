@@ -20,7 +20,7 @@ class ThreadsStatsService implements PlatformStatsInterface
                 return null;
             }
 
-            $response = Http::get(self::API_BASE . "/{$externalId}/insights", [
+            $response = Http::get(self::API_BASE."/{$externalId}/insights", [
                 'metric' => 'views,likes,replies,reposts,quotes',
                 'access_token' => $accessToken,
             ]);

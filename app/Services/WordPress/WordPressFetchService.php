@@ -6,6 +6,7 @@ use App\Models\WpItem;
 use App\Models\WpSource;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
+
 class WordPressFetchService
 {
     private const EXCLUDED_POST_TYPES = [
@@ -236,7 +237,7 @@ class WordPressFetchService
         $allFetchedWpPostIds = [];
 
         foreach ($postTypes as $postType) {
-            $restBase = $typeMapping[$postType] ?? $postType . 's';
+            $restBase = $typeMapping[$postType] ?? $postType.'s';
 
             try {
                 [$count, $fetchedIds] = $this->fetchPostType($source, $baseUrl, $postType, $restBase);
@@ -419,7 +420,7 @@ class WordPressFetchService
         $html = preg_replace('/<br\s*\/?>/i', "\n", $html);
         $html = preg_replace('/<\/p>/i', "\n\n", $html);
         $html = preg_replace('/<\/h[1-6]>/i', "\n\n", $html);
-        $html = preg_replace('/<li[^>]*>/i', "- ", $html);
+        $html = preg_replace('/<li[^>]*>/i', '- ', $html);
         $html = preg_replace('/<\/li>/i', "\n", $html);
 
         // Strip remaining HTML tags
