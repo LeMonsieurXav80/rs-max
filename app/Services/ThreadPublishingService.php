@@ -232,15 +232,25 @@ class ThreadPublishingService
             return [['success' => false, 'error' => "No adapter for: {$account->platform->slug}"]];
         }
 
+        // Le boost ne sort qu'en mode fil (X, Bluesky, Threads), ou une citation
+        // native ou un lien vers le fil source a du sens. En mode compile il ne
+        // produirait qu'une URL collee au milieu du texte : on omet le segment
+        // entier — texte promo ET photos.
+        $publishedSegments = $segments->reject(fn (ThreadSegment $s) => $s->is_boost)->values();
+
+        if ($publishedSegments->isEmpty()) {
+            return [['success' => false, 'error' => 'Aucun segment publiable : le fil ne contient que le boost.']];
+        }
+
         // Update pivot status.
         $thread->socialAccounts()->updateExistingPivot($account->id, ['status' => 'publishing']);
 
         // Compile all segments, grouped by language.
-        $compiledContent = $this->compileSegmentsForAccount($segments, $account, $thread);
+        $compiledContent = $this->compileSegmentsForAccount($publishedSegments, $account, $thread);
 
         // Collect all media from all segments.
         $allMedia = [];
-        foreach ($segments as $segment) {
+        foreach ($publishedSegments as $segment) {
             if (! empty($segment->media)) {
                 $allMedia = array_merge($allMedia, $segment->media);
             }
@@ -268,7 +278,8 @@ class ThreadPublishingService
         }
 
         // Mark first segment with external_id, rest as skipped.
-        $firstSegment = $segments->first();
+        // Le boost, exclu de la compilation, est marque skipped avec les autres.
+        $firstSegment = $publishedSegments->first();
         if ($firstSegment) {
             $firstSegment->segmentPlatforms()
                 ->where('social_account_id', $account->id)
@@ -282,7 +293,7 @@ class ThreadPublishingService
                     'error_message' => $result['error'] ?? null,
                 ]);
 
-            foreach ($segments->skip(1) as $segment) {
+            foreach ($segments->where('id', '!=', $firstSegment->id) as $segment) {
                 $segment->segmentPlatforms()
                     ->where('social_account_id', $account->id)
                     ->update(['status' => $result['success'] ? 'skipped' : 'failed']);
@@ -474,6 +485,9 @@ class ThreadPublishingService
      * Compile all segments grouped by language for compiled mode (Facebook, Telegram, Instagram).
      * Result: 🇫🇷 Seg1 FR\n\nSeg2 FR\n\n🇬🇧 Seg1 EN\n\nSeg2 EN
      *
+     * Les segments de boost sont deja ecartes par publishCompiledMode : ils ne
+     * sortent qu'en mode fil, avec citation native ou lien vers le fil source.
+     *
      * Pour Instagram : si le thread a un instagram_compiled_content (genere par IA
      * ou edite manuellement), on l'utilise comme source au lieu de concatener les
      * segments — la concatenation brute depasse souvent les 2200 caracteres.
@@ -517,15 +531,6 @@ class ThreadPublishingService
                 }
 
                 if ($text) {
-                    // Pour un segment de boost, append l'URL specifique a la plateforme cible.
-                    if ($segment->is_boost && $segment->boost_source_thread_id) {
-                        $boostSource = app(ThreadBoostService::class)
-                            ->findSourceForPlatform($segment->boost_source_thread_id, $account->platform_id);
-                        $platformUrl = ! empty($boostSource['url']) ? $boostSource['url'] : $segment->boost_source_url;
-                        if ($platformUrl) {
-                            $text = rtrim($text)."\n\n".$platformUrl;
-                        }
-                    }
                     $segmentTexts[] = $text;
                 }
             }
