@@ -123,13 +123,16 @@ class PostController extends Controller
             if (! $request->filled('media_type')) {
                 return;
             }
+            // JSON_EXTRACT rend une valeur JSON, donc guillemets compris
+            // ("video/mp4") : le LIKE 'video/%' ne matchait jamais. L'operateur
+            // ->> desencadre la chaine (MySQL 5.7.9+, SQLite 3.38+).
             match ($request->input('media_type')) {
                 'photo' => $q->whereNotNull('media')
                     ->whereRaw('JSON_LENGTH(media) = 1')
-                    ->whereRaw("JSON_EXTRACT(media, '$[0].mimetype') LIKE 'image/%'"),
+                    ->whereRaw("media->>'$[0].mimetype' LIKE 'image/%'"),
                 'video' => $q->whereNotNull('media')
                     ->whereRaw('JSON_LENGTH(media) = 1')
-                    ->whereRaw("JSON_EXTRACT(media, '$[0].mimetype') LIKE 'video/%'"),
+                    ->whereRaw("media->>'$[0].mimetype' LIKE 'video/%'"),
                 'carousel' => $q->whereNotNull('media')
                     ->whereRaw('JSON_LENGTH(media) > 1'),
                 default => null,
