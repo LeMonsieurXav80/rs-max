@@ -2,6 +2,8 @@
 
 namespace App\Models;
 
+use App\Support\MediaItems;
+use Illuminate\Database\Eloquent\Casts\Attribute;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
@@ -36,13 +38,30 @@ class Post extends Model
     protected function casts(): array
     {
         return [
-            'media' => 'array',
             'translations' => 'array',
             'platform_contents' => 'array',
             'auto_translate' => 'boolean',
             'scheduled_at' => 'datetime',
             'published_at' => 'datetime',
         ];
+    }
+
+    /**
+     * Medias de la publication. Remplace le cast `array` pour garantir un
+     * `mimetype` sur chaque item : l'API et les imports n'ecrivent que `type`,
+     * alors que les apercus et les adapters de publication lisent `mimetype`.
+     * Voir App\Support\MediaItems.
+     */
+    protected function media(): Attribute
+    {
+        return Attribute::make(
+            get: fn (?string $value) => MediaItems::normalize(json_decode($value ?? '', true)),
+            set: function ($value) {
+                $items = MediaItems::normalize(is_string($value) ? json_decode($value, true) : $value);
+
+                return $items === null ? null : json_encode($items);
+            },
+        );
     }
 
     public function user(): BelongsTo
