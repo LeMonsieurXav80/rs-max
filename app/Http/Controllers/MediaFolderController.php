@@ -6,7 +6,6 @@ use App\Models\MediaFile;
 use App\Models\MediaFolder;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
-use Illuminate\Support\Str;
 
 class MediaFolderController extends Controller
 {
@@ -33,13 +32,7 @@ class MediaFolderController extends Controller
         ]);
 
         $name = $request->input('name');
-        $slug = Str::slug($name);
-
-        $baseSlug = $slug;
-        $counter = 1;
-        while (MediaFolder::where('slug', $slug)->exists()) {
-            $slug = $baseSlug . '-' . $counter++;
-        }
+        $slug = MediaFolder::uniqueSlug($name);
 
         $maxOrder = MediaFolder::max('sort_order') ?? 0;
 
@@ -69,7 +62,9 @@ class MediaFolderController extends Controller
 
         if ($request->has('name')) {
             $folder->name = $request->input('name');
-            $folder->slug = Str::slug($request->input('name'));
+            // Slug dérivé du nom mais dédupliqué : `slug` est unique en base, un renommage
+            // vers un nom déjà pris levait une violation de contrainte (500).
+            $folder->slug = MediaFolder::uniqueSlug($request->input('name'), $folder->id);
         }
 
         if ($request->has('color')) {

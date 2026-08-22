@@ -22,6 +22,7 @@ php artisan tinker
 
 - [Pipeline Mac (ingest et enrichissement)](#pipeline-mac)
 - [Médiathèque (recherche, classification)](#médiathèque)
+- [Dossiers (lister, créer, renommer, déplacer)](#dossiers)
 - [Banques d'images externes (Pexels, Pixabay, Unsplash)](#banques-dimages)
 - [Génération de threads avec auto-attach photos](#génération-threads)
 - [Tracking des publications](#tracking-publications)
@@ -384,6 +385,72 @@ Recherche dans la médiathèque locale.
 `similarity` n'est présent que si `query_embedding` était fourni. Pour le payload **complet** d'une photo (folder, ai_metadata, source, intimacy, phash, publications, ingested_at, etc.), faire ensuite `GET /api/media/{id}`.
 
 **Tri par moins-publiées d'abord** (depuis Avr 2026) : en mode mots-clés (sans embedding), les résultats sont triés par `publication_count` croissant puis aléatoirement à publication_count égal. Évite de servir toujours les mêmes photos en auto-attach. En mode embedding, le tri reste par similarité cosine.
+
+---
+
+## Dossiers
+
+Écriture ouverte à l'API depuis **août 2026**. Avant, seule l'UI web `/media/folders` savait
+créer ou renommer un dossier — l'API était en lecture seule et `PUT`/`PATCH` renvoyaient 404.
+
+### `GET /api/media/folders`
+
+Liste plate de tous les dossiers : `id`, `slug`, `name`, `path` (`Parent / Sous / Petit-fils`),
+`parent_id`, `is_private`.
+
+### `POST /api/media/folders`
+
+Crée un dossier, ou un **sous-dossier** si `parent_id` est fourni.
+
+| Champ | Requis | Détail |
+|---|---|---|
+| `name` | oui | max 100 caractères. Le `slug` en est dérivé et dédupliqué (`cottiers`, puis `cottiers-1`…). |
+| `parent_id` | non | id d'un dossier existant. Absent ou `null` → dossier racine. |
+| `color` | non | hex, défaut `#6366f1`. |
+| `is_private` | non | défaut `false`. |
+
+```bash
+curl -X POST https://<host>/api/media/folders \
+  -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
+  -d '{"name": "Cottiers", "parent_id": 42}'
+```
+
+```json
+{
+  "id": 231, "status": "created", "slug": "cottiers", "name": "Cottiers",
+  "path": "PDC / Pays / Ecosse / Glasgow / Cottiers", "parent_id": 42, "is_private": false
+}
+```
+
+### `PATCH /api/media/folders/{id}` (ou `PUT`)
+
+Renomme, recolore ou déplace un dossier. Champs acceptés : `name`, `parent_id`, `color` —
+tous facultatifs, seuls les champs présents sont touchés. Réponse identique à la création,
+avec `"status": "updated"`.
+
+```bash
+# Renommer sans changer de place dans l'arbre
+curl -X PATCH https://<host>/api/media/folders/230 \
+  -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
+  -d '{"name": "Cottiers"}'
+```
+
+Renommer **régénère le slug** depuis le nouveau nom. Les liens existants pointant sur
+l'ancien slug (notamment le paramètre `folder` de `/api/media/search`) cessent donc de
+résoudre : vérifier avant de renommer un dossier déjà référencé.
+
+**Refus (par conception)**
+
+| Cas | Code |
+|---|---|
+| Dossier système (`is_system`) | 403 — le renommer casserait `ensureDefaultFolder()`, qui retrouve le dossier par son slug |
+| Dossier dans une branche **privée** | 403 — cohérent avec `PATCH /api/media/{id}` |
+| `parent_id` visant une branche privée | 403 — écrire dans une zone que l'API ne sait pas relire |
+| `parent_id` = le dossier lui-même, ou l'un de ses descendants | 422 — détacherait la branche de la racine |
+| `is_private` | ignoré — ouvrir ou fermer une branche reste une décision de l'UI web |
+
+**Pas d'endpoint de suppression ni de déplacement de fichiers en API** : `DELETE /media/folders/{id}`
+et `POST /media/folders/move` restent web-only (session + CSRF), volontairement.
 
 ---
 

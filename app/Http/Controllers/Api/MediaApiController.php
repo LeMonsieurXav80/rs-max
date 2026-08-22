@@ -793,6 +793,132 @@ class MediaApiController extends Controller
     }
 
     /**
+     * POST /api/media/folders — crée un dossier (ou un sous-dossier via `parent_id`).
+     */
+    public function createFolder(Request $request): JsonResponse
+    {
+        $data = $request->validate([
+            'name' => 'required|string|max:100',
+            'parent_id' => 'nullable|exists:media_folders,id',
+            'color' => 'nullable|string|max:7',
+            'is_private' => 'nullable|boolean',
+        ]);
+
+        // Créer sous une branche privée reviendrait à écrire dans une zone que l'API
+        // ne sait même pas relire : on refuse, comme `updateDescription`.
+        if (! empty($data['parent_id'])) {
+            $parent = MediaFolder::find($data['parent_id']);
+            if ($parent && $parent->isEffectivelyPrivate()) {
+                return response()->json([
+                    'error' => 'parent folder is private and not writable via API',
+                    'parent_id' => $parent->id,
+                ], 403);
+            }
+        }
+
+        $folder = MediaFolder::create([
+            'name' => $data['name'],
+            'slug' => MediaFolder::uniqueSlug($data['name']),
+            'parent_id' => $data['parent_id'] ?? null,
+            'color' => $data['color'] ?? '#6366f1',
+            'is_private' => (bool) ($data['is_private'] ?? false),
+            'sort_order' => (MediaFolder::max('sort_order') ?? 0) + 1,
+        ]);
+
+        return response()->json($this->folderPayload($folder->fresh(), 'created'), 201);
+    }
+
+    /**
+     * PATCH /api/media/folders/{folder} — renomme, recolore ou déplace un dossier.
+     *
+     * `is_private` n'est volontairement PAS modifiable ici : ouvrir une branche privée
+     * est une décision de politique, elle reste à l'UI web.
+     */
+    public function updateFolder(Request $request, MediaFolder $folder): JsonResponse
+    {
+        $data = $request->validate([
+            'name' => 'sometimes|required|string|max:100',
+            'parent_id' => 'sometimes|nullable|exists:media_folders,id',
+            'color' => 'sometimes|string|max:7',
+        ]);
+
+        if ($folder->is_system) {
+            return response()->json([
+                'error' => 'system folder is not editable via API',
+                'folder_id' => $folder->id,
+            ], 403);
+        }
+
+        if ($folder->isEffectivelyPrivate()) {
+            return response()->json([
+                'error' => 'folder is private and not editable via API',
+                'folder_id' => $folder->id,
+            ], 403);
+        }
+
+        if (! $data) {
+            return response()->json([
+                'error' => 'rien à mettre à jour : fournir name, parent_id et/ou color',
+            ], 422);
+        }
+
+        if (array_key_exists('name', $data)) {
+            $folder->name = $data['name'];
+            $folder->slug = MediaFolder::uniqueSlug($data['name'], $folder->id);
+        }
+
+        if (array_key_exists('color', $data)) {
+            $folder->color = $data['color'];
+        }
+
+        if (array_key_exists('parent_id', $data)) {
+            $newParentId = $data['parent_id'];
+
+            if ((int) $newParentId === $folder->id) {
+                return response()->json(['error' => 'un dossier ne peut pas être son propre parent'], 422);
+            }
+
+            // Rattacher un dossier sous l'un de ses propres descendants détacherait
+            // la branche de la racine (cycle) : elle deviendrait invisible partout.
+            if ($newParentId && in_array((int) $newParentId, $folder->descendantIds(), true)) {
+                return response()->json(['error' => 'le nouveau parent serait un descendant du dossier'], 422);
+            }
+
+            if ($newParentId) {
+                $parent = MediaFolder::find($newParentId);
+                if ($parent && $parent->isEffectivelyPrivate()) {
+                    return response()->json([
+                        'error' => 'target parent folder is private and not writable via API',
+                        'parent_id' => $parent->id,
+                    ], 403);
+                }
+            }
+
+            $folder->parent_id = $newParentId;
+        }
+
+        $folder->save();
+
+        return response()->json($this->folderPayload($folder->fresh(), 'updated'));
+    }
+
+    /**
+     * Même forme que les entrées de `folders()`, pour que créer/modifier/lister se lisent pareil.
+     */
+    private function folderPayload(MediaFolder $folder, string $status): array
+    {
+        return [
+            'id' => $folder->id,
+            'status' => $status,
+            'slug' => $folder->slug,
+            'name' => $folder->name,
+            'path' => $folder->pathLabel(),
+            'parent_id' => $folder->parent_id,
+            'is_private' => $folder->is_private,
+        ];
+    }
+
+    /**
      * POST /api/media/{id}/enrich — pose les métadonnées IA sur une photo legacy.
      */
     public function enrich(Request $request, MediaFile $media): JsonResponse

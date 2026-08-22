@@ -74,6 +74,10 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::post('/media/ingest', [MediaApiController::class, 'ingest']);
     Route::get('/media/search', [MediaApiController::class, 'search']);
     Route::get('/media/folders', [MediaApiController::class, 'folders']);
+    // Écriture sur les dossiers : avant `/media/{media}` pour ne pas être capturé.
+    Route::post('/media/folders', [MediaApiController::class, 'createFolder']);
+    Route::patch('/media/folders/{folder}', [MediaApiController::class, 'updateFolder']);
+    Route::put('/media/folders/{folder}', [MediaApiController::class, 'updateFolder']);
     Route::get('/media/pending-analysis', [MediaApiController::class, 'pendingAnalysis']);
     Route::get('/media/{media}', [MediaApiController::class, 'show']); // après /search, /folders et /pending-analysis pour ne pas les capturer
     Route::patch('/media/{media}', [MediaApiController::class, 'updateDescription']); // édition description/tags only (refuse dossiers privés)

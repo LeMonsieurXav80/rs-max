@@ -5,6 +5,7 @@ namespace App\Models;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Support\Str;
 
 class MediaFolder extends Model
 {
@@ -101,6 +102,23 @@ class MediaFolder extends Model
         }
 
         return implode($separator, $names);
+    }
+
+    /**
+     * Slug unique dérivé d'un nom (`media_folders.slug` porte un index unique).
+     * `$ignoreId` permet de renommer un dossier sans qu'il entre en collision avec lui-même.
+     */
+    public static function uniqueSlug(string $name, ?int $ignoreId = null): string
+    {
+        $base = Str::slug($name) ?: 'dossier';
+        $slug = $base;
+        $counter = 1;
+
+        while (self::where('slug', $slug)->when($ignoreId, fn ($q) => $q->whereKeyNot($ignoreId))->exists()) {
+            $slug = $base.'-'.$counter++;
+        }
+
+        return $slug;
     }
 
     public static function ensureDefaultFolder(): self
