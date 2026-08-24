@@ -99,6 +99,9 @@
             }
             return $chain;
         };
+        // Ordre d'arbre (parent puis ses descendants), pas un tri alphabétique sur `path` :
+        // voir MediaFolder::treeOrder().
+        $treeOrder = \App\Models\MediaFolder::treeOrder($folders);
         $foldersJson = $folders->map(function ($f) use ($folderPath, $folderDepth, $childrenCountById, $childrenByParent, $parentChainOf, $recursiveCountById) {
             $hasChildren = $childrenByParent->has($f->id) && $childrenByParent->get($f->id)->isNotEmpty();
             return [
@@ -117,7 +120,7 @@
                 'files_count_total' => $recursiveCountById[$f->id] ?? $f->files_count,
                 'children_count' => $childrenCountById->get($f->id, 0),
             ];
-        })->sortBy('path')->values()->toArray();
+        })->sortBy(fn ($f) => $treeOrder[$f['id']] ?? PHP_INT_MAX)->values()->toArray();
 
         // Auto-ouvre les ancêtres du dossier sélectionné pour qu'il soit visible au chargement.
         $autoOpenIds = [];
@@ -928,6 +931,12 @@
         isFolderVisible(f) {
             return (f.parent_chain || []).every(p => this.openFolders.includes(p));
         },
+        // On itère sur la liste déjà filtrée plutôt que de poser un x-show sur la
+        // racine du x-for : ce x-show reste bloqué en « visible » si le tableau
+        // `folders` vient à être remplacé (cf. bibliothèque du composer de post).
+        visibleFolders() {
+            return this.folders.filter(f => this.isFolderVisible(f));
+        },
         // ───── Drag & drop : dossiers (reorga) + photos (move) ─────
         onFolderDragStart(folderId, ev) {
             this.draggedFolderId = folderId;
@@ -1463,9 +1472,8 @@
                             <span class="text-gray-500 italic" title="Sans dossier ou sans métadonnées (description / tags / personnes)">À classer</span>
                             <span class="text-xs text-gray-400">{{ $uncategorizedCount }}</span>
                         </a>
-                        <template x-for="f in folders" :key="f.id">
-                            <div x-show="isFolderVisible(f)"
-                                 draggable="true"
+                        <template x-for="f in visibleFolders()" :key="f.id">
+                            <div draggable="true"
                                  @dragstart="onFolderDragStart(f.id, $event)"
                                  @dragend="onFolderDragEnd()"
                                  @dragover="onFolderDragOver(f.id, $event)"

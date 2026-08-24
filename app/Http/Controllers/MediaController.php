@@ -1136,6 +1136,10 @@ class MediaController extends Controller
             return $chain;
         };
 
+        // Ordre d'arbre (parent puis ses descendants), pas un tri alphabétique sur `path` :
+        // voir MediaFolder::treeOrder().
+        $treeOrder = MediaFolder::treeOrder($folders);
+
         $foldersJson = $folders->map(fn (MediaFolder $f) => [
             'id' => $f->id,
             'name' => $f->name,
@@ -1147,7 +1151,7 @@ class MediaController extends Controller
             'has_children' => $childrenByParent->has($f->id) && $childrenByParent->get($f->id)->isNotEmpty(),
             'is_private' => (bool) $f->is_private,
             'files_count' => $f->files_count,
-        ])->sortBy('path')->values();
+        ])->sortBy(fn (array $f) => $treeOrder[$f['id']] ?? PHP_INT_MAX)->values();
 
         return response()->json([
             'items' => $items,

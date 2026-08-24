@@ -47,6 +47,46 @@ class MediaFolder extends Model
     }
 
     /**
+     * Position de chaque dossier dans l'ordre d'arbre (parcours en profondeur) :
+     * un dossier est immédiatement suivi de ses descendants, les frères étant
+     * triés par nom (insensible à la casse et aux accents, comme MySQL).
+     *
+     * Trier la liste plate par `path` alphabétique ne suffit PAS : « / » (47) est
+     * supérieur à l'espace, au tiret, à la virgule ou à la parenthèse, donc un
+     * dossier racine « PDC - Archives » se glisse entre « PDC » et
+     * « PDC / Sous-dossier ». Déplier « PDC » n'affichait alors rien juste en
+     * dessous — l'utilisateur croit que la flèche ne marche pas — et les enfants
+     * indentés apparaissaient sous le mauvais parent.
+     *
+     * @param  \Illuminate\Support\Collection<int, self>  $folders
+     * @return array<int, int> [id du dossier => position]
+     */
+    public static function treeOrder($folders): array
+    {
+        $present = $folders->keyBy('id');
+        $childrenByParent = $folders->groupBy(
+            // Un dossier dont le parent est absent de la collection (filtrée) est traité comme racine.
+            fn (self $f) => ($f->parent_id && $present->has($f->parent_id)) ? $f->parent_id : 0
+        );
+        $sortKey = fn (self $f) => Str::ascii(mb_strtolower((string) $f->name));
+
+        $order = [];
+        $position = 0;
+        $walk = function ($parentId) use (&$walk, $childrenByParent, $sortKey, &$order, &$position) {
+            foreach ($childrenByParent->get($parentId, collect())->sortBy($sortKey) as $folder) {
+                if (isset($order[$folder->id])) {
+                    continue; // garde-fou : cycle parent_id
+                }
+                $order[$folder->id] = $position++;
+                $walk($folder->id);
+            }
+        };
+        $walk(0);
+
+        return $order;
+    }
+
+    /**
      * Retourne les ids du dossier + tous ses descendants (récursif).
      * Utilisé pour filtrer la médiathèque sur un dossier ET ses sous-dossiers.
      */

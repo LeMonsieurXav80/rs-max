@@ -33,8 +33,10 @@
                     <span class="text-gray-500 italic">Sans dossier</span>
                     <span class="text-xs text-gray-400" x-text="libraryUncategorizedCount"></span>
                 </button>
-                <template x-for="f in libraryFolders" :key="f.id">
-                    <div x-show="isLibraryFolderVisible(f)" class="flex items-center"
+                {{-- On itère sur la liste DÉJÀ filtrée : un x-show sur la racine d'un x-for
+                     reste bloqué en « visible » quand le tableau est remplacé (refetch). --}}
+                <template x-for="f in visibleLibraryFolders()" :key="f.id">
+                    <div class="flex items-center"
                          :style="`padding-left: ${f.depth * 8}px`">
                         <button x-show="f.has_children" @click.stop="toggleLibraryFolderOpen(f.id)" type="button"
                                 class="w-4 h-4 flex items-center justify-center text-gray-400 hover:text-gray-700 flex-shrink-0">
@@ -193,6 +195,11 @@
                 },
                 isLibraryFolderVisible(f) {
                     return (f.parent_chain || []).every(p => this.libraryOpenFolders.includes(p));
+                },
+                // Méthode et non getter : le x-data parent fait `...mediaLibraryData()`,
+                // et un spread évaluerait le getter une seule fois (valeur figée).
+                visibleLibraryFolders() {
+                    return this.libraryFolders.filter(f => this.isLibraryFolderVisible(f));
                 },
             };
         };
