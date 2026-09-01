@@ -63,13 +63,14 @@ class LinkedInAdapter implements PlatformAdapterInterface
             'author' => $authorUrn,
             'lifecycleState' => 'PUBLISHED',
             'visibility' => 'PUBLIC',
-            'commentary' => $content,
+            'commentary' => $this->escapeLittleText($content),
             'distribution' => [
                 'feedDistribution' => 'MAIN_FEED',
             ],
         ];
 
         // If content contains a URL, add it as an article
+        // (sur le contenu BRUT : l'URL de `article.source` ne doit pas être échappée)
         $link = $this->extractLink($content);
         if ($link) {
             $body['content'] = [
@@ -128,7 +129,7 @@ class LinkedInAdapter implements PlatformAdapterInterface
             'author' => $authorUrn,
             'lifecycleState' => 'PUBLISHED',
             'visibility' => 'PUBLIC',
-            'commentary' => $content,
+            'commentary' => $this->escapeLittleText($content),
             'distribution' => [
                 'feedDistribution' => 'MAIN_FEED',
             ],
@@ -219,7 +220,7 @@ class LinkedInAdapter implements PlatformAdapterInterface
             'author' => $authorUrn,
             'lifecycleState' => 'PUBLISHED',
             'visibility' => 'PUBLIC',
-            'commentary' => $content,
+            'commentary' => $this->escapeLittleText($content),
             'distribution' => [
                 'feedDistribution' => 'MAIN_FEED',
             ],
@@ -285,7 +286,7 @@ class LinkedInAdapter implements PlatformAdapterInterface
             'author' => $authorUrn,
             'lifecycleState' => 'PUBLISHED',
             'visibility' => 'PUBLIC',
-            'commentary' => $content,
+            'commentary' => $this->escapeLittleText($content),
             'distribution' => [
                 'feedDistribution' => 'MAIN_FEED',
             ],
@@ -403,6 +404,32 @@ class LinkedInAdapter implements PlatformAdapterInterface
         }
 
         return 'LinkedIn video processing timed out after '.($maxAttempts * 5)."s (last status: {$lastStatus})";
+    }
+
+    /**
+     * Échappe les caractères réservés du format « little text » de LinkedIn.
+     *
+     * Le champ `commentary` de /rest/posts est interprété comme du little text :
+     * un caractère réservé laissé nu casse la publication en silence — une
+     * parenthèse fait disparaître tout le texte qui suit (post publié amputé,
+     * sans erreur ni 422), un `*` en début de ligne ou du markdown `**gras**`
+     * fait échouer l'appel.
+     *
+     * Le backslash doit être échappé EN PREMIER, sinon on redouble les
+     * backslashes ajoutés pour les autres caractères. Les caractères non
+     * réservés (la puce « • » U+2022, par exemple) sont laissés intacts.
+     *
+     * @see https://learn.microsoft.com/en-us/linkedin/marketing/community-management/shares/little-text-format
+     */
+    private function escapeLittleText(string $content): string
+    {
+        $reserved = ['\\', '|', '{', '}', '@', '[', ']', '(', ')', '<', '>', '#', '*', '_', '~'];
+
+        return str_replace(
+            $reserved,
+            array_map(fn ($char) => '\\'.$char, $reserved),
+            $content
+        );
     }
 
     private function extractLink(string $content): ?string
