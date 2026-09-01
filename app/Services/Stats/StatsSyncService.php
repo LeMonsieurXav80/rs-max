@@ -171,6 +171,11 @@ class StatsSyncService
         // Adaptive intervals: Twitter uses relaxed schedule (pay-per-use API)
         if ($slug === 'twitter') {
             $intervalHours = $daysSincePublished < 7 ? 12 : $configuredInterval;
+        } elseif ($slug === 'linkedin') {
+            // Quota dur côté LinkedIn (Community Management, palier Development :
+            // 100 requêtes/membre/jour) et 5 appels par relevé — la cadence horaire
+            // des premières 48 h épuiserait le quota sur un seul post.
+            $intervalHours = max(6, $configuredInterval);
         } elseif ($daysSincePublished < 2) {
             $intervalHours = 1;          // < 48h: every hour
         } elseif ($daysSincePublished < 7) {
@@ -196,6 +201,7 @@ class StatsSyncService
             'threads' => new ThreadsStatsService,
             'bluesky' => new BlueskyStatsService,
             'reddit' => new RedditStatsService,
+            'linkedin' => new LinkedInStatsService,
             default => null,
         };
     }

@@ -27,7 +27,7 @@ class LinkedInOAuthController extends Controller
             'response_type' => 'code',
             'client_id' => config('services.linkedin.client_id'),
             'redirect_uri' => config('services.linkedin.redirect'),
-            'scope' => 'openid profile w_member_social',
+            'scope' => config('services.linkedin.scopes'),
             'state' => $state,
         ]);
 

@@ -332,6 +332,92 @@ class LinkedInAdapter implements PlatformAdapterInterface
     }
 
     /**
+     * Métriques d'un post de PROFIL PERSONNEL via `memberCreatorPostAnalytics`.
+     *
+     * Les Pages passent par `organizationalEntityShareStatistics` (autre endpoint,
+     * autre scope) : non couvert ici, on rend null plutôt qu'un zéro trompeur.
+     *
+     * L'API ne renvoie qu'UNE métrique par appel (`queryType` est obligatoire et
+     * singulier) → un aller-retour par compteur.
+     *
+     * @return array<string,int|null>|null
+     */
+    public function fetchPostMetrics(SocialAccount $account, string $postUrn): ?array
+    {
+        $credentials = $account->credentials;
+
+        if (($credentials['account_type'] ?? 'person') !== 'person') {
+            Log::warning('LinkedInAdapter: post metrics only implemented for personal profiles', [
+                'account_id' => $account->id,
+            ]);
+
+            return null;
+        }
+
+        // Union key attendue par Rest.li : (share:<urn>) ou (ugc:<urn>).
+        $entity = match (true) {
+            str_contains($postUrn, ':ugcPost:') => '(ugc:'.rawurlencode($postUrn).')',
+            str_contains($postUrn, ':share:') => '(share:'.rawurlencode($postUrn).')',
+            default => null,
+        };
+
+        if ($entity === null) {
+            Log::error('LinkedInAdapter: unsupported post URN for analytics', [
+                'account_id' => $account->id,
+                'urn' => $postUrn,
+            ]);
+
+            return null;
+        }
+
+        $accessToken = $this->getValidToken($account);
+
+        // Une entrée = un appel = une unité de quota. S'en tenir aux compteurs
+        // que `post_platform.metrics` sait stocker (MEMBERS_REACHED n'a pas de
+        // colonne : le récupérer serait un appel jeté).
+        $queryTypes = [
+            'views' => 'IMPRESSION',
+            'likes' => 'REACTION',
+            'comments' => 'COMMENT',
+            'shares' => 'RESHARE',
+            'bookmarks' => 'POST_SAVE',
+        ];
+
+        $metrics = [];
+        $anySuccess = false;
+
+        foreach ($queryTypes as $key => $queryType) {
+            // Query string assemblée à la main : Guzzle ré-encoderait les parenthèses
+            // de la union key, que Rest.li attend littérales.
+            $url = self::API_BASE.'/rest/memberCreatorPostAnalytics'
+                ."?q=entity&entity={$entity}&queryType={$queryType}&aggregation=TOTAL";
+
+            $response = Http::withHeaders($this->headers($accessToken))->get($url);
+
+            if ($response->failed()) {
+                Log::warning('LinkedInAdapter: analytics query failed', [
+                    'account_id' => $account->id,
+                    'urn' => $postUrn,
+                    'query_type' => $queryType,
+                    'status' => $response->status(),
+                    'body' => $response->body(),
+                ]);
+                $metrics[$key] = null;
+
+                continue;
+            }
+
+            $anySuccess = true;
+            $count = $response->json('elements.0.count');
+            $metrics[$key] = $count === null ? null : (int) $count;
+        }
+
+        // Tout a échoué (scope manquant, token périmé) : ne pas écraser les
+        // métriques existantes avec une ligne de null.
+        return $anySuccess ? $metrics : null;
+    }
+
+    /**
      * Get a valid access token, refreshing if expired.
      */
     private function getValidToken(SocialAccount $account): string

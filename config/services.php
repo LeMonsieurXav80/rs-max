@@ -65,6 +65,11 @@ return [
         // Versions supportées 1 an seulement (format YYYYMM) : à remonter
         // avant sunset, sinon 426 NONEXISTENT_VERSION sur tous les appels.
         'version' => env('LINKEDIN_API_VERSION', '202607'),
+        // Ajouter `r_member_postAnalytics` (statistiques des posts de profil)
+        // UNIQUEMENT après validation du produit côté LinkedIn : un scope non
+        // accordé fait échouer l'autorisation entière en unauthorized_scope_error,
+        // et plus personne ne peut connecter son compte.
+        'scopes' => env('LINKEDIN_SCOPES', 'openid profile w_member_social'),
     ],
 
     'pinterest' => [
