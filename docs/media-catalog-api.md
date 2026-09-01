@@ -330,6 +330,8 @@ Recherche dans la médiathèque locale.
 - `tags[]` : sous-chaînes recherchées via JSON_SEARCH+LIKE (case-insensitive). Match tolérant : `"plage"` trouve `"plage paradisiaque"`, `"chaise longue"` trouve `"chaise longue bleue"`.
 - `people[]` : match exact (les ids sont normalisés `caroline`, `xavier`)
 - `country` / `city` / `region` : match exact case-insensitive sur la colonne dédiée (distinct des tags).
+- `event` : match exact case-insensitive sur la colonne `event` — **OPTIONNEL** (août 2026).
+- `taken_at_from` / `taken_at_to` : fenêtre de prise de vue, bornes **incluses** — **OPTIONNEL** (août 2026). Une photo sans `taken_at` n'est jamais retenue dès qu'une borne est posée.
 - `social_account_ids[]` : restreint le compteur "fois publiée" et l'exclusion récente à ces comptes (sinon global). Ajoute `account_publication_count` en sortie et trie dessus.
 - `exclude_recently_published_days` : exclut les photos publiées récemment (0-3650). Défaut : 0.
 - `limit` : 1-200 (défaut 20)
@@ -337,6 +339,11 @@ Recherche dans la médiathèque locale.
 - `used_on` : `<wp_source_id>` — **OPTIONNEL**, photos déjà publiées **sur ce site WP**. L'usage est par-site : une photo publiée sur PDC mais pas sur Vantour n'apparaît pas avec `used_on=<vantour>`.
 - `unused_on` : `<wp_source_id>` — **OPTIONNEL**, photos **jamais** publiées sur ce site WP (candidates idéales pour ce site).
 - `generated` : `0|1` — **OPTIONNEL**, nature du fichier. `generated=1` → uniquement les images fabriquées par le Studio / l'API carrousel ; `generated=0` → uniquement les photos d'origine. Absent → les deux (une slide reste un média de la bibliothèque). Utile pour un agent qui cherche une **photo** à illustrer et ne veut pas se voir proposer un visuel déjà composé.
+
+`folder`, `country`, `city`, `region`, `event` et `taken_at_from`/`taken_at_to` sont
+partagés avec `POST /api/partners/{partner}/media/{detach,attach}` — même
+implémentation (`MediaSelectionFilter`), pour qu'un lot se désigne de la même façon
+des deux côtés. Voir `docs/API.md` §12.
 
 **Filtres hardcodés non-contournables** :
 - Dossier **public** uniquement (403 si privé) ; descente limitée aux sous-dossiers publics

@@ -641,6 +641,29 @@ Chaque tag de publication porte une **origine** :
 
 Un partenaire présent des deux côtés est enregistré `manual`.
 
+> **Piège — le recalcul `auto` part du POST, jamais de la PHOTO.**
+> Le tag `auto` est recalculé à l'enregistrement d'une publication. Retirer une
+> marque d'une photo ne suffit donc pas : les publications qui l'utilisent gardent
+> leur ligne pivot jusqu'à leur prochain enregistrement — **qui n'arrivera jamais
+> pour un contenu déjà publié**. Le nettoyage serait alors invisible là où il
+> compte, dans les comptes rendus.
+>
+> Depuis août 2026, tous les chemins qui modifient les marques d'une photo
+> déclenchent le report automatiquement : édition en masse de la médiathèque,
+> fiche photo, `POST /api/media/{id}/validate` et `/enrich`, classification Vision,
+> et les deux routes `detach`/`attach` ci-dessous. L'écriture se fait directement
+> sur le pivot, sans passer par `PUT /api/posts/{id}` — un post publié il y a six
+> mois reste donc nettoyable.
+>
+> Pour le contenu désaligné **avant** cette date :
+> `php artisan partners:resync-content [--partner=holafly] [--commit]`
+> (dry-run par défaut, les tags `manual` ne sont jamais touchés).
+>
+> À noter : l'héritage ne passe **pas** par la filiation des images générées. Une
+> slide de carrousel ne reprend pas les partenaires de ses photos sources, donc un
+> fil illustré d'un carrousel n'a jamais porté leurs tags — il n'y a rien à y
+> nettoyer.
+
 ### `GET /api/partners`
 
 Liste complète (non paginée). `?active=1` pour ne garder que les partenaires actifs.
@@ -730,6 +753,74 @@ les cas et ne se pilotent pas d'ici.
 
 Côté web, le même geste se fait depuis la fiche du post ou du fil (bouton « Modifier »
 du bloc Partenaires), y compris sur un contenu publié.
+
+### `POST /api/partners/{partner}/media/detach`
+### `POST /api/partners/{partner}/media/attach`
+
+Retire (ou pose) un partenaire sur **un lot de photos** en une requête, et reporte
+l'effet sur les publications qui les utilisent. Ne touche que des pivots : la fiche
+partenaire n'est **jamais** supprimée — pour ça, `DELETE /api/partners/{id}`.
+
+Ici, et seulement ici, `{partner}` accepte l'**id numérique ou le slug**
+(`/api/partners/holafly/media/detach`). Les autres routes partenaires restent en id.
+
+**Sélection** — par ids explicites **ou** par filtres, jamais les deux (422 sinon) :
+
+```json
+{ "media_ids": [586, 519, 514], "dry_run": true }
+```
+
+```json
+{ "filters": { "folder": "pdc", "city": "Essaouira" }, "dry_run": true }
+```
+
+Les filtres sont aussi acceptés à plat (`{"folder": "pdc", "city": "Essaouira"}`).
+
+| Filtre | Comportement |
+|---|---|
+| `folder` | Slug. Descente récursive **tant que la chaîne reste publique**, comme `/api/media/search`. |
+| `city`, `region`, `country` | Match exact, insensible à la casse. |
+| `event` | Idem. |
+| `taken_at_from`, `taken_at_to` | Bornes incluses. Une photo sans `taken_at` n'est jamais retenue dès qu'une borne est posée. |
+
+Ce sont exactement les filtres de `/api/media/search`, même implémentation
+(`MediaSelectionFilter`) : un lot se désigne de la même façon des deux côtés.
+
+**`dry_run` vaut `true` par défaut** — l'écriture se demande explicitement. Le
+dry-run exécute réellement l'opération puis la rembobine : les compteurs annoncés
+sont donc ceux du run réel, pas une estimation.
+
+**Réponse** :
+
+```json
+{
+  "partner": {"id": 1, "name": "Holafly", "slug": "holafly"},
+  "action": "detach",
+  "dry_run": true,
+  "media_matched": 180,
+  "media_detached": 174,
+  "media_skipped_private": 6,
+  "posts_recalculated": 4,
+  "threads_recalculated": 8,
+  "posts_now_untagged": [812, 831],
+  "threads_now_untagged": [88, 92, 94, 96, 98]
+}
+```
+
+- `media_matched` : photos retenues par la sélection.
+- `media_detached` / `media_attached` : celles réellement modifiées — au détachement
+  celles qui portaient le tag, à l'attachement celles qui ne l'avaient pas. C'est ce
+  qui rend l'opération **idempotente** : rejouer la même requête ne gonfle rien.
+- `media_skipped_private` : photos dans un dossier privé (ou sous un ancêtre privé),
+  jamais touchées — **y compris quand elles sont désignées par leur id**. Un skip
+  compté plutôt qu'un 403 global, pour qu'une photo mal rangée ne fasse pas échouer
+  tout le lot.
+- `*_now_untagged` : contenus qui, après recalcul, ne portent plus du tout ce
+  partenaire. Vide en dry-run après rembobinage.
+
+Le niveau d'intimité (`intimacy_level`) n'entre pas en jeu : une photo semi-privée
+est détachée normalement. Le tag est une métadonnée interne et la route ne renvoie
+aucune image — la sauter laisserait du sur-taguage hors de portée de l'API.
 
 ### Taguer depuis les autres endpoints
 

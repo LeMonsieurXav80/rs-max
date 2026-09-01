@@ -3,12 +3,17 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
+use App\Models\MediaFile;
+use App\Models\MediaFolder;
 use App\Models\Partner;
 use App\Models\Post;
 use App\Models\Thread;
+use App\Services\Media\MediaSelectionFilter;
+use App\Services\PartnerTagService;
 use Carbon\Carbon;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\Rule;
 
 class PartnerApiController extends Controller
@@ -214,6 +219,194 @@ class PartnerApiController extends Controller
                 'total' => $threads->total(),
             ],
         ]);
+    }
+
+    /**
+     * POST /api/partners/{partner}/media/detach — retire un partenaire d'un lot de photos.
+     * POST /api/partners/{partner}/media/attach  — l'ajoute au même titre.
+     *
+     * Ne touche QUE des pivots : la fiche partenaire n'est jamais supprimée.
+     *
+     * Le point délicat est le report : le tag 'auto' d'une publication est
+     * recalculé à l'enregistrement du POST, jamais à celui de la PHOTO. Détacher
+     * les photos sans plus laisserait les publications déjà en base taguées
+     * jusqu'à leur prochain save — qui n'arrivera jamais pour du contenu publié.
+     * D'où le rattrapage systématique via resyncContentUsingMedia().
+     */
+    public function detachMedia(Request $request, string $partner): JsonResponse
+    {
+        return $this->amendMedia($request, $partner, attach: false);
+    }
+
+    public function attachMedia(Request $request, string $partner): JsonResponse
+    {
+        return $this->amendMedia($request, $partner, attach: true);
+    }
+
+    private function amendMedia(Request $request, string $partnerKey, bool $attach): JsonResponse
+    {
+        $partner = $this->resolvePartner($partnerKey);
+        if (! $partner) {
+            return response()->json(['error' => 'partner not found', 'partner' => $partnerKey], 404);
+        }
+
+        // Les filtres sont attendus groupés sous `filters`. On accepte aussi les
+        // clés à plat : même vocabulaire que la query string de /api/media/search,
+        // où elles sont forcément à plat.
+        $payload = $request->all();
+        $nested = $request->input('filters');
+        if (is_array($nested)) {
+            $payload = array_merge($payload, $nested);
+        }
+        unset($payload['filters']);
+
+        $validated = validator($payload, MediaSelectionFilter::rules() + [
+            'media_ids' => 'nullable|array|min:1|max:1000',
+            'media_ids.*' => 'integer',
+            // Défaut à true : la route touche potentiellement des centaines de
+            // photos et une douzaine de publications, l'écriture se demande.
+            'dry_run' => 'nullable|boolean',
+        ])->validate();
+
+        $dryRun = array_key_exists('dry_run', $validated)
+            ? filter_var($validated['dry_run'], FILTER_VALIDATE_BOOLEAN)
+            : true;
+
+        $hasIds = ! empty($validated['media_ids']);
+        $filterKeys = ['folder', 'city', 'region', 'country', 'event', 'taken_at_from', 'taken_at_to'];
+        $hasFilters = (bool) array_filter(
+            $filterKeys,
+            fn ($k) => ! empty($validated[$k])
+        );
+
+        // Ids OU filtres, jamais les deux : sinon la sélection effective devient
+        // ambiguë (intersection ? union ?) et le dry-run cesse d'être lisible.
+        if ($hasIds === $hasFilters) {
+            return response()->json([
+                'error' => $hasIds
+                    ? 'media_ids et filters sont exclusifs : fournir l\'un ou l\'autre'
+                    : 'fournir media_ids ou au moins un filtre de sélection',
+                'filters_supported' => $filterKeys,
+            ], 422);
+        }
+
+        $query = MediaFile::query();
+        $skippedPrivate = 0;
+
+        if ($hasIds) {
+            $query->whereIn('id', $validated['media_ids']);
+        } else {
+            if (! empty($validated['folder'])) {
+                $folder = MediaFolder::where('slug', $validated['folder'])->firstOrFail();
+                // Dossier privé : on ne fait pas échouer tout le lot, on n'y descend
+                // simplement pas (les photos sont comptées en skipped ci-dessous).
+                $folderIds = MediaSelectionFilter::publicDescendantIds($folder);
+                $query->whereIn('folder_id', $folderIds ?: [0]);
+            }
+            MediaSelectionFilter::apply($query, $validated);
+        }
+
+        // Ne garder que les photos réellement concernées : au détachement celles
+        // qui portent le tag, à l'attachement celles qui ne l'ont pas encore.
+        // C'est ce qui rend l'opération idempotente et les compteurs honnêtes.
+        $matched = $query->with('folder')->get();
+
+        $eligible = $matched->filter(function (MediaFile $media) use ($partner, $attach, &$skippedPrivate) {
+            // Un dossier privé (ou sous un ancêtre privé) est hors de portée de
+            // l'API, y compris quand la photo est désignée par son id.
+            if ($media->folder && $media->folder->isEffectivelyPrivate()) {
+                $skippedPrivate++;
+
+                return false;
+            }
+
+            $has = $media->partners()->where('partners.id', $partner->id)->exists();
+
+            return $attach ? ! $has : $has;
+        })->values();
+
+        // Le travail est TOUJOURS exécuté pour de vrai, puis annulé en dry-run.
+        // C'est la seule façon d'annoncer exactement ce que fera le run réel :
+        // tant que les photos portent encore le tag, aucune dérive n'est visible
+        // sur les publications, et un dry-run « simulé » répondrait 0 partout.
+        DB::beginTransaction();
+        try {
+            $tags = app(PartnerTagService::class);
+
+            foreach ($eligible as $media) {
+                $attach
+                    ? $tags->amendMediaNames($media, [$partner->name], [])
+                    : $tags->amendMediaNames($media, [], [$partner->name]);
+            }
+
+            $touched = $eligible->isEmpty()
+                ? ['posts' => [], 'threads' => []]
+                : $tags->resyncContentUsingMedia($eligible);
+
+            $outcome = [
+                'touched' => $touched,
+                // Contenus qui, après recalcul, ne portent plus du tout le partenaire.
+                'posts_now_untagged' => $this->untaggedAmong($partner, Post::class, $touched['posts']),
+                'threads_now_untagged' => $this->untaggedAmong($partner, Thread::class, $touched['threads']),
+            ];
+
+            // Dry-run : on a mesuré sur un état réellement écrit, on rembobine.
+            $dryRun ? DB::rollBack() : DB::commit();
+        } catch (\Throwable $e) {
+            DB::rollBack();
+            throw $e;
+        }
+
+        $countKey = $attach ? 'media_attached' : 'media_detached';
+
+        return response()->json([
+            'partner' => ['id' => $partner->id, 'name' => $partner->name, 'slug' => $partner->slug],
+            'action' => $attach ? 'attach' : 'detach',
+            'dry_run' => $dryRun,
+            'media_matched' => $matched->count(),
+            $countKey => $eligible->count(),
+            'media_skipped_private' => $skippedPrivate,
+            'posts_recalculated' => count($outcome['touched']['posts']),
+            'threads_recalculated' => count($outcome['touched']['threads']),
+            'posts_now_untagged' => $outcome['posts_now_untagged'],
+            'threads_now_untagged' => $outcome['threads_now_untagged'],
+        ]);
+    }
+
+    /**
+     * Parmi $ids, ceux qui ne portent plus aucun tag de ce partenaire.
+     *
+     * @param  class-string<Post|Thread>  $model
+     * @param  array<int,int>  $ids
+     * @return array<int,int>
+     */
+    private function untaggedAmong(Partner $partner, string $model, array $ids): array
+    {
+        if (! $ids) {
+            return [];
+        }
+
+        $table = $model === Post::class ? 'posts' : 'threads';
+
+        $encore = $model::query()
+            ->whereIn($table.'.id', $ids)
+            ->whereHas('partners', fn ($q) => $q->where('partners.id', $partner->id))
+            ->pluck($table.'.id')
+            ->map(fn ($id) => (int) $id)
+            ->all();
+
+        return array_values(array_diff($ids, $encore));
+    }
+
+    /**
+     * Résolution id OU slug, comme le filtre `partners` de /api/media/search.
+     * Les autres routes partenaires restent en binding implicite (id seul).
+     */
+    private function resolvePartner(string $key): ?Partner
+    {
+        return ctype_digit($key)
+            ? Partner::find((int) $key)
+            : Partner::where('slug', Partner::slugFor($key))->first();
     }
 
     /**

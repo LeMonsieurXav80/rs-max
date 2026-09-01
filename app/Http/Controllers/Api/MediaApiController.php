@@ -9,6 +9,7 @@ use App\Models\MediaFolder;
 use App\Models\MediaPublication;
 use App\Models\Partner;
 use App\Services\AiAssistService;
+use App\Services\Media\MediaSelectionFilter;
 use App\Services\PartnerTagService;
 use App\Services\StockPhotoService;
 use App\Support\TagNormalizer;
@@ -248,8 +249,7 @@ class MediaApiController extends Controller
      */
     public function search(Request $request): JsonResponse
     {
-        $params = $request->validate([
-            'folder' => 'required|string|exists:media_folders,slug',
+        $params = $request->validate(MediaSelectionFilter::rules(folderRequired: true) + [
             'query_embedding' => 'nullable|array|min:1',
             'query_embedding.*' => 'numeric',
             'tags' => 'nullable|array',
@@ -262,11 +262,9 @@ class MediaApiController extends Controller
             // Sans ce param, on garde le comportement global (compteur sur toutes plateformes).
             'social_account_ids' => 'nullable|array',
             'social_account_ids.*' => 'integer|exists:social_accounts,id',
-            // Filtres géographiques : match exact (case-insensitive) sur les colonnes dédiées.
-            // Distincts des tags, qui sont à valeur sémantique et souvent incomplets.
-            'country' => 'nullable|string|max:120',
-            'city' => 'nullable|string|max:120',
-            'region' => 'nullable|string|max:120',
+            // folder / country / city / region / event / taken_at_from / taken_at_to
+            // viennent de MediaSelectionFilter : même vocabulaire que le (dé)taguage
+            // en masse des partenaires, pour ne pas avoir deux façons de désigner un lot.
             // Filtres d'usage. `used` est global (publiée n'importe où, social ou WP).
             // `used_on`/`unused_on` sont par-site WP : "utilisé" est par-site, pas global.
             'used' => 'nullable|boolean',
@@ -292,7 +290,7 @@ class MediaApiController extends Controller
 
         // On ne descend dans les sous-dossiers que tant qu'ils sont publics aussi.
         // Un sous-dossier privé sous un parent public reste cloisonné.
-        $folderIds = $this->collectPublicDescendantIds($folder);
+        $folderIds = MediaSelectionFilter::publicDescendantIds($folder);
 
         $limit = $params['limit'] ?? 20;
         $excludeDays = $params['exclude_recently_published_days'] ?? 0;
@@ -334,12 +332,8 @@ class MediaApiController extends Controller
                 $query->whereJsonContains('people_ids', strtolower($person));
             }
         }
-        // Filtres géographiques : match exact case-insensitive sur la colonne dédiée.
-        foreach (['country', 'city', 'region'] as $geoField) {
-            if (! empty($params[$geoField])) {
-                $query->whereRaw("LOWER({$geoField}) = ?", [strtolower(trim($params[$geoField]))]);
-            }
-        }
+        // Géographie, événement et fenêtre de prise de vue : vocabulaire partagé.
+        MediaSelectionFilter::apply($query, $params);
         // Partenaires : filtre sur la relation, pas sur le miroir JSON `brands`.
         if (! empty($params['partners'])) {
             foreach ($params['partners'] as $partner) {
@@ -480,33 +474,6 @@ class MediaApiController extends Controller
                 'generated' => $request->has('generated') ? $request->boolean('generated') : null,
             ],
         ]);
-    }
-
-    /**
-     * Retourne les ids du dossier + descendants tant que la chaîne reste publique.
-     * Un sous-dossier privé arrête la descente sur sa branche.
-     */
-    private function collectPublicDescendantIds(MediaFolder $root): array
-    {
-        if ($root->is_private) {
-            return [];
-        }
-
-        $ids = [$root->id];
-        $stack = [$root->id];
-
-        while ($stack) {
-            $children = MediaFolder::whereIn('parent_id', $stack)
-                ->where('is_private', false)
-                ->pluck('id')->all();
-            if (! $children) {
-                break;
-            }
-            $ids = array_merge($ids, $children);
-            $stack = $children;
-        }
-
-        return $ids;
     }
 
     /**
@@ -1257,7 +1224,12 @@ class MediaApiController extends Controller
             return;
         }
 
-        app(PartnerTagService::class)->syncMediaNames($media, $brands, $origin);
+        $partnerTags = app(PartnerTagService::class);
+        $partnerTags->syncMediaNames($media, $brands, $origin);
+        // Report vers les publications qui utilisent cette photo : le tag 'auto'
+        // est recalcule a l'enregistrement du post, jamais a celui de la photo,
+        // et un contenu deja publie ne repassera jamais par ce chemin.
+        $partnerTags->resyncContentUsingMedia([$media]);
     }
 
     /**

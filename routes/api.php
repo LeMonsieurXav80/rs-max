@@ -54,6 +54,10 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::post('/partners', [PartnerApiController::class, 'store']);
     Route::get('/partners/{partner}/posts', [PartnerApiController::class, 'posts']); // avant /{partner}
     Route::get('/partners/{partner}/threads', [PartnerApiController::class, 'threads']);
+    // (Dé)taguage en masse de photos. Ne touche que des pivots, jamais la fiche.
+    // dry_run à true par défaut. {partner} accepte l'id ou le slug ici.
+    Route::post('/partners/{partner}/media/detach', [PartnerApiController::class, 'detachMedia']);
+    Route::post('/partners/{partner}/media/attach', [PartnerApiController::class, 'attachMedia']);
     Route::get('/partners/{partner}', [PartnerApiController::class, 'show']);
     Route::put('/partners/{partner}', [PartnerApiController::class, 'update']);
     Route::patch('/partners/{partner}', [PartnerApiController::class, 'update']);

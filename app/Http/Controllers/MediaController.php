@@ -301,10 +301,19 @@ class MediaController extends Controller
             $service->amendMediaNames($mf, $addClean, $remove);
         }
 
+        // Le report photo -> publication se declenche a l'enregistrement du POST,
+        // jamais a celui de la PHOTO : sans ce rattrapage, retirer une marque ici
+        // laisserait le tag en place sur les publications qui utilisent ces photos,
+        // definitivement pour un contenu deja publie. Un seul appel pour tout le
+        // lot, la recherche inverse est groupee.
+        $touched = $service->resyncContentUsingMedia($files);
+
         return response()->json([
             'count' => $files->count(),
             'added' => $addClean,
             'removed' => $remove,
+            'posts_recalculated' => count($touched['posts']),
+            'threads_recalculated' => count($touched['threads']),
         ]);
     }
 
@@ -454,7 +463,11 @@ class MediaController extends Controller
         // Les marques detectees deviennent des fiches partenaires (origine 'vision'),
         // que le manager peut ensuite renommer, fusionner ou desactiver.
         if (! empty($result['brands'])) {
-            app(PartnerTagService::class)->syncMediaNames($media, $result['brands'], 'vision');
+            $partnerTags = app(PartnerTagService::class);
+            $partnerTags->syncMediaNames($media, $result['brands'], 'vision');
+            // Une photo reclassee peut deja illustrer des publications : leur tag
+            // 'auto' doit suivre, dans un sens comme dans l'autre.
+            $partnerTags->resyncContentUsingMedia([$media]);
         }
 
         $media->refresh();
@@ -836,7 +849,11 @@ class MediaController extends Controller
         // Les marques sont une relation : le service resout les noms en fiches
         // partenaires (creation a la volee) et remet a jour le miroir `brands`.
         if (array_key_exists('brands', $data)) {
-            app(PartnerTagService::class)->syncMediaNames($media, $data['brands'] ?? []);
+            $partnerTags = app(PartnerTagService::class);
+            $partnerTags->syncMediaNames($media, $data['brands'] ?? []);
+            // Report vers les publications qui utilisent cette photo : elles ne
+            // seront peut-etre jamais re-enregistrees (contenu deja publie).
+            $partnerTags->resyncContentUsingMedia([$media]);
             $media->refresh();
         }
 

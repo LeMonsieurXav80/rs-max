@@ -18,6 +18,9 @@ use Illuminate\Support\Collection;
  */
 class PartnerTagService
 {
+    /** Photos par requete de recherche inverse (voir applyMediaNeedles). */
+    private const NEEDLE_CHUNK = 50;
+
     /**
      * Resout une liste de noms libres en fiches partenaires (creation a la volee).
      * Dedup par slug : « Coca-Cola », « coca cola » et « COCA COLA » convergent.
@@ -249,6 +252,192 @@ class PartnerTagService
 
         $model->partners()->sync($sync);
         $model->unsetRelation('partners');
+    }
+
+    /**
+     * Ids 'auto' que PORTERAIT le contenu si on le recalculait maintenant.
+     * Lecture seule : sert au mode dry-run et aux comptes rendus de diff.
+     *
+     * @return array<int,int>
+     */
+    public function expectedAutoIds(Post|Thread $model): array
+    {
+        $media = $model instanceof Post
+            ? $model->media
+            : $model->segments()->pluck('media')
+                ->filter(fn ($m) => is_array($m))
+                ->flatten(1)
+                ->all();
+
+        return $this->partnerIdsFromMedia($media);
+    }
+
+    /**
+     * Ids 'auto' actuellement en base sur le contenu.
+     *
+     * @return array<int,int>
+     */
+    public function currentAutoIds(Post|Thread $model): array
+    {
+        return $model->partners()
+            ->wherePivot('source', 'auto')
+            ->pluck('partners.id')
+            ->map(fn ($id) => (int) $id)
+            ->all();
+    }
+
+    /**
+     * Contenu dont les tags 'auto' ne correspondent plus a ses photos.
+     * Renvoie null si tout est deja aligne (rien a ecrire).
+     *
+     * @return array{added:array<int,int>,removed:array<int,int>}|null
+     */
+    public function autoTagDrift(Post|Thread $model): ?array
+    {
+        $expected = $this->expectedAutoIds($model);
+        $current = $this->currentAutoIds($model);
+
+        $added = array_values(array_diff($expected, $current));
+        $removed = array_values(array_diff($current, $expected));
+
+        return ($added || $removed) ? ['added' => $added, 'removed' => $removed] : null;
+    }
+
+    /**
+     * Recalcule les tags 'auto' de tous les posts et fils qui utilisent l'une des
+     * photos donnees.
+     *
+     * Raison d'etre : le report photo -> publication est declenche a
+     * l'enregistrement du POST, jamais a celui de la PHOTO. Sans ce rattrapage,
+     * retirer une marque d'une photo laisse la ligne pivot en place sur les
+     * publications qui l'utilisent — definitivement pour un contenu deja publie,
+     * qui ne sera jamais re-enregistre. Le nettoyage serait alors invisible la
+     * ou il compte, c'est-a-dire dans les comptes rendus partenaires.
+     *
+     * L'ecriture passe par syncPost/syncThread, qui touchent le pivot en direct :
+     * pas de validation de statut, un post publie il y a six mois reste nettoyable.
+     * Les tags 'manual' sont preserves.
+     *
+     * @param  iterable<MediaFile>  $mediaFiles
+     * @param  bool  $dryRun  n'ecrit rien, se contente de lister ce qui changerait
+     * @return array{posts:array<int,int>,threads:array<int,int>} ids REELLEMENT modifies
+     */
+    public function resyncContentUsingMedia(iterable $mediaFiles, bool $dryRun = false): array
+    {
+        $filenames = [];
+        $ids = [];
+        foreach ($mediaFiles as $media) {
+            if ($media->filename) {
+                $filenames[] = $media->filename;
+            }
+            $ids[] = (int) $media->id;
+        }
+
+        if (! $filenames && ! $ids) {
+            return ['posts' => [], 'threads' => []];
+        }
+
+        $posts = [];
+        $threads = [];
+
+        // Paquets de 50 photos : au-dela, le nombre de clauses LIKE d'une seule
+        // requete devient deraisonnable (un detach Holafly porte sur 180 photos).
+        $filenameChunks = array_chunk($filenames, self::NEEDLE_CHUNK) ?: [[]];
+        $idChunks = array_chunk($ids, self::NEEDLE_CHUNK) ?: [[]];
+        $chunkCount = max(count($filenameChunks), count($idChunks));
+
+        for ($i = 0; $i < $chunkCount; $i++) {
+            $chunkFilenames = $filenameChunks[$i] ?? [];
+            $chunkIds = $idChunks[$i] ?? [];
+            if (! $chunkFilenames && ! $chunkIds) {
+                continue;
+            }
+
+            foreach ($this->postsUsingMedia($chunkFilenames, $chunkIds) as $post) {
+                // Un post peut ressortir de plusieurs paquets : ne le traiter qu'une fois.
+                if (isset($posts[$post->id]) || $this->autoTagDrift($post) === null) {
+                    continue;
+                }
+                $posts[$post->id] = true;
+                if (! $dryRun) {
+                    $this->syncPost($post);
+                }
+            }
+
+            foreach ($this->threadsUsingMedia($chunkFilenames, $chunkIds) as $thread) {
+                if (isset($threads[$thread->id]) || $this->autoTagDrift($thread) === null) {
+                    continue;
+                }
+                $threads[$thread->id] = true;
+                if (! $dryRun) {
+                    $this->syncThread($thread);
+                }
+            }
+        }
+
+        return [
+            'posts' => array_map('intval', array_keys($posts)),
+            'threads' => array_map('intval', array_keys($threads)),
+        ];
+    }
+
+    /**
+     * Posts susceptibles d'utiliser l'une des photos.
+     *
+     * Le prefiltre SQL n'a pas besoin d'etre exact, seulement COMPLET : un faux
+     * positif est recalcule a l'identique et ne coute qu'une requete. C'est ce
+     * qui autorise le LIKE, alors que posts.media melange trois formats d'item
+     * (chaine url, {url}, {id}).
+     *
+     * @param  array<int,string>  $filenames
+     * @param  array<int,int>  $ids
+     * @return \Illuminate\Support\LazyCollection<int,Post>
+     */
+    private function postsUsingMedia(array $filenames, array $ids): \Illuminate\Support\LazyCollection
+    {
+        return Post::query()
+            ->whereNotNull('media')
+            ->where(fn ($q) => $this->applyMediaNeedles($q, 'media', $filenames, $ids))
+            ->lazyById(200);
+    }
+
+    /**
+     * Fils dont AU MOINS UN segment utilise l'une des photos — segment de boost
+     * inclus, puisque syncThread() recalcule depuis tous les segments.
+     *
+     * @param  array<int,string>  $filenames
+     * @param  array<int,int>  $ids
+     * @return \Illuminate\Support\LazyCollection<int,Thread>
+     */
+    private function threadsUsingMedia(array $filenames, array $ids): \Illuminate\Support\LazyCollection
+    {
+        return Thread::query()
+            ->whereHas('segments', function ($q) use ($filenames, $ids) {
+                $q->whereNotNull('media')
+                    ->where(fn ($inner) => $this->applyMediaNeedles($inner, 'media', $filenames, $ids));
+            })
+            ->lazyById(200);
+    }
+
+    /**
+     * Clauses OR de recherche d'une photo dans une colonne JSON de media.
+     *
+     * L'id est cherche avec son delimiteur de fin ("id":58, ou "id":58}) pour ne
+     * pas confondre 58 et 580. L'appelant decoupe en paquets (NEEDLE_CHUNK).
+     *
+     * @param  array<int,string>  $filenames
+     * @param  array<int,int>  $ids
+     */
+    private function applyMediaNeedles($query, string $column, array $filenames, array $ids): void
+    {
+        foreach ($filenames as $filename) {
+            $query->orWhere($column, 'like', '%'.$filename.'%');
+        }
+        foreach ($ids as $id) {
+            $query->orWhere($column, 'like', '%"id":'.$id.',%')
+                ->orWhere($column, 'like', '%"id":'.$id.'}%')
+                ->orWhere($column, 'like', '%"id":"'.$id.'"%');
+        }
     }
 
     /**
