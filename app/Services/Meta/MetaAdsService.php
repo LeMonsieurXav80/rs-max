@@ -141,6 +141,30 @@ class MetaAdsService
     }
 
     /**
+     * Pages visibles par CE jeton.
+     *
+     * Zero Page ne veut pas dire « aucune Page attribuee a l'utilisateur
+     * systeme » : le plus souvent le jeton n'a simplement pas `pages_show_list`.
+     * **Les scopes sont figes a la generation du jeton** — attribuer un actif
+     * ensuite ne les elargit pas, il faut regenerer.
+     *
+     * Sert au diagnostic du boost Facebook, qui echoue sinon sur un message
+     * (« publication indisponible ») qui accuse le mauvais coupable.
+     *
+     * @return array{success:bool,error:?string,pages:array<int,array<string,mixed>>}
+     */
+    public function pages(): array
+    {
+        $result = $this->get('me/accounts', ['fields' => 'id,name']);
+
+        if (! $result['success']) {
+            return ['success' => false, 'error' => $result['error'], 'pages' => []];
+        }
+
+        return ['success' => true, 'error' => null, 'pages' => $result['data']['data'] ?? []];
+    }
+
+    /**
      * CPM reellement paye, par regie, sur les N derniers jours.
      *
      * Le CPM est recalcule depuis `spend / impressions` plutot que lu dans le
@@ -624,11 +648,17 @@ class MetaAdsService
             $message .= ' — jeton invalide : utiliser un token « utilisateur système » du portefeuille Business, il survit aux changements de mot de passe.';
         }
 
-        // 1885557 : publication introuvable OU Page non accessible au jeton. Le
-        // second cas est le plus frequent et le message de Meta ne le distingue
-        // pas — sans cette precision on cherche du cote du post pour rien.
+        // 1885557 : publication introuvable OU Page inaccessible au JETON. Le
+        // second cas est de loin le plus frequent et Meta ne les distingue pas.
+        // Piege : attribuer la Page a l'utilisateur systeme ne suffit PAS — un
+        // jeton n'exerce que les scopes coches a sa generation. Un jeton
+        // `ads_read,ads_management` ne verra jamais une Page, meme attribuee ;
+        // il faut le REGENERER avec les scopes Pages.
         if (($error['error_subcode'] ?? null) === 1885557) {
-            $message .= ' — vérifier que la Page est bien attribuée à l\'utilisateur système (Paramètres d\'entreprise → Utilisateurs système → Ajouter des actifs → Pages) et que le jeton porte `pages_manage_ads`.';
+            $message .= ' — le plus souvent le jeton ne porte pas les scopes Pages :'
+                .' vérifier `pages_show_list` et `pages_manage_ads` via /debug_token.'
+                .' Attribuer la Page à l\'utilisateur système ne suffit pas, il faut REGENERER le jeton'
+                .' (les scopes sont figés à sa création). Diagnostic : GET /me/accounts doit renvoyer la Page.';
         }
 
         return $message;

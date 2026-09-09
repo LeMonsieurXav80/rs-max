@@ -441,9 +441,17 @@ class SettingsController extends Controller
         // Le cache porte sur l'ancien relevé : un test doit interroger Meta.
         $this->metaAds->forgetCache();
 
+        // Les Pages visibles disent tout de suite si le boost Facebook pourra
+        // fonctionner : zéro Page = jeton sans scope Pages, pas Page manquante.
+        $pages = $this->metaAds->pages();
+
         return response()->json([
             'success' => true,
             'accounts' => $accounts['accounts'],
+            'pages' => $pages['pages'],
+            'pages_hint' => $pages['pages'] === []
+                ? 'Aucune Page visible : le boost Facebook échouera. Le jeton ne porte probablement pas `pages_show_list` + `pages_manage_ads` — les scopes sont figés à la génération, il faut REGENERER le jeton. Instagram fonctionne sans.'
+                : null,
             'observed_cpm' => $this->metaAds->isConfigured() ? $this->metaAds->observedCpm() : null,
         ]);
     }
