@@ -13,6 +13,7 @@ class PostPlatformSnapshot extends Model
         'post_platform_id',
         'measured_at',
         'views',
+        'reach',
         'likes',
         'comments',
         'shares',

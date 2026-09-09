@@ -15,7 +15,7 @@ class StatsSyncService
      * indépendamment du post, et déclencherait un snapshot à chaque sync
      * même sur une publication figée.
      */
-    private const ENGAGEMENT_KEYS = ['views', 'likes', 'comments', 'shares', 'bookmarks'];
+    private const ENGAGEMENT_KEYS = ['views', 'reach', 'likes', 'comments', 'shares', 'bookmarks'];
 
     /**
      * Sync metrics for a specific post platform.
@@ -68,6 +68,7 @@ class StatsSyncService
             $postPlatform->snapshots()->create([
                 'measured_at' => $postPlatform->metrics_synced_at ?? now(),
                 'views' => $metrics['views'] ?? null,
+                'reach' => $metrics['reach'] ?? null,
                 'likes' => $metrics['likes'] ?? null,
                 'comments' => $metrics['comments'] ?? null,
                 'shares' => $metrics['shares'] ?? null,

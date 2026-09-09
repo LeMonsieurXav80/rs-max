@@ -44,6 +44,7 @@ class InstagramStatsService implements PlatformStatsInterface
             // Fetch insights using unified metrics (views, reach, shares, saved)
             // Note: 'impressions' is deprecated for Reels (VIDEO) from v22.0+, use 'views' instead
             $views = null;
+            $reach = null;
             $shares = null;
             $saved = null;
             $insightsResponse = Http::get(self::GRAPH_API_BASE.'/'.self::GRAPH_API_VERSION."/{$externalId}/insights", [
@@ -56,6 +57,9 @@ class InstagramStatsService implements PlatformStatsInterface
                 foreach ($insights as $insight) {
                     match ($insight['name']) {
                         'views' => $views = $insight['values'][0]['value'] ?? null,
+                        // Portée = comptes uniques atteints. Déjà demandée dans
+                        // l'appel ci-dessus, elle n'était simplement pas lue.
+                        'reach' => $reach = $insight['values'][0]['value'] ?? null,
                         'shares' => $shares = $insight['values'][0]['value'] ?? null,
                         'saved' => $saved = $insight['values'][0]['value'] ?? null,
                         default => null,
@@ -80,6 +84,7 @@ class InstagramStatsService implements PlatformStatsInterface
 
             return [
                 'views' => $views,
+                'reach' => $reach,
                 'likes' => $data['like_count'] ?? 0,
                 'comments' => $data['comments_count'] ?? 0,
                 'shares' => $shares,

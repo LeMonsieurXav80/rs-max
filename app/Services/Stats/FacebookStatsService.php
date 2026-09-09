@@ -44,18 +44,23 @@ class FacebookStatsService implements PlatformStatsInterface
 
             // Try to fetch post insights (views, shares) - may fail depending on post type/permissions
             $views = null;
+            $reach = null;
             $shares = null;
             $insightsResponse = Http::get(self::GRAPH_API_BASE.'/'.self::GRAPH_API_VERSION."/{$externalId}/insights", [
-                'metric' => 'post_impressions,post_engaged_users',
+                // post_impressions_unique = portée : les personnes touchées, pas
+                // les affichages. Même appel, aucun quota supplémentaire.
+                'metric' => 'post_impressions,post_impressions_unique,post_engaged_users',
                 'access_token' => $accessToken,
             ]);
 
             if ($insightsResponse->successful()) {
                 $insights = $insightsResponse->json('data', []);
                 foreach ($insights as $insight) {
-                    if ($insight['name'] === 'post_impressions') {
-                        $views = $insight['values'][0]['value'] ?? null;
-                    }
+                    match ($insight['name']) {
+                        'post_impressions' => $views = $insight['values'][0]['value'] ?? null,
+                        'post_impressions_unique' => $reach = $insight['values'][0]['value'] ?? null,
+                        default => null,
+                    };
                 }
             }
 
@@ -89,6 +94,7 @@ class FacebookStatsService implements PlatformStatsInterface
 
             return [
                 'views' => $views,
+                'reach' => $reach,
                 'likes' => $data['likes']['summary']['total_count'] ?? 0,
                 'comments' => $data['comments']['summary']['total_count'] ?? 0,
                 'shares' => $shares,
