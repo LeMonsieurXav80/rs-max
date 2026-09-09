@@ -5,6 +5,7 @@ use App\Http\Controllers\Api\CarouselApiController;
 use App\Http\Controllers\Api\ExtensionApiController;
 use App\Http\Controllers\Api\GenerateApiController;
 use App\Http\Controllers\Api\MediaApiController;
+use App\Http\Controllers\Api\MetaAdsApiController;
 use App\Http\Controllers\Api\PartnerApiController;
 use App\Http\Controllers\Api\PersonaApiController;
 use App\Http\Controllers\Api\PostApiController;
@@ -54,6 +55,18 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::post('/partners', [PartnerApiController::class, 'store']);
     Route::get('/partners/{partner}/posts', [PartnerApiController::class, 'posts']); // avant /{partner}
     Route::get('/partners/{partner}/threads', [PartnerApiController::class, 'threads']);
+    Route::get('/partners/{partner}/emv', [PartnerApiController::class, 'emv']);
+
+    // ── Meta Ads ──
+    // Lecture ouverte ; écriture en dry-run par défaut, derrière
+    // META_ADS_WRITE_ENABLED et réservée aux managers. Pas de création ni de
+    // suppression de campagne : hors périmètre à dessein.
+    Route::get('/meta-ads/campaigns', [MetaAdsApiController::class, 'campaigns']);
+    Route::get('/meta-ads/insights', [MetaAdsApiController::class, 'insights']); // avant /campaigns/{id}
+    Route::get('/meta-ads/logs', [MetaAdsApiController::class, 'logs']);
+    Route::get('/meta-ads/campaigns/{object}', [MetaAdsApiController::class, 'campaign']);
+    Route::post('/meta-ads/{object}/status', [MetaAdsApiController::class, 'updateStatus']);
+    Route::post('/meta-ads/{object}/budget', [MetaAdsApiController::class, 'updateBudget']);
     // (Dé)taguage en masse de photos. Ne touche que des pivots, jamais la fiche.
     // dry_run à true par défaut. {partner} accepte l'id ou le slug ici.
     Route::post('/partners/{partner}/media/detach', [PartnerApiController::class, 'detachMedia']);

@@ -8,11 +8,14 @@ use App\Models\Post;
 use App\Models\PostPlatform;
 use App\Models\SocialAccountSnapshot;
 use App\Models\Thread;
+use App\Services\Stats\EmvService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 
 class StatsApiController extends Controller
 {
+    public function __construct(private readonly EmvService $emv) {}
+
     /**
      * GET /api/stats/overview — KPIs globaux.
      * ?period=30&accounts[]=3&accounts[]=5
@@ -59,6 +62,7 @@ class StatsApiController extends Controller
                 'published' => $threadsPublished,
             ],
             'engagement' => $stats,
+            'emv' => $this->emv->forItems($allPosts),
             'followers' => [
                 'total' => $totalFollowers,
                 'accounts_count' => $activeAccountsCount,

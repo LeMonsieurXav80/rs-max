@@ -7,9 +7,11 @@ use App\Models\MediaFile;
 use App\Models\MediaFolder;
 use App\Models\Partner;
 use App\Models\Post;
+use App\Models\PostPlatform;
 use App\Models\Thread;
 use App\Services\Media\MediaSelectionFilter;
 use App\Services\PartnerTagService;
+use App\Services\Stats\EmvService;
 use Carbon\Carbon;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -93,29 +95,8 @@ class PartnerApiController extends Controller
             'to' => 'nullable|date',
         ]);
 
-        $query = $partner->posts()->with(['postPlatforms.platform', 'postPlatforms.socialAccount']);
-
-        if (! empty($filters['status'])) {
-            $query->where('posts.status', $filters['status']);
-        }
-
-        if (! empty($filters['source'])) {
-            $query->where('partner_post.source', $filters['source']);
-        }
-
-        if (! empty($filters['from'])) {
-            $from = Carbon::parse($filters['from'])->startOfDay();
-            $query->where(fn ($q) => $q->where('posts.published_at', '>=', $from)
-                ->orWhere('posts.scheduled_at', '>=', $from)
-                ->orWhere('posts.created_at', '>=', $from));
-        }
-
-        if (! empty($filters['to'])) {
-            $to = Carbon::parse($filters['to'])->endOfDay();
-            $query->where(fn ($q) => $q->where('posts.published_at', '<=', $to)
-                ->orWhere('posts.scheduled_at', '<=', $to)
-                ->orWhere('posts.created_at', '<=', $to));
-        }
+        $query = $this->filteredPosts($partner, $filters)
+            ->with(['postPlatforms.platform', 'postPlatforms.socialAccount']);
 
         $perPage = min((int) $request->input('per_page', 25), 100);
         $posts = $query
@@ -149,6 +130,73 @@ class PartnerApiController extends Controller
                 'total' => $posts->total(),
             ],
         ]);
+    }
+
+    /**
+     * GET /api/partners/{id}/emv — valorisation des retombées du partenaire.
+     *
+     * Mêmes filtres que /posts (`status`, `source`, `from`, `to`). Les fils sont
+     * hors périmètre : aucune métrique n'est collectée dessus.
+     */
+    public function emv(Request $request, Partner $partner, EmvService $emv): JsonResponse
+    {
+        $filters = $request->validate([
+            'status' => ['nullable', Rule::in(['draft', 'scheduled', 'publishing', 'published', 'failed'])],
+            'source' => ['nullable', Rule::in(['auto', 'manual'])],
+            'from' => 'nullable|date',
+            'to' => 'nullable|date',
+        ]);
+
+        $postIds = $this->filteredPosts($partner, $filters)->pluck('posts.id');
+
+        $diffusions = $postIds->isEmpty()
+            ? collect()
+            : PostPlatform::with('platform')
+                ->whereIn('post_id', $postIds)
+                ->where('status', 'published')
+                ->whereNotNull('metrics')
+                ->get();
+
+        return response()->json([
+            'partner' => ['id' => $partner->id, 'name' => $partner->name, 'slug' => $partner->slug],
+            'emv' => $emv->forItems($diffusions),
+        ]);
+    }
+
+    /**
+     * Publications taguées d'un partenaire, filtrées.
+     *
+     * On garde la relation (et non son Builder) pour que le pivot soit hydraté.
+     *
+     * @param  array<string,mixed>  $filters
+     */
+    private function filteredPosts(Partner $partner, array $filters)
+    {
+        $query = $partner->posts();
+
+        if (! empty($filters['status'])) {
+            $query->where('posts.status', $filters['status']);
+        }
+
+        if (! empty($filters['source'])) {
+            $query->where('partner_post.source', $filters['source']);
+        }
+
+        if (! empty($filters['from'])) {
+            $from = Carbon::parse($filters['from'])->startOfDay();
+            $query->where(fn ($q) => $q->where('posts.published_at', '>=', $from)
+                ->orWhere('posts.scheduled_at', '>=', $from)
+                ->orWhere('posts.created_at', '>=', $from));
+        }
+
+        if (! empty($filters['to'])) {
+            $to = Carbon::parse($filters['to'])->endOfDay();
+            $query->where(fn ($q) => $q->where('posts.published_at', '<=', $to)
+                ->orWhere('posts.scheduled_at', '<=', $to)
+                ->orWhere('posts.created_at', '<=', $to));
+        }
+
+        return $query;
     }
 
     /**

@@ -26,6 +26,7 @@ API REST d'orchestration multi-plateformes : publication, planification, génér
 14. [Annexes : plateformes, langues, statuts](#14-annexes--plateformes-langues-statuts)
 15. [Endpoints — Extension Chrome (RS-Max Companion)](#15-endpoints--extension-chrome-rs-max-companion)
 16. [Endpoints en session web (PAS accessibles par token)](#16-endpoints-en-session-web-pas-accessibles-par-token)
+17. [Endpoints — Meta Ads (pilotage des campagnes)](#17-endpoints--meta-ads-pilotage-des-campagnes)
 
 ---
 
@@ -730,6 +731,52 @@ Supprime la fiche et retire le tag de toutes les photos et publications.
 Symétrique de `/posts`, pour les fils de discussion. Mêmes filtres et même pagination.
 Un fil hérite des partenaires des photos de **tous** ses segments (segment de boost inclus).
 
+### `GET /api/partners/{id}/emv`
+
+**Valorisation des retombées** (Earned Media Value) des publications taguées.
+Mêmes filtres que `/posts` : `status`, `source`, `from`, `to`.
+
+Deux méthodes sont rendues côte à côte, elles ne mesurent pas la même chose :
+
+- `cpm` — `(vues ÷ 1000) × CPM de référence`, soit ce qu'aurait coûté cette
+  audience en publicité payante ;
+- `ayzenberg` — `Σ (nombre d'actions × valeur unitaire)`, la valeur de
+  l'engagement. La vue y vaut `0` par défaut, sans quoi `total` compterait
+  deux fois la même audience.
+
+Les tarifs viennent de `config/emv.php`, surchargeables depuis `/settings`
+(onglet Statistiques). **Le calcul est fait à la volée, jamais persisté** :
+changer un tarif recalcule tout l'historique.
+
+**Reddit et Bluesky n'exposent aucune vue** : la méthode `cpm` y est
+structurellement impossible. Elles ne sont pas comptées à zéro, elles sont
+listées dans `coverage.uncovered_platforms` — lire ce bloc avant de présenter
+un total à un partenaire. Les fils de discussion sont hors périmètre :
+`thread_segment_platform` ne porte aucune métrique.
+
+```json
+{
+  "partner": {"id": 3, "name": "Nike", "slug": "nike"},
+  "emv": {
+    "currency": "EUR",
+    "cpm": 425.5,
+    "ayzenberg": 88.2,
+    "total": 513.7,
+    "by_platform": [
+      {"slug": "instagram", "items": 12, "views": 50000,
+       "cpm": 425.5, "ayzenberg": 74.2, "views_available": true},
+      {"slug": "bluesky", "items": 3, "views": 0,
+       "cpm": 0, "ayzenberg": 14.0, "views_available": false}
+    ],
+    "coverage": {"items": 15, "valued": 12, "measurable": 12,
+                 "uncovered_platforms": ["bluesky"]}
+  }
+}
+```
+
+`GET /api/stats/overview` porte le même bloc `emv` pour l'ensemble des comptes
+de l'utilisateur.
+
 ### Taguer rétroactivement une publication déjà publiée
 
 `PUT /api/posts/{id}` et `PUT /api/threads/{id}` **refusent** tout contenu déjà publié
@@ -1070,3 +1117,109 @@ qu'on cesse de les confondre avec l'API à token.
 
 Documentation détaillée (réponses complètes, champ `extra`, pièges) : note
 `RS-Max API` du vault Obsidian, section 20.
+
+---
+
+## 17. Endpoints — Meta Ads (pilotage des campagnes)
+
+Lecture et pilotage du compte publicitaire Meta, **conçus pour être appelés par une IA**.
+Configuration du jeton : `docs/meta-ads-cpm-constate.md`.
+
+> **Ces endpoints dépensent de l'argent réel.** La lecture est ouverte ; l'écriture est
+> fermée par défaut et en simulation par défaut. Les garde-fous ci-dessous ne sont pas
+> du confort : ils sont la dernière barrière entre une hallucination et une facture.
+
+### Permissions du jeton
+
+| Usage | Scope requis |
+|---|---|
+| Lecture seule (campagnes, insights, CPM constaté) | `ads_read` |
+| Pilotage (pause, budget) | **`ads_management`** |
+
+Un jeton généré avec `ads_read` seul renverra une erreur de permission sur toute
+écriture — il faut le régénérer, on n'élargit pas un jeton existant.
+
+### Lecture
+
+```
+GET /api/meta-ads/campaigns?active=1
+GET /api/meta-ads/campaigns/{id}?days=30
+GET /api/meta-ads/insights?level=campaign&days=30&object_id=…
+GET /api/meta-ads/logs?limit=50
+```
+
+`GET /campaigns/{id}` renvoie la campagne, ses ad sets et ses performances en un
+seul appel — de quoi décider sans enchaîner les requêtes.
+
+**Les budgets sont exprimés dans la devise du compte** (`25.5`), jamais en centimes.
+La conversion depuis les unités mineures de Meta est faite une seule fois, dans
+`MetaAdsService`.
+
+`effective_status` prime sur `status` : une campagne `ACTIVE` dont le compte a
+atteint son plafond ne diffuse pas, et seul le statut effectif le dit.
+
+`GET /logs` rend le journal des gestes déjà passés. **À lire avant de proposer une
+action** : c'est ce qui évite de reproposer en boucle une modification déjà tentée.
+
+### Écriture
+
+```
+POST /api/meta-ads/{id}/status    {"status": "PAUSED", "dry_run": false}
+POST /api/meta-ads/{id}/budget    {"amount": 25.50, "dry_run": false}
+```
+
+| Paramètre | Défaut | Rôle |
+|---|---|---|
+| `dry_run` | **`true`** | Renvoie le plan sans rien envoyer à Meta |
+| `force` | `false` | Autorise une hausse de budget au-delà du plafond relatif |
+| `lifetime` | `false` | Vise `lifetime_budget` au lieu de `daily_budget` |
+| `object_type` | `campaign` | `campaign` ou `adset`, pour le journal |
+
+`status` accepte `ACTIVE` et `PAUSED` uniquement. `DELETED` et `ARCHIVED` sont
+volontairement absents : gestes destructifs, ils se font dans le Gestionnaire de
+publicités, sous les yeux d'un humain. **Créer ou supprimer une campagne n'est pas
+exposé** — une campagne qui se crée toute seule dépense sans qu'un humain ait vu le
+ciblage ni le créatif.
+
+### Les cinq garde-fous
+
+1. **Interrupteur général** — `META_ADS_WRITE_ENABLED`, à `false` par défaut. Toute
+   écriture répond `403`, `dry_run: false` compris.
+2. **Manager requis** — un compte `user` reçoit `403`.
+3. **`dry_run` à `true` par défaut** — sans le passer explicitement à `false`, on
+   obtient le plan (`previous` → `requested`), pas l'exécution.
+4. **Plafond de hausse** — au-delà de `max_budget_increase_pct` (50 %) en une fois :
+   `422`. Contournable par `force: true`. Attrape l'erreur d'unité et le raisonnement
+   qui dérape.
+5. **Plafond absolu** — `max_daily_budget` (100) n'est **jamais** contournable, `force`
+   compris. Le relever se fait dans `config/meta_ads.php`.
+
+Tout est journalisé dans `meta_ads_action_logs`, **dry-run compris**, avec l'état
+précédent — sans lui, un retour arrière se ferait à l'aveugle.
+
+### Réponse type (simulation)
+
+```json
+{
+  "dry_run": true,
+  "applied": false,
+  "object_id": "120000",
+  "object_name": "Campagne Test",
+  "action": "budget",
+  "previous": {"daily_budget": 20},
+  "requested": {"daily_budget": 25.5},
+  "note": "Simulation : rien n'a été envoyé à Meta. Renvoyer avec `dry_run: false` pour appliquer."
+}
+```
+
+### Méthode conseillée pour un agent
+
+1. `GET /campaigns` et `GET /logs` — lire l'état **live** et ce qui a déjà été tenté ;
+   l'API fait foi, pas un état mémorisé.
+2. Appeler la mutation **sans `dry_run: false`** pour obtenir le plan.
+3. Présenter le plan à un humain.
+4. Ne rejouer avec `dry_run: false` qu'après accord explicite.
+
+Deux rappels qui évitent des conclusions fausses : les chiffres de performance Meta
+ne sont **fiables qu'à J+4**, et des impressions à zéro signalent le plus souvent une
+campagne qui ne diffuse pas (plafond, ciblage vide), pas une enchère trop basse.

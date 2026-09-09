@@ -5,6 +5,8 @@ namespace App\Http\Controllers;
 use App\Models\MediaFolder;
 use App\Models\Setting;
 use App\Services\Carousel\StudioDefaults;
+use App\Services\Meta\MetaAdsService;
+use App\Services\Stats\EmvService;
 use App\Services\TelegramNotificationService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -13,6 +15,11 @@ use Illuminate\View\View;
 
 class SettingsController extends Controller
 {
+    public function __construct(
+        private readonly EmvService $emv,
+        private readonly MetaAdsService $metaAds,
+    ) {}
+
     private const SETTINGS_KEYS = [
         'image_max_dimension',
         'image_target_min_kb',
@@ -80,6 +87,11 @@ class SettingsController extends Controller
         'notify_telegram_chat_id',
         // Studio carrousel
         StudioDefaults::FOLDER_KEY,
+        // Meta Ads / EMV (le jeton est chiffré, il ne passe pas par ici)
+        'meta_ads_account_id',
+        'emv_cpm_source',
+        'meta_ads_max_daily_budget',
+        'meta_ads_max_budget_increase_pct',
     ];
 
     private const DEFAULTS = [
@@ -147,6 +159,12 @@ class SettingsController extends Controller
         'notify_telegram_chat_id' => '',
         // Studio carrousel : vide = racine de la médiathèque
         StudioDefaults::FOLDER_KEY => '',
+        // Meta Ads / EMV
+        'meta_ads_account_id' => '',
+        'emv_cpm_source' => 'reference',
+        // Vide = retombe sur config/meta_ads.php (cf. MetaAdsService::numericSetting)
+        'meta_ads_max_daily_budget' => '',
+        'meta_ads_max_budget_increase_pct' => '',
         'inbox_reply_prompt' => "Tu reponds a des commentaires et messages sur les reseaux sociaux. Adapte la longueur et le style de ta reponse au message recu :\n- Emoji seul ou reaction simple (coeur, flamme, applaudissements...) → reponds par 1-2 emojis adaptes, rien d'autre\n- Compliment court (\"bravo\", \"top\", \"j'adore\", \"genial\") → remercie en 2-5 mots max, tu peux ajouter un emoji\n- Question → reponds brievement et precisement, 1-2 phrases max\n- Commentaire developpe ou avis → 1-2 phrases engageantes max\n- Message prive → reponds de maniere naturelle et conversationnelle\n\nRegles absolues :\n- Ne fais JAMAIS une reponse plus longue que le message original\n- Pas de hashtags\n- Pas de formule de politesse generique (\"Merci pour votre commentaire !\")\n- Sois authentique, pas corporate\n- Garde le ton et la personnalite definis dans ton profil",
     ];
 
@@ -200,7 +218,21 @@ class SettingsController extends Controller
             ->sortBy('label', SORT_NATURAL | SORT_FLAG_CASE)
             ->values();
 
-        return view('settings.index', compact('settings', 'hasOpenaiKey', 'availableModels', 'hasNotifyBotToken', 'mediaFolders'));
+        // Tarifs EMV : structure imbriquée (CPM + valeur par action, par réseau),
+        // hors du système clé/valeur plat ci-dessus. Stockés en un seul JSON.
+        $emvRates = $this->emv->allRates();
+        $emvCurrency = $this->emv->currency();
+        $hasMetaAdsToken = $this->metaAds->token() !== null;
+
+        // Valeurs EFFECTIVES (réglage en base sinon config) : le formulaire doit
+        // montrer le plafond qui s'applique vraiment, pas un champ vide.
+        $metaAdsLimits = [
+            'max_daily_budget' => $this->metaAds->maxDailyBudget(),
+            'max_budget_increase_pct' => $this->metaAds->maxBudgetIncreasePct(),
+            'write_enabled' => (bool) config('meta_ads.write_enabled'),
+        ];
+
+        return view('settings.index', compact('settings', 'hasOpenaiKey', 'availableModels', 'hasNotifyBotToken', 'mediaFolders', 'emvRates', 'emvCurrency', 'hasMetaAdsToken', 'metaAdsLimits'));
     }
 
     public function update(Request $request)
@@ -211,6 +243,14 @@ class SettingsController extends Controller
 
         $validated = $request->validate([
             'openai_api_key' => 'nullable|string|min:10',
+            // Meta Ads (lecture du CPM réellement payé)
+            'meta_ads_token' => 'nullable|string|min:20',
+            'meta_ads_account_id' => 'nullable|string|max:64',
+            'emv_cpm_source' => 'required|in:reference,meta_observed',
+            // Garde-fous du pilotage. `min:1` et non `min:0` : un plafond à zéro
+            // bloquerait tout et se lirait comme une panne, pas comme un réglage.
+            'meta_ads_max_daily_budget' => 'nullable|numeric|min:1|max:100000',
+            'meta_ads_max_budget_increase_pct' => 'nullable|numeric|min:1|max:10000',
             'image_max_dimension' => 'required|integer|min:512|max:4096',
             'image_target_min_kb' => 'required|integer|min:50|max:500',
             'image_target_max_kb' => 'required|integer|min:200|max:2000',
@@ -320,11 +360,92 @@ class SettingsController extends Controller
         // Handle notify_publish_error checkbox
         $validated['notify_publish_error'] = $request->has('notify_publish_error') ? true : false;
 
+        // Jeton Meta Ads (chiffré, jamais réaffiché). Vide = on garde l'existant :
+        // le champ est un mot de passe, il revient vide à chaque enregistrement.
+        if ($request->filled('meta_ads_token')) {
+            Setting::setEncrypted('meta_ads_token', $validated['meta_ads_token']);
+        }
+        unset($validated['meta_ads_token']);
+
+        // Le compte publicitaire ou la période ont pu changer : le CPM en cache
+        // porterait sur l'ancien compte.
+        $this->metaAds->forgetCache();
+
+        // Tarifs EMV : un seul JSON, hors du système clé/valeur plat.
+        if ($request->has('emv')) {
+            $this->saveEmvRates($request);
+        }
+
         foreach ($validated as $key => $value) {
             Setting::set($key, $value);
         }
 
         return redirect()->route('settings.index', ['tab' => $request->input('_active_tab', 'ia')])->with('status', 'settings-updated');
+    }
+
+    /**
+     * Surcharge des tarifs EMV.
+     *
+     * On n'enregistre que ce qui s'écarte de config/emv.php : sans ça, un tarif
+     * corrigé en config resterait masqué à vie par une valeur en base identique
+     * à l'ancien défaut.
+     */
+    private function saveEmvRates(Request $request): void
+    {
+        $input = $request->validate([
+            'emv' => 'array',
+            'emv.*.cpm' => 'nullable|numeric|min:0|max:10000',
+            'emv.*.actions.*' => 'nullable|numeric|min:0|max:1000',
+        ])['emv'] ?? [];
+
+        $overrides = [];
+
+        foreach ($input as $slug => $values) {
+            $defaults = $this->emv->defaultRatesFor($slug);
+            $platform = [];
+
+            if (isset($values['cpm']) && $values['cpm'] !== '' && (float) $values['cpm'] !== $defaults['cpm']) {
+                $platform['cpm'] = (float) $values['cpm'];
+            }
+
+            foreach (($values['actions'] ?? []) as $action => $value) {
+                if ($value !== '' && $value !== null && (float) $value !== ($defaults['actions'][$action] ?? 0.0)) {
+                    $platform['actions'][$action] = (float) $value;
+                }
+            }
+
+            if ($platform !== []) {
+                $overrides[$slug] = $platform;
+            }
+        }
+
+        $this->emv->saveOverrides($overrides === [] ? null : ['platforms' => $overrides]);
+    }
+
+    /**
+     * Test de connexion Meta Ads : liste les comptes publicitaires visibles
+     * par le jeton, et remonte le CPM constaté s'il y en a un.
+     */
+    public function testMetaAds(Request $request): JsonResponse
+    {
+        if (! $request->user()->isManager()) {
+            abort(403);
+        }
+
+        $accounts = $this->metaAds->adAccounts();
+
+        if (! $accounts['success']) {
+            return response()->json(['success' => false, 'error' => $accounts['error'], 'accounts' => []]);
+        }
+
+        // Le cache porte sur l'ancien relevé : un test doit interroger Meta.
+        $this->metaAds->forgetCache();
+
+        return response()->json([
+            'success' => true,
+            'accounts' => $accounts['accounts'],
+            'observed_cpm' => $this->metaAds->isConfigured() ? $this->metaAds->observedCpm() : null,
+        ]);
     }
 
     public function testNotification(Request $request): JsonResponse

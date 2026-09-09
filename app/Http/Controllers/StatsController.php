@@ -5,11 +5,14 @@ namespace App\Http\Controllers;
 use App\Models\ExternalPost;
 use App\Models\PostPlatform;
 use App\Models\SocialAccountSnapshot;
+use App\Services\Stats\EmvService;
 use Illuminate\Http\Request;
 use Illuminate\View\View;
 
 class StatsController extends Controller
 {
+    public function __construct(private readonly EmvService $emv) {}
+
     /**
      * Vue d'ensemble — KPIs + filtres.
      */
@@ -24,6 +27,7 @@ class StatsController extends Controller
         $stats = $this->calculateAggregateStats($allPosts);
         $statsByPlatform = $this->getStatsByPlatform($allPosts);
         $statsByAccount = $this->getStatsByAccount($allPosts);
+        $emv = $this->emv->forItems($allPosts);
 
         return view('stats.overview', compact(
             'socialAccounts',
@@ -34,6 +38,7 @@ class StatsController extends Controller
             'stats',
             'statsByPlatform',
             'statsByAccount',
+            'emv',
         ));
     }
 
@@ -166,6 +171,7 @@ class StatsController extends Controller
 
         $statsByPlatform = $this->getStatsByPlatform($allPosts);
         $statsByAccount = $this->getStatsByAccount($allPosts);
+        $emv = $this->emv->forItems($allPosts);
 
         return view('stats.platforms', compact(
             'socialAccounts',
@@ -175,6 +181,7 @@ class StatsController extends Controller
             'endDate',
             'statsByPlatform',
             'statsByAccount',
+            'emv',
         ));
     }
 
@@ -226,8 +233,8 @@ class StatsController extends Controller
         $postPlatforms = $ppQuery->orderBy('published_at', 'desc')->get();
         $externalPosts = $epQuery->orderBy('published_at', 'desc')->get();
 
-        $ppExternalIds = $postPlatforms->map(fn ($pp) => $pp->platform_id . '_' . $pp->external_id)->filter()->toArray();
-        $externalPosts = $externalPosts->reject(fn ($ep) => in_array($ep->platform_id . '_' . $ep->external_id, $ppExternalIds));
+        $ppExternalIds = $postPlatforms->map(fn ($pp) => $pp->platform_id.'_'.$pp->external_id)->filter()->toArray();
+        $externalPosts = $externalPosts->reject(fn ($ep) => in_array($ep->platform_id.'_'.$ep->external_id, $ppExternalIds));
 
         return $postPlatforms->concat($externalPosts);
     }
@@ -272,7 +279,7 @@ class StatsController extends Controller
             $metrics = $item->metrics ?? [];
 
             if ($item instanceof ExternalPost) {
-                $key = 'ext_' . $item->id;
+                $key = 'ext_'.$item->id;
                 $postStats[$key] = [
                     'content' => $item->content,
                     'url' => $item->post_url,

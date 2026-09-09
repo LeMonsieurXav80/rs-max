@@ -68,6 +68,9 @@
                 </div>
             </div>
 
+            {{-- Valorisation des retombées --}}
+            <x-emv-summary :emv="$emv" />
+
             {{-- Stats by platform --}}
             @if(count($statsByPlatform) > 0)
                 <div class="bg-white rounded-2xl shadow-sm border border-gray-100">

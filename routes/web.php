@@ -396,6 +396,7 @@ Route::middleware(['auth', 'verified', 'throttle:600,1'])->group(function () {
         Route::get('settings', [SettingsController::class, 'index'])->name('settings.index');
         Route::patch('settings', [SettingsController::class, 'update'])->name('settings.update');
         Route::post('settings/test-notification', [SettingsController::class, 'testNotification'])->name('settings.testNotification');
+        Route::post('settings/test-meta-ads', [SettingsController::class, 'testMetaAds'])->name('settings.testMetaAds');
 
         // Source items API (for thread creation source browser)
         Route::get('api/source-items/sources', [SourceItemController::class, 'sources'])->name('sourceItems.sources');

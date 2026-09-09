@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use App\Models\Partner;
 use App\Models\Post;
 use App\Services\PartnerTagService;
+use App\Services\Stats\EmvService;
 use Carbon\Carbon;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -13,7 +14,10 @@ use Illuminate\View\View;
 
 class PartnerController extends Controller
 {
-    public function __construct(private readonly PartnerTagService $partners) {}
+    public function __construct(
+        private readonly PartnerTagService $partners,
+        private readonly EmvService $emv,
+    ) {}
 
     public function index(Request $request): View
     {
@@ -194,7 +198,7 @@ class PartnerController extends Controller
 
     /**
      * @param  array<string,mixed>  $filters
-     * @return array{total:int,published:int,scheduled:int,threads:int,by_platform:array<string,int>}
+     * @return array{total:int,published:int,scheduled:int,threads:int,by_platform:array<string,int>,emv:array<string,mixed>}
      */
     private function statsFor(Partner $partner, array $filters): array
     {
@@ -202,10 +206,11 @@ class PartnerController extends Controller
 
         $byPlatform = [];
         if ($ids->isNotEmpty()) {
+            // La table est `post_platform` (singulier) : cf. PostPlatform::$table.
             $byPlatform = \App\Models\PostPlatform::query()
-                ->join('platforms', 'platforms.id', '=', 'post_platforms.platform_id')
-                ->whereIn('post_platforms.post_id', $ids)
-                ->where('post_platforms.status', 'published')
+                ->join('platforms', 'platforms.id', '=', 'post_platform.platform_id')
+                ->whereIn('post_platform.post_id', $ids)
+                ->where('post_platform.status', 'published')
                 ->selectRaw('platforms.slug, COUNT(*) as total')
                 ->groupBy('platforms.slug')
                 ->pluck('total', 'slug')
@@ -223,7 +228,30 @@ class PartnerController extends Controller
             'scheduled' => (int) $statuses->get('scheduled', 0),
             'threads' => $this->threadsQuery($partner, $filters)->count(),
             'by_platform' => $byPlatform,
+            'emv' => $this->emvFor($ids),
         ];
+    }
+
+    /**
+     * Valorisation des retombees des publications taguees.
+     *
+     * Les fils sont exclus : aucune metrique n'est collectee sur
+     * `thread_segment_platform`, il n'y a rien a valoriser.
+     *
+     * @param  \Illuminate\Support\Collection<int,int>  $postIds
+     * @return array<string,mixed>
+     */
+    private function emvFor($postIds): array
+    {
+        $diffusions = $postIds->isEmpty()
+            ? collect()
+            : \App\Models\PostPlatform::with('platform')
+                ->whereIn('post_id', $postIds)
+                ->where('status', 'published')
+                ->whereNotNull('metrics')
+                ->get();
+
+        return $this->emv->forItems($diffusions);
     }
 
     private function refreshMediaBrands(Partner $partner): void

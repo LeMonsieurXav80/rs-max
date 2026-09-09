@@ -469,6 +469,237 @@
                     </div>
                     <p class="text-xs text-gray-400 mt-3">Intervalle : temps minimum entre deux syncs pour un meme post. Age max : les posts plus anciens ne sont plus synchronises automatiquement.</p>
                 </div>
+
+                {{-- Meta Ads : CPM réellement payé --}}
+                <div class="bg-white rounded-2xl border border-gray-100 shadow-sm p-6 mt-6">
+                    <div class="flex items-center gap-3 mb-1">
+                        <svg class="w-5 h-5 text-indigo-500" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1.5">
+                            <path stroke-linecap="round" stroke-linejoin="round" d="M10.5 6a7.5 7.5 0 1 0 7.5 7.5h-7.5V6Z" />
+                            <path stroke-linecap="round" stroke-linejoin="round" d="M13.5 10.5H21A7.5 7.5 0 0 0 13.5 3v7.5Z" />
+                        </svg>
+                        <h2 class="text-base font-semibold text-gray-900">Meta Ads — CPM constate</h2>
+                    </div>
+                    <p class="text-sm text-gray-500 mb-5">
+                        Facultatif. Permet de valoriser l'EMV avec le CPM <strong>reellement paye</strong> sur
+                        tes campagnes Facebook / Instagram, au lieu du bareme de reference.
+                        Utiliser un jeton <strong>« utilisateur systeme »</strong> du portefeuille Business :
+                        il n'expire pas et survit aux changements de mot de passe, contrairement a un jeton
+                        utilisateur. Lecture seule, la permission <code class="text-xs bg-gray-100 px-1 rounded">ads_read</code> suffit.
+                    </p>
+
+                    <div class="grid sm:grid-cols-2 gap-4">
+                        <div>
+                            <label for="meta_ads_token" class="block text-sm font-medium text-gray-700 mb-1">Jeton utilisateur systeme</label>
+                            <input type="password" id="meta_ads_token" name="meta_ads_token" autocomplete="new-password"
+                                   placeholder="{{ $hasMetaAdsToken ? 'Enregistre — laisser vide pour conserver' : 'EAAG…' }}"
+                                   class="w-full rounded-xl border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 text-sm">
+                            @error('meta_ads_token')
+                                <p class="text-xs text-red-600 mt-1">{{ $message }}</p>
+                            @enderror
+                            <p class="text-xs text-gray-400 mt-1">Chiffre en base. Jamais reaffiche.</p>
+                        </div>
+                        <div>
+                            <label for="meta_ads_account_id" class="block text-sm font-medium text-gray-700 mb-1">Compte publicitaire</label>
+                            <input type="text" id="meta_ads_account_id" name="meta_ads_account_id"
+                                   value="{{ $settings['meta_ads_account_id'] }}" placeholder="act_123456789"
+                                   class="w-full rounded-xl border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 text-sm">
+                            @error('meta_ads_account_id')
+                                <p class="text-xs text-red-600 mt-1">{{ $message }}</p>
+                            @enderror
+                            <p class="text-xs text-gray-400 mt-1">Le prefixe <code>act_</code> est ajoute s'il manque.</p>
+                        </div>
+                    </div>
+
+                    <div class="mt-4">
+                        <label for="emv_cpm_source" class="block text-sm font-medium text-gray-700 mb-1">Source du CPM pour l'EMV</label>
+                        <select id="emv_cpm_source" name="emv_cpm_source"
+                                class="w-full sm:w-2/3 rounded-xl border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 text-sm">
+                            <option value="reference" {{ $settings['emv_cpm_source'] === 'reference' ? 'selected' : '' }}>
+                                Bareme de reference (tableau ci-dessous)
+                            </option>
+                            <option value="meta_observed" {{ $settings['emv_cpm_source'] === 'meta_observed' ? 'selected' : '' }}>
+                                CPM constate sur Meta Ads (90 j) — bareme pour les autres reseaux
+                            </option>
+                        </select>
+                        <p class="text-xs text-gray-400 mt-1">
+                            Le CPM constate ne couvre que Facebook, Instagram et Threads : les autres reseaux
+                            gardent leur tarif de reference. Si la devise du compte publicitaire differe de
+                            celle de l'EMV, le bareme est conserve (un CPM en USD sur une valorisation en EUR
+                            serait faux sans le dire).
+                        </p>
+                    </div>
+
+                    {{-- Garde-fous du pilotage --}}
+                    <div class="mt-6 pt-5 border-t border-gray-100">
+                        <h3 class="text-sm font-semibold text-gray-900 mb-1">Garde-fous du pilotage</h3>
+                        <p class="text-sm text-gray-500 mb-4">
+                            S'appliquent aux ecritures via <code class="text-xs bg-gray-100 px-1 rounded">/api/meta-ads/*</code>.
+                            A calibrer sur tes budgets reels : un plafond trop haut ne protege de rien,
+                            trop bas il bloque en permanence.
+                            @if($metaAdsLimits['write_enabled'])
+                                <span class="text-amber-700 font-medium">L'ecriture est actuellement OUVERTE.</span>
+                            @else
+                                L'ecriture est actuellement <strong>fermee</strong>
+                                (<code class="text-xs bg-gray-100 px-1 rounded">META_ADS_WRITE_ENABLED</code>).
+                            @endif
+                        </p>
+
+                        <div class="grid sm:grid-cols-2 gap-4">
+                            <div>
+                                <label for="meta_ads_max_daily_budget" class="block text-sm font-medium text-gray-700 mb-1">
+                                    Plafond de budget quotidien
+                                </label>
+                                <input type="number" step="0.01" min="1" id="meta_ads_max_daily_budget"
+                                       name="meta_ads_max_daily_budget" value="{{ $metaAdsLimits['max_daily_budget'] }}"
+                                       class="w-full rounded-xl border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 text-sm">
+                                @error('meta_ads_max_daily_budget')
+                                    <p class="text-xs text-red-600 mt-1">{{ $message }}</p>
+                                @enderror
+                                <p class="text-xs text-gray-400 mt-1">
+                                    Mur absolu, dans la devise du compte. <strong>Jamais contournable</strong>,
+                                    meme avec <code>force</code>.
+                                </p>
+                            </div>
+                            <div>
+                                <label for="meta_ads_max_budget_increase_pct" class="block text-sm font-medium text-gray-700 mb-1">
+                                    Hausse max en une fois (%)
+                                </label>
+                                <input type="number" step="1" min="1" id="meta_ads_max_budget_increase_pct"
+                                       name="meta_ads_max_budget_increase_pct" value="{{ $metaAdsLimits['max_budget_increase_pct'] }}"
+                                       class="w-full rounded-xl border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 text-sm">
+                                @error('meta_ads_max_budget_increase_pct')
+                                    <p class="text-xs text-red-600 mt-1">{{ $message }}</p>
+                                @enderror
+                                <p class="text-xs text-gray-400 mt-1">
+                                    Au-dela, refus en 422 — contournable par <code>force: true</code>.
+                                    Sur de petits budgets, doubler est banal : ne pas trop serrer.
+                                </p>
+                            </div>
+                        </div>
+                        <p class="text-xs text-gray-400 mt-2">
+                            Vider un champ le fait retomber sur la valeur de <code>config/meta_ads.php</code>.
+                        </p>
+                    </div>
+
+                    @if($hasMetaAdsToken)
+                        <div class="mt-4 pt-4 border-t border-gray-100">
+                            <button type="button" onclick="testMetaAds()"
+                                    class="px-4 py-2 bg-blue-50 text-blue-700 text-xs font-medium rounded-lg hover:bg-blue-100 transition-colors">
+                                Tester la connexion
+                            </button>
+                            <div id="meta-ads-result" class="text-xs mt-2"></div>
+                        </div>
+                        <script>
+                            function testMetaAds() {
+                                const btn = event.target;
+                                const result = document.getElementById('meta-ads-result');
+                                btn.disabled = true;
+                                btn.textContent = 'Test en cours...';
+                                result.textContent = '';
+
+                                fetch('{{ route("settings.testMetaAds") }}', {
+                                    method: 'POST',
+                                    headers: {
+                                        'X-CSRF-TOKEN': '{{ csrf_token() }}',
+                                        'Accept': 'application/json',
+                                    },
+                                }).then(r => r.json()).then(data => {
+                                    if (!data.success) {
+                                        result.className = 'text-xs mt-2 text-red-600';
+                                        result.textContent = 'Erreur : ' + (data.error || 'inconnue');
+                                        return;
+                                    }
+                                    let html = '<p class="text-green-600">Connexion OK — '
+                                        + data.accounts.length + ' compte(s) publicitaire(s) visible(s) :</p><ul class="mt-1 space-y-0.5">';
+                                    data.accounts.forEach(a => {
+                                        html += '<li class="text-gray-600"><code>' + a.id + '</code> — '
+                                            + a.name + ' (' + (a.currency || '?') + ')'
+                                            + (a.active ? '' : ' <span class="text-amber-600">inactif</span>') + '</li>';
+                                    });
+                                    html += '</ul>';
+                                    const cpm = data.observed_cpm;
+                                    if (cpm && cpm.available) {
+                                        html += '<p class="mt-2 text-gray-600">CPM constate sur ' + cpm.days + ' j ('
+                                            + (cpm.currency || '?') + ') : ';
+                                        html += Object.entries(cpm.platforms).map(
+                                            ([slug, d]) => slug + ' ' + d.cpm).join(' · ');
+                                        html += '</p>';
+                                    } else if (cpm && cpm.error) {
+                                        html += '<p class="mt-2 text-amber-600">CPM indisponible : ' + cpm.error + '</p>';
+                                    }
+                                    result.className = 'text-xs mt-2';
+                                    result.innerHTML = html;
+                                }).catch(() => {
+                                    result.className = 'text-xs mt-2 text-red-600';
+                                    result.textContent = 'Erreur reseau';
+                                }).finally(() => {
+                                    btn.disabled = false;
+                                    btn.textContent = 'Tester la connexion';
+                                });
+                            }
+                        </script>
+                    @endif
+                </div>
+
+                {{-- Tarifs EMV --}}
+                <div class="bg-white rounded-2xl border border-gray-100 shadow-sm p-6 mt-6">
+                    <div class="flex items-center gap-3 mb-1">
+                        <svg class="w-5 h-5 text-indigo-500" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1.5">
+                            <path stroke-linecap="round" stroke-linejoin="round" d="M12 6v12m-3-2.818.879.659c1.171.879 3.07.879 4.242 0 1.172-.879 1.172-2.303 0-3.182C13.536 12.219 12.768 12 12 12c-.725 0-1.45-.22-2.003-.659-1.106-.879-1.106-2.303 0-3.182s2.9-.879 4.006 0l.415.33M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z" />
+                        </svg>
+                        <h2 class="text-base font-semibold text-gray-900">Valeur média acquise (EMV)</h2>
+                    </div>
+                    <p class="text-sm text-gray-500 mb-5">
+                        Tarifs de reference servant a valoriser les retombees, en {{ $emvCurrency }}.
+                        Le calcul se fait a chaque affichage : modifier un tarif recalcule tout l'historique,
+                        aucun montant n'est fige en base. Laisser la valeur d'origine revient a ne rien surcharger.
+                    </p>
+
+                    <div class="overflow-x-auto">
+                        <table class="w-full text-sm">
+                            <thead>
+                                <tr class="border-b border-gray-100 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                                    <th class="py-2 pr-4">Reseau</th>
+                                    <th class="py-2 px-3">CPM</th>
+                                    <th class="py-2 px-3">Like</th>
+                                    <th class="py-2 px-3">Commentaire</th>
+                                    <th class="py-2 px-3">Partage</th>
+                                    <th class="py-2 px-3">Favori</th>
+                                </tr>
+                            </thead>
+                            <tbody class="divide-y divide-gray-50">
+                                @foreach($emvRates as $slug => $rate)
+                                    <tr>
+                                        <td class="py-3 pr-4 font-medium text-gray-700">{{ $slug }}</td>
+                                        <td class="py-3 px-3">
+                                            @if($rate['views_available'])
+                                                <input type="number" step="0.01" min="0"
+                                                       name="emv[{{ $slug }}][cpm]" value="{{ $rate['cpm'] }}"
+                                                       class="w-24 rounded-lg border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 text-sm">
+                                            @else
+                                                {{-- Pas de vues exposees par l'API : un CPM n'y produirait rien. --}}
+                                                <span class="text-xs text-gray-400" title="Cette API n'expose aucune vue">sans vues</span>
+                                            @endif
+                                        </td>
+                                        @foreach(['like', 'comment', 'share', 'bookmark'] as $action)
+                                            <td class="py-3 px-3">
+                                                <input type="number" step="0.01" min="0"
+                                                       name="emv[{{ $slug }}][actions][{{ $action }}]"
+                                                       value="{{ $rate['actions'][$action] ?? 0 }}"
+                                                       class="w-20 rounded-lg border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 text-sm">
+                                            </td>
+                                        @endforeach
+                                    </tr>
+                                @endforeach
+                            </tbody>
+                        </table>
+                    </div>
+                    <p class="text-xs text-gray-400 mt-3">
+                        CPM : cout pour 1000 vues en publicite payante, base de la methode « impressions ».
+                        Les valeurs par action alimentent la methode « engagement » (indice Ayzenberg) ;
+                        la vue y vaut 0 a dessein, sans quoi la meme audience serait comptee deux fois.
+                    </p>
+                </div>
             </div>
 
             {{-- ═══════════════════════════════════════ --}}

@@ -46,6 +46,11 @@
         </div>
     </div>
 
+    {{-- Valorisation des retombées --}}
+    <div class="mb-6">
+        <x-emv-summary :emv="$stats['emv']" />
+    </div>
+
     {{-- Filtres --}}
     <form method="GET" action="{{ route('partners.posts', $partner) }}"
           class="bg-white rounded-2xl shadow-sm border border-gray-100 p-4 mb-6 flex flex-wrap items-end gap-4">
