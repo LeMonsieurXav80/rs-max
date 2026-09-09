@@ -64,6 +64,10 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::get('/meta-ads/campaigns', [MetaAdsApiController::class, 'campaigns']);
     Route::get('/meta-ads/insights', [MetaAdsApiController::class, 'insights']); // avant /campaigns/{id}
     Route::get('/meta-ads/logs', [MetaAdsApiController::class, 'logs']);
+    Route::get('/meta-ads/boosts', [MetaAdsApiController::class, 'boosts']);
+    // Sponsorise une publication RS-Max deja publiee, sans la republier.
+    // Cree la campagne EN PAUSE : l'activation passe par /status.
+    Route::post('/meta-ads/boost', [MetaAdsApiController::class, 'boost']);
     Route::get('/meta-ads/campaigns/{object}', [MetaAdsApiController::class, 'campaign']);
     Route::post('/meta-ads/{object}/status', [MetaAdsApiController::class, 'updateStatus']);
     Route::post('/meta-ads/{object}/budget', [MetaAdsApiController::class, 'updateBudget']);

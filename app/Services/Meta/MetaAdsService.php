@@ -319,6 +319,144 @@ class MetaAdsService
         return $minor === null || $minor === '' ? null : round(((int) $minor) / 100, 2);
     }
 
+    // ── Sponsorisation d'une publication existante ───────────
+
+    /**
+     * Sponsorise une publication organique DEJA PUBLIEE, sans la republier.
+     *
+     * Meta n'a pas d'endpoint « booster » : il faut monter les quatre objets
+     * (campagne → ad set → creatif → annonce). Le creatif ne porte aucun
+     * contenu, seulement une REFERENCE a la publication existante :
+     *   - Facebook  : `object_story_id` = {page_id}_{post_id}
+     *   - Instagram : `instagram_user_id` + `source_instagram_media_id`
+     * C'est ce qui fait qu'on sponsorise le post d'origine — avec ses likes et
+     * ses commentaires — au lieu d'en publier un double.
+     *
+     * Tout est cree en PAUSED : monter la structure ne coute rien, c'est
+     * l'activation qui depense. Elle se fait ensuite par updateStatus(), qui
+     * passe par les garde-fous et le journal.
+     *
+     * @param  array{platform:string,object_story_id?:string,instagram_media_id?:string,instagram_user_id?:string,page_id?:string,name:string,budget:float,days:int}  $spec
+     * @return array{success:bool,error:?string,ids:array<string,?string>}
+     */
+    public function createBoost(array $spec): array
+    {
+        $ids = ['campaign_id' => null, 'adset_id' => null, 'creative_id' => null, 'ad_id' => null];
+
+        $campaign = $this->post($this->accountId().'/campaigns', [
+            'name' => $spec['name'],
+            'objective' => 'OUTCOME_ENGAGEMENT',
+            'status' => 'PAUSED',
+            'special_ad_categories' => json_encode([]),
+            // Exige par l'API depuis 2026 des lors que le budget est porte par
+            // l'ad set et non par la campagne. Son absence renvoie un 4834011.
+            'is_adset_budget_sharing_enabled' => 'false',
+        ], returnId: true);
+
+        if (! $campaign['success']) {
+            return ['success' => false, 'error' => $campaign['error'], 'ids' => $ids];
+        }
+        $ids['campaign_id'] = $campaign['id'];
+
+        // Budget de DUREE DE VIE, pas quotidien : un boost doit etre borne dans
+        // le temps ET dans la depense totale. Un budget quotidien sans date de
+        // fin tournerait indefiniment.
+        $adset = $this->post($this->accountId().'/adsets', [
+            'name' => $spec['name'],
+            'campaign_id' => $campaign['id'],
+            'lifetime_budget' => (string) (int) round($spec['budget'] * 100),
+            'billing_event' => 'IMPRESSIONS',
+            'optimization_goal' => 'POST_ENGAGEMENT',
+            'start_time' => now()->toIso8601String(),
+            'end_time' => now()->addDays($spec['days'])->toIso8601String(),
+            'targeting' => json_encode($spec['targeting'] ?? [
+                'geo_locations' => ['countries' => ['PT']],
+                'publisher_platforms' => ['facebook', 'instagram'],
+            ]),
+            'status' => 'PAUSED',
+        ], returnId: true);
+
+        if (! $adset['success']) {
+            return $this->rollbackBoost($ids, $adset['error']);
+        }
+        $ids['adset_id'] = $adset['id'];
+
+        $creativePayload = $spec['platform'] === 'instagram'
+            ? [
+                'name' => $spec['name'],
+                'instagram_user_id' => $spec['instagram_user_id'],
+                'source_instagram_media_id' => $spec['instagram_media_id'],
+            ]
+            : [
+                'name' => $spec['name'],
+                'object_story_id' => $spec['object_story_id'],
+            ];
+
+        $creative = $this->post($this->accountId().'/adcreatives', $creativePayload, returnId: true);
+
+        if (! $creative['success']) {
+            return $this->rollbackBoost($ids, $creative['error']);
+        }
+        $ids['creative_id'] = $creative['id'];
+
+        $ad = $this->post($this->accountId().'/ads', [
+            'name' => $spec['name'],
+            'adset_id' => $adset['id'],
+            'creative' => json_encode(['creative_id' => $creative['id']]),
+            'status' => 'PAUSED',
+        ], returnId: true);
+
+        if (! $ad['success']) {
+            return $this->rollbackBoost($ids, $ad['error']);
+        }
+        $ids['ad_id'] = $ad['id'];
+
+        return ['success' => true, 'error' => null, 'ids' => $ids];
+    }
+
+    /**
+     * Supprime ce qui a ete cree avant l'echec.
+     *
+     * Sans ca, un boost interrompu au 3e appel laisse une campagne et un ad set
+     * orphelins dans le compte, qu'aucun ecran RS-Max ne montre. Supprimer la
+     * campagne emporte ses enfants.
+     *
+     * @param  array<string,?string>  $ids
+     * @return array{success:bool,error:?string,ids:array<string,?string>}
+     */
+    private function rollbackBoost(array $ids, ?string $error): array
+    {
+        if ($ids['campaign_id']) {
+            $deleted = $this->post($ids['campaign_id'], ['status' => 'DELETED']);
+
+            if (! $deleted['success']) {
+                Log::error('MetaAdsService: rollback du boost impossible, campagne orpheline', [
+                    'campaign_id' => $ids['campaign_id'],
+                    'error' => $deleted['error'],
+                ]);
+
+                $error .= ' (attention : campagne '.$ids['campaign_id'].' laissée en place, à supprimer à la main)';
+            }
+        }
+
+        return ['success' => false, 'error' => $error, 'ids' => $ids];
+    }
+
+    /**
+     * Valide un appel de creation sans rien creer (execution_options).
+     *
+     * Sert au dry-run : Meta verifie la publication, les droits et le budget,
+     * et rend l'erreur exacte — donc un plan qui ment beaucoup moins qu'une
+     * simulation faite de notre cote.
+     *
+     * @param  array<string,mixed>  $payload
+     * @return array{success:bool,error:?string}
+     */
+    public function validateOnly(string $path, array $payload): array
+    {
+        return $this->post($path, $payload + ['execution_options' => json_encode(['validate_only'])]);
+    }
+
     // ── Transport ────────────────────────────────────────────
 
     /**
@@ -353,7 +491,7 @@ class MetaAdsService
      * @param  array<string,mixed>  $payload
      * @return array{success:bool,error:?string}
      */
-    private function post(string $path, array $payload): array
+    private function post(string $path, array $payload, bool $returnId = false): array
     {
         if (! $this->isConfigured()) {
             return ['success' => false, 'error' => 'Compte publicitaire non configuré.'];
@@ -369,7 +507,7 @@ class MetaAdsService
                 return ['success' => false, 'error' => $this->errorMessage($response->json())];
             }
 
-            return ['success' => true, 'error' => null];
+            return ['success' => true, 'error' => null] + ($returnId ? ['id' => $response->json('id')] : []);
         } catch (\Throwable $e) {
             Log::error('MetaAdsService: POST a échoué', ['path' => $path, 'error' => $e->getMessage()]);
 
@@ -476,12 +614,21 @@ class MetaAdsService
     private function errorMessage(?array $body): string
     {
         $error = $body['error'] ?? [];
-        $message = $error['message'] ?? 'Erreur inconnue';
+        // error_user_msg est le message lisible (et traduit) de Meta ; `message`
+        // se reduit souvent a « Invalid parameter », qui n'aide personne.
+        $message = $error['error_user_msg'] ?? $error['message'] ?? 'Erreur inconnue';
 
         // 190/460 = le token utilisateur est mort avec la session (changement de
         // mot de passe). C'est precisement ce qu'un token systeme evite.
         if (($error['code'] ?? null) === 190) {
             $message .= ' — jeton invalide : utiliser un token « utilisateur système » du portefeuille Business, il survit aux changements de mot de passe.';
+        }
+
+        // 1885557 : publication introuvable OU Page non accessible au jeton. Le
+        // second cas est le plus frequent et le message de Meta ne le distingue
+        // pas — sans cette precision on cherche du cote du post pour rien.
+        if (($error['error_subcode'] ?? null) === 1885557) {
+            $message .= ' — vérifier que la Page est bien attribuée à l\'utilisateur système (Paramètres d\'entreprise → Utilisateurs système → Ajouter des actifs → Pages) et que le jeton porte `pages_manage_ads`.';
         }
 
         return $message;

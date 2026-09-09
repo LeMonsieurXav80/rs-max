@@ -1223,3 +1223,50 @@ précédent — sans lui, un retour arrière se ferait à l'aveugle.
 Deux rappels qui évitent des conclusions fausses : les chiffres de performance Meta
 ne sont **fiables qu'à J+4**, et des impressions à zéro signalent le plus souvent une
 campagne qui ne diffuse pas (plafond, ciblage vide), pas une enchère trop basse.
+
+### Sponsoriser une publication existante
+
+```
+POST /api/meta-ads/boost   {"post_platform_id": 812, "budget": 10, "days": 5, "dry_run": false}
+GET  /api/meta-ads/boosts?post_platform_id=812
+```
+
+Sponsorise une publication **déjà publiée**, sans la republier : le post d'origine est
+promu **avec ses likes et ses commentaires**. On désigne une diffusion RS-Max
+(`post_platform_id`), pas un identifiant Meta brut — RS-Max connaît déjà la Page et
+l'id du post.
+
+Meta n'a pas d'endpoint « booster » : RS-Max monte les quatre objets
+(campagne → ad set → créatif → annonce). Le créatif ne porte aucun contenu, seulement
+une **référence** :
+
+| Réseau | Champ de référence | Source RS-Max |
+|---|---|---|
+| Facebook | `object_story_id` = `{page_id}_{post_id}` | `platform_account_id` + `external_id` |
+| Instagram | `instagram_user_id` + `source_instagram_media_id` | `platform_account_id` + `external_id` |
+
+**Trois garde-fous spécifiques au boost**, en plus des cinq généraux :
+
+1. **Budget borné dans le temps ET en montant** — `budget` est un total, `days` une
+   durée (max 30). Traduit en `lifetime_budget` + `end_time`, jamais en budget
+   quotidien sans fin, qui tournerait indéfiniment.
+2. **Le plafond s'applique au quotidien équivalent** (`budget / days`) : « 300 € sur
+   3 jours » est refusé comme 100 €/jour, malgré un total d'apparence raisonnable.
+3. **Tout est créé en `PAUSED`.** Monter la structure ne coûte rien, l'activer dépense.
+   Le lancement se fait ensuite par `POST /api/meta-ads/{adset_id}/status`
+   `{"status":"ACTIVE","dry_run":false}` — donc via les garde-fous et le journal.
+
+En `dry_run` (défaut), RS-Max demande à **Meta** de valider le créatif
+(`execution_options=['validate_only']`) : la publication et les droits sont testés pour
+de vrai, et `promotable` dit si le boost passera. Rien n'est créé.
+
+Si une étape échoue en cours de route, la campagne déjà créée est supprimée —
+sans quoi le compte se remplirait d'orphelins qu'aucun écran RS-Max ne montre.
+Le lien publication ↔ campagne est conservé dans `meta_ads_boosts`, ce qui permet
+d'ajuster ou d'arrêter ensuite depuis le post.
+
+> **Prérequis Facebook** : l'utilisateur système doit avoir la **Page** en actif
+> (pas seulement le compte publicitaire) et le jeton doit porter `pages_manage_ads`.
+> Sans ça, Meta renvoie le sous-code `1885557` (« publication indisponible »), qui ne
+> dit pas que le vrai problème est l'accès à la Page — RS-Max ajoute la précision.
+> **Instagram fonctionne sans accès Page.**
