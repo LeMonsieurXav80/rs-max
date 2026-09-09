@@ -21,6 +21,8 @@
 
     $anchor = \App\Services\Carousel\Anchor::resolve($data['position'] ?? 'middle-left', $image ? $overlay : $bg);
     $shift = \App\Services\Carousel\Anchor::offsetTransform($data['offset'] ?? 0, $h);
+    // Voile de lisibilité : actif par défaut, coupable slide par slide (slot `scrim`).
+    $showScrim = filter_var($data['scrim'] ?? true, FILTER_VALIDATE_BOOLEAN);
 
     // Échelle typographique du thème : la citation est composée en police de
     // titre (guillemet compris), la signature en police de texte.
@@ -42,7 +44,9 @@
             <img src="{{ $image }}" alt=""
                  style="display:block; width:100%; height:100%; object-fit:cover;">
         </div>
-        <div style="{{ $anchor['scrim'] }}"></div>
+        @if ($showScrim)
+            <div style="{{ $anchor['scrim'] }}"></div>
+        @endif
     @endif
 
     <div style="position:absolute; inset:0; display:flex; flex-direction:column;

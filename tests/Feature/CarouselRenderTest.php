@@ -81,6 +81,47 @@ class CarouselRenderTest extends TestCase
     }
 
     /**
+     * Le slot `scrim` coupe le voile de lisibilité sur toutes les briques qui en
+     * peignent un. Repères : ancre haute/basse => `linear-gradient(to top|bottom)`,
+     * ancre centrale => aplat à `opacity:0.45`.
+     */
+    public function test_le_voile_de_lisibilite_se_coupe_par_slide(): void
+    {
+        $filename = 'test_scrim_'.uniqid().'.png';
+        $png = base64_decode('iVBORw0KGgoAAAANSUhEUgAAAAIAAAACCAYAAACgL26xAAAAF0lEQVR4nGP8//8/AzJgYkAD5AswMDAAAA0OAgOfEE2OAAAAAElFTkSuQmCC');
+        \Illuminate\Support\Facades\Storage::disk('local')->put("media/{$filename}", $png);
+
+        // Les 6 briques qui posent du texte sur une photo. Les quatre dernières
+        // n'ont d'image (donc de voile) que si on leur en donne une.
+        $bases = [
+            'photo-title-bl' => ['title' => 'T'],
+            'text-on-image' => ['title' => 'T'],
+            'quote' => ['quote' => 'Q'],
+            'numbered' => ['number' => '01', 'title' => 'T'],
+            'long-text' => ['body' => 'B'],
+            'cta-end' => ['title' => 'T'],
+        ];
+
+        foreach ($bases as $brick => $base) {
+            $base['image'] = "/media/{$filename}";
+
+            $avec = $this->service()->buildHtml('4:5', [['brick' => $brick, 'data' => $base]]);
+            $sans = $this->service()->buildHtml('4:5', [['brick' => $brick, 'data' => $base + ['scrim' => false]]]);
+
+            $voile = fn (string $html) => preg_match('/linear-gradient\(to (top|bottom)/', $html) === 1
+                || str_contains($html, 'opacity:0.45');
+
+            // Slot absent => voile actif : les compositions existantes ne bougent pas.
+            $this->assertTrue($voile($avec), "voile attendu sur {$brick}");
+            $this->assertFalse($voile($sans), "voile coupé attendu sur {$brick}");
+            // Seul le voile disparaît : la photo et le texte restent.
+            $this->assertStringContainsString('data:image/png;base64,', $sans);
+        }
+
+        \Illuminate\Support\Facades\Storage::disk('local')->delete("media/{$filename}");
+    }
+
+    /**
      * `number_style` choisit l'habillage du numéro sans changer de brique.
      * Repères dans le HTML : la pastille est le seul élément en `border-radius:999px`,
      * le filigrane le seul en `opacity:0.16`.

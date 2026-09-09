@@ -43,7 +43,7 @@ fournies ; on peut en créer d'autres (§ 8).
 | `position` | une des 9 ancres (`bottom-left`, `middle-center`…) | grille 3×3 |
 | `range` | nombre borné | ex. `offset` = décalage vertical en % de la hauteur |
 | `select` | une des options annoncées | ex. `columns` |
-| `toggle` | booléen | ex. `extend_image` (continuité d'image) |
+| `toggle` | booléen | ex. `extend_image` (continuité d'image), `scrim` (dégradé) |
 
 **Thème** — l'apparence, commune à toute la production : 8 couleurs, 2 polices et
 2 échelles typographiques. Identique pour l'image seule et pour le carrousel.
@@ -513,17 +513,17 @@ Pour un carrousel, reprendre les `items[]` **dans l'ordre** — c'est celui des 
 
 | Slug | Nom | Slots |
 |---|---|---|
-| `photo-title-bl` | Photo + titre positionnable | `image`, `extend_image`, `title`, `subtitle`, `position`, `offset` |
+| `photo-title-bl` | Photo + titre positionnable | `image`, `extend_image`, `scrim`, `title`, `subtitle`, `position`, `offset` |
 | `image-full` | Image seule (plein cadre) | `image`, `extend_image` |
-| `text-on-image` | Texte sur image de fond | `image`, `extend_image`, `title`, `body`, `position`, `offset` |
+| `text-on-image` | Texte sur image de fond | `image`, `extend_image`, `scrim`, `title`, `body`, `position`, `offset` |
 | `bold-text` | Texte plein (sans image) | `title`, `subtitle`, `position`, `offset` |
-| `long-text` | Texte long | `title`, `body` (1800), `align`, `image`, `extend_image`, `position`, `offset` |
+| `long-text` | Texte long | `title`, `body` (1800), `align`, `image`, `extend_image`, `scrim`, `position`, `offset` |
 | `bar-chart` | Histogramme | `title`, `items`, `direction`, `note` |
 | `stat-grid` | Grille de chiffres | `title`, `items`, `columns` |
-| `quote` | Citation | `quote`, `author`, `image`, `extend_image`, `position`, `offset` |
+| `quote` | Citation | `quote`, `author`, `image`, `extend_image`, `scrim`, `position`, `offset` |
 | `table-rows` | Tableau | `title`, `rows`, `note` |
-| `numbered` | Slide numérotée | `number`, `number_style`, `title`, `body`, `image`, `extend_image`, `position`, `offset` |
-| `cta-end` | Slide de fin (appel à l'action) | `title`, `subtitle`, `handle`, `image`, `extend_image`, `position`, `offset` |
+| `numbered` | Slide numérotée | `number`, `number_style`, `title`, `body`, `image`, `extend_image`, `scrim`, `position`, `offset` |
+| `cta-end` | Slide de fin (appel à l'action) | `title`, `subtitle`, `handle`, `image`, `extend_image`, `scrim`, `position`, `offset` |
 
 Défauts notables : `photo-title-bl` ancre en `bottom-left`, `text-on-image` et
 `cta-end` en `middle-center`, `bold-text`/`quote`/`numbered` en `middle-left`,
@@ -552,6 +552,36 @@ Le groupe s'arrête sans erreur si la slide suivante ne sait pas peindre d'image
 la slide n'a pas de photo. Le rendu vaut surtout pour des photos **paysage** :
 l'image est recadrée en `cover` sur un cadre 2 à 3 fois plus large que haut, donc
 un portrait s'y ferait sévèrement rogner.
+
+### Dégradé de lisibilité (`scrim`)
+
+Une brique qui pose du texte sur une photo peint sous ce texte un **voile
+sombre**, orienté selon l'ancre verticale : dégradé descendant en `top-*`,
+montant en `bottom-*`, aplat uniforme à 45 % en `middle-*`. C'est lui qui rend un
+titre blanc lisible sur un ciel clair.
+
+Le booléen `scrim` le coupe **slide par slide**, sans changer de brique ni de
+thème — pour une photo déjà sombre, ou quand le voile abîme l'image :
+
+```json
+{"brick": "photo-title-bl", "data": {"image": 4213, "title": "Sans voile", "scrim": false}},
+{"brick": "photo-title-bl", "data": {"image": 4214, "title": "Avec voile"}}
+```
+
+À savoir :
+
+- **`true` par défaut**, y compris pour une composition enregistrée avant
+  l'existence du slot : le rendu des carrousels existants ne bouge pas ;
+- il ne porte que sur les briques à texte-sur-photo listées ci-dessus.
+  `image-full` n'en a jamais eu, `bold-text`/`bar-chart`/`stat-grid`/`table-rows`
+  n'affichent pas de photo ;
+- sur les briques à image **optionnelle** (`quote`, `numbered`, `long-text`,
+  `cta-end`), le voile n'existe déjà que si une photo est présente : `scrim` n'a
+  alors aucun effet visible sur une slide sans image ;
+- la **couleur** du voile reste celle du thème (`overlay`) et vaut pour toute la
+  production ; `scrim` décide de sa présence, pas de sa teinte ;
+- dans un template maison (§ 8), le voile est à vous : c'est la classe
+  `.brick-scrim`, à piloter par le slot booléen de votre choix.
 
 `long-text` prend le relais de `text-on-image` quand c'est le TEXTE qui commande :
 jusqu'à 1800 signes, la taille et l'interligne descendent par paliers selon la

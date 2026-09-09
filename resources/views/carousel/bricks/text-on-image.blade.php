@@ -17,6 +17,8 @@
     $bodyFont = $theme['body_font'] ?? 'Poppins';
 
     $anchor = \App\Services\Carousel\Anchor::resolve($data['position'] ?? 'middle-center', $overlay);
+    // Voile de lisibilité : actif par défaut, coupable slide par slide (slot `scrim`).
+    $showScrim = filter_var($data['scrim'] ?? true, FILTER_VALIDATE_BOOLEAN);
     $shift = \App\Services\Carousel\Anchor::offsetTransform($data['offset'] ?? 0, $h);
 
     // Échelle typographique du thème : multiplie les fractions ci-dessous.
@@ -40,7 +42,9 @@
     @endif
 
     {{-- Voile de lisibilité, orienté selon l'ancre verticale --}}
-    <div style="{{ $anchor['scrim'] }}"></div>
+    @if ($showScrim)
+        <div style="{{ $anchor['scrim'] }}"></div>
+    @endif
 
     <div style="position:absolute; inset:0; display:flex; flex-direction:column;
                 justify-content:{{ $anchor['justify'] }}; align-items:{{ $anchor['align'] }};

@@ -179,6 +179,11 @@ return [
                     'type' => 'toggle',
                     'default' => false,
                 ],
+                'scrim' => [
+                    'label' => 'Dégradé de lisibilité sur la photo',
+                    'type' => 'toggle',
+                    'default' => true,
+                ],
                 'title' => ['label' => 'Titre', 'type' => 'text', 'max_length' => 200],
                 'subtitle' => ['label' => 'Sous-titre (optionnel)', 'type' => 'text', 'max_length' => 300],
                 'position' => ['label' => 'Emplacement du titre', 'type' => 'position', 'default' => 'bottom-left'],
@@ -216,6 +221,11 @@ return [
                     'label' => 'Prolonger la photo sur la slide suivante',
                     'type' => 'toggle',
                     'default' => false,
+                ],
+                'scrim' => [
+                    'label' => 'Dégradé de lisibilité sur la photo',
+                    'type' => 'toggle',
+                    'default' => true,
                 ],
                 'title' => ['label' => 'Titre', 'type' => 'text', 'max_length' => 200],
                 'body' => ['label' => 'Paragraphe (optionnel)', 'type' => 'textarea', 'max_length' => 600],
@@ -268,6 +278,11 @@ return [
                     'label' => 'Prolonger la photo sur la slide suivante',
                     'type' => 'toggle',
                     'default' => false,
+                ],
+                'scrim' => [
+                    'label' => 'Dégradé de lisibilité sur la photo',
+                    'type' => 'toggle',
+                    'default' => true,
                 ],
                 'position' => ['label' => 'Emplacement du bloc', 'type' => 'position', 'default' => 'middle-left'],
                 'offset' => [
@@ -335,6 +350,11 @@ return [
                     'type' => 'toggle',
                     'default' => false,
                 ],
+                'scrim' => [
+                    'label' => 'Dégradé de lisibilité sur la photo',
+                    'type' => 'toggle',
+                    'default' => true,
+                ],
                 'position' => ['label' => 'Emplacement du texte', 'type' => 'position', 'default' => 'middle-left'],
                 'offset' => [
                     'label' => 'Décalage vertical',
@@ -386,6 +406,11 @@ return [
                     'type' => 'toggle',
                     'default' => false,
                 ],
+                'scrim' => [
+                    'label' => 'Dégradé de lisibilité sur la photo',
+                    'type' => 'toggle',
+                    'default' => true,
+                ],
                 'position' => ['label' => 'Emplacement du texte', 'type' => 'position', 'default' => 'middle-left'],
                 'offset' => [
                     'label' => 'Décalage vertical',
@@ -409,6 +434,11 @@ return [
                     'label' => 'Prolonger la photo sur la slide suivante',
                     'type' => 'toggle',
                     'default' => false,
+                ],
+                'scrim' => [
+                    'label' => 'Dégradé de lisibilité sur la photo',
+                    'type' => 'toggle',
+                    'default' => true,
                 ],
                 'position' => ['label' => 'Emplacement du texte', 'type' => 'position', 'default' => 'middle-center'],
                 'offset' => [

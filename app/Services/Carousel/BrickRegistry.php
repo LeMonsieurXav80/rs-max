@@ -616,7 +616,12 @@ class BrickRegistry
                 : $slot['default'],
 
             // JSON envoie true/false, un formulaire "1"/"on" : les deux comptent.
-            'toggle' => filter_var($value, FILTER_VALIDATE_BOOLEAN),
+            // Slot ABSENT => le défaut du manifeste, pas `false` : un toggle actif
+            // par défaut (le voile de lisibilité) doit survivre à une composition
+            // enregistrée avant l'existence du slot.
+            'toggle' => $value === null
+                ? (bool) $slot['default']
+                : filter_var($value, FILTER_VALIDATE_BOOLEAN),
 
             'range' => $this->clamp(
                 is_numeric($value) ? (float) $value : (float) $slot['default'],

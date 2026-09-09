@@ -222,6 +222,40 @@ class CarouselApiTest extends TestCase
         $this->assertStringContainsString('#101820e6', $html);
     }
 
+    /**
+     * Le voile se coupe SLIDE PAR SLIDE. Le repère est la couleur de voile suivie
+     * du canal alpha (`#101820e6`) : elle n'apparaît que si le scrim est peint.
+     */
+    public function test_le_degrade_est_desactivable_slide_par_slide(): void
+    {
+        $this->actAsApiUser();
+
+        $html = $this->postJson('/api/carousel/preview', [
+            'ratio' => '4:5',
+            'theme' => ['overlay' => '#101820'],
+            'slides' => [
+                // Slot ABSENT => voile actif : une composition antérieure au slot
+                // doit rendre exactement comme avant.
+                ['brick' => 'photo-title-bl', 'data' => ['title' => 'Avec voile']],
+                ['brick' => 'photo-title-bl', 'data' => ['title' => 'Sans voile', 'scrim' => false]],
+                ['brick' => 'photo-title-bl', 'data' => ['title' => 'Voile explicite', 'scrim' => true]],
+            ],
+        ])->assertOk()->getContent();
+
+        $this->assertSame(2, substr_count($html, '#101820e6'), 'deux slides voilées sur trois');
+        $this->assertStringContainsString('Sans voile', $html);
+    }
+
+    public function test_un_degrade_non_booleen_est_rejete(): void
+    {
+        $this->actAsApiUser();
+
+        $this->postJson('/api/carousel/preview', [
+            'ratio' => '4:5',
+            'slides' => [['brick' => 'photo-title-bl', 'data' => ['title' => 'X', 'scrim' => 'oui']]],
+        ])->assertStatus(422);
+    }
+
     public function test_une_couleur_invalide_est_refusee(): void
     {
         $this->actAsApiUser();
