@@ -32,9 +32,10 @@
     $subSize = (int) round($h * 0.032 * $bs);
 @endphp
 
-{{-- Fond : dégradé très léger plutôt qu'aplat, pour éviter l'effet « bloc mort ». --}}
+{{-- Fond : dégradé très léger plutôt qu'aplat, pour éviter l'effet « bloc mort »
+     — sauf si la slide coupe le dégradé (slot `bg_gradient`). --}}
 <div style="position:absolute; inset:0;
-            background:linear-gradient(160deg, {{ $bg }} 0%, {{ $bg }} 55%, {{ $accentAlt }}22 100%);
+            background:{{ \App\Services\Carousel\Palette::surface($theme, $data, 55, '22') }};
             display:flex; flex-direction:column;
             justify-content:{{ $anchor['justify'] }}; align-items:{{ $anchor['align'] }};
             padding:{{ $pad }}px; {{ $shift }}">

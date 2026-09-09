@@ -103,6 +103,33 @@ final class Palette
     }
 
     /**
+     * Fond d'une slide SANS photo : un dégradé très léger vers la seconde couleur
+     * de marque plutôt qu'un aplat, pour éviter l'effet « bloc mort ».
+     *
+     * Le slot `bg_gradient` le coupe slide par slide et rend un aplat uni. Slot
+     * ABSENT => dégradé actif, pour que les compositions antérieures au slot
+     * rendent à l'identique.
+     *
+     * L'alpha est passé en hex plutôt qu'en flottant : ce sont les valeurs
+     * historiques de chaque brique, les convertir les décalerait d'un cran.
+     *
+     * @param  array<string, mixed>  $theme
+     * @param  array<string, mixed>  $data  Données de la slide (slot `bg_gradient`)
+     * @param  int  $stop  Position en % où la teinte commence à monter
+     * @param  string  $alpha  Canal alpha (2 chiffres hex) de la teinte finale
+     */
+    public static function surface(array $theme, array $data, int $stop, string $alpha): string
+    {
+        $bg = self::background($theme);
+
+        if (! filter_var($data['bg_gradient'] ?? true, FILTER_VALIDATE_BOOLEAN)) {
+            return $bg;
+        }
+
+        return 'linear-gradient(160deg, '.$bg.' 0%, '.$bg.' '.$stop.'%, '.self::accentSecondary($theme).$alpha.' 100%)';
+    }
+
+    /**
      * Opacité à appliquer au texte secondaire / discret.
      *
      * Sans couleur dédiée, les briques rendaient ces textes dans la couleur

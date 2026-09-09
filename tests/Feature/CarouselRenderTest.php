@@ -122,6 +122,34 @@ class CarouselRenderTest extends TestCase
     }
 
     /**
+     * Second dégradé, distinct du voile sur photo : le fond des slides SANS image
+     * part de la couleur de fond vers l'accent secondaire (coin bas droit). Le
+     * slot `bg_gradient` le remplace par un aplat uni.
+     */
+    public function test_le_degrade_de_fond_se_coupe_par_slide(): void
+    {
+        $bases = [
+            'bold-text' => ['title' => 'T'],
+            'bar-chart' => ['items' => "A | 10\nB | 20"],
+            'stat-grid' => ['items' => '10 | A'],
+            'table-rows' => ['rows' => 'A | 10'],
+            'long-text' => ['body' => 'B'],
+            'cta-end' => ['title' => 'T'],
+        ];
+
+        foreach ($bases as $brick => $base) {
+            $avec = $this->service()->buildHtml('4:5', [['brick' => $brick, 'data' => $base]]);
+            $sans = $this->service()->buildHtml('4:5', [['brick' => $brick, 'data' => $base + ['bg_gradient' => false]]]);
+
+            // Slot absent => dégradé actif : les compositions existantes ne bougent pas.
+            $this->assertStringContainsString('linear-gradient(160deg', $avec, "dégradé attendu sur {$brick}");
+            $this->assertStringNotContainsString('linear-gradient(160deg', $sans, "aplat attendu sur {$brick}");
+            // L'aplat reprend la couleur de fond du thème, pas du blanc.
+            $this->assertStringContainsString(\App\Services\Carousel\Palette::background(config('carousel.theme', [])), $sans);
+        }
+    }
+
+    /**
      * `number_style` choisit l'habillage du numéro sans changer de brique.
      * Repères dans le HTML : la pastille est le seul élément en `border-radius:999px`,
      * le filigrane le seul en `opacity:0.16`.

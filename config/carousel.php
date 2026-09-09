@@ -246,6 +246,11 @@ return [
             'slots' => [
                 'title' => ['label' => 'Titre', 'type' => 'text', 'max_length' => 200],
                 'subtitle' => ['label' => 'Sous-titre (optionnel)', 'type' => 'text', 'max_length' => 300],
+                'bg_gradient' => [
+                    'label' => 'Dégradé de couleur en fond',
+                    'type' => 'toggle',
+                    'default' => true,
+                ],
                 'position' => ['label' => 'Emplacement du texte', 'type' => 'position', 'default' => 'middle-left'],
                 'offset' => [
                     'label' => 'Décalage vertical',
@@ -284,6 +289,11 @@ return [
                     'type' => 'toggle',
                     'default' => true,
                 ],
+                'bg_gradient' => [
+                    'label' => 'Dégradé de couleur en fond (sans photo)',
+                    'type' => 'toggle',
+                    'default' => true,
+                ],
                 'position' => ['label' => 'Emplacement du bloc', 'type' => 'position', 'default' => 'middle-left'],
                 'offset' => [
                     'label' => 'Décalage vertical',
@@ -311,6 +321,11 @@ return [
                     'options' => ['bars' => 'Barres horizontales', 'columns' => 'Colonnes'],
                     'default' => 'bars',
                 ],
+                'bg_gradient' => [
+                    'label' => 'Dégradé de couleur en fond',
+                    'type' => 'toggle',
+                    'default' => true,
+                ],
                 'note' => ['label' => 'Note de bas de slide (optionnelle)', 'type' => 'text', 'max_length' => 200],
             ],
         ],
@@ -332,6 +347,11 @@ return [
                     'type' => 'select',
                     'options' => [1 => '1 colonne', 2 => '2 colonnes'],
                     'default' => 2,
+                ],
+                'bg_gradient' => [
+                    'label' => 'Dégradé de couleur en fond',
+                    'type' => 'toggle',
+                    'default' => true,
                 ],
             ],
         ],
@@ -375,6 +395,11 @@ return [
                     'label' => 'Lignes — une par ligne : « Protéines | 24 g »',
                     'type' => 'textarea',
                     'max_length' => 800,
+                ],
+                'bg_gradient' => [
+                    'label' => 'Dégradé de couleur en fond',
+                    'type' => 'toggle',
+                    'default' => true,
                 ],
                 'note' => ['label' => 'Note de bas de slide (optionnelle)', 'type' => 'text', 'max_length' => 200],
             ],
@@ -437,6 +462,11 @@ return [
                 ],
                 'scrim' => [
                     'label' => 'Dégradé de lisibilité sur la photo',
+                    'type' => 'toggle',
+                    'default' => true,
+                ],
+                'bg_gradient' => [
+                    'label' => 'Dégradé de couleur en fond (sans photo)',
                     'type' => 'toggle',
                     'default' => true,
                 ],

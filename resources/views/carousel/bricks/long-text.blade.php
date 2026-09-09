@@ -54,7 +54,7 @@
 @endphp
 
 <div style="position:absolute; inset:0;
-            background:{{ $image ? $overlay : 'linear-gradient(160deg, '.$bg.' 0%, '.$bg.' 62%, '.$accentAlt.'1a 100%)' }};">
+            background:{{ $image ? $overlay : \App\Services\Carousel\Palette::surface($theme, $data, 62, '1a') }};">
     @if ($image)
         {{-- Cadre de l'image : la slide entière, ou tout le groupe quand la photo
              se prolonge sur la ou les slides suivantes (Backdrop). --}}

@@ -36,7 +36,7 @@
 @endphp
 
 <div style="position:absolute; inset:0;
-            background:linear-gradient(160deg, {{ $bg }} 0%, {{ $bg }} 60%, {{ $accentAlt }}1f 100%);
+            background:{{ \App\Services\Carousel\Palette::surface($theme, $data, 60, '1f') }};
             display:flex; flex-direction:column; justify-content:center;
             padding:{{ $pad }}px;">
 

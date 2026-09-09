@@ -43,7 +43,7 @@ fournies ; on peut en créer d'autres (§ 8).
 | `position` | une des 9 ancres (`bottom-left`, `middle-center`…) | grille 3×3 |
 | `range` | nombre borné | ex. `offset` = décalage vertical en % de la hauteur |
 | `select` | une des options annoncées | ex. `columns` |
-| `toggle` | booléen | ex. `extend_image` (continuité d'image), `scrim` (dégradé) |
+| `toggle` | booléen | ex. `extend_image`, `scrim` et `bg_gradient` (dégradés) |
 
 **Thème** — l'apparence, commune à toute la production : 8 couleurs, 2 polices et
 2 échelles typographiques. Identique pour l'image seule et pour le carrousel.
@@ -516,14 +516,14 @@ Pour un carrousel, reprendre les `items[]` **dans l'ordre** — c'est celui des 
 | `photo-title-bl` | Photo + titre positionnable | `image`, `extend_image`, `scrim`, `title`, `subtitle`, `position`, `offset` |
 | `image-full` | Image seule (plein cadre) | `image`, `extend_image` |
 | `text-on-image` | Texte sur image de fond | `image`, `extend_image`, `scrim`, `title`, `body`, `position`, `offset` |
-| `bold-text` | Texte plein (sans image) | `title`, `subtitle`, `position`, `offset` |
-| `long-text` | Texte long | `title`, `body` (1800), `align`, `image`, `extend_image`, `scrim`, `position`, `offset` |
-| `bar-chart` | Histogramme | `title`, `items`, `direction`, `note` |
-| `stat-grid` | Grille de chiffres | `title`, `items`, `columns` |
+| `bold-text` | Texte plein (sans image) | `title`, `subtitle`, `bg_gradient`, `position`, `offset` |
+| `long-text` | Texte long | `title`, `body` (1800), `align`, `image`, `extend_image`, `scrim`, `bg_gradient`, `position`, `offset` |
+| `bar-chart` | Histogramme | `title`, `items`, `direction`, `bg_gradient`, `note` |
+| `stat-grid` | Grille de chiffres | `title`, `items`, `columns`, `bg_gradient` |
 | `quote` | Citation | `quote`, `author`, `image`, `extend_image`, `scrim`, `position`, `offset` |
-| `table-rows` | Tableau | `title`, `rows`, `note` |
+| `table-rows` | Tableau | `title`, `rows`, `bg_gradient`, `note` |
 | `numbered` | Slide numérotée | `number`, `number_style`, `title`, `body`, `image`, `extend_image`, `scrim`, `position`, `offset` |
-| `cta-end` | Slide de fin (appel à l'action) | `title`, `subtitle`, `handle`, `image`, `extend_image`, `scrim`, `position`, `offset` |
+| `cta-end` | Slide de fin (appel à l'action) | `title`, `subtitle`, `handle`, `image`, `extend_image`, `scrim`, `bg_gradient`, `position`, `offset` |
 
 Défauts notables : `photo-title-bl` ancre en `bottom-left`, `text-on-image` et
 `cta-end` en `middle-center`, `bold-text`/`quote`/`numbered` en `middle-left`,
@@ -582,6 +582,34 @@ thème — pour une photo déjà sombre, ou quand le voile abîme l'image :
   production ; `scrim` décide de sa présence, pas de sa teinte ;
 - dans un template maison (§ 8), le voile est à vous : c'est la classe
   `.brick-scrim`, à piloter par le slot booléen de votre choix.
+
+### Dégradé de couleur en fond (`bg_gradient`)
+
+**À ne pas confondre avec `scrim`.** Une slide **sans photo** n'a pas un fond
+uni : elle porte un dégradé très léger qui part de la couleur de fond et monte
+vers l'accent secondaire dans le **coin bas droit** (`linear-gradient(160deg…)`),
+pour éviter l'effet « bloc mort ». C'est le dégradé visible sur un histogramme
+ou une slide de fin, là où il n'y a aucune image.
+
+Le booléen `bg_gradient` le remplace par un **aplat uni** de la couleur de fond :
+
+```json
+{"brick": "bar-chart", "data": {"items": "Instagram | 42 %", "bg_gradient": false}}
+```
+
+Il porte sur `bold-text`, `bar-chart`, `stat-grid`, `table-rows`, et sur
+`long-text` / `cta-end` **quand elles n'ont pas de photo** — au-delà, c'est le
+voile `scrim` qui prend le relais. `quote` et `numbered` sans photo rendent déjà
+un aplat, elles n'en ont pas besoin.
+
+Comme `scrim`, il vaut **`true` par défaut**, slot absent compris : le rendu des
+compositions existantes est inchangé au pixel près. Les deux réglages sont
+indépendants — `long-text` et `cta-end` exposent les deux, l'un agissant avec
+photo, l'autre sans.
+
+Il ne touche pas les dégradés **internes** aux briques (les barres d'un
+histogramme vont de l'accent à l'accent secondaire) : ceux-là suivent la palette
+du thème.
 
 `long-text` prend le relais de `text-on-image` quand c'est le TEXTE qui commande :
 jusqu'à 1800 signes, la taille et l'interligne descendent par paliers selon la
