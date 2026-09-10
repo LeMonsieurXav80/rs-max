@@ -1270,3 +1270,72 @@ d'ajuster ou d'arrêter ensuite depuis le post.
 > Sans ça, Meta renvoie le sous-code `1885557` (« publication indisponible »), qui ne
 > dit pas que le vrai problème est l'accès à la Page — RS-Max ajoute la précision.
 > **Instagram fonctionne sans accès Page.**
+
+### Choisir l'objectif, l'audience, le budget et la durée
+
+Ces quatre réglages étaient en dur (`OUTCOME_ENGAGEMENT`, ciblage Portugal, budget total
+sur N jours). Ils se choisissent désormais — à l'API comme dans l'interface (`/ads`).
+
+```
+GET  /api/meta-ads/objectives                     couples objectif → optimisation valides
+GET  /api/meta-ads/targeting/search?type=interest&q=surf
+GET  /api/meta-ads/targeting/custom-audiences
+POST /api/meta-ads/targeting/estimate             {"audience_id": 3}
+GET|POST|PUT|DELETE /api/meta-ads/audiences[/{id}]
+POST /api/meta-ads/{adset_id}/adset               ciblage et dates d'un ad set existant
+```
+
+Paramètres supplémentaires de `POST /api/meta-ads/boost` :
+
+| Paramètre | Défaut | Rôle |
+|---|---|---|
+| `objective` | `OUTCOME_ENGAGEMENT` | Voir `GET /objectives` |
+| `optimization_goal` | défaut de l'objectif | Le couple est **vérifié avant l'appel** |
+| `billing_event` | `IMPRESSIONS` | Facturer au clic assèche la diffusion sur petit budget |
+| `audience_id` | — | Audience enregistrée ; sinon `targeting` brut, sinon ciblage large |
+| `budget_type` | `lifetime` | `daily` pour un budget quotidien |
+| `days` | — | Obligatoire, **même en budget quotidien** |
+| `start_date` | maintenant | Une date passée est repoussée à +5 min |
+| `bid_strategy` | volume max | `COST_CAP` / `LOWEST_COST_WITH_BID_CAP` exigent `bid_amount` |
+| `special_ad_categories` | `[]` | Logement, crédit, emploi, politique |
+| `with_estimate` | `false` | Ajoute la taille d'audience estimée au plan |
+
+Trois points qui coûtent cher quand on les rate :
+
+1. **Le couple objectif / optimisation est validé localement** contre le catalogue.
+   Envoyé de travers, Graph répond « Invalid parameter » sans dire lequel des deux.
+2. **`days` reste obligatoire en budget quotidien** : un budget quotidien sans date de
+   fin tourne indéfiniment. Le plafond porte toujours sur le **quotidien équivalent**,
+   et le plan expose `depense_maximale` — « 20/jour sur 30 jours » ne se lit pas comme 600.
+3. **Une catégorie publicitaire spéciale interdit** le ciblage par âge, genre et centres
+   d'intérêt. RS-Max les retire de la spec plutôt que de laisser Meta rejeter l'annonce.
+
+### Audiences (objets RS-Max, pas des objets Meta)
+
+Meta enterre le ciblage dans l'ad set : il meurt avec lui. Les audiences vivent donc
+dans `meta_audiences` et se déroulent en `targeting` à chaque campagne.
+
+- Les identifiants (intérêt, comportement, lieu, langue) **viennent tous de
+  `GET /targeting/search`** — un id fabriqué ne renvoie pas d'erreur, il donne une
+  campagne qui ne touche personne.
+- Les intérêts partent en `flexible_spec` (OU), jamais à plat (déprécié, et sémantique ET).
+- Une position (`facebook_positions`…) n'est envoyée que si sa régie est cochée.
+- `targeting_automation.advantage_audience` est **toujours explicite** : omis, Meta
+  élargit parfois l'audience de lui-même.
+- Le ciblage est **copié figé** dans `meta_ads_boosts.targeting` à la création : l'audience
+  pourra changer sans qu'on perde ce qui a réellement été diffusé.
+- Enregistrer une audience ne dépense rien : ce chemin n'est **pas** derrière
+  `META_ADS_WRITE_ENABLED` (seul le rôle `manager` est exigé).
+
+### Écrans (session web, rôle manager)
+
+| Écran | Rôle |
+|---|---|
+| `/ads` | Campagnes, budgets, dépenses, journal, sponsorisations |
+| `/ads/{campaign}` | Ad sets : budget, audience, dates, lancement / pause |
+| `/ads/boost/{postPlatform}` | Sponsoriser une publication : objectif, audience, budget, durée |
+| `/ads/audiences` | Audiences enregistrées (recherche Meta + estimation de portée) |
+
+L'interface passe par **les mêmes garde-fous** (`MetaAdsGuard`, `MetaBoostService`) :
+un écran qui contournerait un plafond serait une porte dérobée. Le bouton « Simuler »
+appelle le même `validate_only` que `dry_run` côté API.

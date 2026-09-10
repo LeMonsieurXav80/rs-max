@@ -6,6 +6,7 @@ use App\Http\Controllers\Api\ExtensionApiController;
 use App\Http\Controllers\Api\GenerateApiController;
 use App\Http\Controllers\Api\MediaApiController;
 use App\Http\Controllers\Api\MetaAdsApiController;
+use App\Http\Controllers\Api\MetaAudienceApiController;
 use App\Http\Controllers\Api\PartnerApiController;
 use App\Http\Controllers\Api\PersonaApiController;
 use App\Http\Controllers\Api\PostApiController;
@@ -65,12 +66,29 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::get('/meta-ads/insights', [MetaAdsApiController::class, 'insights']); // avant /campaigns/{id}
     Route::get('/meta-ads/logs', [MetaAdsApiController::class, 'logs']);
     Route::get('/meta-ads/boosts', [MetaAdsApiController::class, 'boosts']);
+    // Couples objectif / optimisation valides : a lire avant de composer un boost.
+    Route::get('/meta-ads/objectives', [MetaAdsApiController::class, 'objectives']);
+    // Ciblage : les identifiants d'interet, de lieu et de langue viennent de Meta,
+    // ils ne s'inventent pas — un id fabrique donne une campagne qui ne touche personne.
+    Route::get('/meta-ads/targeting/search', [MetaAdsApiController::class, 'searchTargeting']);
+    Route::get('/meta-ads/targeting/custom-audiences', [MetaAdsApiController::class, 'customAudiences']);
+    Route::post('/meta-ads/targeting/estimate', [MetaAdsApiController::class, 'estimate']);
+    // Audiences enregistrees (objets RS-Max, pas des objets Meta).
+    Route::get('/meta-ads/audiences', [MetaAudienceApiController::class, 'index']);
+    Route::post('/meta-ads/audiences', [MetaAudienceApiController::class, 'store']);
+    Route::get('/meta-ads/audiences/{audience}', [MetaAudienceApiController::class, 'show']);
+    Route::put('/meta-ads/audiences/{audience}', [MetaAudienceApiController::class, 'update']);
+    Route::patch('/meta-ads/audiences/{audience}', [MetaAudienceApiController::class, 'update']);
+    Route::delete('/meta-ads/audiences/{audience}', [MetaAudienceApiController::class, 'destroy']);
     // Sponsorise une publication RS-Max deja publiee, sans la republier.
     // Cree la campagne EN PAUSE : l'activation passe par /status.
     Route::post('/meta-ads/boost', [MetaAdsApiController::class, 'boost']);
     Route::get('/meta-ads/campaigns/{object}', [MetaAdsApiController::class, 'campaign']);
     Route::post('/meta-ads/{object}/status', [MetaAdsApiController::class, 'updateStatus']);
     Route::post('/meta-ads/{object}/budget', [MetaAdsApiController::class, 'updateBudget']);
+    // Ciblage et dates d'un ad set. Le budget garde son endpoint : c'est lui
+    // qui passe par les plafonds.
+    Route::post('/meta-ads/{object}/adset', [MetaAdsApiController::class, 'updateAdSet']);
     // (Dé)taguage en masse de photos. Ne touche que des pivots, jamais la fiche.
     // dry_run à true par défaut. {partner} accepte l'id ou le slug ici.
     Route::post('/partners/{partner}/media/detach', [PartnerApiController::class, 'detachMedia']);

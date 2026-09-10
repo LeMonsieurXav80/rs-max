@@ -23,6 +23,8 @@ use App\Http\Controllers\LinkedInOAuthController;
 use App\Http\Controllers\LocationController;
 use App\Http\Controllers\MediaController;
 use App\Http\Controllers\MediaFolderController;
+use App\Http\Controllers\MetaAdsController;
+use App\Http\Controllers\MetaAudienceController;
 use App\Http\Controllers\PartnerController;
 use App\Http\Controllers\PersonaController;
 use App\Http\Controllers\PinterestFeedController;
@@ -391,6 +393,31 @@ Route::middleware(['auth', 'verified', 'throttle:600,1'])->group(function () {
         Route::post('tools/yt-translator/language-groups', [YouTubeTranslatorController::class, 'storeLanguageGroup'])->name('yt-translator.languageGroups.store');
         Route::put('tools/yt-translator/language-groups/{languageGroup}', [YouTubeTranslatorController::class, 'updateLanguageGroup'])->name('yt-translator.languageGroups.update');
         Route::delete('tools/yt-translator/language-groups/{languageGroup}', [YouTubeTranslatorController::class, 'destroyLanguageGroup'])->name('yt-translator.languageGroups.destroy');
+
+        // ─── Publicités Meta ────────────────────────────────────
+        // Mêmes garde-fous que l'API (MetaAdsGuard) : un écran qui
+        // contournerait les plafonds serait une porte dérobée.
+        Route::get('ads', [MetaAdsController::class, 'index'])->name('ads.index');
+
+        // Audiences : déclarées AVANT ads/{campaign}, sinon « audiences » serait
+        // lu comme un identifiant de campagne.
+        Route::get('ads/audiences', [MetaAudienceController::class, 'index'])->name('ads.audiences.index');
+        Route::get('ads/audiences/create', [MetaAudienceController::class, 'create'])->name('ads.audiences.create');
+        Route::post('ads/audiences', [MetaAudienceController::class, 'store'])->name('ads.audiences.store');
+        Route::get('ads/audiences/search', [MetaAudienceController::class, 'search'])->name('ads.audiences.search');
+        Route::post('ads/audiences/estimate', [MetaAudienceController::class, 'estimate'])->name('ads.audiences.estimate');
+        Route::get('ads/audiences/{audience}/edit', [MetaAudienceController::class, 'edit'])->name('ads.audiences.edit');
+        Route::put('ads/audiences/{audience}', [MetaAudienceController::class, 'update'])->name('ads.audiences.update');
+        Route::delete('ads/audiences/{audience}', [MetaAudienceController::class, 'destroy'])->name('ads.audiences.destroy');
+
+        // Sponsorisation d'une publication déjà publiée.
+        Route::get('ads/boost/{postPlatform}', [MetaAdsController::class, 'boostForm'])->name('ads.boost.form');
+        Route::post('ads/boost/{postPlatform}', [MetaAdsController::class, 'boost'])->name('ads.boost');
+
+        Route::get('ads/{campaign}', [MetaAdsController::class, 'campaign'])->name('ads.campaign');
+        Route::post('ads/{object}/status', [MetaAdsController::class, 'updateStatus'])->name('ads.status');
+        Route::post('ads/{object}/budget', [MetaAdsController::class, 'updateBudget'])->name('ads.budget');
+        Route::post('ads/{object}/adset', [MetaAdsController::class, 'updateAdSet'])->name('ads.adset');
 
         // Settings
         Route::get('settings', [SettingsController::class, 'index'])->name('settings.index');

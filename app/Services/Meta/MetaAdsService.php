@@ -75,6 +75,50 @@ class MetaAdsService
         return is_numeric($value) ? (float) $value : (float) config($configKey);
     }
 
+    /**
+     * Pixel du compte, s'il a été renseigné dans /settings.
+     *
+     * Optionnel : sans lui, les objectifs de conversion tournent mais
+     * n'optimisent sur rien — RS-Max prévient au lieu d'interdire.
+     */
+    public function pixelId(): ?string
+    {
+        return trim((string) Setting::get('meta_ads_pixel_id', '')) ?: null;
+    }
+
+    /**
+     * Catalogue des objectifs, tel qu'exposé aux formulaires et à l'API.
+     *
+     * @return array<string,array<string,mixed>>
+     */
+    public static function objectives(bool $boostableOnly = false): array
+    {
+        $objectives = (array) config('meta_ads.objectives');
+
+        return $boostableOnly
+            ? array_filter($objectives, fn ($o) => ! empty($o['boostable']))
+            : $objectives;
+    }
+
+    /**
+     * Le couple objectif / optimisation est-il valide ?
+     *
+     * Un couple hors clous part chez Graph et revient en « Invalid parameter »
+     * sans dire lequel des deux est en cause.
+     */
+    public static function goalIsValid(string $objective, string $goal): bool
+    {
+        return array_key_exists($goal, config("meta_ads.objectives.{$objective}.goals", []));
+    }
+
+    /**
+     * Événement facturé par défaut pour un objectif d'optimisation.
+     */
+    public static function defaultBillingEvent(string $goal): string
+    {
+        return config("meta_ads.billing_events.{$goal}", ['IMPRESSIONS'])[0];
+    }
+
     public function token(): ?string
     {
         return Setting::getEncrypted('meta_ads_token') ?: null;
@@ -307,6 +351,158 @@ class MetaAdsService
         ];
     }
 
+    // ── Ciblage : recherche et estimation ────────────────────
+
+    /** Types de recherche exposés → type Graph correspondant. */
+    private const SEARCH_TYPES = [
+        'interest' => 'adinterest',
+        'behavior' => 'adTargetingCategory',
+        'geo' => 'adgeolocation',
+        'locale' => 'adlocale',
+    ];
+
+    /**
+     * Recherche une entrée de ciblage chez Meta (centre d'intérêt, comportement,
+     * lieu, langue).
+     *
+     * Les identifiants de ciblage **ne s'inventent pas** : un `interests` bricolé
+     * à la main est soit refusé, soit — pire — accepté et vide, et la campagne
+     * ne diffuse à personne. Tout ce qui entre dans une audience RS-Max sort
+     * donc d'ici.
+     *
+     * @return array{success:bool,error:?string,results:array<int,array<string,mixed>>}
+     */
+    public function searchTargeting(string $type, string $query, ?string $countryCode = null): array
+    {
+        $graphType = self::SEARCH_TYPES[$type] ?? null;
+
+        if (! $graphType) {
+            return ['success' => false, 'error' => "Type de ciblage inconnu : {$type}", 'results' => []];
+        }
+
+        $params = ['type' => $graphType, 'q' => $query, 'limit' => 30];
+
+        if ($type === 'behavior') {
+            // Les comportements ne se cherchent pas par mot-clé : Graph rend la
+            // liste complète de la classe, on filtre ensuite.
+            $params = ['type' => 'adTargetingCategory', 'class' => 'behaviors', 'limit' => 500];
+        }
+
+        if ($type === 'geo') {
+            $params['location_types'] = json_encode(['country', 'region', 'city']);
+        }
+
+        $result = $this->get('search', $params);
+
+        if (! $result['success']) {
+            return ['success' => false, 'error' => $result['error'], 'results' => []];
+        }
+
+        $rows = $result['data']['data'] ?? [];
+
+        if ($type === 'behavior' && $query !== '') {
+            $needle = mb_strtolower($query);
+            $rows = array_values(array_filter(
+                $rows,
+                fn ($r) => str_contains(mb_strtolower($r['name'] ?? ''), $needle),
+            ));
+        }
+
+        return [
+            'success' => true,
+            'error' => null,
+            'results' => array_map(fn ($r) => [
+                'id' => $r['id'] ?? null,
+                'key' => $r['key'] ?? ($r['id'] ?? null),
+                'name' => $r['name'] ?? '?',
+                'type' => $r['type'] ?? ($r['path'][0] ?? null),
+                'country_code' => $r['country_code'] ?? null,
+                'region' => $r['region'] ?? null,
+                'audience_size' => $r['audience_size_lower_bound'] ?? $r['audience_size'] ?? null,
+                'path' => $r['path'] ?? [],
+            ], array_slice($rows, 0, 30)),
+        ];
+    }
+
+    /**
+     * Audiences personnalisées déjà créées dans le compte publicitaire.
+     *
+     * RS-Max n'en crée pas (une audience personnalisée porte des données
+     * personnelles, sa création se fait sous les yeux d'un humain) mais sait
+     * les réutiliser.
+     *
+     * @return array{success:bool,error:?string,audiences:array<int,array<string,mixed>>}
+     */
+    public function customAudiences(): array
+    {
+        $result = $this->get($this->accountId().'/customaudiences', [
+            'fields' => 'id,name,subtype,approximate_count_lower_bound,delivery_status',
+            'limit' => 200,
+        ]);
+
+        if (! $result['success']) {
+            return ['success' => false, 'error' => $result['error'], 'audiences' => []];
+        }
+
+        return ['success' => true, 'error' => null, 'audiences' => $result['data']['data'] ?? []];
+    }
+
+    /**
+     * Taille estimée de l'audience, telle que Meta la voit.
+     *
+     * Sert à ne pas lancer une campagne sur un ciblage vide : une audience trop
+     * étroite ne renvoie pas d'erreur, elle ne diffuse simplement pas — et rien
+     * dans les insights ne dit pourquoi.
+     *
+     * @param  array<string,mixed>  $targeting
+     * @return array{success:bool,error:?string,lower:?int,upper:?int}
+     */
+    public function reachEstimate(array $targeting, string $optimizationGoal = 'POST_ENGAGEMENT'): array
+    {
+        $result = $this->get($this->accountId().'/delivery_estimate', [
+            'targeting_spec' => json_encode($targeting),
+            'optimization_goal' => $optimizationGoal,
+        ]);
+
+        if (! $result['success']) {
+            return ['success' => false, 'error' => $result['error'], 'lower' => null, 'upper' => null];
+        }
+
+        $row = $result['data']['data'][0] ?? [];
+
+        return [
+            'success' => true,
+            'error' => null,
+            'lower' => isset($row['estimate_mau_lower_bound']) ? (int) $row['estimate_mau_lower_bound'] : null,
+            'upper' => isset($row['estimate_mau_upper_bound']) ? (int) $row['estimate_mau_upper_bound'] : null,
+        ];
+    }
+
+    /**
+     * Devise et fuseau du compte — un budget affiché dans la mauvaise devise
+     * est un budget faux.
+     *
+     * @return array{success:bool,error:?string,currency:?string,timezone:?string,name:?string}
+     */
+    public function accountInfo(): array
+    {
+        $result = $this->get($this->accountId(), [
+            'fields' => 'name,currency,timezone_name,account_status,amount_spent,balance',
+        ]);
+
+        if (! $result['success']) {
+            return ['success' => false, 'error' => $result['error'], 'currency' => null, 'timezone' => null, 'name' => null];
+        }
+
+        return [
+            'success' => true,
+            'error' => null,
+            'currency' => $result['data']['currency'] ?? null,
+            'timezone' => $result['data']['timezone_name'] ?? null,
+            'name' => $result['data']['name'] ?? null,
+        ];
+    }
+
     // ── Écriture ─────────────────────────────────────────────
 
     /**
@@ -360,7 +556,7 @@ class MetaAdsService
      * l'activation qui depense. Elle se fait ensuite par updateStatus(), qui
      * passe par les garde-fous et le journal.
      *
-     * @param  array{platform:string,object_story_id?:string,instagram_media_id?:string,instagram_user_id?:string,page_id?:string,name:string,budget:float,days:int}  $spec
+     * @param  array{platform:string,object_story_id?:string,instagram_media_id?:string,instagram_user_id?:string,page_id?:string,name:string,budget:float,days:int,objective?:string,optimization_goal?:string,billing_event?:string,budget_type?:string,special_ad_categories?:array<int,string>,targeting?:array<string,mixed>,start_time?:string,end_time?:string,bid_strategy?:string,bid_amount?:float,promoted_object?:array<string,mixed>}  $spec
      * @return array{success:bool,error:?string,ids:array<string,?string>}
      */
     public function createBoost(array $spec): array
@@ -369,9 +565,11 @@ class MetaAdsService
 
         $campaign = $this->post($this->accountId().'/campaigns', [
             'name' => $spec['name'],
-            'objective' => 'OUTCOME_ENGAGEMENT',
+            'objective' => $spec['objective'] ?? 'OUTCOME_ENGAGEMENT',
             'status' => 'PAUSED',
-            'special_ad_categories' => json_encode([]),
+            // Declaration obligatoire, meme vide : la mentir expose a la
+            // fermeture du compte, l'omettre fait rejeter l'annonce.
+            'special_ad_categories' => json_encode($spec['special_ad_categories'] ?? []),
             // Exige par l'API depuis 2026 des lors que le budget est porte par
             // l'ad set et non par la campagne. Son absence renvoie un 4834011.
             'is_adset_budget_sharing_enabled' => 'false',
@@ -382,22 +580,8 @@ class MetaAdsService
         }
         $ids['campaign_id'] = $campaign['id'];
 
-        // Budget de DUREE DE VIE, pas quotidien : un boost doit etre borne dans
-        // le temps ET dans la depense totale. Un budget quotidien sans date de
-        // fin tournerait indefiniment.
-        $adset = $this->post($this->accountId().'/adsets', [
-            'name' => $spec['name'],
+        $adset = $this->post($this->accountId().'/adsets', $this->adSetPayload($spec) + [
             'campaign_id' => $campaign['id'],
-            'lifetime_budget' => (string) (int) round($spec['budget'] * 100),
-            'billing_event' => 'IMPRESSIONS',
-            'optimization_goal' => 'POST_ENGAGEMENT',
-            'start_time' => now()->toIso8601String(),
-            'end_time' => now()->addDays($spec['days'])->toIso8601String(),
-            'targeting' => json_encode($spec['targeting'] ?? [
-                'geo_locations' => ['countries' => ['PT']],
-                'publisher_platforms' => ['facebook', 'instagram'],
-            ]),
-            'status' => 'PAUSED',
         ], returnId: true);
 
         if (! $adset['success']) {
@@ -436,6 +620,100 @@ class MetaAdsService
         $ids['ad_id'] = $ad['id'];
 
         return ['success' => true, 'error' => null, 'ids' => $ids];
+    }
+
+    /**
+     * L'ad set : c'est lui qui porte le budget, la duree, le ciblage et
+     * l'optimisation. La campagne, elle, ne porte que l'objectif.
+     *
+     * Deux regles tenues ici :
+     *   - un boost est TOUJOURS borne dans le temps (`end_time`), y compris en
+     *     budget quotidien : un budget quotidien sans fin tourne indefiniment,
+     *     et c'est la facon la plus simple de depenser sans s'en apercevoir ;
+     *   - les montants passent en unites mineures ici et nulle part ailleurs.
+     *
+     * @param  array<string,mixed>  $spec
+     * @return array<string,mixed>
+     */
+    private function adSetPayload(array $spec): array
+    {
+        $start = isset($spec['start_time']) ? \Illuminate\Support\Carbon::parse($spec['start_time']) : now();
+        $end = isset($spec['end_time'])
+            ? \Illuminate\Support\Carbon::parse($spec['end_time'])
+            : $start->copy()->addDays((int) $spec['days']);
+
+        $budgetField = ($spec['budget_type'] ?? 'lifetime') === 'daily' ? 'daily_budget' : 'lifetime_budget';
+
+        $payload = [
+            'name' => $spec['name'],
+            $budgetField => (string) (int) round($spec['budget'] * 100),
+            'billing_event' => $spec['billing_event'] ?? 'IMPRESSIONS',
+            'optimization_goal' => $spec['optimization_goal'] ?? 'POST_ENGAGEMENT',
+            'start_time' => $start->toIso8601String(),
+            'end_time' => $end->toIso8601String(),
+            'targeting' => json_encode($spec['targeting'] ?? [
+                'geo_locations' => ['countries' => ['PT']],
+                'publisher_platforms' => ['facebook', 'instagram'],
+            ]),
+            'status' => 'PAUSED',
+        ];
+
+        if (! empty($spec['bid_strategy'])) {
+            $payload['bid_strategy'] = $spec['bid_strategy'];
+
+            // COST_CAP et LOWEST_COST_WITH_BID_CAP sont refuses sans montant.
+            if (! empty($spec['bid_amount'])) {
+                $payload['bid_amount'] = (string) (int) round($spec['bid_amount'] * 100);
+            }
+        }
+
+        // Certains objectifs d'optimisation ne veulent rien dire sans l'objet
+        // promu : la Page pour PAGE_LIKES, le pixel pour une conversion.
+        if (! empty($spec['promoted_object'])) {
+            $payload['promoted_object'] = json_encode($spec['promoted_object']);
+        }
+
+        return $payload;
+    }
+
+    /**
+     * Modifie un ad set existant : ciblage, dates, optimisation.
+     *
+     * Le budget garde sa methode dediee (`updateBudget`) — c'est lui qui passe
+     * par les plafonds, et le melanger ici les contournerait.
+     *
+     * @param  array<string,mixed>  $fields
+     * @return array{success:bool,error:?string}
+     */
+    public function updateAdSet(string $adSetId, array $fields): array
+    {
+        $payload = [];
+
+        if (isset($fields['targeting'])) {
+            $payload['targeting'] = json_encode($fields['targeting']);
+        }
+
+        foreach (['start_time', 'end_time'] as $date) {
+            if (! empty($fields[$date])) {
+                $payload[$date] = \Illuminate\Support\Carbon::parse($fields[$date])->toIso8601String();
+            }
+        }
+
+        foreach (['optimization_goal', 'billing_event', 'bid_strategy', 'name'] as $field) {
+            if (! empty($fields[$field])) {
+                $payload[$field] = $fields[$field];
+            }
+        }
+
+        if (isset($fields['bid_amount'])) {
+            $payload['bid_amount'] = (string) (int) round((float) $fields['bid_amount'] * 100);
+        }
+
+        if ($payload === []) {
+            return ['success' => false, 'error' => 'Rien à modifier.'];
+        }
+
+        return $this->post($adSetId, $payload);
     }
 
     /**

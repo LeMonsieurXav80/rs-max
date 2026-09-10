@@ -92,6 +92,7 @@ class SettingsController extends Controller
         'emv_cpm_source',
         'meta_ads_max_daily_budget',
         'meta_ads_max_budget_increase_pct',
+        'meta_ads_pixel_id',
     ];
 
     private const DEFAULTS = [
@@ -165,6 +166,9 @@ class SettingsController extends Controller
         // Vide = retombe sur config/meta_ads.php (cf. MetaAdsService::numericSetting)
         'meta_ads_max_daily_budget' => '',
         'meta_ads_max_budget_increase_pct' => '',
+        // Facultatif : sans pixel, les objectifs de conversion diffusent mais
+        // n'optimisent sur rien. On previent, on ne bloque pas.
+        'meta_ads_pixel_id' => '',
         'inbox_reply_prompt' => "Tu reponds a des commentaires et messages sur les reseaux sociaux. Adapte la longueur et le style de ta reponse au message recu :\n- Emoji seul ou reaction simple (coeur, flamme, applaudissements...) → reponds par 1-2 emojis adaptes, rien d'autre\n- Compliment court (\"bravo\", \"top\", \"j'adore\", \"genial\") → remercie en 2-5 mots max, tu peux ajouter un emoji\n- Question → reponds brievement et precisement, 1-2 phrases max\n- Commentaire developpe ou avis → 1-2 phrases engageantes max\n- Message prive → reponds de maniere naturelle et conversationnelle\n\nRegles absolues :\n- Ne fais JAMAIS une reponse plus longue que le message original\n- Pas de hashtags\n- Pas de formule de politesse generique (\"Merci pour votre commentaire !\")\n- Sois authentique, pas corporate\n- Garde le ton et la personnalite definis dans ton profil",
     ];
 
@@ -251,6 +255,7 @@ class SettingsController extends Controller
             // bloquerait tout et se lirait comme une panne, pas comme un réglage.
             'meta_ads_max_daily_budget' => 'nullable|numeric|min:1|max:100000',
             'meta_ads_max_budget_increase_pct' => 'nullable|numeric|min:1|max:10000',
+            'meta_ads_pixel_id' => 'nullable|string|max:64',
             'image_max_dimension' => 'required|integer|min:512|max:4096',
             'image_target_min_kb' => 'required|integer|min:50|max:500',
             'image_target_max_kb' => 'required|integer|min:200|max:2000',

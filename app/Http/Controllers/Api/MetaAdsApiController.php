@@ -5,8 +5,11 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Models\MetaAdsActionLog;
 use App\Models\MetaAdsBoost;
+use App\Models\MetaAudience;
 use App\Models\PostPlatform;
+use App\Services\Meta\MetaAdsGuard;
 use App\Services\Meta\MetaAdsService;
+use App\Services\Meta\MetaBoostService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Validation\Rule;
@@ -24,13 +27,103 @@ use Illuminate\Validation\Rule;
  *   4. plafond absolu de budget quotidien, que `force` NE contourne PAS ;
  *   5. journal d'audit de tout, dry-run compris.
  *
- * Création et suppression de campagnes sont hors périmètre à dessein.
+ * Ce qui reste hors périmètre à dessein : créer une campagne **à partir de rien**
+ * et en supprimer une. Tout ce qui se crée ici part d'une publication RS-Max
+ * déjà publiée, en PAUSE, avec un objectif et un ciblage explicites.
  */
 class MetaAdsApiController extends Controller
 {
-    public function __construct(private readonly MetaAdsService $ads) {}
+    public function __construct(
+        private readonly MetaAdsService $ads,
+        private readonly MetaAdsGuard $guard,
+        private readonly MetaBoostService $boosts,
+    ) {}
 
     // ── Lecture ──────────────────────────────────────────────
+
+    /**
+     * Catalogue des objectifs et des réglages disponibles.
+     *
+     * Un agent qui doit choisir un objectif ne peut pas le deviner : les couples
+     * objectif / optimisation valides sont ici, en clair, plutôt que découverts
+     * à coups de « Invalid parameter ».
+     */
+    public function objectives(Request $request): JsonResponse
+    {
+        return response()->json([
+            'objectives' => MetaAdsService::objectives($request->boolean('boostable', true)),
+            'billing_events' => config('meta_ads.billing_events'),
+            'bid_strategies' => config('meta_ads.bid_strategies'),
+            'special_ad_categories' => config('meta_ads.special_ad_categories'),
+            'placements' => config('meta_ads.placements'),
+            'limits' => [
+                'max_daily_budget' => $this->ads->maxDailyBudget(),
+                'max_budget_increase_pct' => $this->ads->maxBudgetIncreasePct(),
+                'max_days' => (int) config('meta_ads.max_days'),
+            ],
+        ]);
+    }
+
+    /**
+     * Recherche une entrée de ciblage chez Meta.
+     *
+     * Les identifiants de ciblage ne s'inventent pas : un centre d'intérêt
+     * fabriqué de toutes pièces donne une campagne qui ne touche personne.
+     */
+    public function searchTargeting(Request $request): JsonResponse
+    {
+        $validated = $request->validate([
+            'type' => ['required', Rule::in(['interest', 'behavior', 'geo', 'locale'])],
+            'q' => 'nullable|string|max:100',
+        ]);
+
+        $result = $this->ads->searchTargeting($validated['type'], $validated['q'] ?? '');
+
+        return $result['success']
+            ? response()->json(['results' => $result['results']])
+            : response()->json(['error' => $result['error']], 502);
+    }
+
+    /**
+     * Audiences personnalisées du compte (RS-Max n'en crée pas, il les réutilise).
+     */
+    public function customAudiences(): JsonResponse
+    {
+        $result = $this->ads->customAudiences();
+
+        return $result['success']
+            ? response()->json(['audiences' => $result['audiences']])
+            : response()->json(['error' => $result['error']], 502);
+    }
+
+    /**
+     * Taille estimée d'un ciblage — à lire avant de dépenser.
+     *
+     * Une audience trop étroite ne renvoie pas d'erreur : elle ne diffuse pas,
+     * et les insights ne diront jamais pourquoi.
+     */
+    public function estimate(Request $request): JsonResponse
+    {
+        $validated = $request->validate([
+            'audience_id' => 'nullable|integer|exists:meta_audiences,id',
+            'targeting' => 'nullable|array',
+            'optimization_goal' => 'nullable|string|max:64',
+        ]);
+
+        $targeting = ! empty($validated['audience_id'])
+            ? MetaAudience::findOrFail($validated['audience_id'])->toTargetingSpec()
+            : ($validated['targeting'] ?? null);
+
+        if (! $targeting) {
+            return response()->json(['error' => 'Fournir `audience_id` ou `targeting`.'], 422);
+        }
+
+        $result = $this->ads->reachEstimate($targeting, $validated['optimization_goal'] ?? 'POST_ENGAGEMENT');
+
+        return $result['success']
+            ? response()->json(['lower' => $result['lower'], 'upper' => $result['upper'], 'targeting' => $targeting])
+            : response()->json(['error' => $result['error']], 502);
+    }
 
     public function campaigns(Request $request): JsonResponse
     {
@@ -209,8 +302,25 @@ class MetaAdsApiController extends Controller
 
         $validated = $request->validate([
             'post_platform_id' => 'required|integer|exists:post_platform,id',
-            'budget' => 'required|numeric|min:1',   // total, pas quotidien
-            'days' => 'required|integer|min:1|max:30',
+            'name' => 'nullable|string|max:120',
+            // Objectif et optimisation : le couple est vérifié par le service,
+            // le catalogue est sur GET /api/meta-ads/objectives.
+            'objective' => 'nullable|string|max:64',
+            'optimization_goal' => 'nullable|string|max:64',
+            'billing_event' => 'nullable|string|max:64',
+            'special_ad_categories' => 'nullable|array',
+            'special_ad_categories.*' => ['string', Rule::in(array_keys(config('meta_ads.special_ad_categories')))],
+            // Ciblage : une audience enregistrée, ou une spec Meta brute.
+            'audience_id' => 'nullable|integer|exists:meta_audiences,id',
+            'targeting' => 'nullable|array',
+            // Budget : total par défaut (`lifetime`), ou quotidien si demandé.
+            'budget' => 'required|numeric|min:1',
+            'budget_type' => ['nullable', Rule::in(['lifetime', 'daily'])],
+            'days' => 'required|integer|min:1|max:'.(int) config('meta_ads.max_days'),
+            'start_date' => 'nullable|date',
+            'bid_strategy' => ['nullable', Rule::in(array_keys(config('meta_ads.bid_strategies')))],
+            'bid_amount' => 'nullable|numeric|min:0.01',
+            'with_estimate' => 'nullable|boolean',
             'dry_run' => 'nullable|boolean',
             'force' => 'nullable|boolean',
         ]);
@@ -223,80 +333,111 @@ class MetaAdsApiController extends Controller
             ], 422);
         }
 
-        $spec = $this->boostSpec($pp);
+        $spec = $this->boosts->spec($pp, $validated);
 
         if (isset($spec['error'])) {
             return response()->json(['error' => $spec['error']], 422);
         }
 
-        // Un boost est borne : budget TOTAL sur N jours. On ramene au quotidien
-        // pour le confronter au meme plafond que les autres ecritures, sinon
-        // « 300 € sur 30 jours » passerait sous un plafond pense par jour.
-        $daily = round($validated['budget'] / $validated['days'], 2);
+        // On ramene au quotidien pour confronter au meme plafond que les autres
+        // ecritures, sinon « 300 € sur 30 jours » passerait sous un plafond
+        // pense par jour.
+        $daily = $this->boosts->dailyEquivalent($spec);
 
         if ($refusal = $this->guardBudget($daily, null, false, $request->boolean('force'))) {
             return $refusal;
         }
 
         $dryRun = $this->dryRun($request);
-        $spec += [
-            'name' => 'RS-Max — '.str($pp->post?->content_preview ?? 'publication')->limit(40),
-            'budget' => (float) $validated['budget'],
-            'days' => (int) $validated['days'],
-        ];
+        $plan = $this->boosts->plan($pp, $spec);
+        $warnings = $this->boosts->warnings($spec);
 
         // En simulation, on demande a Meta de VALIDER le creatif sans rien creer :
         // ca teste la publication et les droits pour de vrai, la ou une
         // simulation maison se contenterait de dire « ça a l'air bon ».
         if ($dryRun) {
-            $check = $this->ads->validateOnly(
-                $this->ads->accountId().'/adcreatives',
-                $spec['platform'] === 'instagram'
-                    ? ['name' => $spec['name'], 'instagram_user_id' => $spec['instagram_user_id'], 'source_instagram_media_id' => $spec['instagram_media_id']]
-                    : ['name' => $spec['name'], 'object_story_id' => $spec['object_story_id']],
-            );
+            $check = $this->boosts->validate($spec);
+            $estimate = $request->boolean('with_estimate') ? $this->boosts->estimate($spec) : null;
 
-            return response()->json([
+            return response()->json(array_filter([
                 'dry_run' => true,
                 'applied' => false,
                 'promotable' => $check['success'],
                 'error' => $check['error'],
-                'plan' => $this->boostPlan($pp, $spec, $daily),
+                'plan' => $plan,
+                'warnings' => $warnings,
+                'audience_estimate' => $estimate ? ['lower' => $estimate['lower'], 'upper' => $estimate['upper']] : null,
                 'note' => $check['success']
                     ? 'Publication promouvable. Renvoyer avec `dry_run: false` pour créer la campagne (en pause).'
                     : 'Meta refuse de promouvoir cette publication — voir `error`.',
-            ]);
+            ], fn ($v) => $v !== null));
         }
 
-        $result = $this->ads->createBoost($spec);
-
-        $boost = MetaAdsBoost::create([
-            'post_platform_id' => $pp->id,
-            'user_id' => $request->user()->id,
-            'platform' => $spec['platform'],
-            'object_story_id' => $spec['object_story_id'] ?? null,
-            'instagram_media_id' => $spec['instagram_media_id'] ?? null,
-            'budget' => $spec['budget'],
-            'days' => $spec['days'],
-            'starts_at' => now(),
-            'ends_at' => now()->addDays($spec['days']),
-            'status' => $result['success'] ? 'paused' : 'failed',
-            'error' => $result['error'],
-        ] + $result['ids']);
+        $result = $this->boosts->create($spec, $pp, $request->user());
 
         if (! $result['success']) {
-            return response()->json(['applied' => false, 'error' => $result['error'], 'boost_id' => $boost->id], 502);
+            return response()->json(['applied' => false, 'error' => $result['error'], 'boost_id' => $result['boost']->id], 502);
         }
 
         return response()->json([
             'dry_run' => false,
             'applied' => true,
-            'boost_id' => $boost->id,
+            'boost_id' => $result['boost']->id,
             'ids' => $result['ids'],
-            'plan' => $this->boostPlan($pp, $spec, $daily),
+            'plan' => $plan,
+            'warnings' => $warnings,
             'note' => 'Campagne créée EN PAUSE. Pour lancer la diffusion : '
                 .'POST /api/meta-ads/'.$result['ids']['adset_id'].'/status {"status":"ACTIVE","dry_run":false}',
         ], 201);
+    }
+
+    /**
+     * Change le ciblage et/ou les dates d'un ad set existant.
+     *
+     * Le budget garde son endpoint dédié : c'est lui qui passe par les plafonds,
+     * et le mélanger ici les contournerait.
+     */
+    public function updateAdSet(Request $request, string $object): JsonResponse
+    {
+        if ($refusal = $this->guardWrite($request)) {
+            return $refusal;
+        }
+
+        $validated = $request->validate([
+            'audience_id' => 'nullable|integer|exists:meta_audiences,id',
+            'targeting' => 'nullable|array',
+            'start_time' => 'nullable|date',
+            'end_time' => 'nullable|date|after:start_time',
+            'optimization_goal' => 'nullable|string|max:64',
+            'billing_event' => 'nullable|string|max:64',
+            'bid_strategy' => ['nullable', Rule::in(array_keys(config('meta_ads.bid_strategies')))],
+            'bid_amount' => 'nullable|numeric|min:0.01',
+            'dry_run' => 'nullable|boolean',
+        ]);
+
+        $fields = collect($validated)->except(['audience_id', 'dry_run'])->filter()->all();
+
+        if (! empty($validated['audience_id'])) {
+            $fields['targeting'] = MetaAudience::findOrFail($validated['audience_id'])->toTargetingSpec();
+        }
+
+        if ($fields === []) {
+            return response()->json(['error' => 'Rien à modifier.'], 422);
+        }
+
+        $current = $this->ads->object($object);
+
+        return $this->execute(
+            request: $request,
+            objectType: 'adset',
+            objectId: $object,
+            objectName: $current['object']['name'] ?? null,
+            action: 'adset',
+            previous: ['name' => $current['object']['name'] ?? null],
+            requested: $fields,
+            dryRun: $this->dryRun($request),
+            apply: fn () => $this->ads->updateAdSet($object, $fields),
+        );
     }
 
     /**
@@ -313,122 +454,33 @@ class MetaAdsApiController extends Controller
         return response()->json(['boosts' => $boosts]);
     }
 
-    /**
-     * Resout une diffusion RS-Max vers la reference Meta de sa publication.
-     *
-     * @return array<string,mixed>
-     */
-    private function boostSpec(PostPlatform $pp): array
-    {
-        $slug = $pp->platform?->slug;
-        $accountId = $pp->socialAccount?->platform_account_id;
-
-        if (! $accountId) {
-            return ['error' => 'Le compte social n\'a pas de platform_account_id : impossible de résoudre la publication chez Meta.'];
-        }
-
-        return match ($slug) {
-            // La Graph API rend souvent un id deja composite ({page}_{post}) ;
-            // on ne prefixe que s'il ne l'est pas.
-            'facebook' => [
-                'platform' => 'facebook',
-                'object_story_id' => str_contains($pp->external_id, '_')
-                    ? $pp->external_id
-                    : $accountId.'_'.$pp->external_id,
-            ],
-            'instagram' => [
-                'platform' => 'instagram',
-                'instagram_user_id' => $accountId,
-                'instagram_media_id' => $pp->external_id,
-            ],
-            default => ['error' => "La sponsorisation n'existe que sur Facebook et Instagram (reçu : ".($slug ?? 'inconnu').')'],
-        };
-    }
-
-    /**
-     * @param  array<string,mixed>  $spec
-     * @return array<string,mixed>
-     */
-    private function boostPlan(PostPlatform $pp, array $spec, float $daily): array
-    {
-        return [
-            'post_platform_id' => $pp->id,
-            'platform' => $spec['platform'],
-            'compte' => $pp->socialAccount?->name,
-            'publication' => $pp->platform_url ?? $pp->external_id,
-            'reference_meta' => $spec['object_story_id'] ?? $spec['instagram_media_id'] ?? null,
-            'budget_total' => $spec['budget'],
-            'jours' => $spec['days'],
-            'budget_quotidien_equivalent' => $daily,
-            'objectif' => 'OUTCOME_ENGAGEMENT / POST_ENGAGEMENT',
-            'cree_en' => 'PAUSED',
-        ];
-    }
-
     // ── Garde-fous ───────────────────────────────────────────
 
     /**
-     * L'écriture est-elle ouverte, et par la bonne personne ?
+     * Les règles vivent dans `MetaAdsGuard`, partagées avec l'interface web :
+     * deux implémentations, ce serait deux occasions d'oublier un plafond.
      */
     private function guardWrite(Request $request): ?JsonResponse
     {
-        if (! $request->user()->isManager()) {
-            return response()->json(['error' => 'Réservé aux managers.'], 403);
-        }
+        $refusal = $this->guard->write($request->user());
 
-        if (! config('meta_ads.write_enabled')) {
-            return response()->json([
-                'error' => 'Le pilotage en écriture des campagnes est désactivé.',
-                'how_to_enable' => 'Passer META_ADS_WRITE_ENABLED=true — geste délibéré, ces appels dépensent de l\'argent réel.',
-            ], 403);
-        }
+        return $refusal ? response()->json($this->body($refusal), $refusal['status']) : null;
+    }
 
-        if (! $this->ads->isConfigured()) {
-            return response()->json(['error' => 'Compte publicitaire Meta non configuré (voir /settings).'], 422);
-        }
+    private function guardBudget(float $amount, ?float $current, bool $lifetime, bool $force): ?JsonResponse
+    {
+        $refusal = $this->guard->budget($amount, $current, $lifetime, $force);
 
-        return null;
+        return $refusal ? response()->json($this->body($refusal), $refusal['status']) : null;
     }
 
     /**
-     * Un budget peut-il passer de $current à $amount ?
-     *
-     * Deux barrières distinctes : le saut relatif (une erreur de raisonnement
-     * ou d'unité se voit comme une hausse énorme) et le plafond absolu, qui
-     * lui n'est jamais contournable — sinon ce n'est pas un plafond.
+     * @param  array<string,mixed>  $refusal
+     * @return array<string,mixed>
      */
-    private function guardBudget(float $amount, ?float $current, bool $lifetime, bool $force): ?JsonResponse
+    private function body(array $refusal): array
     {
-        $maxDaily = $this->ads->maxDailyBudget();
-
-        if (! $lifetime && $amount > $maxDaily) {
-            return response()->json([
-                'error' => "Budget quotidien demandé ({$amount}) au-dessus du plafond absolu ({$maxDaily}).",
-                'hint' => 'Ce plafond n\'est pas contournable par `force`. Il se règle dans /settings, onglet Statistiques.',
-            ], 422);
-        }
-
-        if ($current === null || $current <= 0 || $force) {
-            return null;
-        }
-
-        $maxIncrease = $this->ads->maxBudgetIncreasePct();
-        $increase = ($amount - $current) / $current * 100;
-
-        if ($increase > $maxIncrease) {
-            return response()->json([
-                'error' => sprintf(
-                    'Hausse de %.1f%% (%s → %s) au-dessus du maximum de %.0f%% en une fois.',
-                    $increase,
-                    $current,
-                    $amount,
-                    $maxIncrease,
-                ),
-                'hint' => 'Renvoyer avec `force: true` si la hausse est voulue, ou procéder par paliers.',
-            ], 422);
-        }
-
-        return null;
+        return collect($refusal)->except('status')->all();
     }
 
     /**

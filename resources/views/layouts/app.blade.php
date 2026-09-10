@@ -466,6 +466,17 @@
                         </div>
                     </div>
 
+                    {{-- Publicites Meta (manager+) : campagnes, audiences, sponsorisation --}}
+                    @if(auth()->user()->isManager())
+                    <a href="{{ url('/ads') }}"
+                       class="flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-colors {{ str_starts_with($currentRoute, 'ads') ? 'bg-indigo-50 text-indigo-600' : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900' }}">
+                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1.5">
+                            <path stroke-linecap="round" stroke-linejoin="round" d="M10.34 15.84c-.688-.06-1.386-.09-2.09-.09H7.5a4.5 4.5 0 1 1 0-9h.75c.704 0 1.402-.03 2.09-.09m0 9.18c.253.962.584 1.892.985 2.783.247.55.06 1.21-.463 1.511l-.657.38c-.551.318-1.26.117-1.527-.461a20.845 20.845 0 0 1-1.44-4.282m3.102.069a18.03 18.03 0 0 1-.59-4.59c0-1.586.205-3.124.59-4.59m0 9.18a23.848 23.848 0 0 1 8.835 2.535M10.34 6.66a23.847 23.847 0 0 0 8.835-2.535m0 0A23.74 23.74 0 0 0 18.795 3m.38 1.125a23.91 23.91 0 0 1 1.014 5.395m-1.014 9.105c.19-.63.33-1.279.415-1.943m0 0A23.98 23.98 0 0 0 20.5 12c0-.83-.042-1.65-.124-2.457m0 0a24.005 24.005 0 0 0-.201-1.418" />
+                        </svg>
+                        Publicités
+                    </a>
+                    @endif
+
                     {{-- ═══ CONFIGURATION ═══ --}}
                     <p class="px-3 pt-4 pb-1 text-[10px] font-semibold uppercase tracking-widest text-gray-400">Configuration</p>
 

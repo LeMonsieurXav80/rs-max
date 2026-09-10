@@ -579,6 +579,23 @@
                         <p class="text-xs text-gray-400 mt-2">
                             Vider un champ le fait retomber sur la valeur de <code>config/meta_ads.php</code>.
                         </p>
+
+                        <div class="mt-4">
+                            <label for="meta_ads_pixel_id" class="block text-sm font-medium text-gray-700 mb-1">
+                                Pixel Meta (facultatif)
+                            </label>
+                            <input type="text" id="meta_ads_pixel_id" name="meta_ads_pixel_id"
+                                   value="{{ $settings['meta_ads_pixel_id'] ?? '' }}"
+                                   placeholder="123456789012345"
+                                   class="w-full rounded-xl border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 text-sm">
+                            @error('meta_ads_pixel_id')
+                                <p class="text-xs text-red-600 mt-1">{{ $message }}</p>
+                            @enderror
+                            <p class="text-xs text-gray-400 mt-1">
+                                Necessaire aux objectifs Prospects et Ventes : sans lui, la campagne diffuse
+                                mais l'optimisation n'a aucun signal a apprendre.
+                            </p>
+                        </div>
                     </div>
 
                     @if($hasMetaAdsToken)
