@@ -37,7 +37,7 @@ class SocialAccountController extends Controller
             }
         }
 
-        // Filter out Telegram bot records and Reddit app records (only show channels/subreddits)
+        // Filter out Telegram bot records (only show channels)
         $accounts = $accounts->reject(fn (SocialAccount $a) => str_starts_with($a->platform_account_id ?? '', 'bot_') || str_starts_with($a->platform_account_id ?? '', 'app_'));
 
         $accounts = $accounts->groupBy(fn (SocialAccount $account) => $account->platform->name);
@@ -63,14 +63,14 @@ class SocialAccountController extends Controller
     public function store(Request $request): RedirectResponse
     {
         $validated = $request->validate([
-            'platform_id'   => 'required|integer|exists:platforms,id',
-            'name'          => 'required|string|max:255',
-            'languages'      => 'required|array|min:1',
-            'languages.*'    => 'in:fr,en,pt,es,de,it',
-            'branding'       => 'nullable|string|max:500',
-            'show_branding'  => 'nullable|boolean',
-            'credentials'    => 'required|array',
-            'credentials.*'  => 'nullable|string|max:2000',
+            'platform_id' => 'required|integer|exists:platforms,id',
+            'name' => 'required|string|max:255',
+            'languages' => 'required|array|min:1',
+            'languages.*' => 'in:fr,en,pt,es,de,it',
+            'branding' => 'nullable|string|max:500',
+            'show_branding' => 'nullable|boolean',
+            'credentials' => 'required|array',
+            'credentials.*' => 'nullable|string|max:2000',
         ]);
 
         $user = $request->user();
@@ -111,12 +111,12 @@ class SocialAccountController extends Controller
             ]);
         } else {
             $account = SocialAccount::create([
-                'platform_id'  => $validated['platform_id'],
+                'platform_id' => $validated['platform_id'],
                 'platform_account_id' => $platformAccountId,
-                'name'         => $validated['name'],
-                'credentials'  => $credentials,
-                'languages'    => $validated['languages'],
-                'branding'     => $validated['branding'] ?? null,
+                'name' => $validated['name'],
+                'credentials' => $credentials,
+                'languages' => $validated['languages'],
+                'branding' => $validated['branding'] ?? null,
                 'show_branding' => $validated['show_branding'] ?? false,
             ]);
         }
@@ -162,14 +162,14 @@ class SocialAccountController extends Controller
         }
 
         $validated = $request->validate([
-            'name'           => 'required|string|max:255',
-            'languages'      => 'required|array|min:1',
-            'languages.*'    => 'in:fr,en,pt,es,de,it',
-            'branding'       => 'nullable|string|max:500',
-            'show_branding'  => 'nullable|boolean',
-            'persona_id'     => 'nullable|exists:personas,id',
-            'credentials'    => 'nullable|array',
-            'credentials.*'  => 'nullable|string|max:2000',
+            'name' => 'required|string|max:255',
+            'languages' => 'required|array|min:1',
+            'languages.*' => 'in:fr,en,pt,es,de,it',
+            'branding' => 'nullable|string|max:500',
+            'show_branding' => 'nullable|boolean',
+            'persona_id' => 'nullable|exists:personas,id',
+            'credentials' => 'nullable|array',
+            'credentials.*' => 'nullable|string|max:2000',
         ]);
 
         // Build credentials: merge with existing so blank fields don't wipe saved values
@@ -190,12 +190,12 @@ class SocialAccountController extends Controller
         }
 
         $account->update([
-            'name'          => $validated['name'],
-            'languages'     => $validated['languages'],
-            'branding'      => $validated['branding'] ?? $account->branding,
+            'name' => $validated['name'],
+            'languages' => $validated['languages'],
+            'branding' => $validated['branding'] ?? $account->branding,
             'show_branding' => $validated['show_branding'] ?? false,
-            'persona_id'    => $validated['persona_id'] ?? null,
-            'credentials'   => $account->credentials,
+            'persona_id' => $validated['persona_id'] ?? null,
+            'credentials' => $account->credentials,
         ]);
 
         return redirect()->route('accounts.index')
@@ -251,9 +251,9 @@ class SocialAccountController extends Controller
         $account->users()->updateExistingPivot($user->id, ['is_active' => ! $currentActive]);
 
         return response()->json([
-            'success'   => true,
+            'success' => true,
             'is_active' => ! $currentActive,
-            'message'   => ! $currentActive
+            'message' => ! $currentActive
                 ? 'Compte activé.'
                 : 'Compte désactivé.',
         ]);

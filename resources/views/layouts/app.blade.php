@@ -173,10 +173,10 @@
 
                     {{-- Sources de contenu (collapsible) --}}
                     @if(auth()->user()->isManager())
-                    <div x-data="{ rssOpen: {{ str_starts_with($currentRoute, 'rss') || str_starts_with($currentRoute, 'wordpress') || str_starts_with($currentRoute, 'youtube-channels') || str_starts_with($currentRoute, 'reddit') || str_starts_with($currentRoute, 'tools/pinterest-feeds') ? 'true' : 'false' }} }">
+                    <div x-data="{ rssOpen: {{ str_starts_with($currentRoute, 'rss') || str_starts_with($currentRoute, 'wordpress') || str_starts_with($currentRoute, 'youtube-channels') || str_starts_with($currentRoute, 'tools/pinterest-feeds') ? 'true' : 'false' }} }">
                         <button
                             @click="rssOpen = !rssOpen"
-                            class="w-full flex items-center justify-between px-3 py-2.5 rounded-xl text-sm font-medium transition-colors {{ str_starts_with($currentRoute, 'rss') || str_starts_with($currentRoute, 'wordpress') || str_starts_with($currentRoute, 'youtube-channels') || str_starts_with($currentRoute, 'reddit') || str_starts_with($currentRoute, 'tools/pinterest-feeds') ? 'text-indigo-600' : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900' }}"
+                            class="w-full flex items-center justify-between px-3 py-2.5 rounded-xl text-sm font-medium transition-colors {{ str_starts_with($currentRoute, 'rss') || str_starts_with($currentRoute, 'wordpress') || str_starts_with($currentRoute, 'youtube-channels') || str_starts_with($currentRoute, 'tools/pinterest-feeds') ? 'text-indigo-600' : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900' }}"
                         >
                             <span class="flex items-center gap-3">
                                 <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1.5">
@@ -210,13 +210,6 @@
                                     <path d="M23.498 6.186a3.016 3.016 0 0 0-2.122-2.136C19.505 3.545 12 3.545 12 3.545s-7.505 0-9.377.505A3.017 3.017 0 0 0 .502 6.186C0 8.07 0 12 0 12s0 3.93.502 5.814a3.016 3.016 0 0 0 2.122 2.136c1.871.505 9.376.505 9.376.505s7.505 0 9.377-.505a3.015 3.015 0 0 0 2.122-2.136C24 15.93 24 12 24 12s0-3.93-.502-5.814zM9.545 15.568V8.432L15.818 12l-6.273 3.568z"/>
                                 </svg>
                                 Chaines YouTube
-                            </a>
-                            <a href="{{ url('/reddit-sources') }}"
-                               class="flex items-center gap-3 px-3 py-2 rounded-lg text-sm transition-colors {{ str_starts_with($currentRoute, 'reddit-sources') ? 'bg-indigo-50 text-indigo-600 font-medium' : 'text-gray-500 hover:bg-gray-50 hover:text-gray-900' }}">
-                                <svg class="w-4 h-4" fill="currentColor" viewBox="0 0 24 24">
-                                    <path d="M12 0A12 12 0 0 0 0 12a12 12 0 0 0 12 12 12 12 0 0 0 12-12A12 12 0 0 0 12 0zm5.01 4.744c.688 0 1.25.561 1.25 1.249a1.25 1.25 0 0 1-2.498.056l-2.597-.547-.8 3.747c1.824.07 3.48.632 4.674 1.488.308-.309.73-.491 1.207-.491.968 0 1.754.786 1.754 1.754 0 .716-.435 1.333-1.01 1.614a3.111 3.111 0 0 1 .042.52c0 2.694-3.13 4.87-6.985 4.87-3.856 0-6.987-2.176-6.987-4.87 0-.183.015-.366.043-.534A1.748 1.748 0 0 1 4.028 12c0-.968.786-1.754 1.754-1.754.463 0 .898.196 1.207.49 1.207-.883 2.878-1.43 4.744-1.487l.885-4.182a.342.342 0 0 1 .14-.197.35.35 0 0 1 .238-.042l2.906.617a1.214 1.214 0 0 1 1.108-.701zM9.25 12C8.561 12 8 12.562 8 13.25c0 .687.561 1.248 1.25 1.248.687 0 1.248-.561 1.248-1.249 0-.688-.561-1.249-1.249-1.249zm5.5 0c-.687 0-1.248.561-1.248 1.25 0 .687.561 1.248 1.249 1.248.688 0 1.249-.561 1.249-1.249 0-.687-.562-1.249-1.25-1.249zm-5.466 3.99a.327.327 0 0 0-.231.094.33.33 0 0 0 0 .463c.842.842 2.484.913 2.961.913.477 0 2.105-.056 2.961-.913a.361.361 0 0 0 .029-.463.33.33 0 0 0-.464 0c-.547.533-1.684.73-2.512.73-.828 0-1.979-.196-2.512-.73a.326.326 0 0 0-.232-.095z"/>
-                                </svg>
-                                Subreddits Reddit
                             </a>
                             <a href="{{ url('/tools/pinterest-feeds') }}"
                                class="flex items-center gap-3 px-3 py-2 rounded-lg text-sm transition-colors {{ str_starts_with($currentRoute, 'tools/pinterest-feeds') ? 'bg-indigo-50 text-indigo-600 font-medium' : 'text-gray-500 hover:bg-gray-50 hover:text-gray-900' }}">
@@ -397,13 +390,6 @@
                                     <path d="M20.447 20.452h-3.554v-5.569c0-1.328-.027-3.037-1.852-3.037-1.853 0-2.136 1.445-2.136 2.939v5.667H9.351V9h3.414v1.561h.046c.477-.9 1.637-1.85 3.37-1.85 3.601 0 4.267 2.37 4.267 5.455v6.286zM5.337 7.433a2.062 2.062 0 0 1-2.063-2.065 2.064 2.064 0 1 1 2.063 2.065zm1.782 13.019H3.555V9h3.564v11.452zM22.225 0H1.771C.792 0 0 .774 0 1.729v20.542C0 23.227.792 24 1.771 24h20.451C23.2 24 24 23.227 24 22.271V1.729C24 .774 23.2 0 22.222 0h.003z"/>
                                 </svg>
                                 LinkedIn
-                            </a>
-                            <a href="{{ url('/platforms/reddit') }}"
-                               class="flex items-center gap-3 px-3 py-2 rounded-lg text-sm transition-colors {{ $currentRoute === 'platforms/reddit' ? 'bg-indigo-50 text-indigo-600 font-medium' : 'text-gray-500 hover:bg-gray-50 hover:text-gray-900' }}">
-                                <svg class="w-4 h-4" fill="currentColor" viewBox="0 0 24 24">
-                                    <path d="M14.238 15.348c.085.084.085.221 0 .306-.465.462-1.194.687-2.231.687l-.008-.002-.008.002c-1.036 0-1.766-.225-2.231-.688-.085-.084-.085-.221 0-.305.084-.084.222-.084.307 0 .379.377 1.008.561 1.924.561l.008.002.008-.002c.915 0 1.544-.184 1.924-.561.085-.084.223-.084.307 0zm-3.44-2.418a1.269 1.269 0 0 0-1.27 1.27 1.27 1.27 0 1 0 1.27-1.27zm4.132 0a1.27 1.27 0 1 0 0 2.54 1.27 1.27 0 0 0 0-2.54zM12 0C5.373 0 0 5.373 0 12s5.373 12 12 12 12-5.373 12-12S18.627 0 12 0zm5.492 13.612c.036.174.055.353.055.536 0 2.726-3.173 4.937-7.088 4.937s-7.088-2.211-7.088-4.937c0-.183.018-.362.055-.536a1.657 1.657 0 0 1-.653-1.315c0-.916.742-1.659 1.659-1.659.443 0 .845.177 1.14.465a8.134 8.134 0 0 1 4.382-1.384l.862-4.067a.279.279 0 0 1 .334-.223l2.874.613a1.14 1.14 0 1 1-.13.611l-2.571-.548-.756 3.563a8.097 8.097 0 0 1 4.327 1.383 1.65 1.65 0 0 1 1.14-.465c.916 0 1.659.743 1.659 1.659 0 .548-.268 1.033-.653 1.315v.036z"/>
-                                </svg>
-                                Reddit
                             </a>
                             <a href="{{ url('/platforms/pinterest') }}"
                                class="flex items-center gap-3 px-3 py-2 rounded-lg text-sm transition-colors {{ $currentRoute === 'platforms/pinterest' ? 'bg-indigo-50 text-indigo-600 font-medium' : 'text-gray-500 hover:bg-gray-50 hover:text-gray-900' }}">

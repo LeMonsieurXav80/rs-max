@@ -3,7 +3,6 @@
 namespace App\Services\Rss;
 
 use App\Models\Persona;
-use App\Models\RedditItem;
 use App\Models\RssItem;
 use App\Models\Setting;
 use App\Models\SocialAccount;
@@ -25,7 +24,7 @@ class ContentGenerationService
     /**
      * Generate a social media post from an RSS item using a persona.
      */
-    public function generate(RssItem|WpItem|YtItem|RedditItem $item, Persona $persona, SocialAccount $account): ?string
+    public function generate(RssItem|WpItem|YtItem $item, Persona $persona, SocialAccount $account): ?string
     {
         $apiKey = Setting::getEncrypted('openai_api_key');
         if (! $apiKey) {
@@ -40,9 +39,6 @@ class ContentGenerationService
         if ($item instanceof YtItem) {
             // YouTube: use description as content
             $articleContent = $item->description ?: $item->title;
-        } elseif ($item instanceof RedditItem) {
-            // Reddit: use selftext for self posts, title for link posts
-            $articleContent = $item->selftext ?: $item->title;
         } else {
             // RSS/WordPress: fetch the full article content
             $pageMeta = $this->articleFetcher->fetchPageMeta($item->url);
@@ -104,23 +100,6 @@ class ContentGenerationService
                     $userPrompt .= "IMPORTANT: This video is NOT recent. Do NOT use expressions like \"our latest video\", \"new video\" or \"just released\". Naturally incorporate this phrasing into your post: \"{$agePhrase}\". You can adapt it slightly to the context, but keep the idea.\n\n";
                 }
             }
-        } elseif ($item instanceof RedditItem) {
-            $userPrompt = "Voici un post Reddit à transformer en publication pour les réseaux sociaux.\n\n";
-            $userPrompt .= "Titre : {$item->title}\n";
-            $userPrompt .= "Score : {$item->score} upvotes\n";
-            $userPrompt .= "Commentaires : {$item->num_comments}\n";
-            if ($item->author) {
-                $userPrompt .= "Auteur : u/{$item->author}\n";
-            }
-            if ($item->published_at) {
-                $userPrompt .= "Date de publication : {$item->published_at->translatedFormat('j F Y')}\n";
-            }
-            $userPrompt .= "URL : {$item->permalink}\n\n";
-            if ($item->is_self && $item->selftext) {
-                $userPrompt .= "Contenu du post :\n{$articleContent}\n\n";
-            } else {
-                $userPrompt .= "Lien partagé : {$item->url}\n\n";
-            }
         } else {
             $userPrompt = "Voici un article à transformer en publication pour les réseaux sociaux.\n\n";
             $userPrompt .= "Titre : {$item->title}\n";
@@ -152,7 +131,7 @@ class ContentGenerationService
 
         // Instagram links are not clickable, so don't ask to include the URL
         if ($account->platform->slug !== 'instagram') {
-            $linkUrl = ($item instanceof RedditItem) ? $item->permalink : $item->url;
+            $linkUrl = $item->url;
 
             if ($charLimit > 0) {
                 if ($account->platform->slug === 'bluesky') {

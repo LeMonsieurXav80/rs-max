@@ -271,7 +271,7 @@ class PublishController extends Controller
     private function getAdapter(string $slug): ?PlatformAdapterInterface
     {
         // Source unique de vérité : évite qu'une plateforme ajoutée au job
-        // (linkedin, reddit) reste absente de la publication manuelle.
+        // (linkedin) reste absente de la publication manuelle.
         return AdapterFactory::make($slug);
     }
 

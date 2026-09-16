@@ -14,7 +14,6 @@ class AdapterFactory
             'twitter' => new TwitterAdapter,
             'youtube' => new YouTubeAdapter,
             'bluesky' => new BlueskyAdapter,
-            'reddit' => new RedditAdapter,
             'linkedin' => new LinkedInAdapter,
             default => null,
         };

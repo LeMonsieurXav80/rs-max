@@ -4,7 +4,6 @@ namespace App\Services;
 
 use App\Models\SocialAccount;
 use App\Services\Adapters\BlueskyAdapter;
-use App\Services\Adapters\RedditAdapter;
 
 class PostUrlBuilder
 {
@@ -23,7 +22,6 @@ class PostUrlBuilder
             'facebook' => "https://www.facebook.com/{$externalId}",
             'instagram' => "https://www.instagram.com/p/{$externalId}/",
             'linkedin' => "https://www.linkedin.com/feed/update/{$externalId}/",
-            'reddit' => RedditAdapter::buildPostUrl($account->credentials['subreddit'] ?? '', $externalId),
             default => null,
         };
     }

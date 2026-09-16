@@ -111,22 +111,6 @@ class PlatformSeeder extends Seeder
                 ]),
             ],
             [
-                'slug' => 'reddit',
-                'name' => 'Reddit',
-                'description' => 'Publications sur Reddit (subreddits)',
-                'color' => '#FF4500',
-                'auth_type' => 'oauth',
-                'config' => json_encode([
-                    'credential_fields' => [
-                        ['key' => 'client_id', 'label' => 'Client ID', 'type' => 'password'],
-                        ['key' => 'client_secret', 'label' => 'Client Secret', 'type' => 'password'],
-                        ['key' => 'username', 'label' => 'Username', 'type' => 'text'],
-                        ['key' => 'password', 'label' => 'Password', 'type' => 'password'],
-                        ['key' => 'subreddit', 'label' => 'Subreddit', 'type' => 'text'],
-                    ],
-                ]),
-            ],
-            [
                 'slug' => 'linkedin',
                 'name' => 'LinkedIn',
                 'description' => 'Publications sur LinkedIn (profils et pages)',

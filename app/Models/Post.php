@@ -126,11 +126,6 @@ class Post extends Model
         return $this->hasOne(RssPost::class);
     }
 
-    public function redditPost(): \Illuminate\Database\Eloquent\Relations\HasOne
-    {
-        return $this->hasOne(RedditPost::class);
-    }
-
     public function getSourceImageUrlAttribute(): ?string
     {
         if ($this->source_type === 'wordpress' && $this->relationLoaded('wpPost') && $this->wpPost?->wpItem) {
@@ -143,10 +138,6 @@ class Post extends Model
 
         if ($this->source_type === 'rss' && $this->relationLoaded('rssPost') && $this->rssPost?->rssItem) {
             return $this->rssPost->rssItem->image_url;
-        }
-
-        if ($this->source_type === 'reddit' && $this->relationLoaded('redditPost') && $this->redditPost?->redditItem) {
-            return $this->redditPost->redditItem->thumbnail_url;
         }
 
         return null;

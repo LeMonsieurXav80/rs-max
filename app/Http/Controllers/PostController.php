@@ -102,7 +102,6 @@ class PostController extends Controller
             'wpPost.wpItem',
             'ytPost.ytItem',
             'rssPost.rssItem',
-            'redditPost.redditItem',
         ]);
 
         // Admin sees all posts, regular user sees only own posts
@@ -184,7 +183,6 @@ class PostController extends Controller
             'wpPost.wpItem',
             'ytPost.ytItem',
             'rssPost.rssItem',
-            'redditPost.redditItem',
         ]);
         if (! $user->isAdmin()) {
             $calendarQuery->where('user_id', $user->id);
@@ -815,7 +813,7 @@ class PostController extends Controller
         $defaults = [
             'twitter' => 280, 'facebook' => 63206, 'instagram' => 2200,
             'threads' => 500, 'youtube' => 5000, 'telegram' => 4096,
-            'bluesky' => 300, 'linkedin' => 3000, 'pinterest' => 500, 'reddit' => 40000,
+            'bluesky' => 300, 'linkedin' => 3000, 'pinterest' => 500,
         ];
 
         $limits = [];

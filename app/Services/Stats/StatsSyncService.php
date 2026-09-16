@@ -201,7 +201,6 @@ class StatsSyncService
             'youtube' => new YouTubeStatsService,
             'threads' => new ThreadsStatsService,
             'bluesky' => new BlueskyStatsService,
-            'reddit' => new RedditStatsService,
             'linkedin' => new LinkedInStatsService,
             default => null,
         };

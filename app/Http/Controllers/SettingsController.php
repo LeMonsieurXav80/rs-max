@@ -69,7 +69,6 @@ class SettingsController extends Controller
         'inbox_platform_youtube_enabled',
         'inbox_platform_bluesky_enabled',
         'inbox_platform_telegram_enabled',
-        'inbox_platform_reddit_enabled',
         'inbox_platform_twitter_enabled',
         'inbox_sync_freq_facebook',
         'inbox_sync_freq_instagram',
@@ -77,7 +76,6 @@ class SettingsController extends Controller
         'inbox_sync_freq_youtube',
         'inbox_sync_freq_bluesky',
         'inbox_sync_freq_telegram',
-        'inbox_sync_freq_reddit',
         'inbox_sync_freq_twitter',
         'ai_model_inbox',
         'inbox_use_persona',
@@ -143,7 +141,6 @@ class SettingsController extends Controller
         'inbox_platform_youtube_enabled' => true,
         'inbox_platform_bluesky_enabled' => true,
         'inbox_platform_telegram_enabled' => true,
-        'inbox_platform_reddit_enabled' => true,
         'inbox_platform_twitter_enabled' => false,
         'inbox_sync_freq_facebook' => 'every_15_min',
         'inbox_sync_freq_instagram' => 'every_15_min',
@@ -151,7 +148,6 @@ class SettingsController extends Controller
         'inbox_sync_freq_youtube' => 'every_2_hours',
         'inbox_sync_freq_bluesky' => 'every_30_min',
         'inbox_sync_freq_telegram' => 'every_15_min',
-        'inbox_sync_freq_reddit' => 'hourly',
         'inbox_sync_freq_twitter' => 'hourly',
         'ai_model_inbox' => 'gpt-4o-mini',
         'inbox_use_persona' => true,
@@ -303,7 +299,6 @@ class SettingsController extends Controller
             'inbox_platform_youtube_enabled' => 'nullable',
             'inbox_platform_bluesky_enabled' => 'nullable',
             'inbox_platform_telegram_enabled' => 'nullable',
-            'inbox_platform_reddit_enabled' => 'nullable',
             'inbox_platform_twitter_enabled' => 'nullable',
             'inbox_sync_freq_facebook' => 'required|in:every_15_min,every_30_min,hourly,every_2_hours,every_6_hours,every_12_hours,daily',
             'inbox_sync_freq_instagram' => 'required|in:every_15_min,every_30_min,hourly,every_2_hours,every_6_hours,every_12_hours,daily',
@@ -311,7 +306,6 @@ class SettingsController extends Controller
             'inbox_sync_freq_youtube' => 'required|in:every_15_min,every_30_min,hourly,every_2_hours,every_6_hours,every_12_hours,daily',
             'inbox_sync_freq_bluesky' => 'required|in:every_15_min,every_30_min,hourly,every_2_hours,every_6_hours,every_12_hours,daily',
             'inbox_sync_freq_telegram' => 'required|in:every_15_min,every_30_min,hourly,every_2_hours,every_6_hours,every_12_hours,daily',
-            'inbox_sync_freq_reddit' => 'required|in:every_15_min,every_30_min,hourly,every_2_hours,every_6_hours,every_12_hours,daily',
             'inbox_sync_freq_twitter' => 'required|in:every_15_min,every_30_min,hourly,every_2_hours,every_6_hours,every_12_hours,daily',
             'ai_model_inbox' => 'required|string|max:50',
             'inbox_use_persona' => 'nullable',
@@ -353,7 +347,7 @@ class SettingsController extends Controller
         unset($validated['stock_photos_auto_fallback']);
 
         // Handle inbox platform toggles (checkboxes: absent = false)
-        $inboxPlatforms = ['facebook', 'instagram', 'threads', 'youtube', 'bluesky', 'telegram', 'reddit', 'twitter'];
+        $inboxPlatforms = ['facebook', 'instagram', 'threads', 'youtube', 'bluesky', 'telegram', 'twitter'];
         foreach ($inboxPlatforms as $slug) {
             $key = "inbox_platform_{$slug}_enabled";
             $validated[$key] = $request->has($key) ? true : false;

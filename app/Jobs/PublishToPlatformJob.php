@@ -11,7 +11,6 @@ use App\Services\Adapters\FacebookAdapter;
 use App\Services\Adapters\InstagramAdapter;
 use App\Services\Adapters\LinkedInAdapter;
 use App\Services\Adapters\PlatformAdapterInterface;
-use App\Services\Adapters\RedditAdapter;
 use App\Services\Adapters\TelegramAdapter;
 use App\Services\Adapters\ThreadsAdapter;
 use App\Services\Adapters\TwitterAdapter;
@@ -137,7 +136,6 @@ class PublishToPlatformJob implements ShouldQueue
             'twitter' => new TwitterAdapter,
             'youtube' => new YouTubeAdapter,
             'bluesky' => new BlueskyAdapter,
-            'reddit' => new RedditAdapter,
             'linkedin' => new LinkedInAdapter,
             default => null,
         };

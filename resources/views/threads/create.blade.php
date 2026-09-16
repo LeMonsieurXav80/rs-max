@@ -69,13 +69,6 @@
                             YouTube
                         </button>
                         @endif
-                        @if(($sourceTypeCounts['reddit'] ?? 0) > 0)
-                        <button type="button" @click="switchSourceMode('reddit')"
-                                class="px-3 py-1.5 text-xs font-medium rounded-lg transition-colors"
-                                :class="sourceMode === 'reddit' ? 'bg-indigo-600 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'">
-                            Reddit
-                        </button>
-                        @endif
                     </div>
                     @endif
 

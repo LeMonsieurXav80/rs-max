@@ -33,7 +33,6 @@ use App\Http\Controllers\PlatformController;
 use App\Http\Controllers\PostController;
 use App\Http\Controllers\ProfileController;
 use App\Http\Controllers\PublishController;
-use App\Http\Controllers\RedditSourceController;
 use App\Http\Controllers\ReshareController;
 use App\Http\Controllers\RssFeedController;
 use App\Http\Controllers\SettingsController;
@@ -100,7 +99,6 @@ Route::middleware(['auth', 'verified', 'throttle:600,1'])->group(function () {
     Route::get('platforms/twitter', [PlatformController::class, 'twitter'])->name('platforms.twitter');
     Route::get('platforms/youtube', [PlatformController::class, 'youtube'])->name('platforms.youtube');
     Route::get('platforms/bluesky', [PlatformController::class, 'bluesky'])->name('platforms.bluesky');
-    Route::get('platforms/reddit', [PlatformController::class, 'reddit'])->name('platforms.reddit');
     Route::get('platforms/linkedin', [PlatformController::class, 'linkedin'])->name('platforms.linkedin');
     Route::get('platforms/pinterest', [PlatformController::class, 'pinterest'])->name('platforms.pinterest');
 
@@ -108,7 +106,6 @@ Route::middleware(['auth', 'verified', 'throttle:600,1'])->group(function () {
     Route::post('platforms/telegram/validate-bot', [PlatformController::class, 'validateTelegramBot'])->name('platforms.telegram.validateBot');
     Route::post('platforms/twitter/validate-account', [PlatformController::class, 'validateTwitterAccount'])->name('platforms.twitter.validateAccount');
     Route::post('platforms/bluesky/validate-account', [PlatformController::class, 'validateBlueskyAccount'])->name('platforms.bluesky.validateAccount');
-    Route::post('platforms/reddit/validate-account', [PlatformController::class, 'validateRedditAccount'])->name('platforms.reddit.validateAccount');
 
     // Save default account selection (shared across posts, inbox, stats)
     Route::post('accounts/save-defaults', [PostController::class, 'saveDefaultAccounts'])->name('accounts.saveDefaults');
@@ -251,8 +248,6 @@ Route::middleware(['auth', 'verified', 'throttle:600,1'])->group(function () {
     Route::post('platforms/twitter/add-account', [PlatformController::class, 'addTwitterAccount'])->name('platforms.twitter.addAccount');
     Route::put('platforms/twitter/update-account/{account}', [PlatformController::class, 'updateTwitterAccount'])->name('platforms.twitter.updateAccount');
     Route::post('platforms/bluesky/add-account', [PlatformController::class, 'addBlueskyAccount'])->name('platforms.bluesky.addAccount');
-    Route::post('platforms/reddit/register-app', [PlatformController::class, 'registerRedditApp'])->name('platforms.reddit.registerApp');
-    Route::post('platforms/reddit/add-subreddit', [PlatformController::class, 'addRedditSubreddit'])->name('platforms.reddit.addSubreddit');
 
     // ─── Manager (gestionnaire) ─────────────────────────────────
 
@@ -322,15 +317,6 @@ Route::middleware(['auth', 'verified', 'throttle:600,1'])->group(function () {
         Route::post('youtube-channels/{ytSource}/generate-preview', [YouTubeChannelController::class, 'generatePreview'])->name('youtube-channels.generatePreview');
         Route::post('youtube-channels/{ytSource}/regenerate-item', [YouTubeChannelController::class, 'regenerateItem'])->name('youtube-channels.regenerateItem');
         Route::post('youtube-channels/{ytSource}/confirm-publications', [YouTubeChannelController::class, 'confirmPublications'])->name('youtube-channels.confirmPublications');
-
-        // Reddit Sources
-        Route::resource('reddit-sources', RedditSourceController::class)->except(['show'])->parameters(['reddit-sources' => 'redditSource']);
-        Route::post('reddit-sources/test-connection', [RedditSourceController::class, 'testConnection'])->name('reddit-sources.testConnection');
-        Route::post('reddit-sources/{redditSource}/fetch', [RedditSourceController::class, 'fetchNow'])->name('reddit-sources.fetch');
-        Route::get('reddit-sources/{redditSource}/preview', [RedditSourceController::class, 'preview'])->name('reddit-sources.preview');
-        Route::post('reddit-sources/{redditSource}/generate-preview', [RedditSourceController::class, 'generatePreview'])->name('reddit-sources.generatePreview');
-        Route::post('reddit-sources/{redditSource}/regenerate-item', [RedditSourceController::class, 'regenerateItem'])->name('reddit-sources.regenerateItem');
-        Route::post('reddit-sources/{redditSource}/confirm-publications', [RedditSourceController::class, 'confirmPublications'])->name('reddit-sources.confirmPublications');
 
         // Bot actions
         // Bot — Hub + Logs
@@ -450,7 +436,6 @@ Route::middleware(['auth', 'verified', 'throttle:600,1'])->group(function () {
 
         // Platform account deletion (admin only)
         Route::delete('platforms/telegram/bot', [PlatformController::class, 'destroyTelegramBot'])->name('platforms.telegram.destroyBot');
-        Route::delete('platforms/reddit/app', [PlatformController::class, 'destroyRedditApp'])->name('platforms.reddit.destroyApp');
         Route::delete('platforms/account/{account}', [PlatformController::class, 'destroyAccount'])->name('platforms.destroyAccount');
     });
 });

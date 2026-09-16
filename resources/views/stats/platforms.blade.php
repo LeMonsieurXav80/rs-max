@@ -134,7 +134,6 @@
             threads: '#000000',
             bluesky: '#0085FF',
             telegram: '#26A5E4',
-            reddit: '#FF4500',
         };
 
         new Chart(document.getElementById('platformChart'), {

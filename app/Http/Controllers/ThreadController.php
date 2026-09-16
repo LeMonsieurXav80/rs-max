@@ -5,7 +5,6 @@ namespace App\Http\Controllers;
 use App\Models\HookCategory;
 use App\Models\Persona;
 use App\Models\Platform;
-use App\Models\RedditSource;
 use App\Models\RssFeed;
 use App\Models\SocialAccount;
 use App\Models\Thread;
@@ -107,7 +106,6 @@ class ThreadController extends Controller
                 'wordpress' => WpSource::where('is_active', true)->count(),
                 'rss' => RssFeed::where('is_active', true)->count(),
                 'youtube' => YtSource::where('is_active', true)->count(),
-                'reddit' => RedditSource::where('is_active', true)->count(),
             ];
         }
 
@@ -178,7 +176,7 @@ class ThreadController extends Controller
         $validated = $request->validate([
             'title' => 'nullable|string|max:255',
             'source_url' => 'nullable|url|max:2048',
-            'source_type' => 'nullable|string|in:manual,rss,wordpress,youtube,reddit',
+            'source_type' => 'nullable|string|in:manual,rss,wordpress,youtube',
             'accounts' => 'required|array|min:1',
             'accounts.*' => 'integer|exists:social_accounts,id',
             'segments' => 'required|array|min:1',

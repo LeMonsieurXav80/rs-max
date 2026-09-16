@@ -13,9 +13,8 @@
         'youtube' => 'YouTube',
         'linkedin' => 'LinkedIn',
         'pinterest' => 'Pinterest',
-        'reddit' => 'Reddit',
     ];
-    $platformOrder = ['facebook', 'instagram', 'threads', 'twitter', 'bluesky', 'telegram', 'youtube', 'linkedin', 'pinterest', 'reddit'];
+    $platformOrder = ['facebook', 'instagram', 'threads', 'twitter', 'bluesky', 'telegram', 'youtube', 'linkedin', 'pinterest'];
 @endphp
 
 <div x-data="platformTabs()" @accounts-changed.window="updatePlatforms()" x-init="updatePlatforms()" x-cloak>
@@ -188,7 +187,6 @@ function platformTabs() {
             youtube: 'YouTube',
             linkedin: 'LinkedIn',
             pinterest: 'Pinterest',
-            reddit: 'Reddit',
         },
         aiMultiLoading: false,
         aiMultiError: '',
@@ -201,7 +199,7 @@ function platformTabs() {
             const checked = [...document.querySelectorAll('input[name="accounts[]"]:checked')];
             const slugs = [...new Set(checked.map(el => el.dataset.platform))];
             // Keep platform order consistent
-            const order = ['facebook', 'instagram', 'threads', 'twitter', 'bluesky', 'telegram', 'youtube', 'linkedin', 'pinterest', 'reddit'];
+            const order = ['facebook', 'instagram', 'threads', 'twitter', 'bluesky', 'telegram', 'youtube', 'linkedin', 'pinterest'];
             this.platforms = order.filter(s => slugs.includes(s));
 
             // Check if any selected account has a persona

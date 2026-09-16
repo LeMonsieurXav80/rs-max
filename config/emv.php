@@ -94,12 +94,6 @@ return [
             'actions' => ['like' => 0.03, 'comment' => 0.20, 'share' => 0.35],
         ],
 
-        // score = upvotes nets, pas des likes : volontairement sous-value.
-        'reddit' => [
-            'views_available' => false,
-            'actions' => ['like' => 0.03, 'comment' => 0.25],
-        ],
-
         'bluesky' => [
             'views_available' => false,
             'actions' => ['like' => 0.04, 'comment' => 0.25, 'share' => 0.40, 'bookmark' => 0.20],

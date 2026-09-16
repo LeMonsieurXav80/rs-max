@@ -2,8 +2,6 @@
 
 namespace App\Http\Controllers;
 
-use App\Models\RedditItem;
-use App\Models\RedditSource;
 use App\Models\RssFeed;
 use App\Models\RssItem;
 use App\Models\WpItem;
@@ -22,7 +20,7 @@ class SourceItemController extends Controller
         }
 
         $request->validate([
-            'type' => 'required|in:rss,wordpress,youtube,reddit',
+            'type' => 'required|in:rss,wordpress,youtube',
         ]);
 
         $type = $request->input('type');
@@ -31,7 +29,6 @@ class SourceItemController extends Controller
             'rss' => RssFeed::where('is_active', true)->orderBy('name')->get(['id', 'name', 'url', 'category']),
             'wordpress' => WpSource::where('is_active', true)->orderBy('name')->get(['id', 'name', 'url']),
             'youtube' => YtSource::where('is_active', true)->orderBy('name')->get(['id', 'name', 'channel_name', 'thumbnail_url']),
-            'reddit' => RedditSource::where('is_active', true)->orderBy('name')->get(['id', 'name', 'subreddit']),
         };
 
         return response()->json([
@@ -42,7 +39,6 @@ class SourceItemController extends Controller
                     'rss' => $s->category ?? $s->url,
                     'wordpress' => $s->url,
                     'youtube' => $s->channel_name ?? '',
-                    'reddit' => 'r/' . $s->subreddit,
                 },
             ]),
         ]);
@@ -55,7 +51,7 @@ class SourceItemController extends Controller
         }
 
         $request->validate([
-            'type' => 'required|in:rss,wordpress,youtube,reddit',
+            'type' => 'required|in:rss,wordpress,youtube',
             'source_id' => 'required|integer',
             'search' => 'nullable|string|max:255',
         ]);
@@ -68,11 +64,10 @@ class SourceItemController extends Controller
             'rss' => RssItem::where('rss_feed_id', $sourceId),
             'wordpress' => WpItem::where('wp_source_id', $sourceId),
             'youtube' => YtItem::where('yt_source_id', $sourceId),
-            'reddit' => RedditItem::where('reddit_source_id', $sourceId),
         };
 
         if ($search) {
-            $query->where('title', 'like', '%' . $search . '%');
+            $query->where('title', 'like', '%'.$search.'%');
         }
 
         $items = $query->orderByDesc('published_at')->limit(50)->get();
@@ -84,12 +79,10 @@ class SourceItemController extends Controller
             'image_url' => match ($type) {
                 'rss', 'wordpress' => $item->image_url ?? null,
                 'youtube' => $item->thumbnail_url ?? null,
-                'reddit' => $item->thumbnail_url ?? null,
             },
             'published_at' => $item->published_at?->format('d/m/Y'),
             'extra' => match ($type) {
-                'youtube' => $item->view_count ? number_format($item->view_count) . ' vues' : null,
-                'reddit' => $item->score ? $item->score . ' pts, ' . $item->num_comments . ' com.' : null,
+                'youtube' => $item->view_count ? number_format($item->view_count).' vues' : null,
                 default => $item->author ?? null,
             },
         ]);

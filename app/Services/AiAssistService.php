@@ -235,7 +235,6 @@ TXT;
                 'bluesky' => 'Bluesky',
                 'linkedin' => 'LinkedIn',
                 'pinterest' => 'Pinterest',
-                'reddit' => 'Reddit',
                 default => ucfirst($slug),
             };
             $platformDescriptions[] = "{$label} (max {$charLimit} caractères)";
@@ -358,7 +357,6 @@ TXT;
                 'bluesky' => 'Bluesky',
                 'linkedin' => 'LinkedIn',
                 'pinterest' => 'Pinterest',
-                'reddit' => 'Reddit',
                 default => ucfirst($slug),
             };
             $platformDescriptions[] = "{$label} (max {$charLimit} caractères)";
@@ -652,7 +650,6 @@ TXT;
             'bluesky' => 300,
             'linkedin' => 3000,
             'pinterest' => 500,
-            'reddit' => 40000,
             default => 0,
         };
     }
