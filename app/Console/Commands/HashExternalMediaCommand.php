@@ -3,9 +3,8 @@
 namespace App\Console\Commands;
 
 use App\Models\ExternalPost;
-use App\Services\Media\PerceptualHasher;
+use App\Services\Import\ExternalMediaHasher;
 use Illuminate\Console\Command;
-use Illuminate\Support\Facades\Http;
 
 /**
  * Calcule l'empreinte perceptuelle de la premiere image de chaque publication
@@ -29,7 +28,7 @@ class HashExternalMediaCommand extends Command
 
     protected $description = 'Calcule l\'empreinte des images des publications natives';
 
-    public function handle(PerceptualHasher $hasher): int
+    public function handle(ExternalMediaHasher $hasher): int
     {
         $query = ExternalPost::query()
             ->whereNotNull('published_at')
@@ -49,68 +48,23 @@ class HashExternalMediaCommand extends Command
         $bar = $this->output->createProgressBar($posts->count());
         $bar->start();
 
-        $hashed = 0;
-        $sansImage = 0;
-        $echecs = 0;
+        $result = ['hashed' => 0, 'without_image' => 0, 'failed' => 0];
 
         foreach ($posts as $post) {
+            $result[$hasher->hash($post)]++;
             $bar->advance();
-
-            $first = $post->mediaItems()[0] ?? null;
-            // La miniature suffit et pese moins : l'empreinte travaille de
-            // toute facon sur une image reduite a quelques pixels.
-            $url = $first['thumbnail_url'] ?? $first['url'] ?? null;
-
-            if (! $url) {
-                $post->update(['media_hashed_at' => now()]);
-                $sansImage++;
-
-                continue;
-            }
-
-            $hash = $this->hashOf($hasher, $url);
-
-            if ($hash === null) {
-                $echecs++;
-
-                // Pas de `media_hashed_at` : une URL momentanement injoignable
-                // doit etre retentee au prochain passage.
-                continue;
-            }
-
-            $post->update(['media_hash' => $hash, 'media_hashed_at' => now()]);
-            $hashed++;
         }
 
         $bar->finish();
         $this->newLine(2);
 
-        $this->info("{$hashed} empreinte(s) calculee(s), {$sansImage} sans image, {$echecs} echec(s).");
+        $this->info("{$result['hashed']} empreinte(s) calculee(s), {$result['without_image']} sans image, {$result['failed']} echec(s).");
+
+        if ($result['failed'] > 0) {
+            $this->warn('Les echecs viennent surtout d\'URL expirees : Instagram signe ses liens de CDN.');
+            $this->line('  Relancer `external:import` rafraichit les URL, et hache dans la foulee.');
+        }
 
         return self::SUCCESS;
-    }
-
-    private function hashOf(PerceptualHasher $hasher, string $url): ?string
-    {
-        $temp = null;
-
-        try {
-            $response = Http::timeout(20)->get($url);
-
-            if (! $response->successful()) {
-                return null;
-            }
-
-            $temp = tempnam(sys_get_temp_dir(), 'rshash_');
-            file_put_contents($temp, $response->body());
-
-            return $hasher->hash($temp);
-        } catch (\Throwable) {
-            return null;
-        } finally {
-            if ($temp) {
-                @unlink($temp);
-            }
-        }
     }
 }

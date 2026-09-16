@@ -3,6 +3,7 @@
 namespace App\Console\Commands;
 
 use App\Models\SocialAccount;
+use App\Services\Import\ExternalMediaHasher;
 use App\Services\Import\ImportService;
 use Illuminate\Console\Command;
 
@@ -20,7 +21,8 @@ class ImportExternalPostsCommand extends Command
                             {--account= : Un seul compte social, par son id}
                             {--platform= : Un seul reseau, par son slug}
                             {--limit= : Publications ramenees par compte}
-                            {--since= : Rattrapage force sur N jours, en ignorant le point de reprise}';
+                            {--since= : Rattrapage force sur N jours, en ignorant le point de reprise}
+                            {--no-hash : Ne pas calculer l\'empreinte des images}';
 
     protected $description = 'Importe les publications faites nativement sur les reseaux';
 
@@ -31,7 +33,7 @@ class ImportExternalPostsCommand extends Command
      */
     private const IMPORTABLE = ['facebook', 'instagram', 'twitter', 'youtube', 'threads', 'bluesky', 'pinterest'];
 
-    public function handle(ImportService $importService): int
+    public function handle(ImportService $importService, ExternalMediaHasher $hasher): int
     {
         $limit = (int) ($this->option('limit') ?: config('import.default_limit'));
 
@@ -71,7 +73,25 @@ class ImportExternalPostsCommand extends Command
 
             if ($result['success']) {
                 $total += $result['imported'];
-                $this->line("  {$account->name} ({$account->platform->slug}) : {$result['imported']} publication(s)");
+                $suffixe = '';
+
+                // Tant que les URL sont fraiches : Instagram signe ses liens de
+                // CDN et un hachage differe se prend des 403.
+                if (! $this->option('no-hash')) {
+                    $aHacher = \App\Models\ExternalPost::where('social_account_id', $account->id)
+                        ->whereNull('media_hashed_at')
+                        ->whereNotNull('published_at')
+                        ->orderByDesc('published_at')
+                        ->limit(200)
+                        ->get();
+
+                    if ($aHacher->isNotEmpty()) {
+                        $h = $hasher->hashAll($aHacher);
+                        $suffixe = ", {$h['hashed']} empreinte(s)";
+                    }
+                }
+
+                $this->line("  {$account->name} ({$account->platform->slug}) : {$result['imported']} publication(s){$suffixe}");
 
                 continue;
             }

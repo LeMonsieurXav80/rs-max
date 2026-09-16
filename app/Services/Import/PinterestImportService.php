@@ -116,25 +116,30 @@ class PinterestImportService implements PlatformImportInterface
         $media = $pin['media'] ?? [];
         $isVideo = ($media['media_type'] ?? '') === 'video';
 
-        if ($isVideo) {
-            $cover = $media['cover_image_url'] ?? null;
+        // Une epingle video expose `images` comme les autres : c'est la meme
+        // visuelle, en plusieurs tailles. `cover_image_url` n'est pas toujours
+        // renseigne — il manquait sur 59 des 126 epingles importees, qui se
+        // retrouvaient sans aucune image et donc sans empreinte.
+        $visual = $this->widestImage($media['images'] ?? [])
+            ?? ($media['cover_image_url'] ?? null);
 
-            return $cover
-                ? ExternalPost::normalizeMediaItems([[
-                    'url' => $cover,
-                    'type' => 'video',
-                    'thumbnail_url' => $cover,
-                    'external_media_id' => $pin['id'] ?? null,
-                ]])
-                : [];
-        }
-
-        $images = $media['images'] ?? [];
-
-        if ($images === []) {
+        if (! $visual) {
             return [];
         }
 
+        return ExternalPost::normalizeMediaItems([[
+            'url' => $visual,
+            'type' => $isVideo ? 'video' : 'image',
+            'thumbnail_url' => $isVideo ? $visual : null,
+            'external_media_id' => $pin['id'] ?? null,
+        ]]);
+    }
+
+    /**
+     * La plus grande des tailles proposees par Pinterest (150x150 a 1200x).
+     */
+    private function widestImage(array $images): ?string
+    {
         $widest = null;
         $widestSize = -1;
 
@@ -147,13 +152,7 @@ class PinterestImportService implements PlatformImportInterface
             }
         }
 
-        return $widest
-            ? ExternalPost::normalizeMediaItems([[
-                'url' => $widest,
-                'type' => 'image',
-                'external_media_id' => $pin['id'] ?? null,
-            ]])
-            : [];
+        return $widest;
     }
 
     /**
