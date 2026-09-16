@@ -24,6 +24,15 @@ trait ImportsIncrementally
      */
     protected function importSince(SocialAccount $account): CarbonImmutable
     {
+        // Rattrapage force (`external:import --since=N`) : on ignore le point
+        // de reprise et on redescend a la profondeur demandee. Sans cette
+        // sortie, un compte qui a deja de l'historique en base ne peut plus
+        // remonter au-dela — c'est tout l'interet du mecanisme le reste du
+        // temps, et exactement ce qui gene une reprise depuis zero.
+        if ($forced = config('import.force_since_days')) {
+            return CarbonImmutable::now()->subDays((int) $forced);
+        }
+
         $floor = CarbonImmutable::now()->subDays(config('import.first_run_days'));
 
         $latest = ExternalPost::where('social_account_id', $account->id)

@@ -19,7 +19,8 @@ class ImportExternalPostsCommand extends Command
     protected $signature = 'external:import
                             {--account= : Un seul compte social, par son id}
                             {--platform= : Un seul reseau, par son slug}
-                            {--limit= : Publications ramenees par compte}';
+                            {--limit= : Publications ramenees par compte}
+                            {--since= : Rattrapage force sur N jours, en ignorant le point de reprise}';
 
     protected $description = 'Importe les publications faites nativement sur les reseaux';
 
@@ -33,6 +34,16 @@ class ImportExternalPostsCommand extends Command
     public function handle(ImportService $importService): int
     {
         $limit = (int) ($this->option('limit') ?: config('import.default_limit'));
+
+        // Rattrapage : on redescend a la profondeur demandee au lieu de
+        // reprendre a la derniere publication connue. Pense pour une reprise
+        // depuis zero, pas pour le passage quotidien — chaque reseau borne de
+        // toute facon ce qu'il accepte de rendre (X s'arrete vers 3 200
+        // publications, les autres paginent plus loin).
+        if ($since = $this->option('since')) {
+            config(['import.force_since_days' => (int) $since]);
+            $this->warn("Rattrapage force sur {$since} jours : le point de reprise est ignore.");
+        }
 
         $accounts = SocialAccount::with('platform')
             ->when($this->option('account'), fn ($q, $id) => $q->where('id', (int) $id))

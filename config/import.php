@@ -24,6 +24,11 @@ return [
     // Nombre de publications ramenees par compte et par passage.
     'default_limit' => (int) env('IMPORT_DEFAULT_LIMIT', 25),
 
+    // Profondeur forcee, en jours : ignore le point de reprise et redescend
+    // jusque-la. Vide en temps normal — `external:import --since=N` la pose
+    // le temps d'un rattrapage.
+    'force_since_days' => null,
+
     /*
     |--------------------------------------------------------------------------
     | Rafraichissement des metriques

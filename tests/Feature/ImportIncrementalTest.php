@@ -154,4 +154,17 @@ class ImportIncrementalTest extends TestCase
 
         $this->assertSame('recent', $this->service->newestKnownExternalId($this->account));
     }
+
+    public function test_le_rattrapage_force_ignore_le_point_de_reprise(): void
+    {
+        // Un compte avec de l'historique recent : en temps normal l'import
+        // repart de sa derniere publication connue et ne redescend jamais.
+        $this->externalPost(['published_at' => now()->subDays(2)]);
+
+        config(['import.force_since_days' => 730]);
+
+        $since = $this->service->importSince($this->account);
+
+        $this->assertEqualsWithDelta(730, $since->diffInDays(now()), 1);
+    }
 }
