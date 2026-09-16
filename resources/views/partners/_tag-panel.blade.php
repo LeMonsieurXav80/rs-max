@@ -12,7 +12,9 @@
 @php
     $partnerOptions = $partnerOptions ?? [];
     $autoPartners = $taggable->partners->where('pivot.source', 'auto');
-    $manualIds = $taggable->partners->where('pivot.source', 'manual')->pluck('id')->map(fn ($id) => (int) $id)->values()->all();
+    // 'auto_text' se presente comme un tag manuel : pre-coche, donc
+    // decochable. Sans ca, une marque deduite a tort serait indelogeable.
+    $manualIds = $taggable->partners->whereIn('pivot.source', ['manual', \App\Services\PartnerTagService::SOURCE_TEXT])->pluck('id')->map(fn ($id) => (int) $id)->values()->all();
 @endphp
 
 <div x-data="{

@@ -7,6 +7,7 @@ use App\Models\Partner;
 use App\Models\Post;
 use App\Models\Thread;
 use Illuminate\Support\Collection;
+use Illuminate\Support\Str;
 
 /**
  * Point d'entree unique du tag partenaire : resolution des noms en fiches,
@@ -20,6 +21,20 @@ class PartnerTagService
 {
     /** Photos par requete de recherche inverse (voir applyMediaNeedles). */
     private const NEEDLE_CHUNK = 50;
+
+    /**
+     * Tag deduit du TEXTE de la publication, par opposition a 'auto' (deduit
+     * des photos). Il lui faut sa propre source : les 'auto' sont recalcules a
+     * chaque enregistrement depuis les photos attachees, ce qui effacerait un
+     * tag dont les photos ne savent rien.
+     */
+    public const SOURCE_TEXT = 'auto_text';
+
+    /** En dessous, un nom de marque ramasse trop de faux positifs. */
+    private const MIN_NEEDLE = 3;
+
+    /** Longueur a partir de laquelle on cherche aussi la forme collee (#lamarque). */
+    private const MIN_GLUED = 5;
 
     /**
      * Resout une liste de noms libres en fiches partenaires (creation a la volee).
@@ -242,9 +257,26 @@ class PartnerTagService
         // On revalide toujours contre la base : un id supprime ou invente ne doit rien casser.
         $manual = empty($manual) ? [] : Partner::whereIn('id', $manual)->pluck('id')->all();
 
+        // Les tags deduits du texte ne se recalculent pas ici. `sync()`
+        // supprimant tout ce qu'on ne lui redonne pas, il faut les lui
+        // repasser explicitement, sinon un enregistrement automatique les
+        // effacerait.
+        //
+        // Sauf quand un HUMAIN vient de soumettre sa liste ($manualIds non
+        // nul) : les tags du texte lui sont presentes pre-coches, donc ce
+        // qu'il renvoie fait foi. C'est ce qui permet d'en retirer un.
+        $fromText = $manualIds === null
+            ? $model->partners()->wherePivot('source', self::SOURCE_TEXT)->pluck('partners.id')->all()
+            : [];
+
         $sync = [];
         foreach ($autoIds as $id) {
             $sync[$id] = ['source' => 'auto'];
+        }
+        // Le texte prime sur la photo : une legende ne change pas, alors
+        // qu'une photo peut etre detachee. Le tag survit donc au detachement.
+        foreach ($fromText as $id) {
+            $sync[$id] = ['source' => self::SOURCE_TEXT];
         }
         foreach ($manual as $id) {
             $sync[$id] = ['source' => 'manual'];
@@ -252,6 +284,80 @@ class PartnerTagService
 
         $model->partners()->sync($sync);
         $model->unsetRelation('partners');
+    }
+
+    /**
+     * Tague un contenu d'apres les marques nommees dans son texte.
+     *
+     * Comble le trou de l'heritage par les photos : une publication faite
+     * nativement sur le reseau, avec une image qui n'a jamais transite par la
+     * mediatheque, ne peut rien heriter — alors que sa legende cite la marque.
+     *
+     * N'ajoute jamais qu'a ce qui existe deja, et ne retire rien : une marque
+     * absente du texte n'est pas une marque a enlever, elle peut venir d'une
+     * photo ou d'une decision humaine.
+     *
+     * @return array<int,int> Ids des partenaires ajoutes par cet appel.
+     */
+    public function tagFromText(Post|Thread $model, ?string $text): array
+    {
+        $detected = $this->partnerIdsFromText($text);
+
+        if ($detected === []) {
+            return [];
+        }
+
+        $already = $model->partners()->pluck('partners.id')->map(fn ($id) => (int) $id)->all();
+        $added = array_values(array_diff($detected, $already));
+
+        foreach ($added as $id) {
+            $model->partners()->attach($id, ['source' => self::SOURCE_TEXT]);
+        }
+
+        $model->unsetRelation('partners');
+
+        return $added;
+    }
+
+    /**
+     * Partenaires nommes dans un texte libre.
+     *
+     * La comparaison passe par le meme slug que la deduplication des fiches :
+     * « Coca-Cola », « coca cola » et « COCA COLA » se valent. Deux formes sont
+     * cherchees — les mots separes, et la forme collee des hashtags
+     * (« #cocacola »), cette derniere seulement au-dela d'une longueur qui la
+     * rend peu ambigue.
+     *
+     * @return array<int,int>
+     */
+    public function partnerIdsFromText(?string $text): array
+    {
+        $haystack = Str::slug((string) $text, ' ');
+
+        if ($haystack === '') {
+            return [];
+        }
+
+        $glued = str_replace(' ', '', $haystack);
+        $ids = [];
+
+        foreach (Partner::all(['id', 'slug']) as $partner) {
+            $needle = str_replace('-', ' ', (string) $partner->slug);
+
+            if (mb_strlen($needle) < self::MIN_NEEDLE) {
+                continue;
+            }
+
+            $asWords = preg_match('/\b'.preg_quote($needle, '/').'\b/', $haystack) === 1;
+            $asHashtag = mb_strlen($needle) >= self::MIN_GLUED
+                && str_contains($glued, str_replace(' ', '', $needle));
+
+            if ($asWords || $asHashtag) {
+                $ids[] = (int) $partner->id;
+            }
+        }
+
+        return $ids;
     }
 
     /**

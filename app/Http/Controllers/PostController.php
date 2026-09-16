@@ -479,7 +479,11 @@ class PostController extends Controller
         $partnerTags = app(PartnerTagService::class);
         $partnerOptions = $partnerTags->options();
         // Seuls les tags manuels sont re-cochables : les 'auto' sont recalcules au save.
-        $selectedPartnerIds = $post->partners()->wherePivot('source', 'manual')->pluck('partners.id')->all();
+        // Les tags deduits du texte sont pre-coches comme les manuels : c'est ce
+        // qui les rend retirables. Enregistrer le formulaire les confirme.
+        $selectedPartnerIds = $post->partners()
+            ->wherePivotIn('source', ['manual', \App\Services\PartnerTagService::SOURCE_TEXT])
+            ->pluck('partners.id')->all();
         $mediaPartnerMap = $partnerTags->partnersByMediaUrl($post->media);
 
         // Une publication deja partie s'edite en metadonnees seules : ni comptes,

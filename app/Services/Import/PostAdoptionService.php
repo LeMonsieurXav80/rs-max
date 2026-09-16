@@ -90,12 +90,34 @@ class PostAdoptionService
         // transaction : le service relit les medias depuis la base.
         $this->partnerTags->syncPost($post);
 
+        // Puis ce que le texte nomme. Une publication native est souvent faite
+        // d'une photo prise sur le vif, inconnue de la mediatheque : il n'y a
+        // rien a heriter, alors que la legende cite la marque.
+        $this->partnerTags->tagFromText($post, $this->taggableText($externalPosts));
+
         return [
             'post' => $post->fresh(),
             'downloaded' => $mediaResult['downloaded'],
             'reused' => $mediaResult['reused'],
             'skipped_videos' => $mediaResult['skipped_videos'],
         ];
+    }
+
+    /**
+     * Tous les textes du lot bout a bout, pour la detection des marques.
+     *
+     * Chaque reseau a sa redaction : la marque peut n'etre citee que dans la
+     * version longue de Facebook, ou ne survivre que dans les hashtags
+     * d'Instagram. Chercher dans le seul texte de reference en raterait.
+     *
+     * @param  Collection<int, ExternalPost>  $externalPosts
+     */
+    private function taggableText(Collection $externalPosts): string
+    {
+        return $externalPosts
+            ->map(fn (ExternalPost $p) => (string) $p->content)
+            ->filter()
+            ->implode("\n");
     }
 
     /**
