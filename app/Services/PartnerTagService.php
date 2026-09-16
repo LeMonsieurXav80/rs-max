@@ -338,19 +338,26 @@ class PartnerTagService
             return [];
         }
 
-        $glued = str_replace(' ', '', $haystack);
+        $hashtags = $this->hashtagSlugs((string) $text);
         $ids = [];
 
         foreach (Partner::all(['id', 'slug']) as $partner) {
-            $needle = str_replace('-', ' ', (string) $partner->slug);
+            $slug = (string) $partner->slug;
+            $needle = str_replace('-', ' ', $slug);
 
             if (mb_strlen($needle) < self::MIN_NEEDLE) {
                 continue;
             }
 
             $asWords = preg_match('/\b'.preg_quote($needle, '/').'\b/', $haystack) === 1;
+
+            // Compare aux hashtags REELLEMENT presents, un par un. Chercher la
+            // forme collee dans le texte entier prive d'espaces n'a aucune
+            // frontiere de mot : « absolument » contient « absolut », et
+            // « looking sharp » colle en « lookingsharp » qui contient
+            // « kings ». Les deux se sont produits en vrai.
             $asHashtag = mb_strlen($needle) >= self::MIN_GLUED
-                && str_contains($glued, str_replace(' ', '', $needle));
+                && in_array(str_replace('-', '', $slug), $hashtags, true);
 
             if ($asWords || $asHashtag) {
                 $ids[] = (int) $partner->id;
@@ -358,6 +365,24 @@ class PartnerTagService
         }
 
         return $ids;
+    }
+
+    /**
+     * Hashtags d'un texte, ramenes a la meme forme qu'un slug de partenaire
+     * sans ses tirets : « #PrettyLittleThing » donne « prettylittlething ».
+     *
+     * @return array<int,string>
+     */
+    private function hashtagSlugs(string $text): array
+    {
+        preg_match_all('/#([\p{L}\p{N}_]+)/u', $text, $matches);
+
+        return collect($matches[1] ?? [])
+            ->map(fn (string $tag) => str_replace('-', '', Str::slug($tag)))
+            ->filter()
+            ->unique()
+            ->values()
+            ->all();
     }
 
     /**

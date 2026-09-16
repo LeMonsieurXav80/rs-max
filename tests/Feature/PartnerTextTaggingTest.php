@@ -198,4 +198,29 @@ class PartnerTextTaggingTest extends TestCase
 
         $this->assertSame('manual', $post->fresh()->partners->first()->pivot->source);
     }
+
+    public function test_un_mot_qui_contient_le_nom_ne_declenche_rien(): void
+    {
+        // Trouve en prod : « Absolut » sortait sur 6 publications parce que la
+        // recherche de la forme collee n'avait aucune frontiere de mot, et que
+        // « absolument » prive d'espaces contient « absolut ».
+        Partner::create(['name' => 'Absolut', 'slug' => Partner::slugFor('Absolut')]);
+
+        $this->assertSame([], $this->tag('C est absolument magnifique ce matin la'));
+    }
+
+    public function test_deux_mots_colles_ne_fabriquent_pas_une_marque(): void
+    {
+        // « looking sharp » colle en « lookingsharp », qui contient « kings ».
+        Partner::create(['name' => 'Kings', 'slug' => Partner::slugFor('Kings')]);
+
+        $this->assertSame([], $this->tag('Toujours looking sharp sur cette photo'));
+    }
+
+    public function test_le_hashtag_reste_reconnu_apres_le_correctif(): void
+    {
+        Partner::create(['name' => 'Absolut', 'slug' => Partner::slugFor('Absolut')]);
+
+        $this->assertSame(['Absolut'], $this->tag('Soiree reussie #Absolut #vendredi'));
+    }
 }
