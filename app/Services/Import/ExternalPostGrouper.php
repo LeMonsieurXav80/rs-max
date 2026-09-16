@@ -3,6 +3,7 @@
 namespace App\Services\Import;
 
 use App\Models\ExternalPost;
+use App\Services\Media\PerceptualHasher;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Str;
 
@@ -21,11 +22,30 @@ use Illuminate\Support\Str;
  */
 class ExternalPostGrouper
 {
+    public function __construct(private readonly PerceptualHasher $hasher) {}
+
     /**
      * Deux reseaux ne recoivent jamais la publication a la seconde pres :
      * publication manuelle en serie, file d'attente, decalage d'horloge.
      */
     public const WINDOW_MINUTES = 30;
+
+    /**
+     * Fenetre elargie, reservee aux publications dont l'IMAGE concorde.
+     *
+     * Pinterest republie le lendemain la photo d'Instagram, avec sa propre
+     * description : ni l'heure ni le texte ne rapprochent les deux. Sur 126
+     * epingles mesurees, une seule avait sa jumelle Instagram a moins de 30
+     * minutes, 111 a moins de 36 heures.
+     *
+     * Elle ne s'applique JAMAIS sur la seule proximite horaire : avec 159
+     * publications sur quatre mois, un tel intervalle trouve toujours quelque
+     * chose. Il faut que les empreintes se repondent.
+     */
+    public const IMAGE_WINDOW_HOURS = 72;
+
+    /** Meme tolerance que la deduplication des photos rapatriees. */
+    private const DHASH_TOLERANCE = 6;
 
     /** Au-dela, les textes disent la meme chose. */
     private const SURE = 0.75;
@@ -119,7 +139,17 @@ class ExternalPostGrouper
             return 'unrelated';
         }
 
-        if ($a->published_at->diffInMinutes($b->published_at, absolute: true) > self::WINDOW_MINUTES) {
+        $ecart = $a->published_at->diffInMinutes($b->published_at, absolute: true);
+
+        // L'image d'abord : c'est le seul signal qui survit a une republication
+        // automatique d'un reseau vers un autre, ou tout le reste change.
+        if ($a->platform_id !== $b->platform_id && $this->sameImage($a, $b)) {
+            return $ecart <= self::IMAGE_WINDOW_HOURS * 60
+                ? 'twin'
+                : 'unrelated';
+        }
+
+        if ($ecart > self::WINDOW_MINUTES) {
             return 'unrelated';
         }
 
@@ -172,6 +202,25 @@ class ExternalPostGrouper
         similar_text($a, $b, $percent);
 
         return $percent / 100;
+    }
+
+    /**
+     * Les deux publications montrent-elles la meme photo ?
+     *
+     * Comparaison d'empreintes perceptuelles : le reseau qui republie
+     * re-encode l'image, donc les octets different alors que la photo est la
+     * meme. Les empreintes sont posees par `external:hash-media` ; sans elles
+     * la reponse est non, jamais « peut-etre ».
+     */
+    private function sameImage(ExternalPost $a, ExternalPost $b): bool
+    {
+        if (! $a->media_hash || ! $b->media_hash) {
+            return false;
+        }
+
+        $distance = $this->hasher->distance($a->media_hash, $b->media_hash);
+
+        return $distance !== null && $distance <= self::DHASH_TOLERANCE;
     }
 
     private function sameMediaShape(ExternalPost $a, ExternalPost $b): bool

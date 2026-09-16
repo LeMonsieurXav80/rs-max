@@ -32,6 +32,8 @@ class ExternalPost extends Model
         'ignored_at',
         'ignored_reason',
         'group_key',
+        'media_hash',
+        'media_hashed_at',
     ];
 
     /** Ecartee par une regle automatique, pas par un humain. */
@@ -43,6 +45,7 @@ class ExternalPost extends Model
             'published_at' => 'datetime',
             'metrics_synced_at' => 'datetime',
             'adopted_at' => 'datetime',
+            'media_hashed_at' => 'datetime',
             'ignored_at' => 'datetime',
             'metrics' => 'array',
             'media' => 'array',
