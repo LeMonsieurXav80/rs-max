@@ -408,6 +408,7 @@
                                             <div class="flex-1 min-w-0">
                                                 <div class="flex items-center gap-2 mb-2">
                                                     <x-status-badge :status="$post->status" />
+                                                    <x-source-badge :source-type="$post->source_type" />
                                                     <span class="text-sm text-gray-500">{{ ($post->scheduled_at ?? $post->published_at)->format('H:i') }}</span>
                                                     @if(auth()->user()->isAdmin() && $post->user)
                                                         <span class="text-xs text-gray-400">{{ $post->user->name }}</span>
@@ -518,6 +519,7 @@
                                 {{-- Status + user --}}
                                 <div class="flex items-center gap-3 mb-1.5">
                                     <x-status-badge :status="$post->status" />
+                                    <x-source-badge :source-type="$post->source_type" />
                                     @if(auth()->user()->isAdmin() && $post->user)
                                         <span class="text-xs text-gray-400">{{ $post->user->name }}</span>
                                     @endif

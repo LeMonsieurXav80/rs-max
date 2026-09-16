@@ -49,7 +49,7 @@ class FacebookImportService implements PlatformImportInterface
         $posts = $this->fetchPostsWithFields(
             $pageId,
             $accessToken,
-            'id,message,full_picture,permalink_url,created_time,likes.summary(true),comments.summary(true),shares,'
+            'id,message,full_picture,permalink_url,created_time,status_type,likes.summary(true),comments.summary(true),shares,'
                 .'attachments{media_type,type,media,target,subattachments{media_type,type,media,target}}',
             $limit,
             $since
@@ -65,7 +65,7 @@ class FacebookImportService implements PlatformImportInterface
         return $this->fetchPostsWithFields(
             $pageId,
             $accessToken,
-            'id,message,full_picture,permalink_url,created_time',
+            'id,message,full_picture,permalink_url,created_time,status_type',
             $limit,
             $since
         ) ?? collect();
@@ -225,6 +225,8 @@ class FacebookImportService implements PlatformImportInterface
                 continue;
             }
 
+            $isNoise = $this->isNoise($post, $mediaItems);
+
             $externalPost = ExternalPost::create([
                 'social_account_id' => $account->id,
                 'platform_id' => $platform->id,
@@ -236,6 +238,10 @@ class FacebookImportService implements PlatformImportInterface
                 'published_at' => $post['created_time'] ?? null,
                 'metrics' => $metricsData,
                 'metrics_synced_at' => now(),
+                // Le fil d'une Page ne contient pas que des publications : on
+                // garde la ligne pour les stats, hors du flux d'adoption.
+                'ignored_at' => $isNoise ? now() : null,
+                'ignored_reason' => $isNoise ? ExternalPost::IGNORED_AUTO_NOISE : null,
             ]);
 
             $imported->push($externalPost);
@@ -244,6 +250,29 @@ class FacebookImportService implements PlatformImportInterface
         $account->update(['last_history_import_at' => now()]);
 
         return $imported;
+    }
+
+    /**
+     * Ce qui remonte dans le fil d'une Page sans etre une publication a soi.
+     *
+     * `status_type` nomme l'evenement : un partage du contenu d'un autre, une
+     * creation d'evenement ou de groupe, un taguage sur la photo d'un tiers.
+     * Rien de tout ca ne doit devenir une publication RS-Max. Le champ est
+     * absent du fallback degrade (sans `pages_read_engagement`) : dans ce cas
+     * seul le test « ni texte ni image » s'applique, et c'est volontaire —
+     * mieux vaut laisser passer du bruit que d'ecarter une vraie publication.
+     *
+     * @param  array<int, array>  $mediaItems
+     */
+    private function isNoise(array $post, array $mediaItems): bool
+    {
+        $noiseTypes = ['shared_story', 'created_event', 'created_group', 'created_note', 'tagged_in_photo'];
+
+        if (in_array($post['status_type'] ?? '', $noiseTypes, true)) {
+            return true;
+        }
+
+        return trim((string) ($post['message'] ?? '')) === '' && empty($mediaItems);
     }
 
     /**

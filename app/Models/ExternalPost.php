@@ -30,8 +30,12 @@ class ExternalPost extends Model
         'adopted_post_id',
         'adopted_at',
         'ignored_at',
+        'ignored_reason',
         'group_key',
     ];
+
+    /** Ecartee par une regle automatique, pas par un humain. */
+    public const IGNORED_AUTO_NOISE = 'auto_noise';
 
     protected function casts(): array
     {

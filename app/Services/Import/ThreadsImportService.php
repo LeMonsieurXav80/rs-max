@@ -46,7 +46,10 @@ class ThreadsImportService implements PlatformImportInterface
         try {
             $url = self::API_BASE."/{$userId}/threads";
             $params = [
-                'fields' => 'id,text,media_type,media_url,thumbnail_url,permalink,timestamp,children{id,media_type,media_url,thumbnail_url}',
+                // `is_reply` : les segments 2..N d'un fil sont des reponses a
+                // soi-meme et remontent ici comme des publications a part. Sans
+                // lui, un fil de cinq messages donnerait cinq publications.
+                'fields' => 'id,text,media_type,media_url,thumbnail_url,permalink,timestamp,is_reply,children{id,media_type,media_url,thumbnail_url}',
                 'limit' => min(100, $limit),
                 'since' => $since->toDateString(),
                 'access_token' => $accessToken,
@@ -147,6 +150,10 @@ class ThreadsImportService implements PlatformImportInterface
                 'published_at' => $thread['timestamp'] ?? null,
                 'metrics' => $metricsData,
                 'metrics_synced_at' => now(),
+                // Une reponse appartient a son fil, pas a elle-meme : on la
+                // garde (les stats en vivent) mais hors du flux d'adoption.
+                'ignored_at' => ($thread['is_reply'] ?? false) ? now() : null,
+                'ignored_reason' => ($thread['is_reply'] ?? false) ? ExternalPost::IGNORED_AUTO_NOISE : null,
             ]);
 
             $imported->push($externalPost);

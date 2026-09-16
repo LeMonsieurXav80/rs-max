@@ -62,6 +62,11 @@ class TwitterImportService implements PlatformImportInterface
                 'tweet.fields' => 'created_at,public_metrics,attachments',
                 'media.fields' => 'url,preview_image_url,type',
                 'expansions' => 'attachments.media_keys',
+                // Sans ce filtre, la timeline renvoie AUSSI les retweets et
+                // chaque reponse : du bruit dans le flux d'adoption, et une
+                // publication RS-Max par reponse une fois l'adoption automatique
+                // en place. X les exclut a la source, donc gratuitement.
+                'exclude' => 'retweets,replies',
             ];
 
             // `since_id` est le filtre le moins cher : X ne renvoie alors que

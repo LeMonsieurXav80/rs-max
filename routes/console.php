@@ -37,7 +37,7 @@ match ($syncFreq) {
 Schedule::command('inbox:send-scheduled')->everyMinute()->withoutOverlapping(5);
 
 // Inbox sync - per-platform frequency configurable via Settings page
-$inboxPlatforms = ['facebook', 'instagram', 'threads', 'youtube', 'bluesky', 'telegram', 'reddit', 'twitter'];
+$inboxPlatforms = ['facebook', 'instagram', 'threads', 'youtube', 'bluesky', 'telegram', 'twitter'];
 foreach ($inboxPlatforms as $slug) {
     $enabled = rescue(fn () => (bool) Setting::get("inbox_platform_{$slug}_enabled", true), true, false);
     if (! $enabled) {
@@ -88,3 +88,16 @@ Schedule::command('snapshots:downsample')->monthlyOn(1, '03:00');
 // Healthcheck quotidien des modeles LLM gratuits (detecte les quotas a 0,
 // les modeles renommes, les cles API revoquees). Resultat visible dans Settings → IA Gratuite.
 Schedule::command('free-llms:test')->dailyAt('04:30')->withoutOverlapping(15);
+
+// Publications natives : import puis adoption automatique, avant la synchro des
+// stats. L'import coute une requete par compte ; l'adoption n'appelle aucune API
+// (elle ne fait que rapatrier les photos deja connues du flux).
+if (rescue(fn () => (bool) Setting::get('external_auto_import_enabled', true), true, false)) {
+    Schedule::command('external:import')->dailyAt('05:15')->withoutOverlapping(30);
+}
+
+// Le delai entre les deux laisse l'import finir : l'adoption a besoin d'avoir
+// TOUS les reseaux en base pour reconnaitre les jumelles d'une publication.
+if (rescue(fn () => (bool) Setting::get('external_auto_adopt_enabled', true), true, false)) {
+    Schedule::command('external:auto-adopt --commit')->dailyAt('05:45')->withoutOverlapping(20);
+}

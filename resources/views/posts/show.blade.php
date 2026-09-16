@@ -272,6 +272,7 @@
                 {{-- Status + user + dates --}}
                 <div class="flex flex-wrap items-center gap-3 mb-6">
                     <x-status-badge :status="$post->status" />
+                    <x-source-badge :source-type="$post->source_type" />
                     @if($post->user)
                         <span class="text-xs text-gray-400">par {{ $post->user->name }}</span>
                     @endif
@@ -566,9 +567,9 @@
                         'threads' => 'Threads', 'twitter' => 'Twitter / X',
                         'bluesky' => 'Bluesky', 'telegram' => 'Telegram',
                         'youtube' => 'YouTube', 'linkedin' => 'LinkedIn',
-                        'pinterest' => 'Pinterest', 'reddit' => 'Reddit',
+                        'pinterest' => 'Pinterest',
                     ];
-                    $addPlatformOrder = ['facebook', 'instagram', 'threads', 'twitter', 'bluesky', 'telegram', 'youtube', 'linkedin', 'pinterest', 'reddit'];
+                    $addPlatformOrder = ['facebook', 'instagram', 'threads', 'twitter', 'bluesky', 'telegram', 'youtube', 'linkedin', 'pinterest'];
                 @endphp
                 <div class="bg-white rounded-2xl shadow-sm border border-gray-100" x-data="{ count: 0 }">
                     <div class="px-6 lg:px-8 py-5 border-b border-gray-100">

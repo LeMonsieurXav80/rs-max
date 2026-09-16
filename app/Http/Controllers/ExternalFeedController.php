@@ -25,7 +25,7 @@ class ExternalFeedController extends Controller
      * @see \App\Services\Import\ImportService::getServiceForPlatform()
      */
     private const IMPORTABLE_PLATFORMS = [
-        'facebook', 'instagram', 'twitter', 'youtube', 'threads', 'bluesky',
+        'facebook', 'instagram', 'twitter', 'youtube', 'threads', 'bluesky', 'pinterest',
     ];
 
     /**
@@ -202,7 +202,7 @@ class ExternalFeedController extends Controller
     {
         $ids = $this->authorizedIds($request);
 
-        ExternalPost::whereIn('id', $ids)->update(['ignored_at' => null]);
+        ExternalPost::whereIn('id', $ids)->update(['ignored_at' => null, 'ignored_reason' => null]);
 
         return back()->with('success', count($ids).' publication(s) remise(s) dans le flux.');
     }
