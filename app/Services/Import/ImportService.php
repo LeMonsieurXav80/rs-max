@@ -116,6 +116,7 @@ class ImportService
             'youtube' => app(YouTubeImportService::class),
             'threads' => app(ThreadsImportService::class),
             'bluesky' => app(BlueskyImportService::class),
+            'pinterest' => app(PinterestImportService::class),
             default => null,
         };
     }

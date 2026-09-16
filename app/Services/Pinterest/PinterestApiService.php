@@ -236,6 +236,68 @@ class PinterestApiService
         return $response->json('items', []);
     }
 
+    /**
+     * Epingles dont le compte est proprietaire, de la plus recente a la plus
+     * ancienne.
+     *
+     * `GET /pins` ne rend que les epingles CREEES par le compte : passer par
+     * les tableaux ramenerait aussi celles enregistrees chez les autres, qui
+     * n'ont rien a faire dans le flux d'adoption.
+     *
+     * `pin_metrics=true` fait tenir les statistiques dans le meme appel : chez
+     * Pinterest elles se paieraient sinon une requete par epingle.
+     *
+     * @return array<int, array> Epingles brutes, telles que rendues par l'API.
+     */
+    public function getOwnedPins(SocialAccount $account, int $limit = 25): array
+    {
+        $accessToken = $this->getValidToken($account);
+
+        if (! $accessToken) {
+            return [];
+        }
+
+        $pins = [];
+        $bookmark = null;
+
+        do {
+            $params = [
+                'page_size' => min($limit, 25),
+                'pin_metrics' => 'true',
+            ];
+
+            if ($bookmark) {
+                $params['bookmark'] = $bookmark;
+            }
+
+            $response = Http::withToken($accessToken)->get(self::API_BASE.'/pins', $params);
+
+            if (! $response->successful()) {
+                Log::error('Pinterest: echec de la lecture des epingles', [
+                    'account_id' => $account->id,
+                    'status' => $response->status(),
+                    'body' => $response->body(),
+                ]);
+
+                break;
+            }
+
+            $data = $response->json();
+
+            foreach ($data['items'] ?? [] as $pin) {
+                $pins[] = $pin;
+
+                if (count($pins) >= $limit) {
+                    return $pins;
+                }
+            }
+
+            $bookmark = $data['bookmark'] ?? null;
+        } while ($bookmark && count($pins) < $limit);
+
+        return $pins;
+    }
+
     private function getValidToken(SocialAccount $account): ?string
     {
         $credentials = $account->credentials;
