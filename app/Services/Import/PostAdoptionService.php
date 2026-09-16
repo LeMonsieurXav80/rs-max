@@ -63,6 +63,13 @@ class PostAdoptionService
                     'status' => 'published',
                     'external_id' => $externalPost->external_id,
                     'published_at' => $externalPost->published_at,
+                    'platform_url' => $externalPost->post_url,
+                    // Les metriques ont deja ete payees a l'import : sans ce
+                    // report, la publication adoptee s'affiche vide jusqu'a la
+                    // prochaine synchro — et reste vide pour toujours sur un
+                    // reseau qui n'a pas de service de stats.
+                    'metrics' => $externalPost->metrics,
+                    'metrics_synced_at' => $externalPost->metrics_synced_at,
                 ]);
 
                 $externalPost->update([

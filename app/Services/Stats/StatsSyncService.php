@@ -202,6 +202,7 @@ class StatsSyncService
             'threads' => new ThreadsStatsService,
             'bluesky' => new BlueskyStatsService,
             'linkedin' => new LinkedInStatsService,
+            'pinterest' => app(PinterestStatsService::class),
             default => null,
         };
     }

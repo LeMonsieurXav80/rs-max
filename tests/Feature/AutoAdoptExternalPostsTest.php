@@ -167,4 +167,23 @@ class AutoAdoptExternalPostsTest extends TestCase
 
         $this->assertSame(0, Post::count());
     }
+
+    public function test_les_metriques_de_l_import_suivent_la_publication(): void
+    {
+        $this->externalPost('facebook', 'Une publication avec ses chiffres deja connus', now()->subDay())
+            ->update([
+                'metrics' => ['views' => 1200, 'likes' => 42, 'comments' => 3, 'shares' => 7],
+                'metrics_synced_at' => now()->subHour(),
+            ]);
+
+        $this->artisan('external:auto-adopt --commit')->assertSuccessful();
+
+        $platform = Post::first()->postPlatforms()->first();
+
+        // Sans ce report, la publication s'afficherait vide alors que l'import
+        // avait deja paye l'appel.
+        $this->assertSame(1200, $platform->metrics['views']);
+        $this->assertSame(42, $platform->metrics['likes']);
+        $this->assertNotNull($platform->metrics_synced_at);
+    }
 }

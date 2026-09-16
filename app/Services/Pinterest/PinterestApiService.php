@@ -298,6 +298,35 @@ class PinterestApiService
         return $pins;
     }
 
+    /**
+     * Une epingle et ses statistiques, pour la resynchro.
+     *
+     * @return array|null L'epingle brute, ou null si elle a disparu.
+     */
+    public function getPin(SocialAccount $account, string $pinId): ?array
+    {
+        $accessToken = $this->getValidToken($account);
+
+        if (! $accessToken) {
+            return null;
+        }
+
+        $response = Http::withToken($accessToken)
+            ->get(self::API_BASE."/pins/{$pinId}", ['pin_metrics' => 'true']);
+
+        if (! $response->successful()) {
+            Log::error('Pinterest: echec de la lecture d\'une epingle', [
+                'pin_id' => $pinId,
+                'status' => $response->status(),
+                'body' => $response->body(),
+            ]);
+
+            return null;
+        }
+
+        return $response->json();
+    }
+
     private function getValidToken(SocialAccount $account): ?string
     {
         $credentials = $account->credentials;
