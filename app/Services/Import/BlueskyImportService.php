@@ -78,6 +78,14 @@ class BlueskyImportService implements PlatformImportInterface
                         continue;
                     }
 
+                    // Une reponse n'est pas une publication. Le flux d'auteur
+                    // les rend melangees aux autres ; sans ce filtre, chaque
+                    // « Merci beaucoup ! » devient une publication RS-Max.
+                    // `reply` est porte par l'element de flux, pas par le post.
+                    if (isset($item['reply'])) {
+                        continue;
+                    }
+
                     // getAuthorFeed n'accepte aucun filtre de date : on coupe
                     // des qu'on sort de la fenetre.
                     if ($this->isBeforeWindow($post['record']['createdAt'] ?? null, $since)) {
