@@ -186,4 +186,41 @@ class AutoAdoptExternalPostsTest extends TestCase
         $this->assertSame(42, $platform->metrics['likes']);
         $this->assertNotNull($platform->metrics_synced_at);
     }
+
+    public function test_deux_marques_sans_groupe_commun_ne_fusionnent_pas(): void
+    {
+        // Cas reel : un tweet de Van Tour fusionne avec une publication Bluesky
+        // de Planete de Caro, parce que leurs textes anglais generes se
+        // ressemblaient et que l'horaire collait.
+        $vantour = \App\Models\AccountGroup::create(['user_id' => $this->owner->id, 'name' => 'Van Tour']);
+        $caro = \App\Models\AccountGroup::create(['user_id' => $this->owner->id, 'name' => 'Planete de Caro']);
+
+        $vantour->socialAccounts()->attach($this->accounts['facebook']->id);
+        $caro->socialAccounts()->attach($this->accounts['instagram']->id);
+
+        $texte = 'The Barril armacao worked from 1841 to 1966 and the anchors still rest there';
+
+        $this->externalPost('facebook', $texte, now()->subDay());
+        $this->externalPost('instagram', $texte, now()->subDay()->addMinutes(3));
+
+        $this->artisan('external:auto-adopt --commit')->assertSuccessful();
+
+        $this->assertSame(2, Post::count(), 'Deux marques distinctes doivent rester separees.');
+    }
+
+    public function test_un_meme_groupe_fusionne_toujours(): void
+    {
+        $groupe = \App\Models\AccountGroup::create(['user_id' => $this->owner->id, 'name' => 'Une seule marque']);
+        $groupe->socialAccounts()->attach($this->accounts['facebook']->id);
+        $groupe->socialAccounts()->attach($this->accounts['instagram']->id);
+
+        $texte = 'Le nouveau parcours en foret ouvre ce week-end, venez avec de bonnes chaussures';
+
+        $this->externalPost('facebook', $texte, now()->subDay());
+        $this->externalPost('instagram', $texte, now()->subDay()->addMinutes(3));
+
+        $this->artisan('external:auto-adopt --commit')->assertSuccessful();
+
+        $this->assertSame(1, Post::count());
+    }
 }

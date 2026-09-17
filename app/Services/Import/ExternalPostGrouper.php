@@ -5,6 +5,7 @@ namespace App\Services\Import;
 use App\Models\ExternalPost;
 use App\Services\Media\PerceptualHasher;
 use Illuminate\Support\Collection;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 
 /**
@@ -23,6 +24,9 @@ use Illuminate\Support\Str;
 class ExternalPostGrouper
 {
     public function __construct(private readonly PerceptualHasher $hasher) {}
+
+    /** Groupes de comptes, charges une fois par passage. */
+    private ?array $groupesParCompte = null;
 
     /**
      * Deux reseaux ne recoivent jamais la publication a la seconde pres :
@@ -139,6 +143,14 @@ class ExternalPostGrouper
             return 'unrelated';
         }
 
+        // Deux marques qui n'ont rien a voir ne publient pas la meme chose.
+        // Sans ce garde-fou, un tweet de Van Tour a ete fusionne avec une
+        // publication Bluesky de Planete de Caro : memes textes anglais
+        // generes, meme minute, deux univers differents.
+        if (! $this->memeUnivers($a, $b)) {
+            return 'unrelated';
+        }
+
         $ecart = $a->published_at->diffInMinutes($b->published_at, absolute: true);
 
         // L'image d'abord : c'est le seul signal qui survit a une republication
@@ -202,6 +214,53 @@ class ExternalPostGrouper
         similar_text($a, $b, $percent);
 
         return $percent / 100;
+    }
+
+    /**
+     * Les deux comptes appartiennent-ils au meme univers ?
+     *
+     * Les groupes de comptes (`account_groups`) disent deja quelles marques
+     * vont ensemble : c'est la seule source de verite disponible, et elle est
+     * tenue a jour par l'utilisateur.
+     *
+     * Un compte rattache a AUCUN groupe ne bloque rien — on ne sait pas, donc
+     * on laisse les autres criteres decider. Ce sont deux comptes groupes
+     * SANS groupe commun qui trahissent deux univers distincts.
+     */
+    private function memeUnivers(ExternalPost $a, ExternalPost $b): bool
+    {
+        if ($a->social_account_id === $b->social_account_id) {
+            return true;
+        }
+
+        $groupes = $this->groupesParCompte();
+
+        $ga = $groupes[$a->social_account_id] ?? [];
+        $gb = $groupes[$b->social_account_id] ?? [];
+
+        if ($ga === [] || $gb === []) {
+            return true;
+        }
+
+        return array_intersect($ga, $gb) !== [];
+    }
+
+    /**
+     * @return array<int, array<int,int>> ids de groupes, par compte social
+     */
+    private function groupesParCompte(): array
+    {
+        if ($this->groupesParCompte !== null) {
+            return $this->groupesParCompte;
+        }
+
+        $this->groupesParCompte = [];
+
+        foreach (DB::table('account_group_social_account')->get() as $ligne) {
+            $this->groupesParCompte[(int) $ligne->social_account_id][] = (int) $ligne->account_group_id;
+        }
+
+        return $this->groupesParCompte;
     }
 
     /**
