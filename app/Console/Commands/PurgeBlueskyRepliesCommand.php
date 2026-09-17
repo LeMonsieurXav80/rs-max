@@ -39,6 +39,15 @@ class PurgeBlueskyRepliesCommand extends Command
     /** Maximum accepte par `getPosts`. */
     private const CHUNK = 25;
 
+    /**
+     * RS-Max stocke l'identifiant Bluesky sous la forme `at://...|cid`, le cid
+     * servant a republier. L'API, elle, n'accepte que l'at-uri seul.
+     */
+    private function atUri(ExternalPost $post): string
+    {
+        return explode('|', (string) $post->external_id)[0];
+    }
+
     public function handle(): int
     {
         $commit = (bool) $this->option('commit');
@@ -65,24 +74,31 @@ class PurgeBlueskyRepliesCommand extends Command
         $this->line("{$posts->count()} publication(s) Bluesky a verifier aupres de l'API.");
 
         $reponses = collect();
+        $echecs = 0;
         $bar = $this->output->createProgressBar((int) ceil($posts->count() / self::CHUNK));
         $bar->start();
 
         foreach ($posts->chunk(self::CHUNK) as $lot) {
             $bar->advance();
 
-            $reponse = Http::timeout(30)->get(self::API_BASE.'/xrpc/app.bsky.feed.getPosts', [
-                'uris' => $lot->pluck('external_id')->all(),
-            ]);
+            // XRPC attend `uris=` repete, pas `uris[0]=` : le tableau passe
+            // a Http::get() produit la seconde forme, que l'API refuse.
+            $query = collect($lot)
+                ->map(fn (ExternalPost $p) => 'uris='.urlencode($this->atUri($p)))
+                ->implode('&');
+
+            $reponse = Http::timeout(30)->get(self::API_BASE.'/xrpc/app.bsky.feed.getPosts?'.$query);
 
             if (! $reponse->successful()) {
+                $echecs++;
+
                 continue;
             }
 
             $parUri = collect($reponse->json('posts', []))->keyBy('uri');
 
             foreach ($lot as $externalPost) {
-                $distant = $parUri->get($externalPost->external_id);
+                $distant = $parUri->get($this->atUri($externalPost));
 
                 if ($distant && isset($distant['record']['reply'])) {
                     $reponses->push($externalPost);
@@ -92,6 +108,12 @@ class PurgeBlueskyRepliesCommand extends Command
 
         $bar->finish();
         $this->newLine(2);
+
+        // Sans ca, une API qui refuse toutes les requetes se lit « aucune
+        // reponse trouvee » — exactement ce qui s'est produit la premiere fois.
+        if ($echecs > 0) {
+            $this->error("{$echecs} lot(s) refuse(s) par l'API : resultat incomplet, ne pas s'y fier.");
+        }
 
         if ($reponses->isEmpty()) {
             $this->info('Aucune reponse trouvee.');
