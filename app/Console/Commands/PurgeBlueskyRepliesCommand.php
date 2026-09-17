@@ -48,6 +48,29 @@ class PurgeBlueskyRepliesCommand extends Command
         return explode('|', (string) $post->external_id)[0];
     }
 
+    /**
+     * Repond-il a QUELQU'UN D'AUTRE ?
+     *
+     * `record.reply` ne suffit pas a trancher : Bluesky le pose aussi sur les
+     * suites de fil, ou l'auteur se repond a lui-meme. Celles-la sont du
+     * contenu a part entiere, pas du bruit — les confondre reviendrait a
+     * supprimer la moitie d'un fil publie nativement.
+     */
+    private function repondAUnTiers(array $post): bool
+    {
+        $parent = $post['record']['reply']['parent']['uri'] ?? null;
+
+        if (! $parent) {
+            return false;
+        }
+
+        $auteur = $post['author']['did'] ?? null;
+        // at://did:plc:xxxx/app.bsky.feed.post/yyy
+        $auteurDuParent = explode('/', str_replace('at://', '', $parent))[0] ?? null;
+
+        return $auteur !== null && $auteurDuParent !== null && $auteur !== $auteurDuParent;
+    }
+
     public function handle(): int
     {
         $commit = (bool) $this->option('commit');
@@ -100,7 +123,7 @@ class PurgeBlueskyRepliesCommand extends Command
             foreach ($lot as $externalPost) {
                 $distant = $parUri->get($this->atUri($externalPost));
 
-                if ($distant && isset($distant['record']['reply'])) {
+                if ($distant && $this->repondAUnTiers($distant)) {
                     $reponses->push($externalPost);
                 }
             }
