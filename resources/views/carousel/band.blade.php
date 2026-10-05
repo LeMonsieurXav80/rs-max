@@ -39,7 +39,7 @@
 <body>
 <div data-carousel-root>
     @foreach ($slides as $i => $slide)
-        <section data-carousel-slide data-index="{{ $i }}">
+        <section data-carousel-slide data-index="{{ $i }}" style="background:{{ \App\Services\Carousel\Palette::background($slide['theme'] ?? []) }};">
             @include($slide['view'], [
                 'w' => $w,
                 'h' => $h,
