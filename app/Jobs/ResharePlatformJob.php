@@ -2,7 +2,7 @@
 
 namespace App\Jobs;
 
-use App\Models\MediaFile;
+use App\Concerns\ResolvesPublishableMedia;
 use App\Models\Post;
 use App\Models\PostLog;
 use App\Models\PostPlatform;
@@ -17,11 +17,10 @@ use Illuminate\Foundation\Bus\Dispatchable;
 use Illuminate\Queue\InteractsWithQueue;
 use Illuminate\Queue\SerializesModels;
 use Illuminate\Support\Facades\Log;
-use Illuminate\Support\Facades\URL;
 
 class ResharePlatformJob implements ShouldQueue
 {
-    use Dispatchable, InteractsWithQueue, Queueable, SerializesModels;
+    use Dispatchable, InteractsWithQueue, Queueable, ResolvesPublishableMedia, SerializesModels;
 
     public int $tries = 1;
 
@@ -69,7 +68,7 @@ class ResharePlatformJob implements ShouldQueue
             'link' => $adapter->publish(
                 $account,
                 $publishingService->getContentForAccount($post, $account),
-                $this->resolveMediaUrls($post->media),
+                $this->resolveMediaUrls($post->media, $platform->slug),
             ),
             'native_repost' => $adapter instanceof ResharingAdapterInterface
                 ? $adapter->nativeRepost($account, $this->sourceExternalId)
@@ -79,7 +78,7 @@ class ResharePlatformJob implements ShouldQueue
                     $account,
                     $this->buildQuoteText($post, $account, $publishingService),
                     $this->sourceExternalId,
-                    $this->resolveMediaUrls($post->media),
+                    $this->resolveMediaUrls($post->media, $platform->slug),
                 )
                 : ['success' => false, 'external_id' => null, 'error' => "Adapter {$platform->slug} ne supporte pas le quote natif."],
             default => ['success' => false, 'external_id' => null, 'error' => "Mode inconnu : {$this->mode}"],
@@ -122,60 +121,6 @@ class ResharePlatformJob implements ShouldQueue
         $post->link_url = $original;
 
         return $content;
-    }
-
-    private function resolveMediaUrls(?array $media): ?array
-    {
-        if (empty($media)) {
-            return $media;
-        }
-
-        return array_map(function ($item) {
-            $url = $item['url'] ?? '';
-            if (str_starts_with($url, '/media/')) {
-                $filename = basename($url);
-                $item['local_path'] = storage_path("app/private/media/{$filename}");
-
-                if (empty($item['mimetype']) || empty($item['size'])) {
-                    $mediaFile = MediaFile::where('filename', $filename)->first();
-                    if ($mediaFile) {
-                        $item['mimetype'] = $item['mimetype'] ?? $mediaFile->mime_type;
-                        $item['size'] = $item['size'] ?? $mediaFile->size;
-                        $item['title'] = $item['title'] ?? $mediaFile->original_name;
-                    }
-                }
-
-                if (empty($item['mimetype'])) {
-                    $item['mimetype'] = $this->guessMimetypeFromFilename($filename);
-                }
-
-                $item['url'] = URL::temporarySignedRoute(
-                    'media.show',
-                    now()->addHours(4),
-                    ['filename' => $filename]
-                );
-            }
-
-            if (empty($item['mimetype'])) {
-                $item['mimetype'] = ($item['type'] ?? 'image') === 'video' ? 'video/mp4' : 'image/jpeg';
-            }
-
-            return $item;
-        }, $media);
-    }
-
-    private function guessMimetypeFromFilename(string $filename): string
-    {
-        return match (strtolower(pathinfo($filename, PATHINFO_EXTENSION))) {
-            'jpg', 'jpeg' => 'image/jpeg',
-            'png' => 'image/png',
-            'gif' => 'image/gif',
-            'webp' => 'image/webp',
-            'mp4', 'm4v' => 'video/mp4',
-            'mov' => 'video/quicktime',
-            'webm' => 'video/webm',
-            default => 'application/octet-stream',
-        };
     }
 
     private function markFailed(PostPlatform $postPlatform, string $error): void

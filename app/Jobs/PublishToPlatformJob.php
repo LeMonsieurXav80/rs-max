@@ -2,7 +2,7 @@
 
 namespace App\Jobs;
 
-use App\Models\MediaFile;
+use App\Concerns\ResolvesPublishableMedia;
 use App\Models\Post;
 use App\Models\PostLog;
 use App\Models\PostPlatform;
@@ -25,11 +25,10 @@ use Illuminate\Foundation\Bus\Dispatchable;
 use Illuminate\Queue\InteractsWithQueue;
 use Illuminate\Queue\SerializesModels;
 use Illuminate\Support\Facades\Log;
-use Illuminate\Support\Facades\URL;
 
 class PublishToPlatformJob implements ShouldQueue
 {
-    use Dispatchable, InteractsWithQueue, Queueable, SerializesModels;
+    use Dispatchable, InteractsWithQueue, Queueable, ResolvesPublishableMedia, SerializesModels;
 
     public int $tries = 1;
 
@@ -77,7 +76,7 @@ class PublishToPlatformJob implements ShouldQueue
         ]);
 
         // Resolve local media URLs to absolute public URLs
-        $media = $this->resolveMediaUrls($post->media);
+        $media = $this->resolveMediaUrls($post->media, $platform->slug);
 
         // Publish
         // article_title n'est lu que par TwitterAdapter ; les autres adapters
@@ -138,67 +137,6 @@ class PublishToPlatformJob implements ShouldQueue
             'bluesky' => new BlueskyAdapter,
             'linkedin' => new LinkedInAdapter,
             default => null,
-        };
-    }
-
-    /**
-     * Convert local /media/... paths to absolute signed URLs for external API access,
-     * and guarantee every item has a mimetype (enrich from DB or guess from extension).
-     * Older posts can have media items without mimetype — adapters then crash on
-     * $item['mimetype']. Normalising here keeps the adapter code simple.
-     */
-    private function resolveMediaUrls(?array $media): ?array
-    {
-        if (empty($media)) {
-            return $media;
-        }
-
-        return array_map(function ($item) {
-            $url = $item['url'] ?? '';
-
-            if (str_starts_with($url, '/media/')) {
-                $filename = basename($url);
-                $item['local_path'] = storage_path("app/private/media/{$filename}");
-
-                if (empty($item['mimetype']) || empty($item['size'])) {
-                    $mediaFile = MediaFile::where('filename', $filename)->first();
-                    if ($mediaFile) {
-                        $item['mimetype'] = $item['mimetype'] ?? $mediaFile->mime_type;
-                        $item['size'] = $item['size'] ?? $mediaFile->size;
-                        $item['title'] = $item['title'] ?? $mediaFile->original_name;
-                    }
-                }
-
-                if (empty($item['mimetype'])) {
-                    $item['mimetype'] = $this->guessMimetypeFromFilename($filename);
-                }
-
-                $item['url'] = URL::temporarySignedRoute(
-                    'media.show',
-                    now()->addHours(4),
-                    ['filename' => $filename]
-                );
-            }
-
-            if (empty($item['mimetype'])) {
-                $item['mimetype'] = ($item['type'] ?? 'image') === 'video' ? 'video/mp4' : 'image/jpeg';
-            }
-
-            return $item;
-        }, $media);
-    }
-
-    private function guessMimetypeFromFilename(string $filename): string
-    {
-        return match (strtolower(pathinfo($filename, PATHINFO_EXTENSION))) {
-            'jpg', 'jpeg' => 'image/jpeg',
-            'png' => 'image/png',
-            'gif' => 'image/gif',
-            'webp' => 'image/webp',
-            'mp4', 'm4v' => 'video/mp4',
-            'mov' => 'video/quicktime',
-            'webm' => 'video/webm',
-            default => 'application/octet-stream',
         };
     }
 

@@ -4,12 +4,16 @@ namespace App\Http\Controllers\Api;
 
 use App\Concerns\ProcessesImages;
 use App\Http\Controllers\Controller;
+use App\Jobs\GenerateMediaThumbnailJob;
 use App\Models\MediaFile;
 use App\Models\MediaFolder;
 use App\Models\MediaPublication;
 use App\Models\Partner;
+use App\Models\Setting;
 use App\Services\AiAssistService;
 use App\Services\Media\MediaSelectionFilter;
+use App\Services\Media\ThumbnailService;
+use App\Services\Media\VideoNormalizer;
 use App\Services\PartnerTagService;
 use App\Services\StockPhotoService;
 use App\Support\TagNormalizer;
@@ -162,6 +166,180 @@ class MediaApiController extends Controller
             'url_full' => "/media/{$filename}",
             'url_thumb' => "/media/{$filename}",
         ], 201);
+    }
+
+    /**
+     * POST /api/media/upload — dépose un fichier SANS LE TOUCHER.
+     *
+     * Raison d'être : les quatre chemins d'entrée existants recompressent, et
+     * c'est voulu pour des photos de flux. Mais un visuel fabriqué pour être
+     * publié (slide de carrousel, export vidéo) ne survit pas au traitement :
+     * `processImage()` vise 200-500 ko et réduit tout ce qui dépasse 2048 px,
+     * `MediaController::compressVideo()` transcode dès 50 Mo et SUPPRIME
+     * l'original. Le réseau recompressant ensuite par-dessus, on perd deux fois.
+     *
+     * Ici : l'octet exact, aucun appel GD ni ffmpeg sur le fichier stocké. La
+     * normalisation qu'un réseau impose arrive à la publication, dans une
+     * variante à côté (`MediaVariantService`) — Instagram reçoit l'original,
+     * seul Bluesky reçoit une version réduite.
+     *
+     * Contrairement à `/ingest`, aucun `phash` n'est exigé : il n'est calculable
+     * que sur une image, et cette entrée accepte aussi la vidéo. L'idempotence
+     * repose sur `content_hash` (SHA-256 des octets), qui vaut pour les deux et
+     * rend un renvoi du même fichier sans effet.
+     */
+    public function upload(Request $request): JsonResponse
+    {
+        $file = $request->file('file');
+        $mimeType = $file?->getMimeType() ?? '';
+        $isImage = str_starts_with($mimeType, 'image/');
+
+        // Mêmes plafonds que l'upload web (réglages /settings), en Mo → Ko.
+        $maxKb = $isImage
+            ? (int) Setting::get('image_max_upload_mb', 50) * 1024
+            : (int) Setting::get('video_max_upload_mb', 500) * 1024;
+
+        $validated = $request->validate([
+            'file' => "required|file|max:{$maxKb}|mimes:jpeg,jpg,png,gif,webp,mp4,mov,webm",
+            'folder_id' => 'nullable|integer|exists:media_folders,id',
+            'folder_path' => 'nullable|string|max:255',
+            'description_fr' => 'nullable|string|max:2000',
+            'thematic_tags' => 'nullable|array',
+            'thematic_tags.*' => 'string',
+            'brands' => 'nullable|array',
+            'brands.*' => 'string|max:80',
+            'intimacy_level' => ['nullable', Rule::in(self::INTIMACY_LEVELS)],
+        ]);
+
+        // Idempotence : le même fichier renvoyé deux fois ne crée pas un doublon.
+        // Indispensable pour un CLI relancé après une coupure réseau à mi-lot.
+        $contentHash = hash_file('sha256', $file->getRealPath());
+        $existing = MediaFile::where('content_hash', $contentHash)->first();
+        if ($existing) {
+            return response()->json([
+                'id' => $existing->id,
+                'status' => 'exists',
+                'filename' => $existing->filename,
+                'url' => "/media/{$existing->filename}",
+                'mimetype' => $existing->mime_type,
+                'size' => $existing->size,
+                'width' => $existing->width,
+                'height' => $existing->height,
+                'preserve_original' => (bool) $existing->preserve_original,
+            ]);
+        }
+
+        [$folderId, $folderIsPrivate] = $this->resolveUploadFolder($validated);
+
+        // Même garde-fou que /ingest : un dossier privé escalade 'public' en
+        // 'never_publish'. Un 'prive' explicite est respecté tel quel.
+        $intimacyLevel = $validated['intimacy_level'] ?? 'public';
+        if ($folderIsPrivate && $intimacyLevel === 'public') {
+            $intimacyLevel = 'never_publish';
+        }
+
+        // L'extension de l'original est conservée telle quelle : pas de PNG→JPG
+        // ici, c'est précisément la conversion qu'on vient éviter.
+        $extension = strtolower($file->getClientOriginalExtension() ?: pathinfo($file->getRealPath(), PATHINFO_EXTENSION));
+        $filename = date('Ymd_His').'_'.Str::random(8).'.'.$extension;
+
+        // storeAs copie les octets, sans réencodage d'aucune sorte.
+        $file->storeAs('media', $filename, 'local');
+
+        $storedPath = Storage::disk('local')->path("media/{$filename}");
+        $dimensions = $this->probeDimensions($storedPath, $isImage);
+
+        $mediaFile = MediaFile::create([
+            'folder_id' => $folderId,
+            'filename' => $filename,
+            'original_name' => $file->getClientOriginalName(),
+            'mime_type' => $mimeType,
+            'size' => Storage::disk('local')->size("media/{$filename}"),
+            'width' => $dimensions['width'] ?: null,
+            'height' => $dimensions['height'] ?: null,
+            'source' => 'cli',
+            'preserve_original' => true,
+            'content_hash' => $contentHash,
+            'description_fr' => $validated['description_fr'] ?? null,
+            'thematic_tags' => $this->normalizeTags($validated['thematic_tags'] ?? null),
+            'brands' => $this->normalizeBrands($validated['brands'] ?? null),
+            'intimacy_level' => $intimacyLevel,
+            // Pas de mise en file d'analyse Vision : le lot contient des vidéos,
+            // que Vision ne traite pas, et un visuel fabriqué porte déjà son sens.
+            'pending_analysis' => false,
+            'ingested_at' => now(),
+        ]);
+
+        $this->syncPartners($mediaFile, $validated['brands'] ?? null, 'import');
+
+        // Vignette : GD est rapide sur une image, ffmpeg coûteux sur une vidéo —
+        // d'où le même partage synchrone/queue que l'upload web.
+        if ($isImage) {
+            $thumbRel = app(ThumbnailService::class)->generate($mediaFile);
+            if ($thumbRel) {
+                $mediaFile->update(['thumbnail_path' => $thumbRel]);
+            }
+        } else {
+            GenerateMediaThumbnailJob::dispatch($mediaFile->id);
+        }
+
+        return response()->json([
+            'id' => $mediaFile->id,
+            'status' => 'created',
+            'filename' => $filename,
+            'url' => "/media/{$filename}",
+            'mimetype' => $mimeType,
+            'size' => $mediaFile->size,
+            'width' => $mediaFile->width,
+            'height' => $mediaFile->height,
+            'preserve_original' => true,
+        ], 201);
+    }
+
+    /**
+     * Résout le dossier de destination d'un upload : `folder_id` prime, sinon
+     * `folder_path` est créé au besoin (même convention que /ingest).
+     *
+     * @return array{0: int|null, 1: bool} [folder_id, dossier privé ?]
+     */
+    private function resolveUploadFolder(array $validated): array
+    {
+        if (! empty($validated['folder_id'])) {
+            $folder = MediaFolder::find($validated['folder_id']);
+
+            return [$folder?->id, (bool) $folder?->is_private];
+        }
+
+        if (! empty($validated['folder_path'])) {
+            $folder = MediaFolder::firstOrCreate(
+                ['name' => $validated['folder_path']],
+                ['slug' => Str::slug($validated['folder_path'])]
+            );
+
+            return [$folder->id, (bool) $folder->is_private];
+        }
+
+        return [null, false];
+    }
+
+    /**
+     * Dimensions du fichier stocké, sans le modifier : getimagesize pour une
+     * image, ffprobe pour une vidéo. Zéros si illisible — la publication n'en
+     * dépend pas, seules les grilles d'affichage s'en servent.
+     *
+     * @return array{width: int, height: int}
+     */
+    private function probeDimensions(string $absolutePath, bool $isImage): array
+    {
+        if ($isImage) {
+            $size = @getimagesize($absolutePath);
+
+            return ['width' => (int) ($size[0] ?? 0), 'height' => (int) ($size[1] ?? 0)];
+        }
+
+        $meta = app(VideoNormalizer::class)->analyze($absolutePath);
+
+        return ['width' => (int) ($meta['width'] ?? 0), 'height' => (int) ($meta['height'] ?? 0)];
     }
 
     /**

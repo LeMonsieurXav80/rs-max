@@ -27,6 +27,7 @@ API REST d'orchestration multi-plateformes : publication, planification, génér
 15. [Endpoints — Extension Chrome (RS-Max Companion)](#15-endpoints--extension-chrome-rs-max-companion)
 16. [Endpoints en session web (PAS accessibles par token)](#16-endpoints-en-session-web-pas-accessibles-par-token)
 17. [Endpoints — Meta Ads (pilotage des campagnes)](#17-endpoints--meta-ads-pilotage-des-campagnes)
+18. [Endpoint — Dépôt de média sans compression](#18-endpoint--dépôt-de-média-sans-compression)
 
 ---
 
@@ -1339,3 +1340,49 @@ dans `meta_audiences` et se déroulent en `targeting` à chaque campagne.
 L'interface passe par **les mêmes garde-fous** (`MetaAdsGuard`, `MetaBoostService`) :
 un écran qui contournerait un plafond serait une porte dérobée. Le bouton « Simuler »
 appelle le même `validate_only` que `dry_run` côté API.
+
+---
+
+## 18. Endpoint — Dépôt de média sans compression
+
+### `POST /api/media/upload` (multipart)
+
+Dépose un fichier **sans le toucher** : images **et vidéos**, l'octet exact, ni GD
+ni ffmpeg. C'est le seul chemin par lequel une vidéo peut entrer par API —
+`/media/ingest` n'accepte que des images et exige un `phash`, qui n'est calculable
+que sur une image.
+
+| Champ | |
+|---|---|
+| `file` | **requis**. jpeg, png, gif, webp, mp4, mov, webm. Plafonds : réglages `image_max_upload_mb` (50) et `video_max_upload_mb` (500) |
+| `folder_path` ou `folder_id` | dossier de la médiathèque, créé au besoin |
+| `description_fr`, `thematic_tags[]`, `brands[]` | optionnels |
+| `intimacy_level` | `public` par défaut ; un dossier privé escalade en `never_publish` |
+
+**Idempotent par `content_hash`** (SHA-256 des octets) : renvoyer le même fichier
+rend `200` + `status: "exists"` plutôt qu'un doublon — un lot relancé après une
+coupure réseau est donc sans danger.
+
+```json
+{
+  "id": 412, "status": "created", "filename": "20261005_a1b2c3d4.png",
+  "url": "/media/20261005_a1b2c3d4.png", "mimetype": "image/png",
+  "size": 6291456, "width": 2160, "height": 2700, "preserve_original": true
+}
+```
+
+L'`url` retournée s'utilise telle quelle dans `media[]` d'un
+[`POST /api/posts`](#7-endpoints--posts-contenu-simple) ou d'un segment de fil.
+
+### Ce que `preserve_original` change à la publication
+
+La ligne porte `preserve_original = true`, et la normalisation qu'un réseau impose
+n'a plus lieu à l'upload mais **à la publication, pour ce réseau seul**
+(`MediaVariantService`, plafonds dans `config/media_variants.php`). Instagram
+reçoit l'original ; seul Bluesky reçoit une version réduite, écrite dans une
+variante à côté — l'original n'est jamais remplacé.
+
+Les quatre chemins d'entrée historiques (upload web, `/media/ingest`,
+téléchargement d'URL, import externe) **compressent toujours**, à dessein.
+
+Détail et pièges : [`docs/cli-publication-sans-compression.md`](cli-publication-sans-compression.md).

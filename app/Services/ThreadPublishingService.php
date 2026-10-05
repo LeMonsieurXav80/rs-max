@@ -17,6 +17,7 @@ use App\Services\Adapters\ThreadableAdapterInterface;
 use App\Services\Adapters\ThreadsAdapter;
 use App\Services\Adapters\TwitterAdapter;
 use App\Services\Adapters\YouTubeAdapter;
+use App\Services\Media\MediaVariantService;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Facades\URL;
@@ -87,7 +88,7 @@ class ThreadPublishingService
                 [$rawSegmentMedia, $overlayTemp] = $this->applyFirstImageOverlay($thread, $rawSegmentMedia);
             }
 
-            $media = $this->resolveMediaUrls($rawSegmentMedia);
+            $media = $this->resolveMediaUrls($rawSegmentMedia, $account->platform->slug);
 
             // Threads API: video replies break the thread chain, so strip videos from replies.
             if ($account->platform->slug === 'threads' && $previousExternalId !== null && ! empty($media)) {
@@ -269,7 +270,7 @@ class ThreadPublishingService
             [$rawMedia, $overlayTemp] = $this->applyFirstImageOverlay($thread, $rawMedia);
         }
 
-        $media = $this->resolveMediaUrls($rawMedia);
+        $media = $this->resolveMediaUrls($rawMedia, $account->platform->slug);
 
         try {
             $result = $adapter->publish($account, $compiledContent, $media);
@@ -742,13 +743,21 @@ class ThreadPublishingService
         }
     }
 
-    private function resolveMediaUrls(?array $media): ?array
+    /**
+     * `$platformSlug` sert aux fichiers `preserve_original` : la variante
+     * envoyée dépend du réseau visé (cf `MediaVariantService`). Un segment de
+     * fil peut porter une vidéo — carrousel Instagram, publication Threads —
+     * elle doit passer par les mêmes plafonds qu'un post simple.
+     */
+    private function resolveMediaUrls(?array $media, string $platformSlug): ?array
     {
         if (empty($media)) {
             return $media;
         }
 
-        return array_map(function ($item) {
+        $variants = app(MediaVariantService::class);
+
+        return array_map(function ($item) use ($variants, $platformSlug) {
             $url = $item['url'] ?? '';
 
             if (str_starts_with($url, '/media/')) {
@@ -773,10 +782,21 @@ class ThreadPublishingService
                     };
                 }
 
+                // Quel fichier part réellement : l'original, ou la variante que
+                // ce réseau impose. Les fils publient par URL, sans `local_path`.
+                $served = $variants->filenameFor($filename, $platformSlug);
+
+                if ($served !== $filename) {
+                    $variantPath = Storage::disk('local')->path("media/{$served}");
+                    if (is_file($variantPath)) {
+                        $item['size'] = filesize($variantPath);
+                    }
+                }
+
                 $item['url'] = URL::temporarySignedRoute(
                     'media.show',
                     now()->addHours(4),
-                    ['filename' => $filename]
+                    ['filename' => $served]
                 );
             }
 

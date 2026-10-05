@@ -2,7 +2,7 @@
 
 namespace App\Http\Controllers;
 
-use App\Models\MediaFile;
+use App\Concerns\ResolvesPublishableMedia;
 use App\Models\Post;
 use App\Models\PostLog;
 use App\Models\PostPlatform;
@@ -11,10 +11,11 @@ use App\Services\Adapters\PlatformAdapterInterface;
 use App\Services\PublishingService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
-use Illuminate\Support\Facades\URL;
 
 class PublishController extends Controller
 {
+    use ResolvesPublishableMedia;
+
     public function __construct(
         private PublishingService $publishingService,
     ) {}
@@ -159,7 +160,10 @@ class PublishController extends Controller
             ], 422);
         }
 
-        $media = $this->resolveMediaUrls($post->media);
+        // La résolution des médias est faite DANS la boucle : pour un fichier
+        // `preserve_original`, le fichier réellement envoyé dépend du réseau
+        // (cf `MediaVariantService`). La sortir d'ici enverrait à tous la
+        // variante calculée pour le premier.
         $post->update(['status' => 'publishing']);
         $options = $this->buildOptions($post);
 
@@ -177,6 +181,7 @@ class PublishController extends Controller
             }
 
             $content = $this->publishingService->getContentForAccount($post, $account);
+            $media = $this->resolveMediaUrls($post->media, $platform->slug);
 
             $pp->update(['status' => 'publishing']);
 
@@ -285,61 +290,6 @@ class PublishController extends Controller
         }
 
         return ! empty($options) ? $options : null;
-    }
-
-    private function resolveMediaUrls(?array $media): ?array
-    {
-        if (empty($media)) {
-            return $media;
-        }
-
-        return array_map(function ($item) {
-            $url = $item['url'] ?? '';
-
-            if (str_starts_with($url, '/media/')) {
-                $filename = basename($url);
-                $item['local_path'] = storage_path("app/private/media/{$filename}");
-
-                if (empty($item['mimetype']) || empty($item['size'])) {
-                    $mediaFile = MediaFile::where('filename', $filename)->first();
-                    if ($mediaFile) {
-                        $item['mimetype'] = $item['mimetype'] ?? $mediaFile->mime_type;
-                        $item['size'] = $item['size'] ?? $mediaFile->size;
-                        $item['title'] = $item['title'] ?? $mediaFile->original_name;
-                    }
-                }
-
-                if (empty($item['mimetype'])) {
-                    $item['mimetype'] = $this->guessMimetypeFromFilename($filename);
-                }
-
-                $item['url'] = URL::temporarySignedRoute(
-                    'media.show',
-                    now()->addHours(4),
-                    ['filename' => $filename]
-                );
-            }
-
-            if (empty($item['mimetype'])) {
-                $item['mimetype'] = ($item['type'] ?? 'image') === 'video' ? 'video/mp4' : 'image/jpeg';
-            }
-
-            return $item;
-        }, $media);
-    }
-
-    private function guessMimetypeFromFilename(string $filename): string
-    {
-        return match (strtolower(pathinfo($filename, PATHINFO_EXTENSION))) {
-            'jpg', 'jpeg' => 'image/jpeg',
-            'png' => 'image/png',
-            'gif' => 'image/gif',
-            'webp' => 'image/webp',
-            'mp4', 'm4v' => 'video/mp4',
-            'mov' => 'video/quicktime',
-            'webm' => 'video/webm',
-            default => 'application/octet-stream',
-        };
     }
 
     private function updatePostStatus(Post $post): void

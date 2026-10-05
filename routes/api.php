@@ -111,6 +111,10 @@ Route::middleware('auth:sanctum')->group(function () {
 
     // ── Catalogue média (pipeline Mac + recherche sémantique) ──
     Route::post('/media/ingest', [MediaApiController::class, 'ingest']);
+    // Dépôt sans retouche : l'octet exact, image ou vidéo. La normalisation
+    // qu'un réseau impose arrive à la publication, dans une variante à côté.
+    // `/ingest` reste le chemin du pipeline Mac (phash + embedding requis).
+    Route::post('/media/upload', [MediaApiController::class, 'upload']);
     Route::get('/media/search', [MediaApiController::class, 'search']);
     Route::get('/media/folders', [MediaApiController::class, 'folders']);
     // Écriture sur les dossiers : avant `/media/{media}` pour ne pas être capturé.
