@@ -28,3 +28,7 @@ CREDENTIALS.md
 .claude/
 CLAUDE.md
 database.sqlite
+
+# CLI Python (cli/)
+__pycache__/
+*.pyc
