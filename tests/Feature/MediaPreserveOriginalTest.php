@@ -236,6 +236,31 @@ class MediaPreserveOriginalTest extends TestCase
         );
     }
 
+    public function test_la_conversion_video_de_masse_epargne_les_originaux_preserves(): void
+    {
+        // `media:convert-videos` tourne A CHAQUE demarrage de conteneur
+        // (docker/entrypoint.sh) et parcourt le DISQUE, pas la base. Un `.mov`
+        // y est « toujours converti », puis l'original supprime : sans cette
+        // exception, un original prefere serait detruit au prochain
+        // deploiement, en silence.
+        MediaFile::create([
+            'filename' => 'intouchable.mov',
+            'mime_type' => 'video/quicktime',
+            'size' => 4,
+            'source' => 'cli',
+            'preserve_original' => true,
+        ]);
+        Storage::disk('local')->put('media/intouchable.mov', 'MOOV');
+
+        $this->artisan('media:convert-videos')
+            ->expectsOutputToContain('original préservé')
+            ->assertSuccessful();
+
+        // Les octets sont toujours la, et le fichier n'a pas ete renomme en .mp4.
+        $this->assertSame('MOOV', Storage::disk('local')->get('media/intouchable.mov'));
+        Storage::disk('local')->assertMissing('media/intouchable.mp4');
+    }
+
     public function test_un_reseau_inconnu_rend_l_original(): void
     {
         MediaFile::create([

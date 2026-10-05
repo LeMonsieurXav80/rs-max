@@ -2,6 +2,7 @@
 
 namespace App\Console\Commands;
 
+use App\Models\MediaFile;
 use App\Models\Post;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\Storage;
@@ -39,9 +40,25 @@ class ConvertVideosCommand extends Command
             $allVideos = array_merge($allVideos, glob("{$mediaPath}/*.{$ext}"));
         }
 
+        // Fichiers dont les octets ne doivent JAMAIS etre remplaces. Cette
+        // commande parcourt le DISQUE, pas la base : sans cette liste elle
+        // transcoderait un original preserve (un .mov est « toujours
+        // converti ») et le supprimerait — a chaque demarrage de conteneur,
+        // puisque l'entrypoint la lance. La reduction qu'un reseau impose est
+        // desormais ecrite dans une variante a la publication
+        // (`MediaVariantService`), jamais sur l'original.
+        $preserved = MediaFile::where('preserve_original', true)->pluck('filename')->flip();
+
         $videos = [];
+        $skipped = 0;
         foreach ($allVideos as $videoPath) {
             $ext = strtolower(pathinfo($videoPath, PATHINFO_EXTENSION));
+
+            if ($preserved->has(basename($videoPath))) {
+                $skipped++;
+
+                continue;
+            }
 
             if ($ext !== 'mp4') {
                 // Non-MP4: always convert
@@ -54,6 +71,10 @@ class ConvertVideosCommand extends Command
                 // MP4 H.264 but larger than 1080p: Meta refuse > 1920px longest side
                 $videos[] = ['path' => $videoPath, 'reason' => "résolution {$dims[0]}x{$dims[1]} (> 1080p)"];
             }
+        }
+
+        if ($skipped > 0) {
+            $this->line("{$skipped} vidéo(s) ignorée(s) : original préservé.");
         }
 
         if (empty($videos)) {
