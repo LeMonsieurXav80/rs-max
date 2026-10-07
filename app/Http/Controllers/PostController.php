@@ -82,17 +82,29 @@ class PostController extends Controller
         $user = $request->user();
         $userId = $user->id;
 
+        // L'admin voit tout : ces deux restrictions ne s'appliquent qu'aux autres.
+        // Sans cette exception, une publication partie uniquement sur les comptes
+        // d'un autre utilisateur etait absente de la liste ET du calendrier de
+        // l'admin, alors que sa fiche /posts/{id} s'ouvrait sans probleme.
+        $isAdmin = $user->isAdmin();
+
         // Only load postPlatforms whose social account is active FOR THIS USER
-        $activePostPlatforms = fn ($q) => $q->whereHas('socialAccount', function ($sq) use ($userId) {
+        $activePostPlatforms = fn ($q) => $isAdmin ? $q : $q->whereHas('socialAccount', function ($sq) use ($userId) {
             $sq->whereHas('users', fn ($uq) => $uq->where('social_account_user.user_id', $userId)->where('social_account_user.is_active', true));
         });
 
         // Only show posts that have at least one active account for this user
-        $hasActiveAccount = fn ($q) => $q->whereHas('postPlatforms', function ($ppq) use ($userId) {
-            $ppq->whereHas('socialAccount', function ($sq) use ($userId) {
-                $sq->whereHas('users', fn ($uq) => $uq->where('social_account_user.user_id', $userId)->where('social_account_user.is_active', true));
+        $hasActiveAccount = function ($q) use ($isAdmin, $userId) {
+            if ($isAdmin) {
+                return;
+            }
+
+            $q->whereHas('postPlatforms', function ($ppq) use ($userId) {
+                $ppq->whereHas('socialAccount', function ($sq) use ($userId) {
+                    $sq->whereHas('users', fn ($uq) => $uq->where('social_account_user.user_id', $userId)->where('social_account_user.is_active', true));
+                });
             });
-        });
+        };
 
         $query = Post::query()->with([
             'postPlatforms' => $activePostPlatforms,
@@ -139,13 +151,14 @@ class PostController extends Controller
         };
         $applyMediaTypeFilter($query);
 
-        // Groupes et comptes pour les filtres (mêmes données que le formulaire de création)
+        // Groupes et comptes pour les filtres (mêmes données que le formulaire de création).
+        // Pour l'admin, tous les comptes actifs : sinon il ne peut pas filtrer sur
+        // celui d'un autre utilisateur, dont il voit pourtant les publications.
         $accountGroups = $user->accountGroups()->with('socialAccounts:id')->orderBy('sort_order')->get();
-        $accounts = $user->activeSocialAccounts()
-            ->with('platform')
-            ->orderBy('name')
-            ->get()
-            ->groupBy(fn (SocialAccount $account) => $account->platform->slug);
+        $accounts = ($isAdmin
+            ? SocialAccount::where('is_active', true)->with('platform')->orderBy('name')->get()
+            : $user->activeSocialAccounts()->with('platform')->orderBy('name')->get()
+        )->groupBy(fn (SocialAccount $account) => $account->platform->slug);
 
         // Filtre par groupe (au moins un compte du groupe) ou par compte individuel
         $applyAccountFilter = function ($q) use ($request, $accountGroups) {
