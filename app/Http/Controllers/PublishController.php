@@ -66,7 +66,7 @@ class PublishController extends Controller
         $content = $this->publishingService->getContentForAccount($post, $account);
 
         // Resolve media URLs
-        $media = $this->resolveMediaUrls($post->media);
+        $media = $this->resolveMediaUrls($post->media, $platform->slug);
 
         // Mark as publishing
         $postPlatform->update(['status' => 'publishing']);
