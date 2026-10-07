@@ -15,6 +15,9 @@ class TwitterAdapter implements PlatformAdapterInterface, ResharingAdapterInterf
 
     private const RETWEETS_URL = 'https://api.twitter.com/2/users/%s/retweets';
 
+    /** Plafond impose par l'API X sur `media.media_ids`. */
+    private const MAX_IMAGES = 4;
+
     /**
      * OAuth 1.0a credentials populated per-request from the SocialAccount.
      */
@@ -292,13 +295,47 @@ class TwitterAdapter implements PlatformAdapterInterface, ResharingAdapterInterf
     // -------------------------------------------------------------------------
 
     /**
+     * Ce qu'un tweet peut porter : 4 images AU PLUS, ou 1 seule video — les deux
+     * ne se melangent pas. Envoye tel quel, un carrousel de 9 photos part en
+     * 9 uploads puis se fait refuser en bloc (HTTP 400, "there must be a maximum
+     * of 4 items"), et le reseau est perdu pour la publication entiere. On
+     * tronque donc comme le fait BlueskyAdapter, qui a la meme contrainte.
+     */
+    private function capMedia(array $media): array
+    {
+        $images = [];
+        $video = null;
+
+        foreach ($media as $item) {
+            if (str_starts_with($item['mimetype'] ?? 'image/jpeg', 'video/')) {
+                $video ??= $item;
+            } else {
+                $images[] = $item;
+            }
+        }
+
+        // La video prime et ne tolere aucun compagnon.
+        $kept = $video ? [$video] : array_slice($images, 0, self::MAX_IMAGES);
+
+        if (count($kept) < count($media)) {
+            Log::warning('TwitterAdapter: media tronques pour tenir dans un tweet', [
+                'recus' => count($media),
+                'envoyes' => count($kept),
+                'raison' => $video ? 'video seule' : 'maximum '.self::MAX_IMAGES.' images',
+            ]);
+        }
+
+        return $kept;
+    }
+
+    /**
      * Upload all media items. Returns media_ids or an error message.
      */
     private function uploadAllMedia(array $media): array
     {
         $mediaIds = [];
 
-        foreach ($media as $item) {
+        foreach ($this->capMedia($media) as $item) {
             $mediaId = $this->uploadMedia($item['url']);
 
             if ($mediaId === null) {
@@ -336,11 +373,18 @@ class TwitterAdapter implements PlatformAdapterInterface, ResharingAdapterInterf
             ];
         }
 
-        $apiError = $body['detail'] ?? $body['title'] ?? null;
-        if (! $apiError && isset($body['errors'])) {
-            $apiError = collect($body['errors'])->pluck('message')->implode('; ');
-        }
-        $apiError = $apiError ?: json_encode($body);
+        // `detail` est generique ("One or more parameters [...] was invalid"),
+        // le motif reel vit dans `errors[].message` ("there must be a maximum
+        // of 4 items in the array"). On ne gardait que le premier : l'erreur
+        // affichee n'apprenait rien et le diagnostic imposait d'aller lire les
+        // logs du serveur. On concatene donc les deux quand les deux existent.
+        $detail = $body['detail'] ?? $body['title'] ?? null;
+        $motifs = isset($body['errors'])
+            ? collect($body['errors'])->pluck('message')->filter()->implode(' ; ')
+            : '';
+
+        $apiError = trim(implode(' — ', array_filter([$detail, $motifs])))
+            ?: json_encode($body);
 
         Log::error('TwitterAdapter: tweet creation failed', [
             'status' => $response->status(),
