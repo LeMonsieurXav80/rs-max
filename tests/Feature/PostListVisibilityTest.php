@@ -109,6 +109,31 @@ class PostListVisibilityTest extends TestCase
             ->assertSee('La publication introuvable');
     }
 
+    /**
+     * La liste deroulante de filtrage doit REELLEMENT contenir le compte, pas
+     * seulement laisser passer un account_id saisi a la main.
+     *
+     * Ce test existe parce qu'un premier correctif filtrait les comptes sur
+     * `social_accounts.is_active`, colonne partie sur le pivot en fevrier 2026.
+     * En MySQL c'est une erreur 1054 franche ; en SQLite, un identifiant inconnu
+     * entre guillemets doubles est degrade en CHAINE LITTERALE (`'is_active' = 1`
+     * est faux), la requete rend zero ligne sans erreur. Le menu etait donc vide
+     * en test comme en prod, et seule la prod le disait.
+     *
+     * On verifie la presence de l'optgroup : il n'apparait que si la collection
+     * de comptes est non vide, la ou le nom du compte peut figurer ailleurs
+     * dans la page.
+     */
+    public function test_le_menu_de_filtrage_de_l_admin_contient_les_comptes_des_autres(): void
+    {
+        $this->publicationDeCaroline();
+        $admin = User::factory()->create(['role' => 'admin']);
+
+        $this->actingAs($admin)->get('/posts')
+            ->assertOk()
+            ->assertSee('<optgroup label="Facebook">', false);
+    }
+
     public function test_un_utilisateur_ordinaire_ne_voit_pas_les_publications_des_autres(): void
     {
         $this->publicationDeCaroline();

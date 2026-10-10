@@ -155,8 +155,12 @@ class PostController extends Controller
         // Pour l'admin, tous les comptes actifs : sinon il ne peut pas filtrer sur
         // celui d'un autre utilisateur, dont il voit pourtant les publications.
         $accountGroups = $user->accountGroups()->with('socialAccounts:id')->orderBy('sort_order')->get();
+        // Pas de filtre d'activation sur le compte lui-meme : `is_active` a
+        // quitte `social_accounts` pour le pivot `social_account_user` en
+        // fevrier 2026 (l'activation est propre a chaque utilisateur). Pour qui
+        // voit tout, « tous les comptes » veut donc dire tous les comptes.
         $accounts = ($isAdmin
-            ? SocialAccount::where('is_active', true)->with('platform')->orderBy('name')->get()
+            ? SocialAccount::query()->with('platform')->orderBy('name')->get()
             : $user->activeSocialAccounts()->with('platform')->orderBy('name')->get()
         )->groupBy(fn (SocialAccount $account) => $account->platform->slug);
 
