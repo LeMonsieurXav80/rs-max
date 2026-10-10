@@ -82,20 +82,24 @@ class PostController extends Controller
         $user = $request->user();
         $userId = $user->id;
 
-        // L'admin voit tout : ces deux restrictions ne s'appliquent qu'aux autres.
-        // Sans cette exception, une publication partie uniquement sur les comptes
-        // d'un autre utilisateur etait absente de la liste ET du calendrier de
-        // l'admin, alors que sa fiche /posts/{id} s'ouvrait sans probleme.
-        $isAdmin = $user->isAdmin();
+        // Qui voit tout (admin, manager) echappe aux deux restrictions : le
+        // proprietaire de la publication ET le rattachement aux comptes. Sans
+        // cette exception, une publication partie uniquement sur les comptes
+        // d'un autre utilisateur etait absente de la liste ET du calendrier,
+        // alors que sa fiche /posts/{id} s'ouvrait sans probleme.
+        //
+        // Modifier et supprimer restent reserves a l'auteur et a l'admin :
+        // `seesAllContent()` est un droit de REGARD, pas d'ecriture.
+        $voitTout = $user->seesAllContent();
 
         // Only load postPlatforms whose social account is active FOR THIS USER
-        $activePostPlatforms = fn ($q) => $isAdmin ? $q : $q->whereHas('socialAccount', function ($sq) use ($userId) {
+        $activePostPlatforms = fn ($q) => $voitTout ? $q : $q->whereHas('socialAccount', function ($sq) use ($userId) {
             $sq->whereHas('users', fn ($uq) => $uq->where('social_account_user.user_id', $userId)->where('social_account_user.is_active', true));
         });
 
         // Only show posts that have at least one active account for this user
-        $hasActiveAccount = function ($q) use ($isAdmin, $userId) {
-            if ($isAdmin) {
+        $hasActiveAccount = function ($q) use ($voitTout, $userId) {
+            if ($voitTout) {
                 return;
             }
 
@@ -116,8 +120,8 @@ class PostController extends Controller
             'rssPost.rssItem',
         ]);
 
-        // Admin sees all posts, regular user sees only own posts
-        if (! $user->isAdmin()) {
+        // Qui voit tout voit toutes les publications ; les autres les leurs.
+        if (! $voitTout) {
             $query->where('user_id', $user->id);
         }
 
@@ -151,15 +155,14 @@ class PostController extends Controller
         };
         $applyMediaTypeFilter($query);
 
-        // Groupes et comptes pour les filtres (mêmes données que le formulaire de création).
-        // Pour l'admin, tous les comptes actifs : sinon il ne peut pas filtrer sur
-        // celui d'un autre utilisateur, dont il voit pourtant les publications.
+        // Groupes et comptes pour les filtres. Qui voit tout doit pouvoir
+        // filtrer sur le compte d'un autre, dont il voit les publications.
         $accountGroups = $user->accountGroups()->with('socialAccounts:id')->orderBy('sort_order')->get();
         // Pas de filtre d'activation sur le compte lui-meme : `is_active` a
         // quitte `social_accounts` pour le pivot `social_account_user` en
         // fevrier 2026 (l'activation est propre a chaque utilisateur). Pour qui
         // voit tout, « tous les comptes » veut donc dire tous les comptes.
-        $accounts = ($isAdmin
+        $accounts = ($voitTout
             ? SocialAccount::query()->with('platform')->orderBy('name')->get()
             : $user->activeSocialAccounts()->with('platform')->orderBy('name')->get()
         )->groupBy(fn (SocialAccount $account) => $account->platform->slug);
@@ -201,7 +204,7 @@ class PostController extends Controller
             'ytPost.ytItem',
             'rssPost.rssItem',
         ]);
-        if (! $user->isAdmin()) {
+        if (! $voitTout) {
             $calendarQuery->where('user_id', $user->id);
         }
         $hasActiveAccount($calendarQuery);
@@ -382,9 +385,18 @@ class PostController extends Controller
     {
         $user = $request->user();
         $userId = $user->id;
+        $voitTout = $user->seesAllContent();
 
+        // Les diffusions etaient elles aussi filtrees par les comptes rattaches
+        // au lecteur : la fiche affichait alors UNE PARTIE des reseaux sur
+        // lesquels la publication est partie, sans rien signaler. Qui voit tout
+        // doit voir tous les reseaux, c'est le coeur de l'interet de l'ecran.
         $post = Post::with([
-            'postPlatforms' => function ($q) use ($userId) {
+            'postPlatforms' => function ($q) use ($userId, $voitTout) {
+                if ($voitTout) {
+                    return;
+                }
+
                 $q->whereHas('socialAccount', function ($sq) use ($userId) {
                     $sq->whereHas('users', fn ($uq) => $uq->where('social_account_user.user_id', $userId)->where('social_account_user.is_active', true));
                 });
@@ -397,8 +409,9 @@ class PostController extends Controller
             'user',
         ])->findOrFail($id);
 
-        // Regular users can only view their own posts
-        if (! $user->isAdmin() && $post->user_id !== $user->id) {
+        // Lecture seule : voir la fiche d'autrui est permis, la modifier non
+        // (les methodes d'ecriture plus bas restent sur `isAdmin()`).
+        if (! $voitTout && $post->user_id !== $user->id) {
             abort(403, 'Unauthorized.');
         }
 

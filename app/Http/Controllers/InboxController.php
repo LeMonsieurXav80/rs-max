@@ -24,7 +24,7 @@ class InboxController extends Controller
             ->filter(fn ($slug) => Setting::get("inbox_platform_{$slug}_enabled", true))
             ->values();
 
-        $accountQuery = $user->isAdmin()
+        $accountQuery = $user->seesAllContent()
             ? SocialAccount::query()
             : $user->socialAccounts();
 
@@ -212,7 +212,7 @@ class InboxController extends Controller
             ];
         }
 
-        $socialAccounts = ($user->isAdmin()
+        $socialAccounts = ($user->seesAllContent()
             ? SocialAccount::query()
             : $user->socialAccounts())
             ->whereHas('platform', fn ($q) => $q->whereIn('slug', $enabledSlugs))
@@ -440,7 +440,7 @@ class InboxController extends Controller
     {
         $user = $request->user();
 
-        $accountIds = ($user->isAdmin() ? SocialAccount::query() : $user->socialAccounts())
+        $accountIds = ($user->seesAllContent() ? SocialAccount::query() : $user->socialAccounts())
             ->pluck('social_accounts.id');
 
         $pending = InboxItem::whereIn('social_account_id', $accountIds)

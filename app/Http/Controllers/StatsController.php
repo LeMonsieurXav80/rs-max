@@ -19,7 +19,7 @@ class StatsController extends Controller
     public function overview(Request $request): View
     {
         $user = $request->user();
-        $socialAccounts = $user->activeSocialAccounts()->with('platform')->orderBy('name')->get();
+        $socialAccounts = $user->visibleSocialAccounts()->with('platform')->orderBy('name')->get();
 
         [$selectedAccounts, $period, $startDate, $endDate] = $this->getFilters($request);
         $allPosts = $this->getFilteredPosts($user, $selectedAccounts, $period, $startDate, $endDate);
@@ -48,7 +48,7 @@ class StatsController extends Controller
     public function audience(Request $request): View
     {
         $user = $request->user();
-        $socialAccounts = $user->activeSocialAccounts()->with('platform')->orderBy('name')->get();
+        $socialAccounts = $user->visibleSocialAccounts()->with('platform')->orderBy('name')->get();
 
         $selectedAccounts = $request->input('accounts', []);
         if (empty($selectedAccounts)) {
@@ -137,7 +137,7 @@ class StatsController extends Controller
     public function publications(Request $request): View
     {
         $user = $request->user();
-        $socialAccounts = $user->activeSocialAccounts()->with('platform')->orderBy('name')->get();
+        $socialAccounts = $user->visibleSocialAccounts()->with('platform')->orderBy('name')->get();
 
         [$selectedAccounts, $period, $startDate, $endDate] = $this->getFilters($request);
         $allPosts = $this->getFilteredPosts($user, $selectedAccounts, $period, $startDate, $endDate);
@@ -164,7 +164,7 @@ class StatsController extends Controller
     public function platforms(Request $request): View
     {
         $user = $request->user();
-        $socialAccounts = $user->activeSocialAccounts()->with('platform')->orderBy('name')->get();
+        $socialAccounts = $user->visibleSocialAccounts()->with('platform')->orderBy('name')->get();
 
         [$selectedAccounts, $period, $startDate, $endDate] = $this->getFilters($request);
         $allPosts = $this->getFilteredPosts($user, $selectedAccounts, $period, $startDate, $endDate);
@@ -216,7 +216,7 @@ class StatsController extends Controller
             $ppQuery->whereIn('social_account_id', $selectedAccounts);
             $epQuery->whereIn('social_account_id', $selectedAccounts);
         } else {
-            $accountIds = $user->activeSocialAccounts()->pluck('social_accounts.id');
+            $accountIds = $user->visibleSocialAccounts()->pluck('social_accounts.id');
             $ppQuery->whereIn('social_account_id', $accountIds);
             $epQuery->whereIn('social_account_id', $accountIds);
         }

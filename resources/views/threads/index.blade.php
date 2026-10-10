@@ -141,7 +141,7 @@
                             <div class="flex items-center gap-3 mb-1.5">
                                 <x-status-badge :status="$thread->status" />
                                 <span class="text-xs text-gray-400">{{ $thread->segments_count }} segments</span>
-                                @if(auth()->user()->isAdmin() && $thread->user)
+                                @if(auth()->user()->seesAllContent() && $thread->user)
                                     <span class="text-xs text-gray-400">{{ $thread->user->name }}</span>
                                 @endif
                             </div>

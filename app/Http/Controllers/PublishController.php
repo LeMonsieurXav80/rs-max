@@ -24,13 +24,32 @@ class PublishController extends Controller
      * Manually publish a single PostPlatform entry (AJAX).
      * Runs synchronously (no queue) for immediate feedback during testing.
      */
+    /**
+     * Qui peut agir sur CETTE diffusion ?
+     *
+     * L'auteur et l'admin, sans condition. Les autres (manager) seulement pour
+     * RELANCER un reseau tombe en erreur : voir la publication d'un collegue
+     * sans pouvoir rattraper son echec n'aurait servi a rien, mais ni relancer
+     * un `pending` — ce serait publier son brouillon a sa place — ni toucher a
+     * un `published`, dont la remise a zero effacerait l'external_id et donc
+     * le lien vers la publication reellement en ligne.
+     */
+    private function peutAgirSurLaDiffusion($user, PostPlatform $postPlatform): bool
+    {
+        if ($user->isAdmin() || $postPlatform->post->user_id === $user->id) {
+            return true;
+        }
+
+        return $user->seesAllContent() && $postPlatform->status === 'failed';
+    }
+
     public function publishOne(Request $request, PostPlatform $postPlatform): JsonResponse
     {
         $user = $request->user();
         $postPlatform->load('socialAccount.platform', 'post.user');
         $post = $postPlatform->post;
 
-        if (! $user->isAdmin() && $post->user_id !== $user->id) {
+        if (! $this->peutAgirSurLaDiffusion($user, $postPlatform)) {
             return response()->json(['success' => false, 'error' => 'Non autorisé.'], 403);
         }
 
@@ -43,8 +62,12 @@ class PublishController extends Controller
 
         $account = $postPlatform->socialAccount;
 
-        // Check if account is active for this user (per-user activation)
-        $isActiveForUser = $account->users()->where('user_id', $user->id)->where('social_account_user.is_active', true)->exists();
+        // Check if account is active for this user (per-user activation).
+        // Qui voit tout relance aussi sur un compte qui n'est pas le sien :
+        // sans cette exception, le droit de relance accorde juste au-dessus
+        // serait refuse ici pour toute publication d'un collegue.
+        $isActiveForUser = $user->seesAllContent()
+            || $account->users()->where('user_id', $user->id)->where('social_account_user.is_active', true)->exists();
         if (! $isActiveForUser) {
             return response()->json([
                 'success' => false,
@@ -253,7 +276,7 @@ class PublishController extends Controller
         $user = $request->user();
         $postPlatform->load('post');
 
-        if (! $user->isAdmin() && $postPlatform->post->user_id !== $user->id) {
+        if (! $this->peutAgirSurLaDiffusion($user, $postPlatform)) {
             return response()->json(['success' => false, 'error' => 'Non autorisé.'], 403);
         }
 

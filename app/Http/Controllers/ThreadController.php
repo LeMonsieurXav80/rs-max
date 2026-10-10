@@ -32,6 +32,35 @@ class ThreadController extends Controller
     private const COMPILED_PLATFORM_SLUGS = ['facebook', 'telegram', 'instagram'];
 
     /**
+     * Qui peut relancer CE fil sur CE compte ?
+     *
+     * L'auteur et l'admin, sans condition. Un manager seulement si la diffusion
+     * y est tombee en erreur : voir le fil d'un collegue sans pouvoir rattraper
+     * son echec n'aurait servi a rien, mais relancer un `pending` publierait
+     * son brouillon a sa place, et une remise a zero effacerait les external_id
+     * des segments deja en ligne.
+     *
+     * Pendant de `PublishController::peutAgirSurLaDiffusion()` ; l'etat par
+     * compte vit ici dans `thread_segment_platform`, pas sur le fil.
+     */
+    private function peutRelancerLeFil($user, Thread $thread, SocialAccount $account): bool
+    {
+        if ($user->isAdmin() || $thread->user_id === $user->id) {
+            return true;
+        }
+
+        if (! $user->seesAllContent()) {
+            return false;
+        }
+
+        return ThreadSegmentPlatform::query()
+            ->where('social_account_id', $account->id)
+            ->where('status', 'failed')
+            ->whereHas('threadSegment', fn ($q) => $q->where('thread_id', $thread->id))
+            ->exists();
+    }
+
+    /**
      * Display a list of threads.
      */
     public function index(Request $request): View
@@ -42,7 +71,8 @@ class ThreadController extends Controller
             ->with(['segments', 'socialAccounts.platform', 'user'])
             ->withCount('segments');
 
-        if (! $user->isAdmin()) {
+        // Qui voit tout voit les fils de tous ; les autres les leurs.
+        if (! $user->seesAllContent()) {
             $query->where('user_id', $user->id);
         }
 
@@ -52,11 +82,12 @@ class ThreadController extends Controller
 
         // Groupes et comptes pour les filtres (mêmes données que le formulaire de création)
         $accountGroups = $user->accountGroups()->with('socialAccounts:id')->orderBy('sort_order')->get();
-        $accounts = $user->activeSocialAccounts()
-            ->with('platform')
-            ->orderBy('name')
-            ->get()
-            ->groupBy(fn (SocialAccount $account) => $account->platform->slug);
+        // Pas de filtre d'activation sur le compte : `is_active` vit sur le
+        // pivot `social_account_user`, pas sur `social_accounts` (fevrier 2026).
+        $accounts = ($user->seesAllContent()
+            ? SocialAccount::query()->with('platform')->orderBy('name')->get()
+            : $user->activeSocialAccounts()->with('platform')->orderBy('name')->get()
+        )->groupBy(fn (SocialAccount $account) => $account->platform->slug);
 
         // Filtre par groupe : on restreint aux fils liés à au moins un compte du groupe
         if ($request->filled('group_id')) {
@@ -116,7 +147,7 @@ class ThreadController extends Controller
         // selon les comptes cochés dans le formulaire.
         $boostableThreads = Thread::query()
             ->where('status', 'published')
-            ->when(! $user->isAdmin(), fn ($q) => $q->where('user_id', $user->id))
+            ->when(! $user->seesAllContent(), fn ($q) => $q->where('user_id', $user->id))
             ->whereHas('segments.segmentPlatforms', fn ($q) => $q->where('status', 'published')->whereNotNull('platform_url'))
             ->with(['segments' => fn ($q) => $q->orderBy('position')->limit(1), 'socialAccounts:id'])
             ->orderByDesc('published_at')
@@ -309,7 +340,8 @@ class ThreadController extends Controller
     {
         $user = $request->user();
 
-        if (! $user->isAdmin() && $thread->user_id !== $user->id) {
+        // Lecture seule : consulter le fil d'autrui est permis, le modifier non.
+        if (! $user->seesAllContent() && $thread->user_id !== $user->id) {
             abort(403);
         }
 
@@ -323,11 +355,18 @@ class ThreadController extends Controller
 
         $attachedIds = $thread->socialAccounts->pluck('id')->all();
 
-        $availableAccounts = $user->activeSocialAccounts()
-            ->with('platform')
-            ->whereNotIn('social_accounts.id', $attachedIds)
-            ->orderBy('name')
-            ->get();
+        // « Ajouter un compte » modifie le fil : reserve a l'auteur et a
+        // l'admin. Sur le fil d'un collegue, proposer ses propres comptes
+        // n'aboutissait qu'a un 403 au clic.
+        $peutModifier = $user->isAdmin() || $thread->user_id === $user->id;
+
+        $availableAccounts = $peutModifier
+            ? $user->activeSocialAccounts()
+                ->with('platform')
+                ->whereNotIn('social_accounts.id', $attachedIds)
+                ->orderBy('name')
+                ->get()
+            : collect();
 
         $partnerOptions = app(PartnerTagService::class)->options();
 
@@ -400,7 +439,7 @@ class ThreadController extends Controller
         $boostableThreads = Thread::query()
             ->where('status', 'published')
             ->where('id', '!=', $thread->id)
-            ->when(! $user->isAdmin(), fn ($q) => $q->where('user_id', $user->id))
+            ->when(! $user->seesAllContent(), fn ($q) => $q->where('user_id', $user->id))
             ->whereHas('segments.segmentPlatforms', fn ($q) => $q->where('status', 'published')->whereNotNull('platform_url'))
             ->with(['segments' => fn ($q) => $q->orderBy('position')->limit(1), 'socialAccounts:id'])
             ->orderByDesc('published_at')
@@ -727,7 +766,7 @@ class ThreadController extends Controller
 
         $user = $request->user();
 
-        if (! $user->isAdmin() && $thread->user_id !== $user->id) {
+        if (! $this->peutRelancerLeFil($user, $thread, $socialAccount)) {
             return response()->json(['success' => false, 'error' => 'Non autorisé.'], 403);
         }
 
@@ -752,7 +791,7 @@ class ThreadController extends Controller
     {
         $user = $request->user();
 
-        if (! $user->isAdmin() && $thread->user_id !== $user->id) {
+        if (! $this->peutRelancerLeFil($user, $thread, $socialAccount)) {
             return response()->json(['success' => false, 'error' => 'Non autorisé.'], 403);
         }
 

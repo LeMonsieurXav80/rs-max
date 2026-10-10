@@ -15,13 +15,15 @@ class DashboardController extends Controller
     public function index(Request $request): View
     {
         $user = $request->user();
-        $isAdmin = $user->isAdmin();
+        // Qui voit tout (admin, manager) voit les chiffres de tous.
+        // `activeAccountsCount` reste volontairement personnel : il mesure les
+        // comptes vers lesquels on peut PUBLIER, pas ce qu'on a le droit de voir.
+        $voitTout = $user->seesAllContent();
         $userId = $user->id;
 
-        // Build base queries - admin sees all, regular user sees own data
         $postQuery = Post::query();
 
-        if (! $isAdmin) {
+        if (! $voitTout) {
             $postQuery->where('user_id', $userId);
         }
 
@@ -34,16 +36,22 @@ class DashboardController extends Controller
         $draftCount = (clone $postQuery)->where('status', 'draft')->count();
 
         // Only load postPlatforms whose social account is active for THIS USER
-        $activePostPlatforms = fn ($q) => $q->whereHas('socialAccount', function ($sq) use ($userId) {
+        $activePostPlatforms = fn ($q) => $voitTout ? $q : $q->whereHas('socialAccount', function ($sq) use ($userId) {
             $sq->whereHas('users', fn ($uq) => $uq->where('social_account_user.user_id', $userId)->where('social_account_user.is_active', true));
         });
 
         // Only show posts with at least one active account for this user
-        $hasActiveAccount = fn ($q) => $q->whereHas('postPlatforms', function ($ppq) use ($userId) {
-            $ppq->whereHas('socialAccount', function ($sq) use ($userId) {
-                $sq->whereHas('users', fn ($uq) => $uq->where('social_account_user.user_id', $userId)->where('social_account_user.is_active', true));
+        $hasActiveAccount = function ($q) use ($voitTout, $userId) {
+            if ($voitTout) {
+                return;
+            }
+
+            $q->whereHas('postPlatforms', function ($ppq) use ($userId) {
+                $ppq->whereHas('socialAccount', function ($sq) use ($userId) {
+                    $sq->whereHas('users', fn ($uq) => $uq->where('social_account_user.user_id', $userId)->where('social_account_user.is_active', true));
+                });
             });
-        });
+        };
 
         // Next 5 scheduled posts (upcoming)
         $upcomingQuery = (clone $postQuery)
