@@ -182,6 +182,23 @@ class ManagerSeesAllContentTest extends TestCase
             ->assertSee('Page de Xavier');
     }
 
+    /**
+     * Les ecrans sont RENDUS, pas seulement construits : appeler la methode du
+     * controleur renvoie un objet View sans l'evaluer, ce qui laisse passer une
+     * variable manquante dans le Blade. `compact('isAdmin')` a survecu ainsi au
+     * renommage de la variable.
+     */
+    public function test_les_ecrans_partages_se_rendent_pour_le_manager(): void
+    {
+        $this->publicationDeXavier();
+        $this->filDeXavier();
+
+        foreach (['/dashboard', '/posts', '/threads', '/stats', '/inbox'] as $url) {
+            $this->actingAs($this->caroline)->get($url)
+                ->assertOk("l'ecran {$url} doit se rendre sans erreur");
+        }
+    }
+
     // ------------------------------------------------------- ecriture refusee
 
     public function test_le_manager_ne_peut_pas_modifier_une_publication_de_l_admin(): void

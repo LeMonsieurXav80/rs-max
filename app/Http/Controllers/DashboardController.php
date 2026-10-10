@@ -77,7 +77,6 @@ class DashboardController extends Controller
             'activeAccountsCount',
             'upcomingPosts',
             'recentPosts',
-            'isAdmin',
         ));
     }
 }
