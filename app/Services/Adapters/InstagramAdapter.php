@@ -133,12 +133,100 @@ class InstagramAdapter implements PlatformAdapterInterface
     // -------------------------------------------------------------------------
 
     /**
-     * Publish a single video as a Reel using Meta's resumable upload flow.
+     * Publish a single video as a Reel.
      *
-     * The legacy `video_url` fetch flow is broken for Instagram since ~April 2026
-     * (Meta returns error 2207076 without ever fetching the URL, regardless of
-     * whether the video specs are valid). The resumable flow uploads bytes
-     * directly to rupload.facebook.com and works reliably.
+     * Chemin principal : `video_url`, où Meta vient lire le fichier lui-même —
+     * exactement comme `image_url`, qui fonctionne depuis toujours.
+     *
+     * Ce chemin avait été abandonné sur un diagnostic faux : l'erreur 2207076
+     * (« Media download failed ») avait été lue comme une panne de l'API, alors
+     * qu'elle disait l'inverse — la route /media/{fichier} n'est pas publique et
+     * exige une URL signée, donc Meta ne pouvait jamais récupérer le fichier.
+     * `ResolvesPublishableMedia` en fournit une, valable 4 h.
+     *
+     * Le flux resumable qui l'avait remplacé refuse `ProcessingFailedError` sur
+     * nos verticales 1080x1920 d'environ 80 s — soit le format Reels standard.
+     * Mesuré : 1080x1920 passe à 40 s mais pas à 82 s, et 82 s passe en
+     * 720x1280 ; c'est la durée combinée à la résolution qui bloque, pas le
+     * poids du fichier (13,5 Mo passent, 16,5 Mo non). Aucune vidéo n'avait
+     * jamais été publiée par ce chemin. Il reste ici en secours, pour le cas où
+     * Meta n'arriverait pas à lire l'URL (fichier non servable, DNS, pare-feu).
+     */
+    private function publishSingleVideo(string $accountId, string $accessToken, string $caption, string $videoUrl, ?string $locationId = null): array
+    {
+        $containerId = $this->createVideoContainerFromUrl(
+            $accountId, $accessToken, $caption, $videoUrl, $locationId
+        );
+
+        if ($containerId !== null) {
+            $processingError = $this->waitForProcessing($containerId, $accessToken);
+
+            if ($processingError === null) {
+                return $this->publishContainer($accountId, $accessToken, $containerId);
+            }
+
+            Log::warning('InstagramAdapter: video_url a échoué, bascule sur le flux resumable', [
+                'container_id' => $containerId,
+                'error' => $processingError,
+            ]);
+        }
+
+        return $this->publishSingleVideoResumable(
+            $accountId, $accessToken, $caption, $videoUrl, $locationId
+        );
+    }
+
+    /**
+     * Create a REELS container from a URL Meta fetches itself.
+     *
+     * @return string|null Container id, or null if the URL is unusable or Meta refused it.
+     */
+    private function createVideoContainerFromUrl(string $accountId, string $accessToken, string $caption, string $videoUrl, ?string $locationId = null, bool $isCarouselItem = false): ?string
+    {
+        // Meta doit pouvoir atteindre l'URL : un chemin relatif ne lui sert à
+        // rien, et c'est précisément ce qui avait fait condamner ce flux.
+        if (! str_starts_with($videoUrl, 'http://') && ! str_starts_with($videoUrl, 'https://')) {
+            Log::warning('InstagramAdapter: URL vidéo non absolue, video_url inutilisable', [
+                'url' => $videoUrl,
+            ]);
+
+            return null;
+        }
+
+        $params = [
+            'media_type' => 'REELS',
+            'video_url' => $videoUrl,
+            'access_token' => $accessToken,
+        ];
+
+        if ($isCarouselItem) {
+            $params['is_carousel_item'] = 'true';
+        } else {
+            $params['caption'] = $caption;
+        }
+
+        if ($locationId && ! $isCarouselItem) {
+            $params['location_id'] = $locationId;
+        }
+
+        $container = Http::post(self::API_BASE."/{$accountId}/media", $params);
+
+        $containerId = $container->json('id');
+
+        if (! $containerId) {
+            Log::warning('InstagramAdapter: création du conteneur via video_url refusée', [
+                'http_status' => $container->status(),
+                'body' => $container->json() ?? $container->body(),
+            ]);
+
+            return null;
+        }
+
+        return (string) $containerId;
+    }
+
+    /**
+     * Secours : upload des octets vers rupload.facebook.com.
      *
      * 1. Create an upload session (media_type=REELS, upload_type=resumable) to
      *    get a container id + rupload URI.
@@ -146,7 +234,7 @@ class InstagramAdapter implements PlatformAdapterInterface
      * 3. Poll until the container is FINISHED (usually instant with resumable).
      * 4. Publish the container.
      */
-    private function publishSingleVideo(string $accountId, string $accessToken, string $caption, string $videoUrl, ?string $locationId = null): array
+    private function publishSingleVideoResumable(string $accountId, string $accessToken, string $caption, string $videoUrl, ?string $locationId = null): array
     {
         // Step 1 -- create the upload session.
         $params = [
@@ -250,6 +338,15 @@ class InstagramAdapter implements PlatformAdapterInterface
     }
 
     /**
+     * Attente entre deux relevés d'état, isolée pour que les tests n'aient pas
+     * à patienter les 10 s réelles (même procédé que `ThreadsAdapter`).
+     */
+    protected function pause(int $seconds): void
+    {
+        sleep($seconds);
+    }
+
+    /**
      * If $url points at our own /media/{filename} route, return the absolute
      * path to the local file; otherwise null.
      */
@@ -287,31 +384,37 @@ class InstagramAdapter implements PlatformAdapterInterface
         foreach ($media as $item) {
             $isVideo = $this->isVideo($item['mimetype']);
 
-            // Videos go through the resumable upload flow (the URL-fetch flow
-            // is broken since ~April 2026 — same reason as publishSingleVideo).
+            // Même ordre que publishSingleVideo : Meta lit l'URL lui-même, et
+            // l'upload d'octets ne sert plus que de secours.
             if ($isVideo) {
-                $session = Http::post(self::API_BASE."/{$accountId}/media", [
-                    'is_carousel_item' => 'true',
-                    'media_type' => 'REELS',
-                    'upload_type' => 'resumable',
-                    'access_token' => $accessToken,
-                ]);
+                $childId = $this->createVideoContainerFromUrl(
+                    $accountId, $accessToken, '', $item['url'], null, true
+                );
 
-                $childId = $this->extractId($session, 'carousel video child session creation');
-                $uploadUri = $session->json('uri');
+                if ($childId === null) {
+                    $session = Http::post(self::API_BASE."/{$accountId}/media", [
+                        'is_carousel_item' => 'true',
+                        'media_type' => 'REELS',
+                        'upload_type' => 'resumable',
+                        'access_token' => $accessToken,
+                    ]);
 
-                if ($childId === null || empty($uploadUri)) {
-                    return $this->errorFromResponse($session, 'Failed to create carousel video child session');
-                }
+                    $childId = $this->extractId($session, 'carousel video child session creation');
+                    $uploadUri = $session->json('uri');
 
-                $uploadError = $this->uploadVideoBytes($uploadUri, $accessToken, $item['url']);
+                    if ($childId === null || empty($uploadUri)) {
+                        return $this->errorFromResponse($session, 'Failed to create carousel video child session');
+                    }
 
-                if ($uploadError !== null) {
-                    return [
-                        'success' => false,
-                        'external_id' => null,
-                        'error' => "Carousel child {$childId}: {$uploadError}",
-                    ];
+                    $uploadError = $this->uploadVideoBytes($uploadUri, $accessToken, $item['url']);
+
+                    if ($uploadError !== null) {
+                        return [
+                            'success' => false,
+                            'external_id' => null,
+                            'error' => "Carousel child {$childId}: {$uploadError}",
+                        ];
+                    }
                 }
             } else {
                 $response = Http::post(self::API_BASE."/{$accountId}/media", [
@@ -426,7 +529,7 @@ class InstagramAdapter implements PlatformAdapterInterface
         $lastStatus = null;
 
         for ($attempt = 0; $attempt < self::VIDEO_POLL_MAX_ATTEMPTS; $attempt++) {
-            sleep(self::VIDEO_POLL_INTERVAL);
+            $this->pause(self::VIDEO_POLL_INTERVAL);
 
             $response = Http::get(self::API_BASE."/{$containerId}", [
                 'fields' => 'status_code,status',
