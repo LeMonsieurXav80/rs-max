@@ -336,6 +336,12 @@ class LinkedInOAuthController extends Controller
         $refreshToken = $credentials['refresh_token'] ?? null;
 
         if (! $refreshToken) {
+            Log::warning('LinkedIn: aucun refresh_token en base, renouvellement impossible', [
+                'account_id' => $account->id,
+                'account' => $account->name,
+                'token_expires_at' => $credentials['token_expires_at'] ?? null,
+            ]);
+
             return null;
         }
 

@@ -419,18 +419,30 @@ class LinkedInAdapter implements PlatformAdapterInterface
 
     /**
      * Get a valid access token, refreshing if expired.
+     *
+     * LinkedIn ne délivre un refresh_token qu'aux applications qui y ont droit :
+     * sans lui, un access_token périmé est définitivement perdu et seule une
+     * reconnexion manuelle du compte le rétablit. Publier quand même, c'est un
+     * 401 EXPIRED_ACCESS_TOKEN par jour que personne ne sait interpréter — d'où
+     * l'arrêt immédiat avec un message qui nomme le geste à faire.
      */
     private function getValidToken(SocialAccount $account): string
     {
         $credentials = $account->credentials;
         $expiresAt = $credentials['token_expires_at'] ?? null;
+        $isExpired = $expiresAt && now()->gt(now()->parse($expiresAt)->subDay());
 
         // If token expires within 24 hours, try to refresh
-        if ($expiresAt && now()->gt(now()->parse($expiresAt)->subDay())) {
+        if ($isExpired) {
             $newToken = LinkedInOAuthController::refreshAccessToken($account);
             if ($newToken) {
                 return $newToken;
             }
+
+            throw new \RuntimeException(
+                "Token LinkedIn expiré depuis le {$expiresAt} et non renouvelable "
+                .'(aucun refresh_token). Reconnectez le compte depuis Plateformes → LinkedIn.'
+            );
         }
 
         return $credentials['access_token'];

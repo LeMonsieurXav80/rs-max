@@ -91,6 +91,26 @@ class PlatformController extends Controller
     }
 
     /**
+     * LinkedIn configuration page.
+     */
+    public function linkedin(Request $request): View
+    {
+        $accounts = $this->accountsForSlugs($request, ['linkedin']);
+
+        return view('platforms.linkedin', compact('accounts'));
+    }
+
+    /**
+     * Pinterest configuration page.
+     */
+    public function pinterest(Request $request): View
+    {
+        $accounts = $this->accountsForSlugs($request, ['pinterest']);
+
+        return view('platforms.pinterest', compact('accounts'));
+    }
+
+    /**
      * Register a Telegram bot (validate + save).
      */
     public function registerTelegramBot(Request $request): RedirectResponse
