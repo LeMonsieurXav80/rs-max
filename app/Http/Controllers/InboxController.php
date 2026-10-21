@@ -47,8 +47,7 @@ class InboxController extends Controller
             ? $allAccountIds->intersect($selectedAccountIds)->values()
             : $allAccountIds;
 
-        $query = InboxItem::whereIn('social_account_id', $accountIds)
-            ->with(['socialAccount.platform', 'platform']);
+        $query = InboxItem::whereIn('social_account_id', $accountIds);
 
         // Status filter (single value, mutually exclusive)
         $status = $request->input('status') ?? '';
@@ -73,8 +72,33 @@ class InboxController extends Controller
             $query->whereIn('type', $types);
         }
 
-        // Fetch filtered items
-        $filteredItems = $query->orderBy('posted_at', 'asc')->get();
+        // Le regroupement en conversations, les filtres « new »/« followup » et le
+        // tri se font en PHP : ils portent sur la conversation entière, pas sur une
+        // ligne. Il faut donc balayer TOUTES les lignes des comptes selectionnes
+        // avant de pouvoir en afficher 15 — ce qui a fait tomber /inbox en 500
+        // (memory_limit 256 Mo creve a ~47 000 lignes pour 8 comptes, le 18/10/2026).
+        //
+        // D'ou deux passes. Celle-ci ne lit que les colonnes necessaires au
+        // regroupement, sans modele Eloquent (`toBase()`) ni relation chargee :
+        // ~10 scalaires par ligne au lieu d'un objet complet avec son compte et sa
+        // plateforme. Les modeles entiers ne sont hydrates qu'a la seconde passe,
+        // pour la seule page affichee.
+        //
+        // `reply_content` est volontairement reduit a un booleen `has_reply` : la
+        // colonne est un TEXT, et seule sa presence sert ici.
+        $colonnesDeRegroupement = [
+            'id', 'social_account_id', 'conversation_key', 'external_id',
+            'parent_id', 'reply_external_id', 'posted_at', 'status',
+            'author_external_id',
+        ];
+        $presenceDeReponse = "CASE WHEN reply_content IS NULL OR reply_content = '' THEN 0 ELSE 1 END as has_reply";
+
+        $filteredItems = (clone $query)
+            ->select($colonnesDeRegroupement)
+            ->selectRaw($presenceDeReponse)
+            ->orderBy('posted_at', 'asc')
+            ->toBase()
+            ->get();
 
         // When status is filtered, fetch related conversation items for context.
         $allItems = $filteredItems;
@@ -84,8 +108,10 @@ class InboxController extends Controller
             $relatedItems = InboxItem::whereIn('social_account_id', $accountIds)
                 ->whereNotIn('status', ['archived', 'ignored'])
                 ->whereIn('conversation_key', $conversationKeys)
-                ->with(['socialAccount.platform', 'platform'])
+                ->select($colonnesDeRegroupement)
+                ->selectRaw($presenceDeReponse)
                 ->orderBy('posted_at', 'asc')
+                ->toBase()
                 ->get();
 
             $allItems = $filteredItems->merge($relatedItems)->unique('id')->sortBy('posted_at')->values();
@@ -112,29 +138,25 @@ class InboxController extends Controller
         // item from the original filtered set (context items alone don't qualify).
         $filteredIds = $statusIsFiltered ? $filteredItems->pluck('id')->flip() : null;
 
+        // Resume minimal par conversation : juste de quoi filtrer, trier et
+        // paginer. Tout ce que la vue affiche est reconstruit plus bas, sur la
+        // seule page retenue.
         $conversationList = $conversations->map(function ($items, $key) {
-            $first = $items->first();
             $latest = $items->sortByDesc('posted_at')->first();
 
             return (object) [
                 'key' => $key,
-                'items' => $items->sortBy('posted_at')->values(),
-                'platform' => $first->platform,
-                'socialAccount' => $first->socialAccount,
-                'type' => $first->type,
+                'item_ids' => $items->pluck('id')->all(),
+                'social_account_id' => $latest->social_account_id,
                 'latest_at' => $latest->posted_at,
-                'unread_count' => $items->where('status', 'unread')->count(),
-                'total_count' => $items->count(),
-                'post_url' => $first->post_url,
-                'external_post_id' => $first->external_post_id,
-                'latest_author' => $latest->author_name ?? $latest->author_username,
                 'latest_author_external_id' => $latest->author_external_id,
+                'has_reply' => $items->contains(fn ($i) => $i->status === 'replied' || (int) $i->has_reply === 1),
             ];
         });
 
         if ($filteredIds) {
             $conversationList = $conversationList->filter(function ($convo) use ($filteredIds) {
-                return $convo->items->contains(fn ($item) => $filteredIds->has($item->id));
+                return collect($convo->item_ids)->contains(fn ($id) => $filteredIds->has($id));
             });
         }
 
@@ -148,7 +170,7 @@ class InboxController extends Controller
                 ->pluck('platform_account_id', 'id');
 
             $conversationList = $conversationList->filter(function ($convo) use ($accountPlatformIds) {
-                $ownPlatformId = $accountPlatformIds[$convo->socialAccount->id] ?? null;
+                $ownPlatformId = $accountPlatformIds[$convo->social_account_id] ?? null;
 
                 // Exclude conversations where the latest message is from the account owner
                 return ! $ownPlatformId || (string) ($convo->latest_author_external_id ?? '') !== (string) $ownPlatformId;
@@ -156,18 +178,58 @@ class InboxController extends Controller
 
             // "new" = never replied in this conversation; "followup" = replied before, new message since
             $wantNew = $status === 'new';
-            $conversationList = $conversationList->filter(function ($convo) use ($wantNew) {
-                $hasReply = $convo->items->contains(fn ($i) => $i->status === 'replied' || $i->reply_content);
-
-                return $wantNew ? ! $hasReply : $hasReply;
-            })->values();
+            $conversationList = $conversationList->filter(
+                fn ($convo) => $wantNew ? ! $convo->has_reply : $convo->has_reply
+            )->values();
         }
 
         // Manual pagination by conversations
         $page = (int) $request->input('page', 1);
         $perPage = (int) ($request->input('per_page') ?: Setting::get('inbox_per_page', 15));
+        $pageDeResumes = $conversationList->forPage($page, $perPage)->values();
+
+        // Seconde passe : les modeles complets, pour cette page uniquement. Une
+        // requete pour tous les messages de la page, relations comprises — jamais
+        // une par conversation.
+        $modeles = InboxItem::with(['socialAccount.platform', 'platform'])
+            ->whereIn('id', $pageDeResumes->flatMap(fn ($c) => $c->item_ids)->all())
+            ->get()
+            ->keyBy('id');
+
+        $conversationsDeLaPage = $pageDeResumes->map(function ($resume) use ($modeles) {
+            $items = collect($resume->item_ids)
+                ->map(fn ($id) => $modeles->get($id))
+                ->filter()
+                ->sortBy('posted_at')
+                ->values();
+
+            // Un message supprime entre les deux passes laisserait une
+            // conversation vide : on l'ecarte plutot que de rendre un objet creux.
+            if ($items->isEmpty()) {
+                return null;
+            }
+
+            $first = $items->first();
+            $latest = $items->sortByDesc('posted_at')->first();
+
+            return (object) [
+                'key' => $resume->key,
+                'items' => $items,
+                'platform' => $first->platform,
+                'socialAccount' => $first->socialAccount,
+                'type' => $first->type,
+                'latest_at' => $latest->posted_at,
+                'unread_count' => $items->where('status', 'unread')->count(),
+                'total_count' => $items->count(),
+                'post_url' => $first->post_url,
+                'external_post_id' => $first->external_post_id,
+                'latest_author' => $latest->author_name ?? $latest->author_username,
+                'latest_author_external_id' => $latest->author_external_id,
+            ];
+        })->filter()->values();
+
         $conversations = new LengthAwarePaginator(
-            $conversationList->forPage($page, $perPage)->values(),
+            $conversationsDeLaPage,
             $conversationList->count(),
             $perPage,
             $page,
