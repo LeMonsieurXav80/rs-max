@@ -111,11 +111,4 @@ class SocialAccount extends Model
     {
         return $this->hasMany(InboxItem::class);
     }
-
-    public function rssFeeds(): BelongsToMany
-    {
-        return $this->belongsToMany(RssFeed::class, 'rss_feed_social_account')
-            ->withPivot('persona_id', 'auto_post', 'post_frequency', 'max_posts_per_day')
-            ->withTimestamps();
-    }
 }

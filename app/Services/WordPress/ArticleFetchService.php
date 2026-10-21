@@ -1,6 +1,6 @@
 <?php
 
-namespace App\Services\Rss;
+namespace App\Services\WordPress;
 
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;

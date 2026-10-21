@@ -3,7 +3,6 @@
 namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
-use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class Persona extends Model
 {
@@ -26,11 +25,6 @@ class Persona extends Model
             'is_active' => 'boolean',
             'bot_comment_max_length' => 'integer',
         ];
-    }
-
-    public function rssPosts(): HasMany
-    {
-        return $this->hasMany(RssPost::class);
     }
 
     public function hasBotComments(): bool

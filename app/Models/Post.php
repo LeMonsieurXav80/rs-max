@@ -116,28 +116,10 @@ class Post extends Model
         return $this->hasOne(WpPost::class);
     }
 
-    public function ytPost(): \Illuminate\Database\Eloquent\Relations\HasOne
-    {
-        return $this->hasOne(YtPost::class);
-    }
-
-    public function rssPost(): \Illuminate\Database\Eloquent\Relations\HasOne
-    {
-        return $this->hasOne(RssPost::class);
-    }
-
     public function getSourceImageUrlAttribute(): ?string
     {
         if ($this->source_type === 'wordpress' && $this->relationLoaded('wpPost') && $this->wpPost?->wpItem) {
             return $this->wpPost->wpItem->image_url;
-        }
-
-        if ($this->source_type === 'youtube' && $this->relationLoaded('ytPost') && $this->ytPost?->ytItem) {
-            return $this->ytPost->ytItem->thumbnail_url;
-        }
-
-        if ($this->source_type === 'rss' && $this->relationLoaded('rssPost') && $this->rssPost?->rssItem) {
-            return $this->rssPost->rssItem->image_url;
         }
 
         return null;

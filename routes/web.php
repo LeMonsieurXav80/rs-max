@@ -1,7 +1,6 @@
 <?php
 
 use App\Http\Controllers\AccountGroupController;
-use App\Http\Controllers\AiAssistController;
 use App\Http\Controllers\Bot\BlueskyBotController;
 use App\Http\Controllers\Bot\FacebookBotController;
 use App\Http\Controllers\BotHubController;
@@ -16,7 +15,6 @@ use App\Http\Controllers\FacebookOAuthController;
 use App\Http\Controllers\HashtagController;
 use App\Http\Controllers\HealthController;
 use App\Http\Controllers\HelpController;
-use App\Http\Controllers\HookController;
 use App\Http\Controllers\ImportController;
 use App\Http\Controllers\InboxController;
 use App\Http\Controllers\LinkedInOAuthController;
@@ -34,17 +32,14 @@ use App\Http\Controllers\PostController;
 use App\Http\Controllers\ProfileController;
 use App\Http\Controllers\PublishController;
 use App\Http\Controllers\ReshareController;
-use App\Http\Controllers\RssFeedController;
 use App\Http\Controllers\SettingsController;
 use App\Http\Controllers\SocialAccountController;
-use App\Http\Controllers\SourceItemController;
 use App\Http\Controllers\StatsController;
 use App\Http\Controllers\ThreadController;
 use App\Http\Controllers\ThreadsOAuthController;
 use App\Http\Controllers\UpdateController;
 use App\Http\Controllers\UserController;
 use App\Http\Controllers\WordPressSiteController;
-use App\Http\Controllers\YouTubeChannelController;
 use App\Http\Controllers\YouTubeOAuthController;
 use App\Http\Controllers\YouTubeTranslatorController;
 use Illuminate\Http\Request;
@@ -73,10 +68,6 @@ Route::middleware(['auth', 'verified', 'throttle:600,1'])->group(function () {
     Route::post('posts/bulk-library/pick', [BulkLibraryController::class, 'pick'])->name('posts.bulk.library.pick');
 
     // AI Assist (must be before posts resource to avoid route conflict)
-    Route::post('posts/ai-assist', [AiAssistController::class, 'generate'])->name('posts.aiAssist');
-    Route::post('posts/ai-assist-platforms', [AiAssistController::class, 'generateForPlatforms'])->name('posts.aiAssistPlatforms');
-    Route::post('posts/ai-assist-media', [AiAssistController::class, 'generateFromMedia'])->name('posts.aiAssistMedia');
-    Route::post('posts/ai-assist-photo-infos', [AiAssistController::class, 'generateFromPhotoInfos'])->name('posts.aiAssistPhotoInfos');
 
     // Posts (resource CRUD)
     // Le tag partenaire a sa propre route : contrairement a update(), il reste
@@ -152,8 +143,6 @@ Route::middleware(['auth', 'verified', 'throttle:600,1'])->group(function () {
     Route::post('posts/{post}/reshare', [ReshareController::class, 'fromPost'])->name('posts.reshare');
 
     // Threads (Fils de discussion)
-    Route::post('threads/generate-from-url', [ThreadController::class, 'generateFromUrl'])->name('threads.generateFromUrl');
-    Route::post('threads/regenerate-segment', [ThreadController::class, 'regenerateSegment'])->name('threads.regenerateSegment');
     Route::post('threads/overlay-preview', [ThreadController::class, 'overlayPreview'])->name('threads.overlayPreview');
     // Idem pour les fils : taguable retroactivement, meme publie.
     Route::put('threads/{thread}/partners', [ThreadController::class, 'updatePartners'])->name('threads.partners.update');
@@ -281,24 +270,11 @@ Route::middleware(['auth', 'verified', 'throttle:600,1'])->group(function () {
         Route::get('partners/{partner}/posts', [PartnerController::class, 'posts'])->name('partners.posts');
         Route::resource('partners', PartnerController::class)->except(['show']);
 
-        // Personas
+        // Personas : conserves avec le retrait de la generation IA, parce que le
+        // bot Bluesky et la generation WordPress s'en servent toujours. Sans cet
+        // ecran, les contextes de commentaire du bot ne seraient plus editables
+        // que directement en base.
         Route::resource('personas', PersonaController::class)->except(['show']);
-
-        // Hooks
-        Route::resource('hooks', HookController::class)->except(['show']);
-        Route::post('hooks/categories', [HookController::class, 'storeCategory'])->name('hooks.categories.store');
-        Route::patch('hooks/categories/{category}', [HookController::class, 'updateCategory'])->name('hooks.categories.update');
-        Route::delete('hooks/categories/{category}', [HookController::class, 'destroyCategory'])->name('hooks.categories.destroy');
-        Route::post('hooks/categories/{category}/reset', [HookController::class, 'resetCounters'])->name('hooks.categories.reset');
-
-        // RSS Feeds
-        Route::resource('rss-feeds', RssFeedController::class)->except(['show']);
-        Route::post('rss-feeds/{rssFeed}/fetch', [RssFeedController::class, 'fetchNow'])->name('rss-feeds.fetch');
-        Route::post('rss-feeds/{rssFeed}/generate', [RssFeedController::class, 'generateNow'])->name('rss-feeds.generate');
-        Route::get('rss-feeds/{rssFeed}/preview', [RssFeedController::class, 'preview'])->name('rss-feeds.preview');
-        Route::post('rss-feeds/{rssFeed}/generate-preview', [RssFeedController::class, 'generatePreview'])->name('rss-feeds.generatePreview');
-        Route::post('rss-feeds/{rssFeed}/regenerate-item', [RssFeedController::class, 'regenerateItem'])->name('rss-feeds.regenerateItem');
-        Route::post('rss-feeds/{rssFeed}/confirm-publications', [RssFeedController::class, 'confirmPublications'])->name('rss-feeds.confirmPublications');
 
         // WordPress Sites
         Route::resource('wordpress-sites', WordPressSiteController::class)->except(['show'])->parameters(['wordpress-sites' => 'wpSource']);
@@ -308,15 +284,6 @@ Route::middleware(['auth', 'verified', 'throttle:600,1'])->group(function () {
         Route::post('wordpress-sites/{wpSource}/generate-preview', [WordPressSiteController::class, 'generatePreview'])->name('wordpress-sites.generatePreview');
         Route::post('wordpress-sites/{wpSource}/regenerate-item', [WordPressSiteController::class, 'regenerateItem'])->name('wordpress-sites.regenerateItem');
         Route::post('wordpress-sites/{wpSource}/confirm-publications', [WordPressSiteController::class, 'confirmPublications'])->name('wordpress-sites.confirmPublications');
-
-        // YouTube Channels
-        Route::resource('youtube-channels', YouTubeChannelController::class)->except(['show'])->parameters(['youtube-channels' => 'ytSource']);
-        Route::post('youtube-channels/test-connection', [YouTubeChannelController::class, 'testConnection'])->name('youtube-channels.testConnection');
-        Route::post('youtube-channels/{ytSource}/fetch', [YouTubeChannelController::class, 'fetchNow'])->name('youtube-channels.fetch');
-        Route::get('youtube-channels/{ytSource}/preview', [YouTubeChannelController::class, 'preview'])->name('youtube-channels.preview');
-        Route::post('youtube-channels/{ytSource}/generate-preview', [YouTubeChannelController::class, 'generatePreview'])->name('youtube-channels.generatePreview');
-        Route::post('youtube-channels/{ytSource}/regenerate-item', [YouTubeChannelController::class, 'regenerateItem'])->name('youtube-channels.regenerateItem');
-        Route::post('youtube-channels/{ytSource}/confirm-publications', [YouTubeChannelController::class, 'confirmPublications'])->name('youtube-channels.confirmPublications');
 
         // Bot actions
         // Bot — Hub + Logs
@@ -412,8 +379,6 @@ Route::middleware(['auth', 'verified', 'throttle:600,1'])->group(function () {
         Route::post('settings/test-meta-ads', [SettingsController::class, 'testMetaAds'])->name('settings.testMetaAds');
 
         // Source items API (for thread creation source browser)
-        Route::get('api/source-items/sources', [SourceItemController::class, 'sources'])->name('sourceItems.sources');
-        Route::get('api/source-items/items', [SourceItemController::class, 'items'])->name('sourceItems.items');
     });
 
     // ─── Admin seulement ────────────────────────────────────────

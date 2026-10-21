@@ -116,8 +116,6 @@ class PostController extends Controller
             'postPlatforms.socialAccount',
             'user',
             'wpPost.wpItem',
-            'ytPost.ytItem',
-            'rssPost.rssItem',
         ]);
 
         // Qui voit tout voit toutes les publications ; les autres les leurs.
@@ -201,8 +199,6 @@ class PostController extends Controller
             'postPlatforms.socialAccount',
             'user',
             'wpPost.wpItem',
-            'ytPost.ytItem',
-            'rssPost.rssItem',
         ]);
         if (! $voitTout) {
             $calendarQuery->where('user_id', $user->id);

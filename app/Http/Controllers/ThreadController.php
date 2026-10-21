@@ -2,21 +2,15 @@
 
 namespace App\Http\Controllers;
 
-use App\Models\HookCategory;
-use App\Models\Persona;
 use App\Models\Platform;
-use App\Models\RssFeed;
 use App\Models\SocialAccount;
 use App\Models\Thread;
 use App\Models\ThreadSegment;
 use App\Models\ThreadSegmentPlatform;
-use App\Models\WpSource;
-use App\Models\YtSource;
 use App\Services\AiAssistService;
 use App\Services\Carousel\CarouselRenderService;
 use App\Services\PartnerTagService;
 use App\Services\ThreadBoostService;
-use App\Services\ThreadContentGenerationService;
 use App\Services\ThreadPublishingService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
@@ -122,23 +116,12 @@ class ThreadController extends Controller
         $user = $request->user();
 
         $accounts = $user->activeSocialAccounts()
-            ->with(['platform', 'persona'])
+            ->with('platform')
             ->orderBy('name')
             ->get()
             ->groupBy(fn (SocialAccount $account) => $account->platform->slug);
 
         $platforms = Platform::where('is_active', true)->get();
-        $personas = Persona::where('is_active', true)->orderBy('name')->get();
-        $hookCategories = HookCategory::active()->ordered()->withCount('activeHooks')->get();
-
-        $sourceTypeCounts = [];
-        if ($user->isAdmin()) {
-            $sourceTypeCounts = [
-                'wordpress' => WpSource::where('is_active', true)->count(),
-                'rss' => RssFeed::where('is_active', true)->count(),
-                'youtube' => YtSource::where('is_active', true)->count(),
-            ];
-        }
 
         $accountGroups = $user->accountGroups()->with('socialAccounts')->get();
 
@@ -154,7 +137,7 @@ class ThreadController extends Controller
             ->limit(50)
             ->get();
 
-        return view('threads.create', compact('accounts', 'platforms', 'personas', 'hookCategories', 'sourceTypeCounts', 'accountGroups', 'boostableThreads'));
+        return view('threads.create', compact('accounts', 'platforms', 'accountGroups', 'boostableThreads'));
     }
 
     /**
@@ -426,13 +409,12 @@ class ThreadController extends Controller
         ] : null;
 
         $accounts = $user->activeSocialAccounts()
-            ->with(['platform', 'persona'])
+            ->with('platform')
             ->orderBy('name')
             ->get()
             ->groupBy(fn (SocialAccount $account) => $account->platform->slug);
 
         $platforms = Platform::where('is_active', true)->get();
-        $personas = Persona::where('is_active', true)->orderBy('name')->get();
         $selectedAccountIds = $thread->socialAccounts->pluck('id')->toArray();
         $accountGroups = $user->accountGroups()->with('socialAccounts')->get();
 
@@ -446,7 +428,7 @@ class ThreadController extends Controller
             ->limit(50)
             ->get();
 
-        return view('threads.edit', compact('thread', 'accounts', 'platforms', 'personas', 'selectedAccountIds', 'accountGroups', 'boostableThreads', 'existingBoost'));
+        return view('threads.edit', compact('thread', 'accounts', 'platforms', 'selectedAccountIds', 'accountGroups', 'boostableThreads', 'existingBoost'));
     }
 
     /**
@@ -597,51 +579,6 @@ class ThreadController extends Controller
     }
 
     /**
-     * AJAX: Generate thread segments from a URL via AI.
-     */
-    public function generateFromUrl(Request $request): JsonResponse
-    {
-        $validated = $request->validate([
-            'source_url' => 'required|url|max:2048',
-            'context_instructions' => 'nullable|string|max:1000',
-            'persona_id' => 'required|exists:personas,id',
-            'hook_category_id' => 'nullable|integer|exists:hook_categories,id',
-            'accounts' => 'required|array|min:1',
-            'accounts.*' => 'integer|exists:social_accounts,id',
-            'folder' => 'nullable|string|exists:media_folders,slug',
-        ]);
-
-        // Determine platform slugs from selected accounts.
-        $platformSlugs = SocialAccount::with('platform')
-            ->whereIn('id', $validated['accounts'])
-            ->get()
-            ->pluck('platform.slug')
-            ->unique()
-            ->values()
-            ->toArray();
-
-        $persona = Persona::findOrFail($validated['persona_id']);
-        $service = new ThreadContentGenerationService;
-
-        $hookCategoryId = $validated['hook_category_id'] ?? null;
-        $contextInstructions = $validated['context_instructions'] ?? null;
-        $folderSlug = $validated['folder'] ?? null;
-        $result = $service->generate($validated['source_url'], $persona, $platformSlugs, $hookCategoryId, $contextInstructions, $folderSlug, $validated['accounts']);
-
-        if (! $result) {
-            return response()->json([
-                'success' => false,
-                'error' => 'Impossible de générer le fil de discussion. Vérifiez l\'URL et réessayez.',
-            ], 422);
-        }
-
-        return response()->json([
-            'success' => true,
-            'data' => $result,
-        ]);
-    }
-
-    /**
      * AJAX: Compile all segments into a single Instagram caption via AI.
      */
     public function compileInstagram(Request $request, Thread $thread, AiAssistService $ai): JsonResponse
@@ -677,56 +614,6 @@ class ThreadController extends Controller
                 'content' => $compiled,
                 'length' => mb_strlen($compiled),
             ],
-        ]);
-    }
-
-    /**
-     * AJAX: Regenerate a single segment.
-     */
-    public function regenerateSegment(Request $request): JsonResponse
-    {
-        $validated = $request->validate([
-            'source_url' => 'required|url|max:2048',
-            'persona_id' => 'required|exists:personas,id',
-            'position' => 'required|integer|min:1',
-            'total_segments' => 'required|integer|min:1',
-            'previous_content' => 'nullable|string',
-            'next_content' => 'nullable|string',
-            'accounts' => 'required|array|min:1',
-            'accounts.*' => 'integer|exists:social_accounts,id',
-        ]);
-
-        $platformSlugs = SocialAccount::with('platform')
-            ->whereIn('id', $validated['accounts'])
-            ->get()
-            ->pluck('platform.slug')
-            ->unique()
-            ->values()
-            ->toArray();
-
-        $persona = Persona::findOrFail($validated['persona_id']);
-        $service = new ThreadContentGenerationService;
-
-        $result = $service->regenerateSegment(
-            $validated['source_url'],
-            $persona,
-            $validated['position'],
-            $validated['total_segments'],
-            $validated['previous_content'] ?? '',
-            $validated['next_content'] ?? '',
-            $platformSlugs,
-        );
-
-        if (! $result) {
-            return response()->json([
-                'success' => false,
-                'error' => 'Impossible de régénérer le segment.',
-            ], 422);
-        }
-
-        return response()->json([
-            'success' => true,
-            'data' => $result,
         ]);
     }
 

@@ -3,12 +3,10 @@
 use App\Http\Controllers\Api\ApiController;
 use App\Http\Controllers\Api\CarouselApiController;
 use App\Http\Controllers\Api\ExtensionApiController;
-use App\Http\Controllers\Api\GenerateApiController;
 use App\Http\Controllers\Api\MediaApiController;
 use App\Http\Controllers\Api\MetaAdsApiController;
 use App\Http\Controllers\Api\MetaAudienceApiController;
 use App\Http\Controllers\Api\PartnerApiController;
-use App\Http\Controllers\Api\PersonaApiController;
 use App\Http\Controllers\Api\PostApiController;
 use App\Http\Controllers\Api\ReshareApiController;
 use App\Http\Controllers\Api\StatsApiController;
@@ -31,7 +29,6 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::post('/posts/{post}/publish', [PostApiController::class, 'publish']);
     Route::post('/posts/{post}/reshare', [ReshareApiController::class, 'fromPost']);
     Route::post('/posts/reshare-url', [ReshareApiController::class, 'fromUrl']);
-    Route::post('/bulk-schedule', [ApiController::class, 'bulkSchedule']);
     Route::post('/bulk-cancel', [PostApiController::class, 'bulkCancel']);
 
     // ── Threads ──
@@ -42,14 +39,6 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::put('/threads/{thread}/partners', [ThreadApiController::class, 'updatePartners']);
     Route::delete('/threads/{thread}', [ThreadApiController::class, 'destroy']);
     Route::post('/threads/{thread}/publish', [ThreadApiController::class, 'publish']);
-    Route::post('/bulk-schedule-threads', [ApiController::class, 'bulkScheduleThreads']);
-
-    // ── Personas ──
-    Route::get('/personas', [PersonaApiController::class, 'index']);
-    Route::post('/personas', [PersonaApiController::class, 'store']);
-    Route::get('/personas/{persona}', [PersonaApiController::class, 'show']);
-    Route::put('/personas/{persona}', [PersonaApiController::class, 'update']);
-    Route::delete('/personas/{persona}', [PersonaApiController::class, 'destroy']);
 
     // ── Partenaires / marques ──
     Route::get('/partners', [PartnerApiController::class, 'index']);
@@ -104,10 +93,6 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::get('/stats/top-posts', [StatsApiController::class, 'topPosts']);
     Route::get('/stats/platforms', [StatsApiController::class, 'platforms']);
     Route::get('/calendar', [StatsApiController::class, 'calendar']);
-
-    // ── Génération IA (preview) ──
-    Route::post('/generate', [GenerateApiController::class, 'generate']);
-    Route::post('/generate-thread', [GenerateApiController::class, 'generateThread']);
 
     // ── Catalogue média (pipeline Mac + recherche sémantique) ──
     Route::post('/media/ingest', [MediaApiController::class, 'ingest']);

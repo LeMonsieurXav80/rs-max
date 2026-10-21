@@ -29,191 +29,10 @@
             </div>
         @endif
 
-        {{-- Section 1: Source URL + Persona + Generate --}}
+        {{-- Saisie du fil : le texte arrive redige, RS-Max ne le reformule plus. --}}
         <div class="bg-white rounded-2xl shadow-sm border border-gray-100 p-6 lg:p-8">
-            <h2 class="text-base font-semibold text-gray-900 mb-4">Source et generation</h2>
-
-            {{-- Hidden source_url for both modes --}}
-            <input type="hidden" name="source_url" :value="sourceUrl">
-
             <div class="space-y-4">
-                <div>
-                    <label class="block text-sm font-medium text-gray-700 mb-2">Source du contenu</label>
-
-                    {{-- Source mode tabs --}}
-                    @if(auth()->user()->isManager() && !empty(array_filter($sourceTypeCounts ?? [])))
-                    <div class="flex flex-wrap items-center gap-1.5 mb-3">
-                        <button type="button" @click="switchSourceMode('url')"
-                                class="px-3 py-1.5 text-xs font-medium rounded-lg transition-colors"
-                                :class="sourceMode === 'url' ? 'bg-indigo-600 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'">
-                            URL
-                        </button>
-                        @if(($sourceTypeCounts['wordpress'] ?? 0) > 0)
-                        <button type="button" @click="switchSourceMode('wordpress')"
-                                class="px-3 py-1.5 text-xs font-medium rounded-lg transition-colors"
-                                :class="sourceMode === 'wordpress' ? 'bg-indigo-600 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'">
-                            WordPress
-                        </button>
-                        @endif
-                        @if(($sourceTypeCounts['rss'] ?? 0) > 0)
-                        <button type="button" @click="switchSourceMode('rss')"
-                                class="px-3 py-1.5 text-xs font-medium rounded-lg transition-colors"
-                                :class="sourceMode === 'rss' ? 'bg-indigo-600 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'">
-                            RSS
-                        </button>
-                        @endif
-                        @if(($sourceTypeCounts['youtube'] ?? 0) > 0)
-                        <button type="button" @click="switchSourceMode('youtube')"
-                                class="px-3 py-1.5 text-xs font-medium rounded-lg transition-colors"
-                                :class="sourceMode === 'youtube' ? 'bg-indigo-600 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'">
-                            YouTube
-                        </button>
-                        @endif
-                    </div>
-                    @endif
-
-                    {{-- URL mode --}}
-                    <div x-show="sourceMode === 'url'" class="space-y-3">
-                        <div class="flex gap-3">
-                            <input type="url" x-model="sourceUrl"
-                                   placeholder="https://example.com/article..."
-                                   class="flex-1 rounded-xl border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 text-sm">
-                        </div>
-                        <textarea x-model="contextInstructions" rows="2"
-                                  placeholder="Contexte ou instructions (ex: Cet article parle du jardin botanique de Coimbra au Portugal, mets en avant la ville et le lieu.)"
-                                  class="w-full rounded-xl border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 text-sm"></textarea>
-                        <button type="button" @click="generateFromUrl()"
-                                :disabled="generating || !sourceUrl || !selectedPersonaId || selectedAccounts.length === 0"
-                                class="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-medium bg-indigo-600 text-white hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors shadow-sm">
-                            <template x-if="!generating">
-                                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2">
-                                    <path stroke-linecap="round" stroke-linejoin="round" d="M9.813 15.904 9 18.75l-.813-2.846a4.5 4.5 0 0 0-3.09-3.09L2.25 12l2.846-.813a4.5 4.5 0 0 0 3.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 0 0 3.09 3.09L15.75 12l-2.846.813a4.5 4.5 0 0 0-3.09 3.09ZM18.259 8.715 18 9.75l-.259-1.035a3.375 3.375 0 0 0-2.455-2.456L14.25 6l1.036-.259a3.375 3.375 0 0 0 2.455-2.456L18 2.25l.259 1.035a3.375 3.375 0 0 0 2.455 2.456L21.75 6l-1.036.259a3.375 3.375 0 0 0-2.455 2.456Z" />
-                                </svg>
-                            </template>
-                            <template x-if="generating">
-                                <svg class="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24">
-                                    <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
-                                    <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path>
-                                </svg>
-                            </template>
-                            <span x-text="generating ? 'Generation...' : 'Generer le fil'"></span>
-                        </button>
-                    </div>
-
-                    {{-- Source browser mode --}}
-                    <div x-show="sourceMode !== 'url'" x-cloak>
-                        {{-- Source dropdown --}}
-                        <div class="flex gap-3 mb-3">
-                            <select x-model="sourceBrowserSourceId" @change="onSourceSelected()"
-                                    class="flex-1 rounded-xl border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 text-sm">
-                                <option value="">-- Choisir une source --</option>
-                                <template x-for="source in sourceBrowserSources" :key="source.id">
-                                    <option :value="source.id" x-text="source.name + ' (' + source.subtitle + ')'"></option>
-                                </template>
-                            </select>
-                            <div x-show="sourceBrowserLoading" class="flex items-center">
-                                <svg class="w-5 h-5 text-gray-400 animate-spin" fill="none" viewBox="0 0 24 24">
-                                    <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
-                                    <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path>
-                                </svg>
-                            </div>
-                        </div>
-
-                        {{-- Search --}}
-                        <div x-show="sourceBrowserSourceId" class="mb-3">
-                            <input type="text" x-model="sourceBrowserSearch" @input="onSourceSearch()"
-                                   placeholder="Rechercher par titre..."
-                                   class="w-full rounded-xl border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 text-sm">
-                        </div>
-
-                        {{-- Items list --}}
-                        <div x-show="sourceBrowserSourceId" class="max-h-64 overflow-y-auto border border-gray-200 rounded-xl">
-                            <div x-show="sourceBrowserLoadingItems" class="text-center py-6">
-                                <svg class="w-6 h-6 text-gray-400 mx-auto animate-spin" fill="none" viewBox="0 0 24 24">
-                                    <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
-                                    <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path>
-                                </svg>
-                            </div>
-                            <div x-show="!sourceBrowserLoadingItems && sourceBrowserItems.length === 0" class="text-center py-6 text-sm text-gray-400">
-                                Aucun article trouve.
-                            </div>
-                            <template x-for="item in sourceBrowserItems" :key="item.id">
-                                <button type="button" @click="selectSourceItem(item)"
-                                        class="w-full text-left px-4 py-3 flex items-start gap-3 hover:bg-indigo-50 transition-colors border-b border-gray-100 last:border-0"
-                                        :class="selectedSourceItem && selectedSourceItem.url === item.url ? 'bg-indigo-50' : ''">
-                                    <template x-if="item.image_url">
-                                        <img :src="item.image_url" alt="" class="w-12 h-9 object-cover rounded-lg flex-shrink-0 border border-gray-200">
-                                    </template>
-                                    <template x-if="!item.image_url">
-                                        <div class="w-12 h-9 bg-gray-100 rounded-lg flex-shrink-0 flex items-center justify-center">
-                                            <svg class="w-4 h-4 text-gray-300" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1.5">
-                                                <path stroke-linecap="round" stroke-linejoin="round" d="m2.25 15.75 5.159-5.159a2.25 2.25 0 0 1 3.182 0l5.159 5.159m-1.5-1.5 1.409-1.409a2.25 2.25 0 0 1 3.182 0l2.909 2.909M3.75 21h16.5A2.25 2.25 0 0 0 22.5 18.75V5.25A2.25 2.25 0 0 0 20.25 3H3.75A2.25 2.25 0 0 0 1.5 5.25v13.5A2.25 2.25 0 0 0 3.75 21Z" />
-                                            </svg>
-                                        </div>
-                                    </template>
-                                    <div class="flex-1 min-w-0">
-                                        <p class="text-sm font-medium text-gray-900 line-clamp-1" x-text="item.title"></p>
-                                        <div class="flex items-center gap-2 mt-0.5">
-                                            <span class="text-xs text-gray-400" x-text="item.published_at"></span>
-                                            <span x-show="item.extra" class="text-xs text-gray-400" x-text="item.extra"></span>
-                                        </div>
-                                    </div>
-                                    <template x-if="selectedSourceItem && selectedSourceItem.url === item.url">
-                                        <svg class="w-5 h-5 text-indigo-600 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2">
-                                            <path stroke-linecap="round" stroke-linejoin="round" d="m4.5 12.75 6 6 9-13.5" />
-                                        </svg>
-                                    </template>
-                                </button>
-                            </template>
-                        </div>
-
-                        {{-- Selected item + generate button --}}
-                        <div x-show="selectedSourceItem" class="mt-3 flex items-center gap-3">
-                            <div class="flex-1 px-3 py-2 bg-indigo-50 border border-indigo-200 rounded-xl min-w-0">
-                                <p class="text-sm font-medium text-indigo-700 truncate" x-text="selectedSourceItem?.title"></p>
-                                <p class="text-xs text-indigo-500 truncate" x-text="selectedSourceItem?.url"></p>
-                            </div>
-                            <button type="button" @click="generateFromUrl()"
-                                    :disabled="generating || !sourceUrl || !selectedPersonaId || selectedAccounts.length === 0"
-                                    class="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-medium bg-indigo-600 text-white hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors shadow-sm flex-shrink-0">
-                                <template x-if="!generating">
-                                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2">
-                                        <path stroke-linecap="round" stroke-linejoin="round" d="M9.813 15.904 9 18.75l-.813-2.846a4.5 4.5 0 0 0-3.09-3.09L2.25 12l2.846-.813a4.5 4.5 0 0 0 3.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 0 0 3.09 3.09L15.75 12l-2.846.813a4.5 4.5 0 0 0-3.09 3.09ZM18.259 8.715 18 9.75l-.259-1.035a3.375 3.375 0 0 0-2.455-2.456L14.25 6l1.036-.259a3.375 3.375 0 0 0 2.455-2.456L18 2.25l.259 1.035a3.375 3.375 0 0 0 2.455 2.456L21.75 6l-1.036.259a3.375 3.375 0 0 0-2.455 2.456Z" />
-                                    </svg>
-                                </template>
-                                <template x-if="generating">
-                                    <svg class="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24">
-                                        <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
-                                        <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path>
-                                    </svg>
-                                </template>
-                                <span x-text="generating ? 'Generation...' : 'Generer le fil'"></span>
-                            </button>
-                        </div>
-                    </div>
-                </div>
-
                 <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                    <div>
-                        <label for="persona_id" class="block text-sm font-medium text-gray-700 mb-1">Persona</label>
-                        <select id="persona_id" x-model="selectedPersonaId"
-                                class="w-full rounded-xl border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 text-sm">
-                            <option value="">-- Choisir une persona --</option>
-                            @foreach($personas as $persona)
-                                <option value="{{ $persona->id }}">{{ $persona->name }}</option>
-                            @endforeach
-                        </select>
-                    </div>
-                    <div>
-                        <label for="hook_category_id" class="block text-sm font-medium text-gray-700 mb-1">Hook d'accroche</label>
-                        <select id="hook_category_id" x-model="selectedHookCategoryId"
-                                class="w-full rounded-xl border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 text-sm">
-                            <option value="">-- Aucun (libre) --</option>
-                            @foreach($hookCategories as $hc)
-                                <option value="{{ $hc->id }}">{{ $hc->name }} ({{ $hc->active_hooks_count }})</option>
-                            @endforeach
-                        </select>
-                    </div>
                     <div>
                         <label for="title" class="block text-sm font-medium text-gray-700 mb-1">Titre (interne)</label>
                         <input type="text" name="title" id="title" x-model="title"
@@ -222,9 +41,6 @@
                     </div>
                 </div>
 
-                <template x-if="generateError">
-                    <div class="rounded-xl bg-red-50 border border-red-200 p-4 text-sm text-red-700" x-text="generateError"></div>
-                </template>
             </div>
         </div>
 
@@ -378,14 +194,6 @@
                                         class="p-1 rounded text-gray-400 hover:text-gray-600 disabled:opacity-30">
                                     <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2">
                                         <path stroke-linecap="round" stroke-linejoin="round" d="m19.5 8.25-7.5 7.5-7.5-7.5" />
-                                    </svg>
-                                </button>
-                                {{-- Regenerate --}}
-                                <button type="button" @click="regenerateSegment(index)"
-                                        :disabled="!sourceUrl || !selectedPersonaId || segment.regenerating"
-                                        class="p-1 rounded text-gray-400 hover:text-indigo-600 disabled:opacity-30">
-                                    <svg class="w-4 h-4" :class="segment.regenerating && 'animate-spin'" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2">
-                                        <path stroke-linecap="round" stroke-linejoin="round" d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0 3.181 3.183a8.25 8.25 0 0 0 13.803-3.7M4.031 9.865a8.25 8.25 0 0 1 13.803-3.7l3.181 3.182" />
                                     </svg>
                                 </button>
                                 {{-- Delete --}}
@@ -925,14 +733,8 @@
     <script>
         function threadForm() {
             return {
-                sourceUrl: '',
-                contextInstructions: '',
                 title: '',
-                selectedPersonaId: '',
-                selectedHookCategoryId: '',
                 segments: [],
-                generating: false,
-                generateError: '',
                 publishMode: 'draft',
                 isPublishing: false,
                 publishDone: false,
@@ -1011,17 +813,6 @@
                     this.refreshInstagramAccountsAvailability();
                 },
 
-                // Source browser
-                sourceMode: 'url',
-                sourceBrowserSources: [],
-                sourceBrowserItems: [],
-                sourceBrowserSourceId: null,
-                sourceBrowserSearch: '',
-                sourceBrowserLoading: false,
-                sourceBrowserLoadingItems: false,
-                selectedSourceItem: null,
-                _sourceSearchTimeout: null,
-
                 // Media picker
                 showMediaLibrary: false,
                 activeMediaSegmentIndex: null,
@@ -1075,70 +866,6 @@
                     if (noMedia) {
                         this.selectedAccounts = [...document.querySelectorAll('input[name="accounts[]"]:checked')];
                     }
-                },
-
-                // --- Source browser methods ---
-
-                async switchSourceMode(mode) {
-                    this.sourceMode = mode;
-                    this.sourceBrowserSourceId = null;
-                    this.sourceBrowserItems = [];
-                    this.sourceBrowserSearch = '';
-                    this.selectedSourceItem = null;
-                    if (mode !== 'url') {
-                        await this.fetchSources(mode);
-                    }
-                },
-
-                async fetchSources(type) {
-                    this.sourceBrowserLoading = true;
-                    this.sourceBrowserSources = [];
-                    try {
-                        const resp = await fetch(`{{ url('api/source-items/sources') }}?type=${type}`, {
-                            headers: { 'Accept': 'application/json' },
-                        });
-                        const data = await resp.json();
-                        this.sourceBrowserSources = data.sources || [];
-                    } catch (err) {}
-                    this.sourceBrowserLoading = false;
-                },
-
-                async onSourceSelected() {
-                    this.sourceBrowserItems = [];
-                    this.sourceBrowserSearch = '';
-                    this.selectedSourceItem = null;
-                    if (this.sourceBrowserSourceId) {
-                        await this.fetchSourceItems();
-                    }
-                },
-
-                async fetchSourceItems() {
-                    this.sourceBrowserLoadingItems = true;
-                    try {
-                        let url = `{{ url('api/source-items/items') }}?type=${this.sourceMode}&source_id=${this.sourceBrowserSourceId}`;
-                        if (this.sourceBrowserSearch) {
-                            url += `&search=${encodeURIComponent(this.sourceBrowserSearch)}`;
-                        }
-                        const resp = await fetch(url, {
-                            headers: { 'Accept': 'application/json' },
-                        });
-                        const data = await resp.json();
-                        this.sourceBrowserItems = data.items || [];
-                    } catch (err) {}
-                    this.sourceBrowserLoadingItems = false;
-                },
-
-                selectSourceItem(item) {
-                    this.selectedSourceItem = item;
-                    this.sourceUrl = item.url;
-                    this.title = this.title || item.title;
-                },
-
-                onSourceSearch() {
-                    clearTimeout(this._sourceSearchTimeout);
-                    this._sourceSearchTimeout = setTimeout(() => {
-                        this.fetchSourceItems();
-                    }, 300);
                 },
 
                 // --- Media picker methods ---
@@ -1321,7 +1048,6 @@
                         content_fr: '',
                         platform_contents: { twitter: '', threads: '', bluesky: '' },
                         media: null,
-                        regenerating: false,
                     });
                 },
 
@@ -1339,104 +1065,6 @@
                     this.segments[newIndex] = temp;
                     // Force reactivity
                     this.segments = [...this.segments];
-                },
-
-                async generateFromUrl() {
-                    if (!this.sourceUrl || !this.selectedPersonaId) return;
-                    this.updateSelectedAccounts();
-                    if (this.selectedAccounts.length === 0) {
-                        this.generateError = 'Veuillez selectionner au moins un compte.';
-                        return;
-                    }
-
-                    this.generating = true;
-                    this.generateError = '';
-
-                    const accountIds = this.selectedAccounts.map(el => el.value);
-
-                    try {
-                        const resp = await fetch('{{ route("threads.generateFromUrl") }}', {
-                            method: 'POST',
-                            headers: {
-                                'Content-Type': 'application/json',
-                                'X-CSRF-TOKEN': document.querySelector('meta[name=csrf-token]').getAttribute('content'),
-                                'Accept': 'application/json',
-                            },
-                            body: JSON.stringify({
-                                source_url: this.sourceUrl,
-                                context_instructions: this.contextInstructions || null,
-                                persona_id: this.selectedPersonaId,
-                                hook_category_id: this.selectedHookCategoryId || null,
-                                accounts: accountIds,
-                            }),
-                        });
-
-                        const data = await resp.json();
-
-                        if (data.success) {
-                            this.title = data.data.title || this.title;
-                            this.segments = data.data.segments.map(s => ({
-                                content_fr: s.content_fr || '',
-                                platform_contents: {
-                                    twitter: s.platform_contents?.twitter || '',
-                                    threads: s.platform_contents?.threads || '',
-                                    bluesky: s.platform_contents?.bluesky || '',
-                                },
-                                media: s.media || null,
-                                regenerating: false,
-                            }));
-                        } else {
-                            this.generateError = data.error || 'Erreur inconnue.';
-                        }
-                    } catch (err) {
-                        this.generateError = 'Erreur de connexion.';
-                    }
-
-                    this.generating = false;
-                },
-
-                async regenerateSegment(index) {
-                    if (!this.sourceUrl || !this.selectedPersonaId) return;
-                    this.updateSelectedAccounts();
-
-                    const segment = this.segments[index];
-                    segment.regenerating = true;
-
-                    const accountIds = this.selectedAccounts.map(el => el.value);
-                    const prevContent = index > 0 ? (this.segments[index - 1].content_fr || '') : '';
-                    const nextContent = index < this.segments.length - 1 ? (this.segments[index + 1].content_fr || '') : '';
-
-                    try {
-                        const resp = await fetch('{{ route("threads.regenerateSegment") }}', {
-                            method: 'POST',
-                            headers: {
-                                'Content-Type': 'application/json',
-                                'X-CSRF-TOKEN': document.querySelector('meta[name=csrf-token]').getAttribute('content'),
-                                'Accept': 'application/json',
-                            },
-                            body: JSON.stringify({
-                                source_url: this.sourceUrl,
-                                persona_id: this.selectedPersonaId,
-                                position: index + 1,
-                                total_segments: this.segments.length,
-                                previous_content: prevContent,
-                                next_content: nextContent,
-                                accounts: accountIds,
-                            }),
-                        });
-
-                        const data = await resp.json();
-                        if (data.success && data.data) {
-                            segment.content_fr = data.data.content_fr || segment.content_fr;
-                            segment.platform_contents.twitter = data.data.twitter || '';
-                            segment.platform_contents.threads = data.data.threads || '';
-                            segment.platform_contents.bluesky = data.data.bluesky || '';
-                        }
-                    } catch (err) {
-                        // Silent fail
-                    }
-
-                    segment.regenerating = false;
                 },
 
                 async handleSubmit(e) {

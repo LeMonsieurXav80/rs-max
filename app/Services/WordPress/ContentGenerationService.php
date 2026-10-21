@@ -1,17 +1,23 @@
 <?php
 
-namespace App\Services\Rss;
+namespace App\Services\WordPress;
 
 use App\Models\Persona;
-use App\Models\RssItem;
 use App\Models\Setting;
 use App\Models\SocialAccount;
 use App\Models\WpItem;
-use App\Models\YtItem;
-use App\Services\YouTube\YouTubeFetchService;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 
+/**
+ * Transforme un article WordPress en publication, via la persona du compte.
+ *
+ * Vivait dans `App\Services\Rss` et servait les trois sources (RSS, WordPress,
+ * YouTube). Le retrait de RSS et de YouTube l'a emporte avec eux, alors que
+ * `WordPressSiteController` s'en sert toujours : il est donc rapatrie ici,
+ * reduit au seul chemin article. Les branches YouTube (duree, vues, tournure
+ * « cette video n'est plus toute fraiche ») sont parties avec la source.
+ */
 class ContentGenerationService
 {
     private ArticleFetchService $articleFetcher;
@@ -22,9 +28,9 @@ class ContentGenerationService
     }
 
     /**
-     * Generate a social media post from an RSS item using a persona.
+     * Generate a social media post from a WordPress item using a persona.
      */
-    public function generate(RssItem|WpItem|YtItem $item, Persona $persona, SocialAccount $account): ?string
+    public function generate(WpItem $item, Persona $persona, SocialAccount $account): ?string
     {
         $apiKey = Setting::getEncrypted('openai_api_key');
         if (! $apiKey) {
@@ -33,30 +39,22 @@ class ContentGenerationService
             return null;
         }
 
-        // 1. Build article content based on item type
-        $articleContent = '';
+        // 1. Fetch the full article content
+        $pageMeta = $this->articleFetcher->fetchPageMeta($item->url);
+        $articleContent = $pageMeta['content'];
 
-        if ($item instanceof YtItem) {
-            // YouTube: use description as content
-            $articleContent = $item->description ?: $item->title;
-        } else {
-            // RSS/WordPress: fetch the full article content
-            $pageMeta = $this->articleFetcher->fetchPageMeta($item->url);
-            $articleContent = $pageMeta['content'];
+        // Update item title if it was derived from URL (sitemap) and we got a real title
+        if ($pageMeta['title'] && ! $item->content && ! $item->summary) {
+            $item->update(['title' => $pageMeta['title']]);
+        }
 
-            // Update item title if it was derived from URL (sitemap) and we got a real title
-            if ($pageMeta['title'] && ! $item->content && ! $item->summary) {
-                $item->update(['title' => $pageMeta['title']]);
-            }
+        // Fallback to the item's own content/summary
+        if (! $articleContent) {
+            $articleContent = $item->content ?: $item->summary;
+        }
 
-            // Fallback to RSS content/summary
-            if (! $articleContent) {
-                $articleContent = $item->content ?: $item->summary;
-            }
-
-            if (! $articleContent) {
-                $articleContent = $item->title;
-            }
+        if (! $articleContent) {
+            $articleContent = $item->title;
         }
 
         // 3. Determine language (always French by default, account can override)
@@ -73,50 +71,21 @@ class ContentGenerationService
         };
 
         // 4. Build the user prompt
-        if ($item instanceof YtItem) {
-            $userPrompt = "Voici une vidéo YouTube à transformer en publication pour les réseaux sociaux.\n\n";
-            $userPrompt .= "Titre : {$item->title}\n";
-            if ($item->duration) {
-                $userPrompt .= 'Durée : '.YouTubeFetchService::formatDuration($item->duration)."\n";
-            }
-            if ($item->view_count) {
-                $userPrompt .= 'Vues : '.number_format($item->view_count, 0, ',', ' ')."\n";
-            }
-            if ($item->like_count) {
-                $userPrompt .= 'Likes : '.number_format($item->like_count, 0, ',', ' ')."\n";
-            }
-            if ($item->published_at) {
-                $userPrompt .= "Date de publication : {$item->published_at->translatedFormat('j F Y')}\n";
-            }
-            $userPrompt .= "URL : {$item->url}\n\n";
-            $userPrompt .= "Description de la vidéo :\n{$articleContent}\n\n";
+        $userPrompt = "Voici un article à transformer en publication pour les réseaux sociaux.\n\n";
+        $userPrompt .= "Titre : {$item->title}\n";
+        if ($item->published_at) {
+            $userPrompt .= "Date de publication : {$item->published_at->translatedFormat('j F Y')}\n";
+        }
+        $userPrompt .= "URL : {$item->url}\n\n";
+        $userPrompt .= "Contenu de l'article :\n{$articleContent}\n\n";
 
-            // Add age-aware phrasing for videos older than 6 months
-            if ($item->published_at && $item->published_at->diffInMonths(now()) >= 6) {
-                $agePhrase = $this->getVideoAgePhrase($item->published_at, $language);
-                if ($language === 'fr') {
-                    $userPrompt .= "IMPORTANT : La vidéo n'est PAS récente. N'utilise PAS d'expressions comme « notre dernière vidéo », « nouvelle vidéo » ou « vient de sortir ». Intègre naturellement cette formulation dans ta publication : « {$agePhrase} ». Tu peux l'adapter légèrement au contexte, mais garde l'idée.\n\n";
-                } else {
-                    $userPrompt .= "IMPORTANT: This video is NOT recent. Do NOT use expressions like \"our latest video\", \"new video\" or \"just released\". Naturally incorporate this phrasing into your post: \"{$agePhrase}\". You can adapt it slightly to the context, but keep the idea.\n\n";
-                }
-            }
-        } else {
-            $userPrompt = "Voici un article à transformer en publication pour les réseaux sociaux.\n\n";
-            $userPrompt .= "Titre : {$item->title}\n";
-            if ($item->published_at) {
-                $userPrompt .= "Date de publication : {$item->published_at->translatedFormat('j F Y')}\n";
-            }
-            $userPrompt .= "URL : {$item->url}\n\n";
-            $userPrompt .= "Contenu de l'article :\n{$articleContent}\n\n";
-
-            // Add age-aware phrasing for articles older than 6 months
-            if ($item->published_at && $item->published_at->diffInMonths(now()) >= 6) {
-                $agePhrase = $this->getArticleAgePhrase($item->published_at, $language);
-                if ($language === 'fr') {
-                    $userPrompt .= "IMPORTANT : L'article n'est PAS récent. N'utilise PAS d'expressions comme « nouvel article », « vient de paraître » ou « tout juste publié ». Intègre naturellement cette formulation dans ta publication : « {$agePhrase} ». Tu peux l'adapter légèrement au contexte, mais garde l'idée.\n\n";
-                } else {
-                    $userPrompt .= "IMPORTANT: This article is NOT recent. Do NOT use expressions like \"new article\", \"just published\" or \"fresh off the press\". Naturally incorporate this phrasing into your post: \"{$agePhrase}\". You can adapt it slightly to the context, but keep the idea.\n\n";
-                }
+        // Add age-aware phrasing for articles older than 6 months
+        if ($item->published_at && $item->published_at->diffInMonths(now()) >= 6) {
+            $agePhrase = $this->getArticleAgePhrase($item->published_at, $language);
+            if ($language === 'fr') {
+                $userPrompt .= "IMPORTANT : L'article n'est PAS récent. N'utilise PAS d'expressions comme « nouvel article », « vient de paraître » ou « tout juste publié ». Intègre naturellement cette formulation dans ta publication : « {$agePhrase} ». Tu peux l'adapter légèrement au contexte, mais garde l'idée.\n\n";
+            } else {
+                $userPrompt .= "IMPORTANT: This article is NOT recent. Do NOT use expressions like \"new article\", \"just published\" or \"fresh off the press\". Naturally incorporate this phrasing into your post: \"{$agePhrase}\". You can adapt it slightly to the context, but keep the idea.\n\n";
             }
         }
         $userPrompt .= "Génère une publication en {$languageLabel} pour le compte \"{$account->name}\" sur {$account->platform->name}.\n";
@@ -236,99 +205,6 @@ class ContentGenerationService
             'bluesky' => 300,
             default => 0,
         };
-    }
-
-    private function getVideoAgePhrase(\Carbon\Carbon $publishedAt, string $language = 'fr'): string
-    {
-        $diffMonths = $publishedAt->diffInMonths(now());
-
-        if ($language === 'en') {
-            $month = $publishedAt->format('F');
-            $year = $publishedAt->format('Y');
-            $monthYear = "{$month} {$year}";
-
-            if ($diffMonths >= 24) {
-                $age = (int) floor($diffMonths / 12).' years';
-            } elseif ($diffMonths >= 12) {
-                $age = 'a year';
-            } else {
-                $age = $diffMonths.' months';
-            }
-
-            $templates = [
-                'We posted this video {age} ago...',
-                'Remember this one? It was back in {month_year}.',
-                "We stumbled back on this {year} video and it's worth a watch.",
-                'This video from {month_year} may be older, but its message still holds up.',
-                'Throwback to {month_year} with this video.',
-                '{month_year} — time flies, but this video is still relevant.',
-                'Quick flashback: this video is from {month_year}.',
-                'Bringing this video from {age} ago back into the spotlight.',
-                'That was {age} ago. Time flies!',
-                'Released in {month_year}, this video deserves to be (re)discovered.',
-                'A {year} video we wanted to share again.',
-                'Published in {month_year}, still relevant today.',
-                '{age} ago, we shared this video. Did you catch it?',
-                'Diving back into our {month_year} archives.',
-                'Since {month_year}, this video has traveled far.',
-                "This video is {age} old and hasn't aged a day.",
-                'Back in {month_year}, we shared this video. Here it is again!',
-                'A {year} classic worth (re)watching.',
-                "It's already been {age} since this video came out.",
-                'A look back at {month_year}.',
-            ];
-
-            $template = $templates[random_int(0, count($templates) - 1)];
-
-            return str_replace(
-                ['{age}', '{month}', '{year}', '{month_year}'],
-                [$age, $month, $year, $monthYear],
-                $template
-            );
-        }
-
-        $mois = $publishedAt->translatedFormat('F');
-        $année = $publishedAt->format('Y');
-        $mois_année = "{$mois} {$année}";
-
-        if ($diffMonths >= 24) {
-            $age = (int) floor($diffMonths / 12).' ans';
-        } elseif ($diffMonths >= 12) {
-            $age = 'un an';
-        } else {
-            $age = $diffMonths.' mois';
-        }
-
-        $templates = [
-            'Il y a {age}, on publiait cette vidéo...',
-            "Vous vous souvenez ? C'était en {mois_année}.",
-            'On est retombé sur cette vidéo de {année} et elle vaut le détour.',
-            'Cette vidéo de {mois_année} a peut-être un peu vieilli, mais pas son message.',
-            'Retour en {mois_année} avec cette vidéo.',
-            '{mois_année} — ça ne nous rajeunit pas, mais cette vidéo reste pertinente.',
-            'Petit flashback : cette vidéo date de {mois_année}.',
-            'On remet en lumière cette vidéo sortie il y a {age}.',
-            "C'était il y a {age}. Le temps passe vite !",
-            "Sortie en {mois_année}, cette vidéo mérite d'être (re)découverte.",
-            "Une vidéo de {année} qu'on avait envie de vous repartager.",
-            "Publiée en {mois_année}, toujours d'actualité.",
-            "Il y a {age}, on vous proposait cette vidéo. Vous l'aviez vue ?",
-            'On replonge dans nos archives de {mois_année}.',
-            'Depuis {mois_année}, cette vidéo a bien voyagé.',
-            "Cette vidéo a {age} et elle n'a pas pris une ride.",
-            'En {mois_année}, on partageait cette vidéo. La revoilà !',
-            'Un classique de {année} à (re)voir.',
-            'Ça fait déjà {age} que cette vidéo est sortie.',
-            "Coup d'œil dans le rétro : {mois_année}.",
-        ];
-
-        $template = $templates[random_int(0, count($templates) - 1)];
-
-        return str_replace(
-            ['{age}', '{mois}', '{année}', '{mois_année}'],
-            [$age, $mois, $année, $mois_année],
-            $template
-        );
     }
 
     private function getArticleAgePhrase(\Carbon\Carbon $publishedAt, string $language = 'fr'): string

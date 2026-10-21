@@ -5,7 +5,6 @@ namespace App\Http\Controllers;
 use App\Models\SocialAccount;
 use App\Services\Adapters\BlueskyAdapter;
 use App\Services\Adapters\ThreadsAdapter;
-use App\Services\AiAssistService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Cache;
@@ -73,7 +72,7 @@ class CrossPostController extends Controller
         }
 
         $posts = [];
-        $url = self::IG_API . "/{$account->platform_account_id}/media";
+        $url = self::IG_API."/{$account->platform_account_id}/media";
         $params = [
             'fields' => 'id,caption,media_type,media_url,permalink,timestamp,children{id,media_type,media_url}',
             'limit' => 100,
@@ -169,25 +168,14 @@ class CrossPostController extends Controller
 
         $caption = $request->input('caption', '');
 
-        // Bluesky caption: 300 char limit — use AI with persona to rewrite if needed
-        $bsCaption = $caption;
-        if (mb_strlen($bsCaption) > 300) {
-            $persona = $bsAccount->persona;
-            if ($persona) {
-                $aiService = new AiAssistService;
-                $aiCaption = $aiService->generate($bsCaption, $persona, $bsAccount);
-                if ($aiCaption && mb_strlen($aiCaption) <= 300) {
-                    $bsCaption = $aiCaption;
-                } else {
-                    $bsCaption = mb_substr($aiCaption ?: $bsCaption, 0, 297) . '...';
-                }
-            } else {
-                $bsCaption = mb_substr($bsCaption, 0, 297) . '...';
-            }
-        }
+        // Bluesky plafonne à 300 caractères. On tronque, on ne réécrit pas : le
+        // texte soumis est celui qui doit partir, pas une variante inventée ici.
+        $bsCaption = mb_strlen($caption) > 300
+            ? mb_substr($caption, 0, 297).'...'
+            : $caption;
 
         // Threads caption: 500 char limit — simple truncate
-        $thCaption = mb_strlen($caption) > 500 ? mb_substr($caption, 0, 497) . '...' : $caption;
+        $thCaption = mb_strlen($caption) > 500 ? mb_substr($caption, 0, 497).'...' : $caption;
 
         $mediaItems = $request->input('media', []);
         $allMedia = [];
@@ -210,6 +198,7 @@ class CrossPostController extends Controller
                 $downloaded = Http::timeout(120)->withOptions(['sink' => $tempFile])->get($mediaUrl);
                 if (! $downloaded->successful() || ! file_exists($tempFile) || filesize($tempFile) === 0) {
                     Log::warning('CrossPost: failed to download media', ['url' => $mediaUrl]);
+
                     continue;
                 }
 
@@ -217,6 +206,7 @@ class CrossPostController extends Controller
 
                 if ($mediaType === 'VIDEO' && filesize($tempFile) > 50_000_000) {
                     Log::warning('CrossPost: video too large, skipping', ['size' => filesize($tempFile)]);
+
                     continue;
                 }
 
@@ -227,7 +217,7 @@ class CrossPostController extends Controller
                     $mimetype === 'image/webp' => 'webp',
                     default => 'jpg',
                 };
-                $filename = 'xpost_' . uniqid() . '.' . $ext;
+                $filename = 'xpost_'.uniqid().'.'.$ext;
                 copy($tempFile, storage_path("app/private/media/{$filename}"));
                 $storageFiles[] = $filename;
 
@@ -308,10 +298,10 @@ class CrossPostController extends Controller
 
             $errors = [];
             if ($doBluesky && ! ($bsResult['success'] ?? false)) {
-                $errors[] = 'Bluesky: ' . ($bsResult['error'] ?? 'erreur');
+                $errors[] = 'Bluesky: '.($bsResult['error'] ?? 'erreur');
             }
             if ($doThreads && ! ($thResult['success'] ?? false)) {
-                $errors[] = 'Threads: ' . ($thResult['error'] ?? 'erreur');
+                $errors[] = 'Threads: '.($thResult['error'] ?? 'erreur');
             }
 
             // Remember this post as done (persists 30 days)

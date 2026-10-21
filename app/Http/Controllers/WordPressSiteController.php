@@ -9,7 +9,7 @@ use App\Models\SocialAccount;
 use App\Models\User;
 use App\Models\WpPost;
 use App\Models\WpSource;
-use App\Services\Rss\ContentGenerationService;
+use App\Services\WordPress\ContentGenerationService;
 use App\Services\WordPress\WordPressFetchService;
 use Carbon\Carbon;
 use Illuminate\Http\JsonResponse;

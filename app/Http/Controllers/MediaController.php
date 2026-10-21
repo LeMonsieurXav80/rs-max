@@ -490,8 +490,8 @@ class MediaController extends Controller
 
     /**
      * Helper privé : redimensionne à 1024px max et renvoie une data URL JPEG base64.
-     * Dupliqué de MediaApiController et AiAssistController. À extraire en trait
-     * si on l'utilise une 4ème fois.
+     * Dupliqué de MediaApiController. À extraire en trait si on l'utilise une
+     * 3ème fois.
      */
     private function resizeImageForVision(string $filePath): ?string
     {
