@@ -371,15 +371,26 @@ class ThreadsAdapter implements PlatformAdapterInterface, ThreadableAdapterInter
 
                 // Threads can also lose the parent container between assembly and
                 // finalize (subcode 4279009). Rebuild the whole carousel and retry.
-                if ($publishResult['success'] || empty($publishResult['retryable_container']) || $attempt >= self::CAROUSEL_ASSEMBLY_MAX_ATTEMPTS) {
+                // Meme traitement pour un alea serveur sur la finalisation
+                // (`code=1` / `code=-1`), qui rendait la main seche jusqu'ici.
+                $rebuildable = ! empty($publishResult['retryable_container'])
+                    || ! empty($publishResult['retryable_transient']);
+
+                if ($publishResult['success'] || ! $rebuildable || $attempt >= self::CAROUSEL_ASSEMBLY_MAX_ATTEMPTS) {
                     return $publishResult;
                 }
 
-                Log::warning('ThreadsAdapter: carousel container vanished at publish, rebuilding', [
+                Log::warning('ThreadsAdapter: carousel publish failed, rebuilding', [
                     'attempt' => $attempt,
                     'carousel_id' => $carouselId,
+                    'error' => $publishResult['error'] ?? null,
+                    'reason' => ! empty($publishResult['retryable_container']) ? 'container_vanished' : 'transient',
                 ]);
                 $lastError = $publishResult;
+
+                if (empty($publishResult['retryable_container'])) {
+                    $this->pause(self::ASSEMBLY_BACKOFF * $attempt);
+                }
 
                 continue;
             }
@@ -525,6 +536,13 @@ class ThreadsAdapter implements PlatformAdapterInterface, ThreadableAdapterInter
             // Signals publishCarousel() to rebuild the carousel from scratch: the
             // parent/children vanished or expired between assembly and finalize.
             'retryable_container' => in_array($subcode, [self::INVALID_CHILDREN_SUBCODE, self::EXPIRED_RESOURCE_SUBCODE], true),
+            // Idem, mais pour un alea serveur sur la finalisation elle-meme. Sans
+            // ce drapeau, une panne `code=1`/`code=-1` plus longue que les
+            // tentatives rapprochees de postWithRetry() rendait la main seche,
+            // alors que la MEME panne a la creation du conteneur etait deja
+            // rattrapee par une reconstruction complete. C'est cette asymetrie
+            // qui coupait les fils en plein milieu.
+            'retryable_transient' => $this->isTransientError($response),
         ];
     }
 
@@ -567,14 +585,25 @@ class ThreadsAdapter implements PlatformAdapterInterface, ThreadableAdapterInter
 
             $result = $this->publishContainer($userId, $accessToken, $created['container_id']);
 
-            if ($result['success'] || empty($result['retryable_container']) || $attempt >= $maxAttempts) {
+            $rebuildable = ! empty($result['retryable_container']) || ! empty($result['retryable_transient']);
+
+            if ($result['success'] || ! $rebuildable || $attempt >= $maxAttempts) {
                 return $result;
             }
 
-            Log::warning('ThreadsAdapter: container vanished at publish, rebuilding', [
+            Log::warning('ThreadsAdapter: publish failed, rebuilding container', [
                 'attempt' => $attempt,
                 'container_id' => $created['container_id'],
+                'error' => $result['error'] ?? null,
+                'reason' => ! empty($result['retryable_container']) ? 'container_vanished' : 'transient',
             ]);
+
+            // Une panne serveur demande une vraie pause avant de retenter : c'est
+            // le meme raisonnement que pour la creation (fil 82). Un conteneur
+            // disparu, lui, se reconstruit tout de suite — comportement inchange.
+            if (empty($result['retryable_container'])) {
+                $this->pause(self::ASSEMBLY_BACKOFF * $attempt);
+            }
 
             $lastError = $result;
         }
@@ -898,8 +927,12 @@ class ThreadsAdapter implements PlatformAdapterInterface, ThreadableAdapterInter
             return true;
         }
 
-        // Threads surfaces intermittent glitches as a generic `code=1`.
-        return (int) $response->json('error.code') === 1;
+        // Threads surfaces intermittent glitches as a generic `code=1`, et les
+        // pannes plus profondes de Graph comme `code=-1` (« Fatal » / API Unknown),
+        // que Meta documente lui-meme comme « attendre et reessayer ». Le -1
+        // manquait ici : servi en HTTP 4xx il ne declenchait aucune tentative, et
+        // condamnait le segment — donc tout le fil (fils d'aout-septembre 2026).
+        return in_array((int) $response->json('error.code'), [1, -1], true);
     }
 
     private function isInvalidChildrenError(\Illuminate\Http\Client\Response $response): bool
