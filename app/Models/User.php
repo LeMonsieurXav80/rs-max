@@ -97,14 +97,21 @@ class User extends Authenticatable
      * Voir l'ensemble des contenus, quel que soit leur auteur ou le compte sur
      * lequel ils sont partis : publications, fils, boite de reception, stats.
      *
+     * Depuis octobre 2026, VRAI pour tout le monde : le cloisonnement par
+     * auteur est retire. L'outil n'a que deux utilisateurs et chacun doit
+     * retrouver ce que l'autre a programme ou publie — une publication
+     * invisible dans un inventaire est pire qu'une publication qu'on pourrait
+     * lire sans y toucher. La methode est CONSERVEE, et non supprimee de ses
+     * ~30 points d'appel, pour que le cloisonnement se reactive en une ligne
+     * (`return $this->isAtLeast(self::ROLE_MANAGER);`) le jour d'un 3e compte.
+     *
      * Volontairement distinct de `isAdmin()`, qui garde les droits d'ECRITURE
-     * sur le contenu d'autrui (modifier, taguer, supprimer). Un manager voit
-     * tout et peut relancer un reseau tombe en erreur, rien de plus — a deux
-     * sur l'outil, l'angle mort coutait plus cher que le cloisonnement.
+     * sur le contenu d'autrui (modifier, taguer, supprimer). Voir tout
+     * n'autorise que le REGARD, plus la relance d'un reseau tombe en erreur.
      */
     public function seesAllContent(): bool
     {
-        return $this->isAtLeast(self::ROLE_MANAGER);
+        return true;
     }
 
     /**

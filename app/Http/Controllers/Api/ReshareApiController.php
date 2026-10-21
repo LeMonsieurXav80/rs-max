@@ -90,10 +90,15 @@ class ReshareApiController extends Controller
         return response()->json($this->formatResult($shadow), 201);
     }
 
+    /**
+     * Repartager ne modifie pas la publication d'origine, il en cree une
+     * nouvelle : le droit de REGARD suffit. Les comptes cibles restent, eux,
+     * filtres par `filterAuthorizedAccounts()`.
+     */
     private function authorizeAccess(Request $request, Post $post): void
     {
         $user = $request->user();
-        if (! $user->isAdmin() && $post->user_id !== $user->id) {
+        if (! $user->seesAllContent() && $post->user_id !== $user->id) {
             abort(403, 'Accès refusé.');
         }
     }

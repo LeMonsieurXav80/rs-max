@@ -283,9 +283,14 @@ class ManagerSeesAllContentTest extends TestCase
         $this->assertSame('published', $diffusion->fresh()->status);
     }
 
-    // ------------------------------------------- l'utilisateur simple cloisonne
+    // ------------------------------- l'utilisateur simple voit aussi, depuis oct. 2026
 
-    public function test_un_utilisateur_simple_ne_voit_toujours_rien_des_autres(): void
+    /**
+     * Le cloisonnement par auteur est retire : `seesAllContent()` vaut VRAI pour
+     * tous les roles. Ce test disait l'exact contraire jusqu'en octobre 2026 —
+     * il est conserve retourne, pour que la bascule soit lisible dans l'historique.
+     */
+    public function test_un_utilisateur_simple_voit_lui_aussi_le_contenu_des_autres(): void
     {
         $post = $this->publicationDeXavier();
         $this->filDeXavier();
@@ -294,12 +299,24 @@ class ManagerSeesAllContentTest extends TestCase
 
         $this->actingAs($simple)->get('/posts')
             ->assertOk()
-            ->assertDontSee('Publication signee Xavier');
+            ->assertSee('Publication signee Xavier');
 
         $this->actingAs($simple)->get('/threads')
             ->assertOk()
-            ->assertDontSee('Fil signe Xavier');
+            ->assertSee('Fil signe Xavier');
 
-        $this->actingAs($simple)->get('/posts/'.$post->id)->assertForbidden();
+        $this->actingAs($simple)->get('/posts/'.$post->id)->assertOk();
+    }
+
+    /**
+     * Voir n'est pas modifier : l'ecriture sur le contenu d'autrui reste fermee.
+     */
+    public function test_un_utilisateur_simple_ne_peut_pas_modifier_le_contenu_des_autres(): void
+    {
+        $post = $this->publicationDeXavier();
+        $simple = User::factory()->create(['role' => 'user']);
+
+        $this->actingAs($simple)->get('/posts/'.$post->id.'/edit')->assertForbidden();
+        $this->actingAs($simple)->delete('/posts/'.$post->id)->assertForbidden();
     }
 }

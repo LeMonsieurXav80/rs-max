@@ -134,7 +134,11 @@ class PostListVisibilityTest extends TestCase
             ->assertSee('<optgroup label="Facebook">', false);
     }
 
-    public function test_un_utilisateur_ordinaire_ne_voit_pas_les_publications_des_autres(): void
+    /**
+     * Octobre 2026 : le cloisonnement par auteur est retire (cf.
+     * `User::seesAllContent()`). Ce test affirmait l'inverse jusque-la.
+     */
+    public function test_un_utilisateur_ordinaire_voit_lui_aussi_les_publications_des_autres(): void
     {
         $this->publicationDeCaroline();
 
@@ -142,6 +146,6 @@ class PostListVisibilityTest extends TestCase
 
         $this->actingAs($autre)->get('/posts')
             ->assertOk()
-            ->assertDontSee('La publication introuvable');
+            ->assertSee('La publication introuvable');
     }
 }

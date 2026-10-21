@@ -25,7 +25,7 @@ class PostApiController extends Controller
         $user = $request->user();
 
         $query = Post::with(['postPlatforms.platform', 'postPlatforms.socialAccount.platform', 'partners'])
-            ->where('user_id', $user->id)
+            ->when(! $user->seesAllContent(), fn ($q) => $q->where('user_id', $user->id))
             ->orderByDesc('created_at');
 
         // ?partner=12 ou ?partner=coca-cola — publications taguées de ce partenaire.
@@ -84,7 +84,7 @@ class PostApiController extends Controller
      */
     public function show(Request $request, Post $post): JsonResponse
     {
-        $this->authorizePost($request, $post);
+        $this->authorizePost($request, $post, ecriture: false);
         $post->load(['postPlatforms.platform', 'postPlatforms.socialAccount.platform', 'postPlatforms.logs', 'partners']);
 
         return response()->json(['post' => $this->formatPost($post, true)]);
@@ -352,9 +352,19 @@ class PostApiController extends Controller
         ]);
     }
 
-    private function authorizePost(Request $request, Post $post): void
+    /**
+     * Lire la publication d'autrui est ouvert (`seesAllContent()`), la modifier
+     * reste sur `isAdmin()` : c'est la meme separation regard / ecriture que
+     * sur l'interface web, qu'il ne faut pas confondre en un seul controle.
+     */
+    private function authorizePost(Request $request, Post $post, bool $ecriture = true): void
     {
         $user = $request->user();
+
+        if (! $ecriture && $user->seesAllContent()) {
+            return;
+        }
+
         if (! $user->isAdmin() && $post->user_id !== $user->id) {
             abort(403, 'Accès refusé.');
         }

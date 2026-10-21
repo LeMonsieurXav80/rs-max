@@ -27,7 +27,7 @@ class ThreadApiController extends Controller
         $user = $request->user();
 
         $query = Thread::with(['segments', 'socialAccounts.platform', 'partners'])
-            ->where('user_id', $user->id)
+            ->when(! $user->seesAllContent(), fn ($q) => $q->where('user_id', $user->id))
             ->orderByDesc('created_at');
 
         if ($request->filled('status')) {
@@ -68,7 +68,7 @@ class ThreadApiController extends Controller
      */
     public function show(Request $request, Thread $thread): JsonResponse
     {
-        $this->authorizeThread($request, $thread);
+        $this->authorizeThread($request, $thread, ecriture: false);
         $thread->load(['segments.segmentPlatforms.socialAccount.platform', 'socialAccounts.platform', 'partners']);
 
         return response()->json(['thread' => $this->formatThread($thread, true)]);
@@ -321,9 +321,18 @@ class ThreadApiController extends Controller
         ]);
     }
 
-    private function authorizeThread(Request $request, Thread $thread): void
+    /**
+     * Lire le fil d'autrui est ouvert (`seesAllContent()`), le modifier reste
+     * sur `isAdmin()` : meme separation regard / ecriture que l'interface web.
+     */
+    private function authorizeThread(Request $request, Thread $thread, bool $ecriture = true): void
     {
         $user = $request->user();
+
+        if (! $ecriture && $user->seesAllContent()) {
+            return;
+        }
+
         if (! $user->isAdmin() && $thread->user_id !== $user->id) {
             abort(403, 'Accès refusé.');
         }

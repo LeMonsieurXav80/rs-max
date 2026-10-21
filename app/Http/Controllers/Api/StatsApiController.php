@@ -27,14 +27,14 @@ class StatsApiController extends Controller
         $selectedAccounts = $request->input('accounts', []);
 
         // Compteurs posts
-        $postQuery = Post::where('user_id', $user->id);
+        $postQuery = Post::when(! $user->seesAllContent(), fn ($q) => $q->where('user_id', $user->id));
         $scheduledCount = (clone $postQuery)->where('status', 'scheduled')->count();
         $publishedCount = (clone $postQuery)->where('status', 'published')->count();
         $failedCount = (clone $postQuery)->where('status', 'failed')->count();
         $draftCount = (clone $postQuery)->where('status', 'draft')->count();
 
         // Compteurs threads
-        $threadQuery = Thread::where('user_id', $user->id);
+        $threadQuery = Thread::when(! $user->seesAllContent(), fn ($q) => $q->where('user_id', $user->id));
         $threadsScheduled = (clone $threadQuery)->where('status', 'scheduled')->count();
         $threadsPublished = (clone $threadQuery)->where('status', 'published')->count();
 
@@ -43,7 +43,7 @@ class StatsApiController extends Controller
         $stats = $this->calculateAggregateStats($allPosts);
 
         // Followers
-        $accounts = $user->activeSocialAccounts()->with('platform')->get();
+        $accounts = $user->visibleSocialAccounts()->with('platform')->get();
         $totalFollowers = $accounts
             ->when(! empty($selectedAccounts), fn ($c) => $c->whereIn('id', $selectedAccounts))
             ->sum('followers_count');
@@ -170,7 +170,7 @@ class StatsApiController extends Controller
         $startOfMonth = \Carbon\Carbon::parse($month)->startOfMonth();
         $endOfMonth = $startOfMonth->copy()->endOfMonth();
 
-        $posts = Post::where('user_id', $user->id)
+        $posts = Post::when(! $user->seesAllContent(), fn ($q) => $q->where('user_id', $user->id))
             ->with(['postPlatforms.platform', 'postPlatforms.socialAccount'])
             ->where(function ($q) use ($startOfMonth, $endOfMonth) {
                 $q->whereBetween('scheduled_at', [$startOfMonth, $endOfMonth])
@@ -179,7 +179,7 @@ class StatsApiController extends Controller
             ->orderByRaw('COALESCE(scheduled_at, published_at) ASC')
             ->get();
 
-        $threads = Thread::where('user_id', $user->id)
+        $threads = Thread::when(! $user->seesAllContent(), fn ($q) => $q->where('user_id', $user->id))
             ->with(['segments', 'socialAccounts.platform'])
             ->where(function ($q) use ($startOfMonth, $endOfMonth) {
                 $q->whereBetween('scheduled_at', [$startOfMonth, $endOfMonth])
@@ -245,7 +245,9 @@ class StatsApiController extends Controller
             $ppQuery->whereIn('social_account_id', $selectedAccounts);
             $epQuery->whereIn('social_account_id', $selectedAccounts);
         } else {
-            $accountIds = $user->activeSocialAccounts()->pluck('social_accounts.id');
+            // `visibleSocialAccounts()` et non `activeSocialAccounts()` : ce sont
+            // les comptes qu'on a le droit de REGARDER, comme sur /stats côté web.
+            $accountIds = $user->visibleSocialAccounts()->pluck('social_accounts.id');
             $ppQuery->whereIn('social_account_id', $accountIds);
             $epQuery->whereIn('social_account_id', $accountIds);
         }

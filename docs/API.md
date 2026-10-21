@@ -62,9 +62,26 @@ Le token en clair n'est affiché qu'**une seule fois**. Copiez-le immédiatement
 
 ### Permissions
 
-- **Admin** : accède à tous les posts, threads et comptes.
-- **Manager** : droits de config (personas, sources, bot, settings).
-- **User** : ne voit que ses propres posts/threads et les comptes sociaux qui lui sont rattachés.
+Depuis **octobre 2026**, le cloisonnement par auteur est retiré : la **lecture**
+porte sur tout le contenu, quel que soit le token utilisé et quel que soit
+l'auteur de la publication. `GET /posts`, `GET /threads`, `GET /stats/*` et
+`GET /calendar` rendent donc le même périmètre pour Xavier et pour Caroline.
+
+> Avant cette date, les listes filtraient en dur sur l'auteur du token — même
+> pour un admin, à rebours de l'interface web. Un inventaire fait par l'API
+> rendait **zéro ligne** sur le contenu de l'autre, sans erreur pour le dire,
+> alors que `GET /posts/{id}` s'ouvrait très bien. Si une vieille procédure
+> affirme encore qu'« un admin voit tout par l'API », elle date d'avant le
+> correctif et sa conclusion était fausse.
+
+L'**écriture** reste cloisonnée, elle :
+
+- **Admin** : modifie, publie et supprime le contenu de n'importe qui.
+- **Manager** : droits de config (personas, sources, bot, settings) ; peut
+  relancer un réseau tombé en erreur, rien de plus sur le contenu d'autrui.
+- **User** : ne modifie que ses propres posts/threads ; ne **publie** que vers
+  les comptes sociaux qui lui sont rattachés (`GET /accounts` reste limité à
+  ceux-là — c'est une liste de cibles de publication, pas un périmètre de lecture).
 
 Toutes les routes sont sous le middleware `auth:sanctum` — un token est obligatoire.
 
