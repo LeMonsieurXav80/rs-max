@@ -6,6 +6,10 @@ elle qui peut trahir en silence.
     python3 -m unittest discover -s cli/qa
 """
 import importlib.util
+import json
+import contextlib
+import io
+from unittest.mock import patch
 import os
 import pathlib
 import sys
@@ -116,6 +120,75 @@ class TestConfigPath(unittest.TestCase):
             self.assertIn('rs-max', str(rsmax.config_path()))
         else:
             self.assertTrue(str(rsmax.config_path()).endswith('rs-max/config.json'))
+
+
+class TestInboxReplies(unittest.TestCase):
+    def args(self, *extra):
+        return rsmax.build_parser().parse_args(['repondre', *extra])
+
+    def test_le_nombre_est_borne_et_le_reseau_ou_compte_est_obligatoire(self):
+        for extra in ([], ['--reseaux', 'instagram', '--nombre', '0'],
+                      ['--reseaux', 'instagram', '--nombre', '101']):
+            with self.assertRaises(SystemExit):
+                rsmax.inbox_scope(self.args(*extra))
+        self.assertEqual(rsmax.inbox_scope(self.args('--reseaux', 'instagram,facebook',
+            '--comptes', '12,18', '--nombre', '7'))['limit'], 7)
+
+    @patch.object(rsmax.time, 'sleep')
+    @patch.object(rsmax, 'resolve_profile', return_value=('https://test.invalid/api', 'token'))
+    def test_apercu_selectionne_n_genere_avec_persona_et_ne_publie_rien(self, profile, sleep):
+        selection = {'requested': 2, 'items': [
+            {'id': 1, 'platform': 'instagram', 'account': {'id': 12}, 'content': 'Bonjour'},
+            {'id': 2, 'platform': 'facebook', 'account': {'id': 18}, 'content': 'Bravo'}]}
+        with patch.object(rsmax, 'call', side_effect=[selection,
+                {'reply_text': 'Salut !', 'persona': {'name': 'Caroline'}},
+                {'reply_text': 'Merci !', 'persona': {'name': 'Xavier'}}]) as call:
+            with contextlib.redirect_stdout(io.StringIO()) as output:
+                rsmax.command_repondre(self.args('--reseaux', 'instagram,facebook', '--nombre', '2'))
+            self.assertEqual(call.call_count, 3)
+            self.assertEqual(call.call_args_list[0].args[4]['limit'], 2)
+            plan = json.loads(output.getvalue())
+            self.assertEqual(plan['items'][1]['persona']['name'], 'Xavier')
+            self.assertFalse(any(c.args[3].endswith('/reply') for c in call.call_args_list))
+
+    @patch.object(rsmax.time, 'sleep')
+    @patch.object(rsmax, 'resolve_profile', return_value=('https://test.invalid/api', 'token'))
+    def test_envoi_du_plan_conserve_les_textes_et_sa_reprise_saute_les_succes(self, profile, sleep):
+        with tempfile.TemporaryDirectory() as folder:
+            path = pathlib.Path(folder) / 'plan.json'
+            plan = {'instance': 'https://test.invalid/api', 'items': [
+                {'id': 1, 'reply_text': 'Texte valide', 'result': {'success': True}},
+                {'id': 2, 'reply_text': 'Réponse relue'}]}
+            path.write_text(json.dumps(plan))
+            with patch.object(rsmax, 'call', return_value={'success': True}) as call:
+                with contextlib.redirect_stdout(io.StringIO()):
+                    rsmax.command_repondre(self.args('--plan', str(path), '--envoyer', '--etaler-minutes', '60'))
+                call.assert_called_once()
+                self.assertEqual(call.call_args.args[3], '/inbox/2/reply')
+                self.assertEqual(call.call_args.args[4]['reply_text'], 'Réponse relue')
+                self.assertFalse(call.call_args.args[4]['dry_run'])
+                self.assertIn('scheduled_at', call.call_args.args[4])
+                self.assertTrue(json.loads(path.read_text())['items'][1]['result']['success'])
+
+    @patch.object(rsmax, 'resolve_profile', return_value=('https://test.invalid/api', 'token'))
+    def test_dry_run_ne_genere_pas_et_ne_publie_pas(self, profile):
+        with patch.object(rsmax, 'call') as call, contextlib.redirect_stdout(io.StringIO()):
+            args = self.args('--reseaux', 'instagram', '--envoyer')
+            args.dry_run = True
+            rsmax.command_repondre(args)
+            call.assert_not_called()
+
+    @patch.object(rsmax, 'resolve_profile', return_value=('https://test.invalid/api', 'token'))
+    def test_un_plan_d_une_autre_instance_ou_avec_doublons_est_refuse(self, profile):
+        with tempfile.TemporaryDirectory() as folder:
+            path = pathlib.Path(folder) / 'plan.json'
+            for plan in ({'instance': 'https://other.invalid/api', 'items': []},
+                         {'instance': 'https://test.invalid/api', 'items': [
+                             {'id': 1, 'reply_text': 'A'}, {'id': 1, 'reply_text': 'B'}]}):
+                path.write_text(json.dumps(plan))
+                with patch.object(rsmax, 'call') as call, self.assertRaises(SystemExit):
+                    rsmax.command_repondre(self.args('--plan', str(path), '--envoyer'))
+                call.assert_not_called()
 
 
 if __name__ == '__main__':
