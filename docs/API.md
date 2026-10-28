@@ -1433,7 +1433,7 @@ commentaire, ni celui d'un autre compte du même réseau.
 }
 ```
 
-- `limit` obligatoire, de 1 à 100, **pour tout le lot**, pas par réseau.
+- `limit` obligatoire, de 1 à 250, **pour tout le lot**, pas par réseau.
 - Au moins un filtre `platforms` ou `accounts` est obligatoire. S'ils sont
   fournis ensemble, c'est leur **intersection**. Comptes : IDs de `GET /api/accounts`.
 - `types` : `comment`, `reply`, `dm`. Par défaut commentaires et réponses ; les
@@ -1470,7 +1470,7 @@ Réutilise le générateur de l'interface : persona, consignes inbox, contexte d
 fil et langue du message. **Le persona est forcé pour cette API**, même si le
 réglage web `inbox_use_persona` est désactivé. Aucun texte n'est enregistré ni
 envoyé au réseau. Les appels se font message par message pour éviter un long
-appel HTTP sur un lot de 100 générations.
+appel HTTP sur un lot de 250 générations.
 
 ### Aperçu, envoi ou programmation
 
@@ -1516,3 +1516,42 @@ pour retirer des items avant l'envoi. Le CLI n'effectue aucun nouvel essai HTTP
 automatique en cas d'erreur. `--dry-run` (avant la sous-commande) décrit l'appel
 sans génération IA ni publication. Le plan est un fichier de travail à supprimer
 après utilisation, sans le copier dans le vault.
+
+
+### Nouveaux commentaires et suivi du cycle (28 octobre 2026)
+
+`new_only: true` sur `/inbox/ai-prepare` sélectionne exclusivement les commentaires
+directs (`type=comment`, sans parent), dans une conversation sans réponse passée,
+préparée ou programmée. Les messages privés et réponses à un commentaire sont
+exclus. La limite maximale est désormais **250 pour le lot entier**.
+
+`GET` ou `POST /api/inbox/status` calcule les compteurs, sans génération ni envoi.
+Fournir `ids` (1 à 1000 identifiants distincts) pour suivre un **cycle précis**,
+ou au moins `accounts`/`platforms` pour lire toute la file d'un périmètre.
+Le cycle est la liste figée d'IDs conservée dans le plan du client ; cette route
+ne crée pas de nouveau lot et ne réserve aucun message.
+
+```json
+{"ids": [123, 456, 789]}
+```
+
+Réponse : `counts` et `by_platform` avec `total`, `unprepared`, `prepared`,
+`scheduled`, `sent`, `failed`, `excluded`, `pending` et `complete` ; `next_at`,
+`last_planned_at`, `last_sent_at` et `missing_or_inaccessible` complètent le suivi.
+`pending` additionne les messages non préparés, préparés et programmés.
+`scheduled` inclut un envoi dont le scheduler attend encore le résultat du réseau.
+`complete` ne signifie pas succès intégral : regarder aussi `failed`/`excluded`.
+Un ID absent ou inaccessible empêche de déclarer le cycle terminé. Les réseaux
+désactivés restent visibles pour compter leur historique. `new_only` ne masque
+pas les messages du cycle une fois envoyés.
+
+Le plan du CLI conserve tous les IDs dès la sélection, avant la première génération :
+
+```bash
+python3 cli/rsmax.py repondre --reseaux instagram,facebook,bluesky,youtube \
+  --comptes 28,29,43,44,47 --nombre 250 --nouveaux-commentaires --sortie /tmp/cycle.json
+python3 cli/rsmax.py etat-reponses --plan /tmp/cycle.json
+```
+
+Le suivi décrit l'état **dans RS-Max**. Un texte seulement généré en aperçu local
+reste `unprepared` dans ces compteurs jusqu'à son envoi ou sa programmation.
