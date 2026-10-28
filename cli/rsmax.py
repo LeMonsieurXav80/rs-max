@@ -544,12 +544,15 @@ def command_etat(args):
 # --------------------------------------------------------------------------
 
 def inbox_scope(args):
-    if not 1 <= args.nombre <= 100:
-        raise SystemExit('--nombre doit etre compris entre 1 et 100.')
+    if not 1 <= args.nombre <= 250:
+        raise SystemExit('--nombre doit etre compris entre 1 et 250.')
     if not args.reseaux and not args.comptes:
         raise SystemExit('Choisir --reseaux et/ou --comptes pour borner les reponses.')
     payload = {'limit': args.nombre, 'order': args.ordre,
                'types': [v.strip() for v in args.types.split(',') if v.strip()]}
+    if getattr(args, 'nouveaux_commentaires', False):
+        payload['new_only'] = True
+        payload['types'] = ['comment']
     if args.reseaux:
         payload['platforms'] = [v.strip() for v in args.reseaux.split(',') if v.strip()]
     if args.comptes:
@@ -577,10 +580,10 @@ def command_repondre(args):
             raise SystemExit('Le plan concerne une autre instance RS-Max.')
         items = plan.get('items', [])
         ids = [item.get('id') for item in items]
-        if (not 1 <= len(items) <= 100 or len(set(ids)) != len(ids)
+        if (not 1 <= len(items) <= 250 or len(set(ids)) != len(ids)
                 or any(type(i) is not int or i < 1 for i in ids)
                 or any(not isinstance(i.get('reply_text'), str) or not i['reply_text'].strip() for i in items)):
-            raise SystemExit('Plan invalide : 1 a 100 messages distincts avec leur reponse sont requis.')
+            raise SystemExit('Plan invalide : 1 a 250 messages distincts avec leur reponse sont requis.')
         path = args.sortie or args.plan
     else:
         scope = inbox_scope(args)
@@ -590,19 +593,19 @@ def command_repondre(args):
         selection = call(url, token, 'POST', '/inbox/ai-prepare', scope, timeout=60)
         plan = {'version': 1, 'instance': url, 'scope': scope,
                 'requested': selection.get('requested'),
-                'skipped_accounts': selection.get('skipped_accounts', []), 'items': []}
+                'skipped_accounts': selection.get('skipped_accounts', []),
+                'items': [{'id': item['id'], 'platform': item['platform'], 'account': item['account'],
+                           'persona': item['persona'], 'content': item['content'], 'reply_text': None}
+                          for item in selection.get('items', [])]}
         path = args.sortie
-        for item in selection.get('items', []):
+        # Persist every selected ID before the first generation, so status covers the whole cycle.
+        save_reply_plan(path, plan)
+        for item in plan['items']:
             time.sleep(1.1)
             suggestion = call(url, token, 'POST', f"/inbox/{item['id']}/ai-suggest", {}, timeout=60)
-            plan['items'].append({
-                'id': item['id'], 'platform': item['platform'], 'account': item['account'],
-                'persona': suggestion['persona'], 'content': item['content'],
-                'reply_text': suggestion['reply_text'],
-            })
+            item['reply_text'] = suggestion['reply_text']
+            item['persona'] = suggestion['persona']
             save_reply_plan(path, plan)
-        # Also persist an empty result with the reasons accounts were skipped.
-        save_reply_plan(path, plan)
 
     if args.envoyer and not args.dry_run:
         # Preserve the reviewed texts. Never regenerate an answer when sending a saved plan.
@@ -620,6 +623,18 @@ def command_repondre(args):
             item['result'] = call(url, token, 'POST', f"/inbox/{item['id']}/reply", payload, timeout=120)
             save_reply_plan(path, plan)
     print(json.dumps(plan, indent=2, ensure_ascii=False))
+
+
+def command_etat_reponses(args):
+    url, token = resolve_profile(args.profil)
+    plan = json.loads(Path(args.plan).expanduser().read_text(encoding='utf-8'))
+    if plan.get('instance') != url:
+        raise SystemExit('Le plan concerne une autre instance RS-Max.')
+    ids = [item['id'] for item in plan.get('items', [])]
+    if not ids:
+        raise SystemExit('Le plan ne contient aucun message.')
+    result = call(url, token, 'POST', '/inbox/status', {'ids': ids}, timeout=60)
+    print(json.dumps(result, indent=2, ensure_ascii=False))
 
 
 def build_parser():
@@ -674,7 +689,8 @@ def build_parser():
     repondre = subparsers.add_parser('repondre', help='prepare les reponses avec le persona du compte ; envoi explicite')
     repondre.add_argument('--reseaux', help='reseaux cibles, ex : instagram,facebook (X = twitter)')
     repondre.add_argument('--comptes', help='comptes cibles, ex : 12,18 ; intersection avec --reseaux')
-    repondre.add_argument('--nombre', type=int, default=10, help='maximum de messages pour tout le lot, de 1 a 100')
+    repondre.add_argument('--nouveaux-commentaires', action='store_true', help='commentaires directs sans conversation deja traitee ou en cours')
+    repondre.add_argument('--nombre', type=int, default=10, help='maximum de messages pour tout le lot, de 1 a 250')
     repondre.add_argument('--types', default='comment,reply', help='comment,reply ; ajouter dm pour les messages prives')
     repondre.add_argument('--ordre', choices=['oldest', 'newest'], default='oldest')
     repondre.add_argument('--sortie', help='enregistre les textes et les resultats dans un fichier JSON')
@@ -682,6 +698,10 @@ def build_parser():
     repondre.add_argument('--envoyer', action='store_true', help='envoie les reponses ; sans cette option, apercu seulement')
     repondre.add_argument('--etaler-minutes', type=int, default=0, help='programme les reponses sur cette duree (max 1440)')
     repondre.set_defaults(func=command_repondre)
+
+    etat_reponses = subparsers.add_parser('etat-reponses', help='compteurs du cycle : envoyes, en attente, echecs')
+    etat_reponses.add_argument('--plan', required=True, help='plan JSON du cycle a suivre')
+    etat_reponses.set_defaults(func=command_etat_reponses)
 
     config = subparsers.add_parser('config', help='enregistre une instance et son jeton')
     config.add_argument('--profil', required=True, dest='profil', help='nom court, ex : dix')

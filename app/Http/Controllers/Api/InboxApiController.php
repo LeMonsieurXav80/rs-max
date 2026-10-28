@@ -81,6 +81,77 @@ class InboxApiController extends Controller
         ]);
     }
 
+    /** Count the exact IDs of a cycle, or all messages in an explicit account/network scope. */
+    public function status(Request $request): JsonResponse
+    {
+        $filters = $this->filters($request);
+        $data = $request->validate([
+            'ids' => 'required_without_all:accounts,platforms|array|min:1|max:1000',
+            'ids.*' => 'integer|distinct|min:1',
+        ]);
+        $filters['types'] ??= ['comment', 'reply', 'dm'];
+        // New-only is a selection filter. A cycle must still include its items after they are sent.
+        unset($filters['new_only']);
+        $query = $this->query($request->user(), $filters, onlyEnabled: false)->withoutEagerLoads()->reorder();
+        if (isset($data['ids'])) {
+            $query->whereIn('id', $data['ids']);
+        }
+        $empty = ['total' => 0, 'unprepared' => 0, 'prepared' => 0, 'scheduled' => 0, 'sent' => 0, 'failed' => 0, 'excluded' => 0];
+        $counts = $empty;
+        $platforms = [];
+        $nextAt = $lastPlannedAt = $lastSentAt = null;
+        $slugs = \App\Models\Platform::pluck('slug', 'id');
+        $query->select(['id', 'platform_id', 'status', 'reply_content', 'reply_external_id', 'replied_at', 'reply_scheduled_at', 'reply_attempts'])
+            ->chunkById(500, function ($items) use (&$counts, &$platforms, $empty, $slugs, &$nextAt, &$lastPlannedAt, &$lastSentAt) {
+                foreach ($items as $item) {
+                    $state = match (true) {
+                        (bool) ($item->replied_at || $item->reply_external_id || $item->status === 'replied') => 'sent',
+                        in_array($item->status, ['archived', 'ignored']) => 'excluded',
+                        // On its last attempt, the scheduler keeps its reservation until the network answers.
+                        (bool) $item->reply_scheduled_at => 'scheduled',
+                        $item->status === 'reply_failed' || $item->reply_attempts >= 3 => 'failed',
+                        filled($item->reply_content) => 'prepared',
+                        in_array($item->status, ['read', 'unread']) => 'unprepared',
+                        default => 'excluded',
+                    };
+                    $slug = $slugs[$item->platform_id];
+                    $platforms[$slug] ??= $empty;
+                    $counts['total']++;
+                    $counts[$state]++;
+                    $platforms[$slug]['total']++;
+                    $platforms[$slug][$state]++;
+                    if ($state === 'scheduled') {
+                        $at = $item->reply_scheduled_at->toIso8601String();
+                        $nextAt = $nextAt === null || $at < $nextAt ? $at : $nextAt;
+                        $lastPlannedAt = $lastPlannedAt === null || $at > $lastPlannedAt ? $at : $lastPlannedAt;
+                    }
+                    if ($state === 'sent' && $item->replied_at) {
+                        $at = $item->replied_at->toIso8601String();
+                        $lastSentAt = $lastSentAt === null || $at > $lastSentAt ? $at : $lastSentAt;
+                    }
+                }
+            });
+        $finish = function ($counts) {
+            $counts['pending'] = $counts['unprepared'] + $counts['prepared'] + $counts['scheduled'];
+            $counts['complete'] = $counts['pending'] === 0;
+
+            return $counts;
+        };
+
+        $summary = $finish($counts);
+        if (isset($data['ids']) && count($data['ids']) !== $counts['total']) {
+            $summary['complete'] = false;
+        }
+
+        return response()->json([
+            'counts' => $summary,
+            'by_platform' => array_map($finish, $platforms),
+            'requested_ids' => isset($data['ids']) ? count($data['ids']) : null,
+            'missing_or_inaccessible' => isset($data['ids']) ? count($data['ids']) - $counts['total'] : 0,
+            'next_at' => $nextAt, 'last_planned_at' => $lastPlannedAt, 'last_sent_at' => $lastSentAt,
+        ]);
+    }
+
     public function suggest(Request $request, InboxItem $inboxItem, InboxReplyGenerator $generator): JsonResponse
     {
         $this->authorizeReply($request->user(), $inboxItem);
@@ -151,16 +222,17 @@ class InboxApiController extends Controller
             'accounts.*' => 'integer|distinct|exists:social_accounts,id',
             'types' => 'sometimes|array|min:1|max:3',
             'types.*' => ['string', 'distinct', Rule::in(['comment', 'reply', 'dm'])],
-            'limit' => ($prepare ? 'required|' : 'sometimes|').'integer|min:1|max:100',
+            'limit' => ($prepare ? 'required|' : 'sometimes|').'integer|min:1|max:250',
+            'new_only' => 'sometimes|boolean',
             'order' => ['sometimes', Rule::in(['oldest', 'newest'])],
             'status' => [$prepare ? 'prohibited' : 'sometimes', Rule::in(['unanswered', 'unread', 'read', 'replied', 'archived', 'ignored', 'reply_failed', 'all'])],
             'page' => 'sometimes|integer|min:1',
         ]);
     }
 
-    private function query(User $user, array $filters): Builder
+    private function query(User $user, array $filters, bool $onlyEnabled = true): Builder
     {
-        $platforms = array_filter(self::PLATFORMS, fn ($slug) => (bool) Setting::get("inbox_platform_{$slug}_enabled", true));
+        $platforms = $onlyEnabled ? array_filter(self::PLATFORMS, fn ($slug) => (bool) Setting::get("inbox_platform_{$slug}_enabled", true)) : self::PLATFORMS;
         $query = InboxItem::query()->with(['socialAccount.platform', 'socialAccount.persona'])
             ->whereIn('social_account_id', $user->visibleSocialAccounts()->select('social_accounts.id'))
             ->whereHas('platform', fn ($q) => $q->whereIn('slug', $platforms))
@@ -171,9 +243,38 @@ class InboxApiController extends Controller
         if (isset($filters['accounts'])) {
             $query->whereIn('social_account_id', $filters['accounts']);
         }
+        if (filter_var($filters['new_only'] ?? false, FILTER_VALIDATE_BOOLEAN)) {
+            $this->newComments($query);
+        }
         $direction = ($filters['order'] ?? 'oldest') === 'newest' ? 'desc' : 'asc';
 
         return $query->orderBy('posted_at', $direction)->orderBy('id', $direction);
+    }
+
+    /** Direct comments in conversations without any prior or pending answer. */
+    private function newComments(Builder $query): void
+    {
+        $query->where('type', 'comment')
+            ->where(fn ($q) => $q->whereNull('parent_id')->orWhere('parent_id', ''))
+            ->whereNotExists(function ($q) {
+                $q->selectRaw('1')->from('inbox_items as handled')
+                    ->whereColumn('handled.social_account_id', 'inbox_items.social_account_id')
+                    ->where(function ($q) {
+                        $q->where(function ($q) {
+                            $q->whereNotNull('inbox_items.conversation_key')->where('inbox_items.conversation_key', '!=', '')
+                                ->whereColumn('handled.conversation_key', 'inbox_items.conversation_key');
+                        })->orWhereColumn('handled.parent_id', 'inbox_items.external_id');
+                    })
+                    ->where(function ($q) {
+                        $q->whereNotNull('handled.replied_at')->orWhereNotNull('handled.reply_external_id')
+                            ->orWhereNotNull('handled.reply_scheduled_at')->orWhere('handled.reply_attempts', '>', 0)
+                            ->orWhere('handled.status', 'replied')
+                            ->orWhere(fn ($q) => $q->whereNotNull('handled.reply_content')->where('handled.reply_content', '!=', ''))
+                            ->orWhereExists(fn ($q) => $q->selectRaw('1')->from('social_accounts as own')
+                                ->whereColumn('own.id', 'inbox_items.social_account_id')
+                                ->whereColumn('own.platform_account_id', 'handled.author_external_id'));
+                    });
+            });
     }
 
     private function unanswered(Builder $query): void

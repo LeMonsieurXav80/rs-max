@@ -23,6 +23,7 @@ Route::middleware('auth:sanctum')->group(function () {
 
     // ── Inbox : lots bornes, persona du compte, apercu avant envoi ──
     Route::get('/inbox', [InboxApiController::class, 'index']);
+    Route::match(['get', 'post'], '/inbox/status', [InboxApiController::class, 'status']);
     Route::post('/inbox/ai-prepare', [InboxApiController::class, 'prepare']);
     Route::post('/inbox/{inboxItem}/ai-suggest', [InboxApiController::class, 'suggest'])->middleware('throttle:60,1');
     Route::post('/inbox/{inboxItem}/reply', [InboxApiController::class, 'reply'])->middleware('throttle:60,1');

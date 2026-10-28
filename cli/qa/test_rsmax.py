@@ -128,7 +128,7 @@ class TestInboxReplies(unittest.TestCase):
 
     def test_le_nombre_est_borne_et_le_reseau_ou_compte_est_obligatoire(self):
         for extra in ([], ['--reseaux', 'instagram', '--nombre', '0'],
-                      ['--reseaux', 'instagram', '--nombre', '101']):
+                      ['--reseaux', 'instagram', '--nombre', '251']):
             with self.assertRaises(SystemExit):
                 rsmax.inbox_scope(self.args(*extra))
         self.assertEqual(rsmax.inbox_scope(self.args('--reseaux', 'instagram,facebook',
@@ -138,8 +138,8 @@ class TestInboxReplies(unittest.TestCase):
     @patch.object(rsmax, 'resolve_profile', return_value=('https://test.invalid/api', 'token'))
     def test_apercu_selectionne_n_genere_avec_persona_et_ne_publie_rien(self, profile, sleep):
         selection = {'requested': 2, 'items': [
-            {'id': 1, 'platform': 'instagram', 'account': {'id': 12}, 'content': 'Bonjour'},
-            {'id': 2, 'platform': 'facebook', 'account': {'id': 18}, 'content': 'Bravo'}]}
+            {'id': 1, 'platform': 'instagram', 'account': {'id': 12}, 'content': 'Bonjour', 'persona': {'name': 'Caroline'}},
+            {'id': 2, 'platform': 'facebook', 'account': {'id': 18}, 'content': 'Bravo', 'persona': {'name': 'Xavier'}}]}
         with patch.object(rsmax, 'call', side_effect=[selection,
                 {'reply_text': 'Salut !', 'persona': {'name': 'Caroline'}},
                 {'reply_text': 'Merci !', 'persona': {'name': 'Xavier'}}]) as call:
@@ -189,6 +189,25 @@ class TestInboxReplies(unittest.TestCase):
                 with patch.object(rsmax, 'call') as call, self.assertRaises(SystemExit):
                     rsmax.command_repondre(self.args('--plan', str(path), '--envoyer'))
                 call.assert_not_called()
+
+
+class TestCycleStatus(unittest.TestCase):
+    def test_new_comments_are_explicit_and_the_limit_can_be_250(self):
+        args = rsmax.build_parser().parse_args(['repondre', '--reseaux', 'instagram,facebook', '--nombre', '250', '--nouveaux-commentaires'])
+        scope = rsmax.inbox_scope(args)
+        self.assertEqual(scope['limit'], 250)
+        self.assertTrue(scope['new_only'])
+        self.assertEqual(scope['types'], ['comment'])
+
+    @patch.object(rsmax, 'resolve_profile', return_value=('https://test.invalid/api', 'token'))
+    def test_status_uses_exact_plan_ids_and_never_generates_or_sends(self, profile):
+        with tempfile.TemporaryDirectory() as folder:
+            path = pathlib.Path(folder) / 'plan.json'
+            path.write_text(json.dumps({'instance': 'https://test.invalid/api', 'items': [{'id': 12}, {'id': 18}]}))
+            args = rsmax.build_parser().parse_args(['etat-reponses', '--plan', str(path)])
+            with patch.object(rsmax, 'call', return_value={'counts': {'pending': 2}}) as call, contextlib.redirect_stdout(io.StringIO()):
+                rsmax.command_etat_reponses(args)
+            call.assert_called_once_with('https://test.invalid/api', 'token', 'POST', '/inbox/status', {'ids': [12, 18]}, timeout=60)
 
 
 if __name__ == '__main__':

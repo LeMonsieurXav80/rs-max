@@ -152,7 +152,7 @@ class InboxApiTest extends TestCase
     public function test_invalid_or_unbounded_lots_are_rejected(): void
     {
         foreach ([[], ['limit' => 1], ['platforms' => []], ['platforms' => ['pinterest'], 'limit' => 1],
-            ['platforms' => ['instagram'], 'limit' => 0], ['platforms' => ['instagram'], 'limit' => 101],
+            ['platforms' => ['instagram'], 'limit' => 0], ['platforms' => ['instagram'], 'limit' => 251],
             ['platforms' => ['instagram'], 'limit' => 1, 'status' => 'all']] as $payload) {
             $this->postJson('/api/inbox/ai-prepare', $payload)->assertUnprocessable();
         }
@@ -304,5 +304,79 @@ class InboxApiTest extends TestCase
         $this->assertSame('reply_failed', $item->fresh()->status);
         $this->assertSame(3, (int) $item->fresh()->reply_attempts);
         $this->assertNull($item->fresh()->reply_scheduled_at);
+    }
+
+    public function test_a_lot_can_contain_250_messages_but_never_251(): void
+    {
+        for ($i = 0; $i < 251; $i++) {
+            $this->item();
+        }
+        $this->postJson('/api/inbox/ai-prepare', ['platforms' => ['instagram'], 'limit' => 250])
+            ->assertOk()->assertJsonPath('selected', 250)->assertJsonPath('eligible', 251);
+    }
+
+    public function test_new_comments_exclude_nested_replies_and_conversations_already_handled(): void
+    {
+        $eligible = $this->item(['conversation_key' => 'fresh']);
+        $this->item(['type' => 'reply']);
+        $this->item(['parent_id' => 'parent', 'type' => 'comment']);
+        $this->item(['conversation_key' => 'answered']);
+        $this->item(['conversation_key' => 'answered', 'type' => 'reply', 'reply_content' => 'Merci', 'status' => 'replied']);
+        $this->item(['conversation_key' => 'pending']);
+        $this->item(['conversation_key' => 'pending', 'type' => 'reply', 'reply_scheduled_at' => now()->addHour()]);
+        $this->postJson('/api/inbox/ai-prepare', ['accounts' => [$this->account->id], 'limit' => 250, 'new_only' => true])
+            ->assertOk()->assertJsonPath('selected', 1)->assertJsonPath('items.0.id', $eligible->id);
+    }
+
+    public function test_new_comments_exclude_own_answers_even_without_reply_metadata(): void
+    {
+        $root = $this->item(['conversation_key' => 'own-answer']);
+        $this->item(['conversation_key' => 'own-answer', 'parent_id' => $root->external_id,
+            'author_external_id' => $this->account->platform_account_id]);
+        $this->postJson('/api/inbox/ai-prepare', ['accounts' => [$this->account->id], 'limit' => 1, 'new_only' => true])
+            ->assertOk()->assertJsonPath('selected', 0);
+    }
+
+    public function test_exact_cycle_counts_include_sent_scheduled_prepared_failed_and_excluded(): void
+    {
+        $items = [
+            $this->item(),
+            $this->item(['reply_content' => 'Brouillon']),
+            $this->item(['reply_content' => 'Programmée', 'reply_scheduled_at' => now()->addHour()]),
+            $this->item(['reply_content' => 'Envoyée', 'status' => 'replied', 'replied_at' => now()]),
+            $this->item(['reply_content' => 'Échec', 'status' => 'reply_failed', 'reply_attempts' => 3]),
+            $this->item(['status' => 'ignored']),
+        ];
+        $this->item(); // Another cycle must not change these counts.
+        $this->postJson('/api/inbox/status', ['ids' => array_map(fn ($i) => $i->id, $items), 'new_only' => true])
+            ->assertOk()->assertJsonPath('counts.total', 6)->assertJsonPath('counts.unprepared', 1)
+            ->assertJsonPath('counts.prepared', 1)->assertJsonPath('counts.scheduled', 1)
+            ->assertJsonPath('counts.sent', 1)->assertJsonPath('counts.failed', 1)
+            ->assertJsonPath('counts.excluded', 1)->assertJsonPath('counts.pending', 3)
+            ->assertJsonPath('counts.complete', false)->assertJsonPath('by_platform.instagram.total', 6);
+        Http::assertNothingSent();
+    }
+
+    public function test_cycle_status_can_be_scoped_by_account_and_includes_disabled_network_history(): void
+    {
+        $item = $this->item(['status' => 'replied', 'replied_at' => now()]);
+        Setting::set('inbox_platform_instagram_enabled', '0');
+        $this->getJson('/api/inbox/status?accounts[]='.$this->account->id)->assertOk()
+            ->assertJsonPath('counts.sent', 1)->assertJsonPath('counts.complete', true);
+        $this->postJson('/api/inbox/status', ['ids' => [$item->id]])->assertOk()->assertJsonPath('counts.total', 1);
+    }
+
+    public function test_missing_cycle_items_prevent_a_false_complete_and_unbounded_status_is_refused(): void
+    {
+        $this->postJson('/api/inbox/status', ['ids' => [99999]])->assertOk()
+            ->assertJsonPath('missing_or_inaccessible', 1)->assertJsonPath('counts.complete', false);
+        $this->getJson('/api/inbox/status')->assertUnprocessable();
+    }
+
+    public function test_a_last_scheduled_attempt_remains_pending_until_the_network_result(): void
+    {
+        $item = $this->item(['reply_content' => 'Merci', 'reply_attempts' => 3, 'reply_scheduled_at' => now()->subSecond()]);
+        $this->postJson('/api/inbox/status', ['ids' => [$item->id]])->assertOk()
+            ->assertJsonPath('counts.pending', 1)->assertJsonPath('counts.failed', 0)->assertJsonPath('counts.scheduled', 1);
     }
 }

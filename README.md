@@ -90,7 +90,7 @@ Variables necessaires : `DEPLOY_API_URL`, `DEPLOY_API_TOKEN`, `DEPLOY_APP_UUID`
 
 ## Répondre aux commentaires par API
 
-L'inbox est accessible par token Sanctum : sélection d'un lot de 1 à 100
+L'inbox est accessible par token Sanctum : sélection d'un lot de 1 à 250
 messages, filtres par réseau/compte, génération avec le persona de chaque
 compte et envoi explicite (ou programmation). Le CLI prépare un aperçu par défaut :
 
@@ -101,3 +101,6 @@ python3 cli/rsmax.py repondre --plan /tmp/reponses.json --envoyer
 
 Voir [API, section 19](docs/API.md#19-inbox--commentaires-et-réponses-avec-persona)
 pour les routes, droits, filtres et codes d'erreur.
+
+Suivi d’un cycle : `python3 cli/rsmax.py etat-reponses --plan /tmp/reponses.json` ;
+API `POST /api/inbox/status` avec la liste des IDs du cycle.
