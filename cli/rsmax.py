@@ -53,6 +53,7 @@ COMMANDES
     envoyer <fichiers...>        depose des fichiers, sans retouche
     publier                      cree une publication (programmee par defaut)
     etat                         les publications a venir, ou le detail de l'une
+    repondre                     reponses aux commentaires, persona et reseaux choisis
     config                       enregistre une instance et son jeton
 
 Chaque commande accepte `--profil` (plusieurs instances RS-Max cohabitent) et
@@ -64,6 +65,7 @@ import mimetypes
 import os
 import re
 import sys
+import time
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -541,6 +543,85 @@ def command_etat(args):
 
 # --------------------------------------------------------------------------
 
+def inbox_scope(args):
+    if not 1 <= args.nombre <= 100:
+        raise SystemExit('--nombre doit etre compris entre 1 et 100.')
+    if not args.reseaux and not args.comptes:
+        raise SystemExit('Choisir --reseaux et/ou --comptes pour borner les reponses.')
+    payload = {'limit': args.nombre, 'order': args.ordre,
+               'types': [v.strip() for v in args.types.split(',') if v.strip()]}
+    if args.reseaux:
+        payload['platforms'] = [v.strip() for v in args.reseaux.split(',') if v.strip()]
+    if args.comptes:
+        try:
+            payload['accounts'] = [int(v.strip()) for v in args.comptes.split(',')]
+        except ValueError:
+            raise SystemExit('--comptes attend des identifiants separes par des virgules.')
+    return payload
+
+
+def save_reply_plan(path, plan):
+    if path:
+        Path(path).expanduser().write_text(json.dumps(plan, indent=2, ensure_ascii=False), encoding='utf-8')
+
+
+def command_repondre(args):
+    url, token = resolve_profile(args.profil)
+    if not 0 <= args.etaler_minutes <= 1440:
+        raise SystemExit('--etaler-minutes doit etre compris entre 0 et 1440.')
+    if args.plan:
+        if args.reseaux or args.comptes:
+            raise SystemExit('--plan reprend exactement son lot ; ne pas ajouter --reseaux ou --comptes.')
+        plan = json.loads(Path(args.plan).expanduser().read_text(encoding='utf-8'))
+        if plan.get('instance') != url:
+            raise SystemExit('Le plan concerne une autre instance RS-Max.')
+        items = plan.get('items', [])
+        ids = [item.get('id') for item in items]
+        if (not 1 <= len(items) <= 100 or len(set(ids)) != len(ids)
+                or any(type(i) is not int or i < 1 for i in ids)
+                or any(not isinstance(i.get('reply_text'), str) or not i['reply_text'].strip() for i in items)):
+            raise SystemExit('Plan invalide : 1 a 100 messages distincts avec leur reponse sont requis.')
+        path = args.sortie or args.plan
+    else:
+        scope = inbox_scope(args)
+        if args.dry_run:
+            print(json.dumps({'method': 'POST', 'path': '/inbox/ai-prepare', 'payload': scope}, indent=2))
+            return
+        selection = call(url, token, 'POST', '/inbox/ai-prepare', scope, timeout=60)
+        plan = {'version': 1, 'instance': url, 'scope': scope,
+                'requested': selection.get('requested'),
+                'skipped_accounts': selection.get('skipped_accounts', []), 'items': []}
+        path = args.sortie
+        for item in selection.get('items', []):
+            time.sleep(1.1)
+            suggestion = call(url, token, 'POST', f"/inbox/{item['id']}/ai-suggest", {}, timeout=60)
+            plan['items'].append({
+                'id': item['id'], 'platform': item['platform'], 'account': item['account'],
+                'persona': suggestion['persona'], 'content': item['content'],
+                'reply_text': suggestion['reply_text'],
+            })
+            save_reply_plan(path, plan)
+        # Also persist an empty result with the reasons accounts were skipped.
+        save_reply_plan(path, plan)
+
+    if args.envoyer and not args.dry_run:
+        # Preserve the reviewed texts. Never regenerate an answer when sending a saved plan.
+        total = len(plan['items'])
+        start = datetime.now().astimezone().timestamp() + 5
+        for index, item in enumerate(plan['items']):
+            if item.get('result', {}).get('success'):
+                continue
+            payload = {'reply_text': item['reply_text'], 'dry_run': False}
+            if args.etaler_minutes:
+                at = max(start + args.etaler_minutes * 60 * index / max(total - 1, 1),
+                         datetime.now().astimezone().timestamp() + 5)
+                payload['scheduled_at'] = datetime.fromtimestamp(at).astimezone().isoformat()
+            time.sleep(1.1)
+            item['result'] = call(url, token, 'POST', f"/inbox/{item['id']}/reply", payload, timeout=120)
+            save_reply_plan(path, plan)
+    print(json.dumps(plan, indent=2, ensure_ascii=False))
+
+
 def build_parser():
     parser = argparse.ArgumentParser(
         prog='rsmax.py',
@@ -589,6 +670,18 @@ def build_parser():
                       choices=['draft', 'scheduled', 'publishing', 'published', 'failed', 'partial'])
     etat.add_argument('--limite', type=int, default=25, help='nombre de lignes (defaut 25)')
     etat.set_defaults(func=command_etat)
+
+    repondre = subparsers.add_parser('repondre', help='prepare les reponses avec le persona du compte ; envoi explicite')
+    repondre.add_argument('--reseaux', help='reseaux cibles, ex : instagram,facebook (X = twitter)')
+    repondre.add_argument('--comptes', help='comptes cibles, ex : 12,18 ; intersection avec --reseaux')
+    repondre.add_argument('--nombre', type=int, default=10, help='maximum de messages pour tout le lot, de 1 a 100')
+    repondre.add_argument('--types', default='comment,reply', help='comment,reply ; ajouter dm pour les messages prives')
+    repondre.add_argument('--ordre', choices=['oldest', 'newest'], default='oldest')
+    repondre.add_argument('--sortie', help='enregistre les textes et les resultats dans un fichier JSON')
+    repondre.add_argument('--plan', help='reprend un plan JSON existant, sans regenerer ses textes')
+    repondre.add_argument('--envoyer', action='store_true', help='envoie les reponses ; sans cette option, apercu seulement')
+    repondre.add_argument('--etaler-minutes', type=int, default=0, help='programme les reponses sur cette duree (max 1440)')
+    repondre.set_defaults(func=command_repondre)
 
     config = subparsers.add_parser('config', help='enregistre une instance et son jeton')
     config.add_argument('--profil', required=True, dest='profil', help='nom court, ex : dix')

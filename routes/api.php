@@ -4,6 +4,7 @@ use App\Http\Controllers\Api\ApiController;
 use App\Http\Controllers\Api\CarouselApiController;
 use App\Http\Controllers\Api\ExtensionApiController;
 use App\Http\Controllers\Api\GenerateApiController;
+use App\Http\Controllers\Api\InboxApiController;
 use App\Http\Controllers\Api\MediaApiController;
 use App\Http\Controllers\Api\MetaAdsApiController;
 use App\Http\Controllers\Api\MetaAudienceApiController;
@@ -19,6 +20,12 @@ Route::middleware('auth:sanctum')->group(function () {
     // ── Auth ──
     Route::get('/me', [ApiController::class, 'me']);
     Route::get('/accounts', [ApiController::class, 'accounts']);
+
+    // ── Inbox : lots bornes, persona du compte, apercu avant envoi ──
+    Route::get('/inbox', [InboxApiController::class, 'index']);
+    Route::post('/inbox/ai-prepare', [InboxApiController::class, 'prepare']);
+    Route::post('/inbox/{inboxItem}/ai-suggest', [InboxApiController::class, 'suggest'])->middleware('throttle:60,1');
+    Route::post('/inbox/{inboxItem}/reply', [InboxApiController::class, 'reply'])->middleware('throttle:60,1');
 
     // ── Posts ──
     Route::get('/posts', [PostApiController::class, 'index']);

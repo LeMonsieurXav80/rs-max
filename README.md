@@ -86,3 +86,18 @@ Un badge s'affiche dans l'interface admin lorsqu'une mise a jour est disponible.
 L'admin peut declencher le deploiement depuis l'interface (via l'API de la plateforme d'hebergement).
 
 Variables necessaires : `DEPLOY_API_URL`, `DEPLOY_API_TOKEN`, `DEPLOY_APP_UUID`
+
+
+## Répondre aux commentaires par API
+
+L'inbox est accessible par token Sanctum : sélection d'un lot de 1 à 100
+messages, filtres par réseau/compte, génération avec le persona de chaque
+compte et envoi explicite (ou programmation). Le CLI prépare un aperçu par défaut :
+
+```bash
+python3 cli/rsmax.py repondre --reseaux instagram,facebook --nombre 10 --sortie /tmp/reponses.json
+python3 cli/rsmax.py repondre --plan /tmp/reponses.json --envoyer
+```
+
+Voir [API, section 19](docs/API.md#19-inbox--commentaires-et-réponses-avec-persona)
+pour les routes, droits, filtres et codes d'erreur.

@@ -28,6 +28,7 @@ API REST d'orchestration multi-plateformes : publication, planification, génér
 16. [Endpoints en session web (PAS accessibles par token)](#16-endpoints-en-session-web-pas-accessibles-par-token)
 17. [Endpoints — Meta Ads (pilotage des campagnes)](#17-endpoints--meta-ads-pilotage-des-campagnes)
 18. [Endpoint — Dépôt de média sans compression](#18-endpoint--dépôt-de-média-sans-compression)
+19. [Inbox — commentaires et réponses avec persona](#19-inbox--commentaires-et-réponses-avec-persona)
 
 ---
 
@@ -1403,3 +1404,115 @@ Les quatre chemins d'entrée historiques (upload web, `/media/ingest`,
 téléchargement d'URL, import externe) **compressent toujours**, à dessein.
 
 Détail et pièges : [`docs/cli-publication-sans-compression.md`](cli-publication-sans-compression.md).
+
+
+## 19. Inbox — commentaires et réponses avec persona
+
+Disponible par token Sanctum depuis octobre 2026, sur les réseaux déjà gérés
+par l'inbox : `facebook`, `instagram`, `threads`, `youtube`, `bluesky`,
+`telegram`, `twitter` (X). Les plateformes désactivées dans les réglages sont
+exclues. Pinterest et LinkedIn ne sont pas pris en charge par cette inbox.
+
+La lecture suit la visibilité de l'interface ; **générer ou envoyer une réponse
+exige un rattachement actif de l'utilisateur au compte social**, y compris
+pour un administrateur. Voir tout ne donne pas le droit de répondre partout.
+Le persona est celui du **compte destinataire**, jamais celui de l'auteur du
+commentaire, ni celui d'un autre compte du même réseau.
+
+### Sélectionner au maximum N messages
+
+`POST /api/inbox/ai-prepare`
+
+```json
+{
+  "platforms": ["instagram", "facebook"],
+  "accounts": [12, 18],
+  "limit": 10,
+  "types": ["comment", "reply"],
+  "order": "oldest"
+}
+```
+
+- `limit` obligatoire, de 1 à 100, **pour tout le lot**, pas par réseau.
+- Au moins un filtre `platforms` ou `accounts` est obligatoire. S'ils sont
+  fournis ensemble, c'est leur **intersection**. Comptes : IDs de `GET /api/accounts`.
+- `types` : `comment`, `reply`, `dm`. Par défaut commentaires et réponses ; les
+  messages privés nécessitent un choix explicite.
+- `order` : `oldest` par défaut, ou `newest`.
+- Uniquement les messages `unread`/`read` sans réponse, brouillon, programmation
+  ni tentative d'envoi antérieure. Les messages du compte lui-même sont exclus.
+- Persona actif et consignes non vides obligatoires. Sinon le compte apparaît
+  dans `skipped_accounts`, avec sa raison ; aucun persona générique de secours.
+
+Réponse : `requested`, `selected`, `available` (messages sans réponse avant
+le filtre persona), `eligible` (avec persona), `skipped_accounts` et `items`.
+Chaque item fournit son `id`, texte, auteur, réseau, compte, persona, état,
+lien de publication et dates. **Cet appel ne génère ni n'envoie de réponse**.
+
+`GET /api/inbox` accepte les mêmes filtres, `limit` (défaut 20), `page` et
+`status` (`unanswered` par défaut ; `unread`, `read`, `replied`, `archived`,
+`ignored`, `reply_failed`, `all`). Réponse paginée `items` + `pagination` ;
+`can_reply` distingue le droit de regard du droit de réponse.
+
+### Générer chaque réponse
+
+`POST /api/inbox/{id}/ai-suggest` avec `{}`.
+
+```json
+{
+  "id": 456,
+  "reply_text": "Merci, on a adoré cet endroit aussi !",
+  "persona": {"id": 3, "name": "Caroline"}
+}
+```
+
+Réutilise le générateur de l'interface : persona, consignes inbox, contexte du
+fil et langue du message. **Le persona est forcé pour cette API**, même si le
+réglage web `inbox_use_persona` est désactivé. Aucun texte n'est enregistré ni
+envoyé au réseau. Les appels se font message par message pour éviter un long
+appel HTTP sur un lot de 100 générations.
+
+### Aperçu, envoi ou programmation
+
+`POST /api/inbox/{id}/reply`
+
+```json
+{"reply_text": "Merci !", "dry_run": true}
+```
+
+`dry_run` vaut **true par défaut** : renvoie le texte et le destinataire, sans
+écriture ni envoi. Passer explicitement `false` pour envoyer. On peut joindre
+`scheduled_at` (date future ISO 8601 avec fuseau) pour utiliser le scheduler
+existant. La programmation stocke le texte exact, elle ne le régénère pas.
+
+Une relance avec le même texte après succès renvoie `already_replied: true`
+sans republier ; une programmation identique renvoie `already_scheduled`.
+Une autre réponse déjà présente renvoie `409`. Un verrou par message est
+partagé avec l'interface et le scheduler. L'API ne retente pas automatiquement
+un envoi refusé ou non confirmé. Après un résultat incertain, contrôler le
+réseau avant de réessayer. Les réponses programmées gardent les trois tentatives
+maximales historiques du scheduler.
+
+Codes : `401` sans token, `403` compte non autorisé, `409` message déjà traité
+ou occupé, `422` paramètres/persona/configuration IA, `502` refus d'envoi.
+Génération et envoi sont limités à 60 appels/minute par utilisateur.
+
+### CLI : préparer puis envoyer les textes relus
+
+```bash
+python3 cli/rsmax.py repondre --reseaux instagram,facebook --comptes 12,18 \
+  --nombre 10 --sortie /tmp/reponses.json
+python3 cli/rsmax.py repondre --plan /tmp/reponses.json --envoyer
+python3 cli/rsmax.py repondre --plan /tmp/reponses.json --envoyer --etaler-minutes 60
+```
+
+La première commande génère un aperçu JSON, sans envoi. Les deux suivantes
+sont deux choix alternatifs : envoi immédiat ou réparti sur 60 minutes.
+Sans `--plan`, `--envoyer` permet aussi de générer puis envoyer directement
+un lot ciblé. Le plan conserve l'instance, les IDs, comptes, personas et textes.
+Sa reprise conserve les textes exacts et saute les succès déjà enregistrés.
+Les filtres de réseau/compte ne se combinent pas à `--plan` : modifier le fichier
+pour retirer des items avant l'envoi. Le CLI n'effectue aucun nouvel essai HTTP
+automatique en cas d'erreur. `--dry-run` (avant la sous-commande) décrit l'appel
+sans génération IA ni publication. Le plan est un fichier de travail à supprimer
+après utilisation, sans le copier dans le vault.
