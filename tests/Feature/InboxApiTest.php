@@ -379,4 +379,13 @@ class InboxApiTest extends TestCase
         $this->postJson('/api/inbox/status', ['ids' => [$item->id]])->assertOk()
             ->assertJsonPath('counts.pending', 1)->assertJsonPath('counts.failed', 0)->assertJsonPath('counts.scheduled', 1);
     }
+
+    public function test_new_comments_detect_a_handled_child_without_a_shared_conversation_key(): void
+    {
+        $root = $this->item(['conversation_key' => null]);
+        $this->item(['conversation_key' => null, 'parent_id' => $root->external_id,
+            'type' => 'reply', 'reply_content' => 'Déjà traité']);
+        $this->postJson('/api/inbox/ai-prepare', ['accounts' => [$this->account->id], 'limit' => 250, 'new_only' => true])
+            ->assertOk()->assertJsonPath('selected', 0);
+    }
 }

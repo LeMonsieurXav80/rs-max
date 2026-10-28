@@ -254,27 +254,36 @@ class InboxApiController extends Controller
     /** Direct comments in conversations without any prior or pending answer. */
     private function newComments(Builder $query): void
     {
-        $query->where('type', 'comment')
-            ->where(fn ($q) => $q->whereNull('parent_id')->orWhere('parent_id', ''))
-            ->whereNotExists(function ($q) {
-                $q->selectRaw('1')->from('inbox_items as handled')
-                    ->whereColumn('handled.social_account_id', 'inbox_items.social_account_id')
-                    ->where(function ($q) {
-                        $q->where(function ($q) {
-                            $q->whereNotNull('inbox_items.conversation_key')->where('inbox_items.conversation_key', '!=', '')
-                                ->whereColumn('handled.conversation_key', 'inbox_items.conversation_key');
-                        })->orWhereColumn('handled.parent_id', 'inbox_items.external_id');
-                    })
-                    ->where(function ($q) {
-                        $q->whereNotNull('handled.replied_at')->orWhereNotNull('handled.reply_external_id')
-                            ->orWhereNotNull('handled.reply_scheduled_at')->orWhere('handled.reply_attempts', '>', 0)
-                            ->orWhere('handled.status', 'replied')
-                            ->orWhere(fn ($q) => $q->whereNotNull('handled.reply_content')->where('handled.reply_content', '!=', ''))
-                            ->orWhereExists(fn ($q) => $q->selectRaw('1')->from('social_accounts as own')
-                                ->whereColumn('own.id', 'inbox_items.social_account_id')
-                                ->whereColumn('own.platform_account_id', 'handled.author_external_id'));
-                    });
-            });
+        $query->where('type', 'comment')->where(fn ($q) => $q->whereNull('parent_id')->orWhere('parent_id', ''));
+        $candidates = clone $query;
+        $this->unanswered($candidates);
+        $items = $candidates->reorder()->toBase()->get(['id', 'social_account_id', 'external_id', 'conversation_key']);
+        $accountIds = $items->pluck('social_account_id')->unique()->all();
+
+        // Two scalar projections: a correlated OR across 47,000 inbox rows timed out in MySQL.
+        // No bodies/personas are loaded until the bounded final lot is hydrated.
+        $handled = \Illuminate\Support\Facades\DB::table('inbox_items as handled')
+            ->join('social_accounts as own', 'own.id', '=', 'handled.social_account_id')
+            ->whereIn('handled.social_account_id', $accountIds)
+            ->where(function ($q) {
+                $q->whereNotNull('handled.replied_at')->orWhereNotNull('handled.reply_external_id')
+                    ->orWhereNotNull('handled.reply_scheduled_at')->orWhere('handled.reply_attempts', '>', 0)
+                    ->orWhere('handled.status', 'replied')
+                    ->orWhere(fn ($q) => $q->whereNotNull('handled.reply_content')->where('handled.reply_content', '!=', ''))
+                    ->orWhereColumn('own.platform_account_id', 'handled.author_external_id');
+            })->get(['handled.social_account_id', 'handled.conversation_key', 'handled.parent_id']);
+        $keys = $parents = [];
+        foreach ($handled as $item) {
+            if (filled($item->conversation_key)) {
+                $keys[$item->social_account_id][$item->conversation_key] = true;
+            }
+            if (filled($item->parent_id)) {
+                $parents[$item->social_account_id][$item->parent_id] = true;
+            }
+        }
+        $eligible = $items->reject(fn ($i) => isset($keys[$i->social_account_id][$i->conversation_key ?? ''])
+            || isset($parents[$i->social_account_id][$i->external_id]))->pluck('id')->all();
+        $query->whereIntegerInRaw('inbox_items.id', $eligible);
     }
 
     private function unanswered(Builder $query): void
