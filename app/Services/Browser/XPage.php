@@ -65,6 +65,21 @@ class XPage
         return $this->poll($seconds, fn () => ! $this->exists($selector));
     }
 
+    /** Ctrl+Entrée : un clic sur le bouton Poster, même DOM, n'a aucun effet. */
+    public function submit(): void
+    {
+        $this->evaluate('document.querySelector('.json_encode(self::EDITOR).').focus()');
+        $this->client->press($this->userId, $this->tabId, 'Control+Enter');
+    }
+
+    /** L'accueil, où X renvoie après l'envoi, a son propre éditeur : seuls l'URL et le message font foi. */
+    public function waitForPublished(int $seconds): bool
+    {
+        return $this->poll($seconds, fn () => (bool) $this->evaluate(
+            '!/^\\/(compose|intent)\\/post/.test(location.pathname)||/publié|envoyé|posted|sent/i.test(document.querySelector(\'[data-testid="toast"]\')?.innerText||"")'
+        ));
+    }
+
     /** Le bouton existe avant d'être actif : il le devient après le traitement des médias. */
     public function waitForSubmit(int $seconds): bool
     {
@@ -102,6 +117,15 @@ class XPage
         $this->client->press($this->userId, $this->tabId, 'Control+v');
 
         return $this->poll(self::FILL_SECONDS, fn () => $this->editorMatches($text));
+    }
+
+    public function clickMenuItem(string $pattern): bool
+    {
+        $regex = json_encode('^('.$pattern.')$');
+
+        return $this->poll(5, fn () => (bool) $this->evaluate(
+            "(()=>{const m=[...document.querySelectorAll('[role=\"menuitem\"]')].find(x=>new RegExp({$regex},'i').test(x.innerText.trim()));if(!m)return false;m.click();return true})()"
+        ));
     }
 
     public function toast(): ?string

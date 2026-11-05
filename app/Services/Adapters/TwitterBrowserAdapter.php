@@ -61,6 +61,30 @@ class TwitterBrowserAdapter implements PlatformAdapterInterface, ResharingAdapte
         });
     }
 
+    public function deleteTweet(SocialAccount $account, string $tweetId): array
+    {
+        return $this->inBrowser($account, "https://x.com/i/web/status/{$tweetId}", function (XPage $page) {
+            $caret = 'article[data-testid="tweet"] [data-testid="caret"]';
+            $confirm = '[data-testid="confirmationSheetConfirm"]';
+
+            if (! $page->waitFor($caret, 20)) {
+                return $this->failure('Tweet introuvable.');
+            }
+
+            $page->click($caret);
+
+            if (! $page->clickMenuItem('Supprimer|Delete') || ! $page->waitFor($confirm, 10)) {
+                return $this->failure('Suppression indisponible : ce tweet n’est sans doute pas celui du compte.');
+            }
+
+            $page->click($confirm);
+
+            return $page->waitUntilGone($confirm, 15)
+                ? ['success' => true, 'external_id' => null, 'error' => null]
+                : $this->failure('Suppression non confirmée.');
+        });
+    }
+
     /** Parcours complet sans le clic final : prouve la session et les médias sans rien publier. */
     public function rehearse(SocialAccount $account, string $content, ?array $media = null): array
     {
@@ -75,10 +99,10 @@ class TwitterBrowserAdapter implements PlatformAdapterInterface, ResharingAdapte
     {
         return $this->inBrowser($account, $url, function (XPage $page) use ($account, $content, $media, $timeline) {
             $this->prepare($page, $content, $media);
-            $page->click(XPage::SUBMIT);
+            $page->submit();
 
             // À partir d'ici, le tweet est peut-être parti : un échec ne doit jamais relancer l'envoi.
-            if (! $page->waitUntilGone(XPage::EDITOR, 30)) {
+            if (! $page->waitForPublished(30)) {
                 return $this->failure('X n’a pas accepté la publication : '.($page->toast() ?? 'raison inconnue'));
             }
 

@@ -64,6 +64,7 @@ class FakeCamofox extends CamofoxClient
     public function press(string $userId, string $tabId, string $key): void
     {
         $this->calls[] = ['press', $key];
+        $this->submitted = $this->submitted || $key === 'Control+Enter';
         $this->editorText = $key === 'Control+v' ? ($this->altersText ? 'autre' : $this->clipboard) : $this->editorText;
     }
 
@@ -83,6 +84,7 @@ class FakeCamofox extends CamofoxClient
         $connected = $this->loggedIn && ! $this->sessionLostUntilImport;
 
         return match (true) {
+            str_contains($expression, 'location.pathname') => $this->submitted,
             str_contains($expression, 'attachments') => $this->attached,
             str_contains($expression, 'getAttribute("href")') => $connected ? '/wildycaro' : null,
             str_contains($expression, 'rsmax-buffer\';t.value=') => tap(null, function () use ($expression) {
@@ -91,7 +93,6 @@ class FakeCamofox extends CamofoxClient
             }),
             str_ends_with($expression, '.click()') => tap(null, function () use ($expression) {
                 $this->calls[] = ['click', json_decode(substr($expression, strlen('document.querySelector('), -strlen(').click()')))];
-                $this->submitted = $this->submitted || str_contains($expression, 'tweetButton');
             }),
             str_contains($expression, 'article[data-testid="tweet"]\')].map') => $this->timeline,
             str_contains($expression, 'innerText||\'\'') => $this->editorText,
@@ -217,7 +218,7 @@ class XBrowserTest extends TestCase
 
         $this->assertFalse($result['success']);
         $this->assertStringContainsString('non confirmé', $result['error']);
-        $this->assertSame(1, collect($this->browser->calls)->where(0, 'click')->where(1, XPage::SUBMIT)->count());
+        $this->assertSame(1, collect($this->browser->calls)->where(0, 'press')->where(1, 'Control+Enter')->count());
     }
 
     public function test_photos_et_video_passent_par_le_dossier_partage(): void
