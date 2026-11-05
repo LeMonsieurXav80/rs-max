@@ -87,7 +87,7 @@ class XPage
             $this->lastToast = $this->toast() ?? $this->lastToast;
 
             return (bool) $this->evaluate('!/^\\/(compose|intent)\\/post/.test(location.pathname)')
-                || preg_match('/publié|envoyé|posted|sent/i', (string) $this->lastToast);
+                || preg_match('/a été (publié|envoyé)|was (sent|posted)/iu', (string) $this->lastToast);
         });
     }
 
