@@ -16,6 +16,9 @@ class XPage
 
     private const POLL_MICROSECONDS = 750000;
 
+    // Camofox coupe une action au-delà de 30 s, un post long doit être saisi par morceaux.
+    private const TYPING_CHUNK = 800;
+
     public function __construct(
         private CamofoxClient $client,
         public readonly string $userId,
@@ -27,9 +30,10 @@ class XPage
         $this->client->navigate($this->userId, $this->tabId, $url);
     }
 
+    /** Clic DOM : le clic de Playwright n'aboutit pas sur les boutons de X. */
     public function click(string $selector): void
     {
-        $this->client->click($this->userId, $this->tabId, $selector);
+        $this->evaluate('document.querySelector('.json_encode($selector).').click()');
     }
 
     public function upload(array $paths): void
@@ -78,23 +82,20 @@ class XPage
     }
 
     /**
-     * Saisie dans l'éditeur, relue avant toute suite : l'autocomplétion de X peut
+     * Saisie au clavier, relue avant toute suite : l'autocomplétion de X peut
      * remplacer un @ ou un # et publierait un texte différent sans le dire.
+     * L'espace en fin de ligne ferme cette autocomplétion avant le saut de ligne,
+     * sinon Entrée y sélectionnerait une suggestion.
      */
     public function fill(string $text): bool
     {
-        $this->click(self::EDITOR);
-        $editor = json_encode(self::EDITOR);
-        $value = json_encode($text, JSON_UNESCAPED_UNICODE);
+        $this->evaluate('document.querySelector('.json_encode(self::EDITOR).').focus()');
 
-        $this->evaluate("(()=>{const e=document.querySelector({$editor});e.focus();return document.execCommand('insertText',false,{$value})})()");
+        $typed = implode("\n", array_map(fn (string $line) => $line.' ', explode("\n", $text)));
 
-        if ($this->editorMatches($text)) {
-            return true;
+        foreach (mb_str_split($typed, self::TYPING_CHUNK) as $chunk) {
+            $this->client->typeKeys($this->userId, $this->tabId, $chunk);
         }
-
-        $this->evaluate("(()=>{const e=document.querySelector({$editor});e.focus();document.execCommand('selectAll');document.execCommand('delete')})()");
-        $this->client->typeKeys($this->userId, $this->tabId, $text);
 
         return $this->editorMatches($text);
     }
@@ -148,7 +149,7 @@ class XPage
     /** « 3 réponses, 2 reposts, 12 J'aime, 1 signet, 900 vues », selon la langue du compte. */
     public static function parseStats(string $label): array
     {
-        $patterns = ['replies' => 'r[ée]ponses?|repl(?:y|ies)', 'reposts' => 'reposts?|retweets?', 'likes' => "j[’']aime|likes?",
+        $patterns = ['replies' => 'r[ée]ponses?|repl(?:y|ies)', 'reposts' => 'reposts?|retweets?', 'likes' => "j[’']+aime|likes?",
             'bookmarks' => 'signets?|bookmarks?', 'views' => 'vues?|views?'];
         $stats = [];
 

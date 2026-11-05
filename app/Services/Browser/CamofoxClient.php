@@ -39,11 +39,6 @@ class CamofoxClient
         return $this->send('post', "/tabs/{$tabId}/evaluate", ['userId' => $userId, 'expression' => $expression])->json('result');
     }
 
-    public function click(string $userId, string $tabId, string $selector): void
-    {
-        $this->send('post', "/tabs/{$tabId}/click", ['userId' => $userId, 'selector' => $selector]);
-    }
-
     public function typeKeys(string $userId, string $tabId, string $text): void
     {
         $this->send('post', "/tabs/{$tabId}/type", ['userId' => $userId, 'text' => $text, 'mode' => 'keyboard', 'delay' => 15]);

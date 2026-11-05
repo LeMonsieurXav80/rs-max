@@ -56,17 +56,10 @@ class FakeCamofox extends CamofoxClient
         $this->calls[] = ['navigate', $url];
     }
 
-    public function click(string $userId, string $tabId, string $selector): void
-    {
-        $this->calls[] = ['click', $selector];
-        if ($selector === XPage::SUBMIT) {
-            $this->submitted = true;
-        }
-    }
-
     public function typeKeys(string $userId, string $tabId, string $text): void
     {
         $this->calls[] = ['keys', $text];
+        $this->editorText .= $this->altersText ? 'x' : $text;
     }
 
     public function upload(string $userId, string $tabId, array $paths, string $selector): void
@@ -86,7 +79,10 @@ class FakeCamofox extends CamofoxClient
 
         return match (true) {
             str_contains($expression, 'getAttribute("href")') => $connected ? '/wildycaro' : null,
-            str_contains($expression, 'execCommand(\'insertText\'') => tap(true, fn () => $this->editorText = $this->altersText ? 'autre' : json_decode(self::between($expression, 'false,', ')})()') ?: '""')),
+            str_ends_with($expression, '.click()') => tap(null, function () use ($expression) {
+                $this->calls[] = ['click', json_decode(substr($expression, strlen('document.querySelector('), -strlen(').click()')))];
+                $this->submitted = $this->submitted || str_contains($expression, 'tweetButton');
+            }),
             str_contains($expression, 'article[data-testid="tweet"]\')].map') => $this->timeline,
             str_contains($expression, 'innerText||\'\'') => $this->editorText,
             str_contains($expression, '!!document.querySelector') => match (true) {
@@ -96,13 +92,6 @@ class FakeCamofox extends CamofoxClient
             },
             default => null,
         };
-    }
-
-    private static function between(string $s, string $a, string $b): string
-    {
-        $start = strpos($s, $a) + strlen($a);
-
-        return substr($s, $start, strrpos($s, $b) - $start);
     }
 }
 
@@ -277,7 +266,7 @@ class XBrowserTest extends TestCase
     public function test_les_stats_affichees_par_x_sont_lues_dans_les_deux_langues(): void
     {
         $this->assertSame(['replies' => 3, 'reposts' => 2, 'likes' => 1204, 'bookmarks' => 1, 'views' => 9000],
-            XPage::parseStats('3 réponses, 2 reposts, 1 204 J’aime, 1 signet, 9 000 vues'));
+            XPage::parseStats("3 réponses, 2 reposts, 1 204 J''aime, 1 signet, 9 000 vues"));
         $this->assertSame(['replies' => 1, 'likes' => 12, 'views' => 345],
             XPage::parseStats('1 reply, 12 likes, 345 views'));
     }
