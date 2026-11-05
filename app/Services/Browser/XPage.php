@@ -65,11 +65,19 @@ class XPage
         return $this->poll($seconds, fn () => ! $this->exists($selector));
     }
 
-    /** Ctrl+Entrée : un clic sur le bouton Poster, même DOM, n'a aucun effet. */
+    /**
+     * Entrée sur le bouton : ni le clic, ni Ctrl+Entrée n'envoient de façon fiable.
+     * Sans le contrôle du focus, Entrée agirait sur un autre élément de la page.
+     */
     public function submit(): void
     {
-        $this->evaluate('document.querySelector('.json_encode(self::EDITOR).').focus()');
-        $this->client->press($this->userId, $this->tabId, 'Control+Enter');
+        $focused = $this->evaluate('(()=>{const b=document.querySelector('.json_encode(self::SUBMIT).');b?.focus();return !!b&&document.activeElement===b})()');
+
+        if (! $focused) {
+            throw new BrowserException('Bouton Poster introuvable : rien n’a été envoyé.');
+        }
+
+        $this->client->press($this->userId, $this->tabId, 'Enter');
     }
 
     /** L'accueil, où X renvoie après l'envoi, a son propre éditeur : seuls l'URL et le message font foi. */

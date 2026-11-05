@@ -35,6 +35,10 @@ class FakeCamofox extends CamofoxClient
 
     public int $attached = 1;
 
+    public bool $buttonFocused = false;
+
+    public bool $focusLost = false;
+
     public string $clipboard = '';
 
     public bool $submitted = false;
@@ -64,7 +68,7 @@ class FakeCamofox extends CamofoxClient
     public function press(string $userId, string $tabId, string $key): void
     {
         $this->calls[] = ['press', $key];
-        $this->submitted = $this->submitted || $key === 'Control+Enter';
+        $this->submitted = $this->submitted || ($key === 'Enter' && $this->buttonFocused);
         $this->editorText = $key === 'Control+v' ? ($this->altersText ? 'autre' : $this->clipboard) : $this->editorText;
     }
 
@@ -85,6 +89,7 @@ class FakeCamofox extends CamofoxClient
 
         return match (true) {
             str_contains($expression, 'location.pathname') => $this->submitted,
+            str_contains($expression, 'document.activeElement===b') => $this->buttonFocused = ! $this->focusLost,
             str_contains($expression, 'attachments') => $this->attached,
             str_contains($expression, 'getAttribute("href")') => $connected ? '/wildycaro' : null,
             str_contains($expression, 'rsmax-buffer\';t.value=') => tap(null, function () use ($expression) {
@@ -218,7 +223,7 @@ class XBrowserTest extends TestCase
 
         $this->assertFalse($result['success']);
         $this->assertStringContainsString('non confirmé', $result['error']);
-        $this->assertSame(1, collect($this->browser->calls)->where(0, 'press')->where(1, 'Control+Enter')->count());
+        $this->assertSame(1, collect($this->browser->calls)->where(0, 'press')->where(1, 'Enter')->count());
     }
 
     public function test_photos_et_video_passent_par_le_dossier_partage(): void
@@ -240,6 +245,16 @@ class XBrowserTest extends TestCase
 
         unlink($dir.'a.jpg');
         unlink($dir.'b.mp4');
+    }
+
+    public function test_entree_nest_jamais_envoyee_si_le_bouton_na_pas_le_focus(): void
+    {
+        $this->browser->focusLost = true;
+
+        $result = $this->adapter()->publish($this->account, 'Bonjour');
+
+        $this->assertFalse($result['success']);
+        $this->assertNotContains(['press', 'Enter'], $this->browser->calls);
     }
 
     public function test_un_media_refuse_annule_avant_le_clic(): void
