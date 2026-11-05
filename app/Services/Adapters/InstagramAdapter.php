@@ -3,6 +3,7 @@
 namespace App\Services\Adapters;
 
 use App\Models\SocialAccount;
+use App\Services\Media\MediaRatioService;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 
@@ -63,6 +64,12 @@ class InstagramAdapter implements PlatformAdapterInterface
             // Single video (published as a Reel).
             if (count($media) === 1 && $this->isVideo($media[0]['mimetype'])) {
                 return $this->publishSingleVideo($accountId, $accessToken, $content, $media[0]['url'], $locationId);
+            }
+
+            // Dernier verrou : tout chemin de publication passe ici, brouillons et fils compris.
+            $ratioConflict = app(MediaRatioService::class)->instagramConflict($media);
+            if ($ratioConflict) {
+                return ['success' => false, 'external_id' => null, 'error' => $ratioConflict];
             }
 
             // Multiple media items -- carousel.

@@ -348,6 +348,8 @@ Force la publication immédiate. Statuts autorisés : `draft`, `scheduled`, `fai
 
 La publication est asynchrone (dispatch d'un `PublishToPlatformJob` par compte cible).
 
+**Carrousels Instagram** : des images de ratios différents sont refusées en `422` (tolérance 1 %, référence = 1re image), ici ainsi qu'à la création ou à la modification d'un post `scheduled`. Instagram recadrerait sinon tout le carrousel sur la première image, sans le signaler. Un `draft` reste enregistrable. Vidéos et images hors médiathèque ne sont pas contrôlées.
+
 ### `POST /api/bulk-cancel`
 
 Annule ou supprime tous les posts planifiés d'une période.

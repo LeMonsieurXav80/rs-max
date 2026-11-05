@@ -108,7 +108,14 @@
                                 <div class="absolute bottom-1 right-1 px-1.5 py-0.5 bg-violet-600 text-white text-[10px] font-semibold rounded-full leading-tight"
                                      title="Image generee par le studio carrousel">Generee</div>
                             </template>
-                            <div class="absolute bottom-1 left-1 px-1.5 py-0.5 bg-black/60 text-white text-xs rounded" x-text="item.size_human"></div>
+                            <div class="absolute bottom-1 left-1 flex flex-col items-start gap-0.5">
+                                {{-- Ambre : ne correspond pas au ratio de la 1re image sélectionnée --}}
+                                <div x-show="item.ratio" x-text="item.ratio"
+                                     class="px-1.5 py-0.5 text-white text-xs rounded"
+                                     :class="ratioDiffers(item) ? 'bg-amber-500' : 'bg-black/60'"
+                                     :title="ratioDiffers(item) ? 'Ratio différent de la première image sélectionnée' : (item.width + ' × ' + item.height)"></div>
+                                <div class="px-1.5 py-0.5 bg-black/60 text-white text-xs rounded" x-text="item.size_human"></div>
+                            </div>
                         </div>
                     </template>
                 </div>
@@ -137,6 +144,33 @@
                 libraryOpenFolders: [],
                 libraryTotalCount: 0,
                 libraryUncategorizedCount: 0,
+                instagramSelected: false,
+                // Coché par l'utilisateur ou par un groupe de comptes : la case fait foi,
+                // relue après le rendu puisqu'elle suit `checked` en différé.
+                refreshInstagramSelected() {
+                    this.$nextTick(() => {
+                        this.instagramSelected = !!this.$root.querySelector('input[data-platform=instagram]:checked');
+                    });
+                },
+                ratioBase() {
+                    return (this.mediaItems || []).find(m => this.hasImageRatio(m)) || null;
+                },
+                hasImageRatio(item) {
+                    return item.width && item.height && (item.mimetype || 'image/').startsWith('image/');
+                },
+                // Même règle que MediaRatioService : comparaison à la 1re image, celle
+                // sur laquelle Instagram recadre.
+                ratioDiffers(item) {
+                    const base = this.ratioBase();
+                    if (!base || !this.hasImageRatio(item)) return false;
+                    return Math.abs((item.width / item.height) / (base.width / base.height) - 1) > {{ \App\Services\Media\MediaRatioService::TOLERANCE }};
+                },
+                ratioConflict() {
+                    return (this.mediaItems || []).some(m => this.ratioDiffers(m));
+                },
+                selectedRatios() {
+                    return [...new Set((this.mediaItems || []).filter(m => this.hasImageRatio(m)).map(m => m.ratio))];
+                },
                 async openLibrary() {
                     this.showLibrary = true;
                     this.libraryFolder = null;

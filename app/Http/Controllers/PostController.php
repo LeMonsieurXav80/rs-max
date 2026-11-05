@@ -8,6 +8,7 @@ use App\Models\Post;
 use App\Models\PostPlatform;
 use App\Models\Setting;
 use App\Models\SocialAccount;
+use App\Services\Media\MediaRatioService;
 use App\Services\PartnerTagService;
 use App\Services\Stats\PostBenchmarkService;
 use App\Services\Stats\StatsSyncService;
@@ -299,6 +300,16 @@ class PostController extends Controller
             return back()->withErrors(['accounts' => 'One or more selected accounts are invalid.'])->withInput();
         }
 
+        // Un brouillon reste enregistrable : on peut y preparer un carrousel en plusieurs fois.
+        $ratioConflict = $this->ratioConflict($validated, $validAccounts, $publishNow);
+        if ($ratioConflict) {
+            if ($request->expectsJson()) {
+                return response()->json(['errors' => ['media' => [$ratioConflict]]], 422);
+            }
+
+            return back()->withErrors(['media' => $ratioConflict])->withInput();
+        }
+
         $post = DB::transaction(function () use ($validated, $user, $validAccounts, $publishNow) {
             $status = $validated['status'];
             $scheduledAt = $validated['scheduled_at'] ?? null;
@@ -520,7 +531,23 @@ class PostController extends Controller
         // ni programmation, et surtout aucun renvoi vers les reseaux.
         $isPublished = $post->status === 'published';
 
-        return view('posts.edit', compact('post', 'accounts', 'platforms', 'selectedAccountIds', 'charLimits', 'accountGroups', 'partnerOptions', 'selectedPartnerIds', 'mediaPartnerMap', 'isPublished'));
+        // Les posts anciens n'ont pas de dimensions dans leur JSON media.
+        $editorMedia = app(MediaRatioService::class)->enrich($post->media);
+
+        return view('posts.edit', compact('post', 'accounts', 'platforms', 'selectedAccountIds', 'charLimits', 'accountGroups', 'partnerOptions', 'selectedPartnerIds', 'mediaPartnerMap', 'isPublished', 'editorMedia'));
+    }
+
+    /**
+     * @param  array<string, mixed>  $validated
+     * @param  iterable<SocialAccount>  $accounts
+     */
+    private function ratioConflict(array $validated, iterable $accounts, bool $publishNow): ?string
+    {
+        if ($validated['status'] !== 'scheduled' && ! $publishNow) {
+            return null;
+        }
+
+        return app(MediaRatioService::class)->conflictForAccounts($validated['media'] ?? null, $accounts);
     }
 
     /**
@@ -573,6 +600,11 @@ class PostController extends Controller
 
         if ($validAccounts->count() !== count($accountIds)) {
             return back()->withErrors(['accounts' => 'One or more selected accounts are invalid.'])->withInput();
+        }
+
+        $ratioConflict = $this->ratioConflict($validated, $validAccounts, $publishNow);
+        if ($ratioConflict) {
+            return back()->withErrors(['media' => $ratioConflict])->withInput();
         }
 
         DB::transaction(function () use ($post, $validated, $validAccounts, $publishNow) {
