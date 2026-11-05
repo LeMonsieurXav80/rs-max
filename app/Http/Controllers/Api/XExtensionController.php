@@ -1,0 +1,148 @@
+<?php
+
+namespace App\Http\Controllers\Api;
+
+use App\Http\Controllers\Controller;
+use App\Models\InboxItem;
+use App\Models\SocialAccount;
+use App\Services\Inbox\InboxReplyGenerator;
+use Illuminate\Http\JsonResponse;
+use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\DB;
+
+class XExtensionController extends Controller
+{
+    private function username(Request $r): string
+    {
+        $v = $r->validate(['username' => ['required', 'string', 'regex:/^[a-zA-Z0-9_]{1,15}$/']]);
+
+        return strtolower($v['username']);
+    }
+
+    private function account(Request $r, int $id): SocialAccount
+    {
+        $a = $r->user()->activeSocialAccounts()->with(['platform', 'persona'])
+            ->whereHas('platform', fn ($q) => $q->where('slug', 'twitter'))->find($id);
+        abort_unless($a, 403, 'Compte X non autorisé.');
+        abort_unless($a->persona?->is_active && filled($a->persona->system_prompt), 422, 'Persona actif et renseigné obligatoire pour ce compte X.');
+
+        return $a;
+    }
+
+    private function profileAccount(Request $r): SocialAccount
+    {
+        $p = DB::table('extension_x_profiles')->where('username', $this->username($r))->first();
+        abort_unless($p, 422, 'Associe ce profil X à son compte RS-Max.');
+        $a = $this->account($r, $p->social_account_id);
+        if ($r->filled('platform_account_id')) {
+            abort_unless((string) $a->platform_account_id === (string) $r->input('platform_account_id'), 409, 'Identité X différente de l’association enregistrée.');
+        }
+
+        return $a;
+    }
+
+    private function personaHash(SocialAccount $a): string
+    {
+        return hash('sha256', $a->id.':'.$a->persona->id.':'.$a->persona->system_prompt);
+    }
+
+    public function context(Request $r): JsonResponse
+    {
+        $username = $this->username($r);
+        $r->validate(['platform_account_id' => 'nullable|string|max:30|regex:/^[0-9]+$/']);
+        $p = DB::table('extension_x_profiles')->where('username', $username)->first();
+        $a = $p ? $this->profileAccount($r) : null;
+        if (! $a && $r->filled('platform_account_id')) {
+            $match = $r->user()->activeSocialAccounts()->whereHas('platform', fn ($q) => $q->where('slug', 'twitter'))
+                ->where('platform_account_id', $r->input('platform_account_id'))->first();
+            if ($match) {
+                $a = $this->account($r, $match->id);
+            }
+        }
+        $accounts = $r->user()->activeSocialAccounts()->with('persona')->whereHas('platform', fn ($q) => $q->where('slug', 'twitter'))->get()
+            ->filter(fn ($x) => $x->persona?->is_active && filled($x->persona->system_prompt))
+            ->map(fn ($x) => ['id' => $x->id, 'name' => $x->name, 'platform_account_id' => $x->platform_account_id,
+                'persona' => ['id' => $x->persona->id, 'name' => $x->persona->name]])->values();
+
+        return response()->json(['username' => $username, 'bound' => (bool) $p, 'account_id' => $a?->id,
+            'persona' => $a ? ['id' => $a->persona->id, 'name' => $a->persona->name] : null, 'accounts' => $accounts]);
+    }
+
+    public function bind(Request $r): JsonResponse
+    {
+        $username = $this->username($r);
+        $v = $r->validate(['social_account_id' => 'required|integer']);
+        $a = $this->account($r, $v['social_account_id']);
+        if ($r->filled('platform_account_id')) {
+            abort_unless((string) $a->platform_account_id === (string) $r->input('platform_account_id'), 409, 'Le compte choisi ne correspond pas à l’identité X détectée.');
+        }
+        $p = DB::table('extension_x_profiles')->where('username', $username)->first();
+        if ($p) {
+            $this->account($r, $p->social_account_id);
+        }
+        DB::table('extension_x_profiles')->updateOrInsert(['username' => $username], ['social_account_id' => $a->id,
+            'created_at' => $p?->created_at ?? now(), 'updated_at' => now()]);
+
+        return $this->context($r);
+    }
+
+    public function suggest(Request $r, InboxReplyGenerator $generator): JsonResponse
+    {
+        $a = $this->profileAccount($r);
+        $v = $r->validate(['tweet_id' => ['required', 'string', 'regex:/^[0-9]{1,25}$/'],
+            'author' => ['required', 'string', 'regex:/^[a-zA-Z0-9_]{1,15}$/'], 'content' => 'required|string|max:15000',
+            'context_complete' => 'required|accepted', 'root_id' => 'required|string',
+            'conversation' => 'required|array|min:1|max:20', 'conversation.*.id' => 'required|string|distinct|regex:/^[0-9]{1,25}$/',
+            'conversation.*.author' => 'required|string|max:15', 'conversation.*.text' => 'present|nullable|string|max:15000',
+            'conversation.*.quote' => 'nullable|string|max:15000', 'conversation.*.media' => 'nullable|string|max:2000']);
+        abort_if(strtolower($v['author']) === $this->username($r), 409, 'Publication du compte lui-même.');
+        $first = $v['conversation'][0];
+        $last = $v['conversation'][count($v['conversation']) - 1];
+        abort_unless($first['id'] === $v['root_id'] && $last['id'] === $v['tweet_id'] && $last['text'] === $v['content']
+            && strtolower($last['author']) === strtolower($v['author']), 422, 'Tweet d’origine ou mention incohérents dans le contexte.');
+        abort_unless(filled($first['text']) || filled($first['quote'] ?? null), 422, 'Tweet d’origine sans texte lisible : pas de réponse sans contexte.');
+        $context = json_encode($v['conversation'], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+
+        return Cache::lock('x-suggest:'.$a->id.':'.$v['tweet_id'], 60)->block(2, function () use ($a, $v, $context, $generator) {
+            $old = DB::table('extension_x_replies')->where('social_account_id', $a->id)->where('tweet_id', $v['tweet_id'])->first();
+            if ($old) {
+                abort_unless($old->status === 'prepared', 409, 'Réponse déjà tentée : aucun nouvel envoi automatique.');
+                abort_unless($old->persona_hash === $this->personaHash($a) && $old->context_json === $context, 409, 'Persona ou contexte changé depuis le brouillon : vérifier avant reprise.');
+
+                return response()->json(['id' => $old->id, 'reply_text' => $old->reply_text, 'status' => 'prepared']);
+            }
+            $item = new InboxItem(['type' => 'comment', 'author_name' => $v['author'], 'content' => $v['content']]);
+            $reply = $generator->generate($item, $a, true, 280, $context, 'X', 'du fil X, du tweet d’origine à la mention');
+            abort_unless(filled($reply), 503, 'Génération indisponible : aucun envoi.');
+            abort_if(strlen(mb_convert_encoding($reply, 'UTF-16LE', 'UTF-8')) / 2 > 280, 422, 'Réponse trop longue pour X : aucun envoi.');
+            $id = DB::table('extension_x_replies')->insertGetId(['social_account_id' => $a->id, 'tweet_id' => $v['tweet_id'],
+                'author' => $v['author'], 'context_json' => $context, 'persona_hash' => $this->personaHash($a),
+                'reply_text' => $reply, 'status' => 'prepared', 'created_at' => now(), 'updated_at' => now()]);
+
+            return response()->json(['id' => $id, 'reply_text' => $reply, 'status' => 'prepared', 'persona' => ['id' => $a->persona->id, 'name' => $a->persona->name]]);
+        });
+    }
+
+    public function begin(Request $r, int $id): JsonResponse
+    {
+        $a = $this->profileAccount($r);
+        $v = $r->validate(['reply_text' => 'required|string|max:280']);
+        $ok = DB::table('extension_x_replies')->where('id', $id)->where('social_account_id', $a->id)->where('status', 'prepared')
+            ->where('reply_text', $v['reply_text'])->where('persona_hash', $this->personaHash($a))->update(['status' => 'publishing', 'updated_at' => now()]);
+        abort_unless($ok, 409, 'Envoi déjà réservé, persona ou texte modifié.');
+
+        return response()->json(['status' => 'publishing']);
+    }
+
+    public function finish(Request $r, int $id): JsonResponse
+    {
+        $a = $this->profileAccount($r);
+        $v = $r->validate(['status' => 'required|in:published,uncertain', 'liked' => 'required|boolean', 'proof' => 'required|string|max:255']);
+        $ok = DB::table('extension_x_replies')->where('id', $id)->where('social_account_id', $a->id)->where('status', 'publishing')
+            ->update($v + ['updated_at' => now()]);
+        abort_unless($ok, 409, 'Tentative absente ou déjà terminée.');
+
+        return response()->json(['status' => $v['status']]);
+    }
+}

@@ -147,4 +147,15 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::post('/extension/actions', [ExtensionApiController::class, 'actions'])
         ->middleware('throttle:120,1');
     Route::get('/extension/summary', [ExtensionApiController::class, 'summary']);
+    Route::get('/extension/x/context', [\App\Http\Controllers\Api\XExtensionController::class, 'context']);
+    Route::put('/extension/x/context', [\App\Http\Controllers\Api\XExtensionController::class, 'bind']);
+    Route::post('/extension/x/suggest', [\App\Http\Controllers\Api\XExtensionController::class, 'suggest'])->middleware('throttle:30,1');
+    Route::post('/extension/x/{id}/begin', [\App\Http\Controllers\Api\XExtensionController::class, 'begin']);
+    Route::post('/extension/x/{id}/finish', [\App\Http\Controllers\Api\XExtensionController::class, 'finish']);
+    Route::get('/extension/tiktok/comments', [\App\Http\Controllers\Api\TikTokExtensionController::class, 'comments']);
+    Route::get('/extension/tiktok/context', [\App\Http\Controllers\Api\TikTokExtensionController::class, 'context']);
+    Route::put('/extension/tiktok/context', [\App\Http\Controllers\Api\TikTokExtensionController::class, 'bind']);
+    Route::post('/extension/tiktok/suggest', [\App\Http\Controllers\Api\TikTokExtensionController::class, 'suggest'])->middleware('throttle:30,1');
+    Route::post('/extension/tiktok/{id}/begin', [\App\Http\Controllers\Api\TikTokExtensionController::class, 'begin']);
+    Route::post('/extension/tiktok/{id}/finish', [\App\Http\Controllers\Api\TikTokExtensionController::class, 'finish']);
 });

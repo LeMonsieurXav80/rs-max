@@ -11,6 +11,7 @@ use App\Models\Partner;
 use App\Models\Post;
 use App\Models\Setting;
 use App\Services\AiAssistService;
+use App\Services\Media\MediaRatioService;
 use App\Services\Media\ThumbnailService;
 use App\Services\Media\VideoNormalizer;
 use App\Services\PartnerTagService;
@@ -636,6 +637,7 @@ class MediaController extends Controller
                 'title' => $originalName,
                 'width' => $result['width'],
                 'height' => $result['height'],
+                'ratio' => MediaRatioService::label($result['width'], $result['height']),
             ]);
         }
 
@@ -672,6 +674,9 @@ class MediaController extends Controller
             'mimetype' => $mimeType,
             'size' => $storedSize,
             'title' => $originalName,
+            'width' => $resolution['width'] ?: null,
+            'height' => $resolution['height'] ?: null,
+            'ratio' => MediaRatioService::label($resolution['width'], $resolution['height']),
             'thumbnail_url' => route('media.thumbnail', $filename),
         ]);
     }
@@ -1048,6 +1053,9 @@ class MediaController extends Controller
                 'size_human' => $mf->size_human,
                 'is_image' => $mf->is_image,
                 'is_video' => $isVideo,
+                'width' => $mf->width,
+                'height' => $mf->height,
+                'ratio' => MediaRatioService::label($mf->width, $mf->height),
                 'date' => $mf->created_at->format('d/m/Y H:i'),
                 'folder_id' => $mf->folder_id,
                 'folder_name' => $mf->folder?->name,

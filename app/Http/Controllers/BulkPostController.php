@@ -7,6 +7,7 @@ use App\Models\Platform;
 use App\Models\Post;
 use App\Models\PostPlatform;
 use App\Models\SocialAccount;
+use App\Services\Media\MediaRatioService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -74,6 +75,12 @@ class BulkPostController extends Controller
             if (empty($media)) {
                 $media = null;
             }
+        }
+
+        // Une ligne du bulk est toujours planifiee : pas d'exception brouillon ici.
+        $ratioConflict = app(MediaRatioService::class)->conflictForAccounts($media, $validAccounts);
+        if ($ratioConflict) {
+            return response()->json(['success' => false, 'message' => $ratioConflict], 422);
         }
 
         $postId = $validated['post_id'] ?? null;

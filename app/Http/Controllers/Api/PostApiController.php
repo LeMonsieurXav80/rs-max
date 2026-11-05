@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Models\Partner;
 use App\Models\Post;
 use App\Models\PostPlatform;
+use App\Services\Media\MediaRatioService;
 use App\Services\PartnerTagService;
 use App\Services\PostUrlBuilder;
 use App\Services\PublishingService;
@@ -122,6 +123,13 @@ class PostApiController extends Controller
             return response()->json(['error' => 'Un ou plusieurs comptes invalides.'], 422);
         }
 
+        if ($validated['status'] === 'scheduled') {
+            $ratioConflict = app(MediaRatioService::class)->conflictForAccounts($validated['media'] ?? null, $validAccounts);
+            if ($ratioConflict) {
+                return response()->json(['error' => $ratioConflict], 422);
+            }
+        }
+
         $post = DB::transaction(function () use ($validated, $user, $validAccounts) {
             $platformContents = array_filter($validated['platform_contents'] ?? [], fn ($v) => ! empty($v));
             $translations = array_filter($validated['translations'] ?? [], fn ($v) => ! empty($v));
@@ -189,6 +197,20 @@ class PostApiController extends Controller
             'accounts' => 'sometimes|array|min:1',
             'accounts.*' => 'integer|exists:social_accounts,id',
         ]);
+
+        // Controle sur l'etat FINAL : un PUT peut ne porter que le statut, les medias
+        // ou les comptes, le reste etant deja en base.
+        if (($validated['status'] ?? $post->status) === 'scheduled') {
+            $accounts = isset($validated['accounts'])
+                ? $request->user()->activeSocialAccounts()->whereIn('social_accounts.id', $validated['accounts'])->get()
+                : $this->accountsOf($post);
+            $media = array_key_exists('media', $validated) ? $validated['media'] : $post->media;
+
+            $ratioConflict = app(MediaRatioService::class)->conflictForAccounts($media, $accounts);
+            if ($ratioConflict) {
+                return response()->json(['error' => $ratioConflict], 422);
+            }
+        }
 
         DB::transaction(function () use ($post, $validated, $request) {
             $updateData = array_intersect_key($validated, array_flip([
@@ -295,6 +317,13 @@ class PostApiController extends Controller
             return response()->json(['error' => 'Ce post ne peut pas être publié.'], 422);
         }
 
+        // Sans ce controle, un brouillon repondrait « Publication lancee » puis
+        // echouerait sur Instagram sans que l'appelant le voie.
+        $ratioConflict = app(MediaRatioService::class)->conflictForAccounts($post->media, $this->accountsOf($post));
+        if ($ratioConflict) {
+            return response()->json(['error' => $ratioConflict], 422);
+        }
+
         app(PublishingService::class)->publish($post);
 
         return response()->json([
@@ -302,6 +331,14 @@ class PostApiController extends Controller
             'message' => 'Publication lancée.',
             'post_id' => $post->id,
         ]);
+    }
+
+    /**
+     * @return \Illuminate\Support\Collection<int, \App\Models\SocialAccount>
+     */
+    private function accountsOf(Post $post)
+    {
+        return $post->postPlatforms()->with('socialAccount.platform')->get()->pluck('socialAccount')->filter();
     }
 
     /**

@@ -104,6 +104,7 @@
             return this.publishTotal > 0 ? Math.round((this.publishCurrent / this.publishTotal) * 100) : 0;
         },
         init() {
+            this.refreshInstagramSelected();
             // Restore media from old input
             const existingMedia = document.querySelectorAll('input[name=\'existing_media[]\']');
             existingMedia.forEach(el => {
@@ -188,6 +189,9 @@
                     mimetype: item.mimetype,
                     size: item.size,
                     title: item.filename,
+                    width: item.width,
+                    height: item.height,
+                    ratio: item.ratio,
                     // Cache d'affichage pour les tags partenaires hérités ; la relation
                     // en base fait foi, ces noms ne sont jamais relus côté serveur.
                     partners: item.partners || [],
@@ -201,7 +205,7 @@
         isInMedia(item) {
             return this.mediaItems.find(m => m.url === item.url);
         }
-    }" @submit="submitPublishNow($event)">
+    }" @submit="submitPublishNow($event)" @accounts-changed="refreshInstagramSelected()">
         @csrf
 
         {{-- Restore old media values --}}
@@ -466,6 +470,10 @@
                                     <path stroke-linecap="round" stroke-linejoin="round" d="M6 18 18 6M6 6l12 12" />
                                 </svg>
                             </button>
+                            {{-- Ratio badge --}}
+                            <div x-show="item.ratio" x-text="item.ratio"
+                                 class="absolute top-1.5 left-1.5 px-1.5 py-0.5 text-white text-xs rounded"
+                                 :class="ratioDiffers(item) ? 'bg-amber-500' : 'bg-black/60'"></div>
                             {{-- Size badge --}}
                             <div class="absolute bottom-1.5 left-1.5 px-1.5 py-0.5 bg-black/60 text-white text-xs rounded" x-show="item.size">
                                 <span x-text="item.size > 1048576 ? (item.size / 1048576).toFixed(1) + ' MB' : Math.round(item.size / 1024) + ' KB'"></span>
@@ -476,6 +484,8 @@
                     </template>
                 </div>
             </div>
+
+            @include('posts._ratio-warning')
 
             {{-- Library modal --}}
             @include('posts._media-library')
