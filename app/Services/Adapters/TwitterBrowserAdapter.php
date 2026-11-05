@@ -22,6 +22,10 @@ class TwitterBrowserAdapter implements PlatformAdapterInterface, ResharingAdapte
 
     private const CONFIRM_MINUTES = 10;
 
+    private const CONFIRM_ATTEMPTS = 4;
+
+    private const CONFIRM_PAUSE_SECONDS = 4;
+
     public function __construct(private XSessionService $sessions) {}
 
     public function publish(SocialAccount $account, string $content, ?array $media = null, ?array $options = null): array
@@ -150,21 +154,22 @@ class TwitterBrowserAdapter implements PlatformAdapterInterface, ResharingAdapte
     /** Le tweet envoyé est reconnu sur la timeline du compte : X ne donne son id qu'à sa page. */
     private function confirm(XPage $page, string $timeline, string $username, string $content): ?string
     {
-        $page->goTo($timeline);
-
-        if (! $page->waitFor('article[data-testid="tweet"]', 20)) {
-            return null;
-        }
-
         $wanted = self::fingerprint($content);
         $since = now()->subMinutes(self::CONFIRM_MINUTES);
 
-        foreach ($page->tweets() as $tweet) {
-            $recent = $tweet['published_at'] && now()->parse($tweet['published_at'])->gte($since);
+        // Juste après l'envoi, le profil affiche encore l'ancienne liste.
+        for ($attempt = 0; $attempt < self::CONFIRM_ATTEMPTS; $attempt++) {
+            $page->goTo($timeline);
+            $page->waitFor('article[data-testid="tweet"]', 15);
+            sleep(self::CONFIRM_PAUSE_SECONDS);
 
-            if ($tweet['author'] === strtolower($username) && $recent && ! $tweet['pinned']
-                && ($wanted === '' || str_starts_with(self::fingerprint($tweet['text']), $wanted))) {
-                return $tweet['id'];
+            foreach ($page->tweets() as $tweet) {
+                $recent = $tweet['published_at'] && now()->parse($tweet['published_at'])->gte($since);
+
+                if ($tweet['author'] === strtolower($username) && $recent && ! $tweet['pinned']
+                    && ($wanted === '' || str_starts_with(self::fingerprint($tweet['text']), $wanted))) {
+                    return $tweet['id'];
+                }
             }
         }
 
