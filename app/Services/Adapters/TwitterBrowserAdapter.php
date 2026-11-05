@@ -45,9 +45,9 @@ class TwitterBrowserAdapter implements PlatformAdapterInterface, ResharingAdapte
 
     public function nativeQuote(SocialAccount $account, string $text, string $sourceExternalId, ?array $media = null): array
     {
-        $source = rawurlencode("https://x.com/i/web/status/{$sourceExternalId}");
-
-        return $this->post($account, self::INTENT_URL.'?url='.$source, $text, $media, 'https://x.com/%s');
+        // Le lien collé dans le texte devient la citation : le paramètre `url` préremplit
+        // l'éditeur, et la relecture y verrait un texte différent de celui prévu.
+        return $this->post($account, self::COMPOSE_URL, trim($text.' https://x.com/i/web/status/'.$sourceExternalId), $media, 'https://x.com/%s');
     }
 
     public function nativeRepost(SocialAccount $account, string $sourceExternalId): array
@@ -67,15 +67,18 @@ class TwitterBrowserAdapter implements PlatformAdapterInterface, ResharingAdapte
 
     public function deleteTweet(SocialAccount $account, string $tweetId): array
     {
-        return $this->inBrowser($account, "https://x.com/i/web/status/{$tweetId}", function (XPage $page) {
-            $caret = 'article[data-testid="tweet"] [data-testid="caret"]';
+        return $this->inBrowser($account, "https://x.com/i/web/status/{$tweetId}", function (XPage $page) use ($tweetId) {
             $confirm = '[data-testid="confirmationSheetConfirm"]';
 
-            if (! $page->waitFor($caret, 20)) {
+            if (! $page->waitFor('article[data-testid="tweet"]', 20)) {
                 return $this->failure('Tweet introuvable.');
             }
 
-            $page->click($caret);
+            sleep(self::CONFIRM_PAUSE_SECONDS);
+
+            if (! $page->openTweetMenu($tweetId)) {
+                return $this->failure('Tweet visé introuvable sur la page.');
+            }
 
             if (! $page->clickMenuItem('Supprimer|Delete') || ! $page->waitFor($confirm, 10)) {
                 return $this->failure('Suppression indisponible : ce tweet n’est sans doute pas celui du compte.');
@@ -107,7 +110,7 @@ class TwitterBrowserAdapter implements PlatformAdapterInterface, ResharingAdapte
 
             // À partir d'ici, le tweet est peut-être parti : un échec ne doit jamais relancer l'envoi.
             if (! $page->waitForPublished(30)) {
-                return $this->failure('X n’a pas accepté la publication : '.($page->toast() ?? 'raison inconnue'));
+                return $this->failure('X n’a pas accepté la publication : '.($page->lastToast ?? 'raison inconnue'));
             }
 
             $tweetId = $this->confirm($page, sprintf($timeline, $account->browser_username), $account->browser_username, $content);
@@ -176,12 +179,12 @@ class TwitterBrowserAdapter implements PlatformAdapterInterface, ResharingAdapte
         return null;
     }
 
-    /** Début du texte sans liens : X les raccourcit à l'affichage. */
+    /** Début du texte, sans liens ni emoji : X raccourcit les uns et affiche les autres en images. */
     private static function fingerprint(string $text): string
     {
         $text = preg_replace('~https?://\S+~u', '', $text);
 
-        return mb_substr(trim(preg_replace('/\s+/u', ' ', $text)), 0, 40);
+        return mb_substr(preg_replace('/[^\p{L}\p{N}]+/u', '', $text), 0, 30);
     }
 
     /**

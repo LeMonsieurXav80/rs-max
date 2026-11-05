@@ -35,9 +35,9 @@ class FakeCamofox extends CamofoxClient
 
     public int $attached = 1;
 
-    public bool $buttonFocused = false;
+    public bool $targetVisible = true;
 
-    public bool $focusLost = false;
+    public ?string $rejection = null;
 
     public string $clipboard = '';
 
@@ -65,10 +65,15 @@ class FakeCamofox extends CamofoxClient
         $this->calls[] = ['navigate', $url];
     }
 
+    public function click(string $userId, string $tabId, string $selector): void
+    {
+        $this->calls[] = ['click', $selector];
+        $this->submitted = $this->submitted || $selector === XPage::SUBMIT;
+    }
+
     public function press(string $userId, string $tabId, string $key): void
     {
         $this->calls[] = ['press', $key];
-        $this->submitted = $this->submitted || ($key === 'Enter' && $this->buttonFocused);
         $this->editorText = $key === 'Control+v' ? ($this->altersText ? 'autre' : $this->clipboard) : $this->editorText;
     }
 
@@ -88,8 +93,9 @@ class FakeCamofox extends CamofoxClient
         $connected = $this->loggedIn && ! $this->sessionLostUntilImport;
 
         return match (true) {
-            str_contains($expression, 'location.pathname') => $this->submitted,
-            str_contains($expression, 'document.activeElement===b') => $this->buttonFocused = ! $this->focusLost,
+            str_contains($expression, 'location.pathname') => $this->submitted && $this->rejection === null,
+            str_contains($expression, 'caret') => $this->targetVisible,
+            str_contains($expression, 'data-testid="toast"') => $this->submitted ? $this->rejection : null,
             str_contains($expression, 'attachments') => $this->attached,
             str_contains($expression, 'getAttribute("href")') => $connected ? '/wildycaro' : null,
             str_contains($expression, 'rsmax-buffer\';t.value=') => tap(null, function () use ($expression) {
@@ -223,7 +229,7 @@ class XBrowserTest extends TestCase
 
         $this->assertFalse($result['success']);
         $this->assertStringContainsString('non confirmé', $result['error']);
-        $this->assertSame(1, collect($this->browser->calls)->where(0, 'press')->where(1, 'Enter')->count());
+        $this->assertSame(1, collect($this->browser->calls)->where(0, 'click')->where(1, XPage::SUBMIT)->count());
     }
 
     public function test_photos_et_video_passent_par_le_dossier_partage(): void
@@ -247,14 +253,24 @@ class XBrowserTest extends TestCase
         unlink($dir.'b.mp4');
     }
 
-    public function test_entree_nest_jamais_envoyee_si_le_bouton_na_pas_le_focus(): void
+    public function test_le_motif_de_refus_de_x_est_rapporte_meme_apres_sa_disparition(): void
     {
-        $this->browser->focusLost = true;
+        $this->browser->rejection = 'Vous avez atteint votre limite quotidienne';
 
         $result = $this->adapter()->publish($this->account, 'Bonjour');
 
         $this->assertFalse($result['success']);
-        $this->assertNotContains(['press', 'Enter'], $this->browser->calls);
+        $this->assertStringContainsString('limite quotidienne', $result['error']);
+    }
+
+    public function test_supprimer_vise_le_tweet_demande_et_non_son_parent(): void
+    {
+        $this->browser->targetVisible = false;
+
+        $result = $this->adapter()->deleteTweet($this->account, '555');
+
+        $this->assertFalse($result['success']);
+        $this->assertSame('Tweet visé introuvable sur la page.', $result['error']);
     }
 
     public function test_un_media_refuse_annule_avant_le_clic(): void
@@ -283,6 +299,25 @@ class XBrowserTest extends TestCase
         $this->assertInstanceOf(TwitterBrowserInboxService::class, $service);
         $this->assertSame('600', $result['external_id']);
         $this->assertContains(['open', 'https://x.com/intent/post?in_reply_to=555'], $this->browser->calls);
+    }
+
+    public function test_une_reponse_en_emoji_est_reconnue_sur_le_profil(): void
+    {
+        $this->browser->timeline = [$this->tweet('700', 'Merci')];
+
+        $result = $this->adapter()->publishReply($this->account, 'Merci 🤍', '555');
+
+        $this->assertSame('700', $result['external_id']);
+    }
+
+    public function test_citer_colle_le_lien_du_tweet_dans_le_texte(): void
+    {
+        $this->browser->timeline = [$this->tweet('701', 'Mon avis')];
+
+        $result = $this->adapter()->nativeQuote($this->account, 'Mon avis', '555');
+
+        $this->assertSame('701', $result['external_id']);
+        $this->assertSame('Mon avis https://x.com/i/web/status/555', $this->browser->clipboard);
     }
 
     public function test_les_mentions_lues_excluent_le_compte_lui_meme(): void

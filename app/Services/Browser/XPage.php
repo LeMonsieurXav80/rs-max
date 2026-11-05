@@ -18,6 +18,8 @@ class XPage
 
     private const FILL_SECONDS = 5;
 
+    public ?string $lastToast = null;
+
     public function __construct(
         private CamofoxClient $client,
         public readonly string $userId,
@@ -66,26 +68,27 @@ class XPage
     }
 
     /**
-     * Entrée sur le bouton : ni le clic, ni Ctrl+Entrée n'envoient de façon fiable.
-     * Sans le contrôle du focus, Entrée agirait sur un autre élément de la page.
+     * Vrai clic du navigateur. Entrée sur le bouton a publié des réponses en double,
+     * et le clic DOM comme Ctrl+Entrée n'envoient pas de façon fiable.
      */
     public function submit(): void
     {
-        $focused = $this->evaluate('(()=>{const b=document.querySelector('.json_encode(self::SUBMIT).');b?.focus();return !!b&&document.activeElement===b})()');
-
-        if (! $focused) {
-            throw new BrowserException('Bouton Poster introuvable : rien n’a été envoyé.');
-        }
-
-        $this->client->press($this->userId, $this->tabId, 'Enter');
+        $this->client->click($this->userId, $this->tabId, self::SUBMIT);
     }
 
-    /** L'accueil, où X renvoie après l'envoi, a son propre éditeur : seuls l'URL et le message font foi. */
+    /**
+     * L'accueil, où X renvoie après l'envoi, a son propre éditeur : seuls l'URL et le
+     * message font foi. Ce message s'efface en quelques secondes : il est gardé pour
+     * dire pourquoi X a refusé, par exemple sa limite quotidienne.
+     */
     public function waitForPublished(int $seconds): bool
     {
-        return $this->poll($seconds, fn () => (bool) $this->evaluate(
-            '!/^\\/(compose|intent)\\/post/.test(location.pathname)||/publié|envoyé|posted|sent/i.test(document.querySelector(\'[data-testid="toast"]\')?.innerText||"")'
-        ));
+        return $this->poll($seconds, function () {
+            $this->lastToast = $this->toast() ?? $this->lastToast;
+
+            return (bool) $this->evaluate('!/^\\/(compose|intent)\\/post/.test(location.pathname)')
+                || preg_match('/publié|envoyé|posted|sent/i', (string) $this->lastToast);
+        });
     }
 
     /** Le bouton existe avant d'être actif : il le devient après le traitement des médias. */
@@ -127,6 +130,16 @@ class XPage
         return $this->poll(self::FILL_SECONDS, fn () => $this->editorMatches($text));
     }
 
+    /** Ouvre le menu du tweet visé. Sur la page d'une réponse, le premier tweet est son parent. */
+    public function openTweetMenu(string $tweetId): bool
+    {
+        $id = json_encode('/status/'.$tweetId);
+
+        return (bool) $this->evaluate(
+            "(()=>{const a=[...document.querySelectorAll('article[data-testid=\"tweet\"]')].find(t=>[...t.querySelectorAll('a[href]')].some(l=>l.getAttribute('href').endsWith({$id})));const c=a?.querySelector('[data-testid=\"caret\"]');if(!c)return false;c.click();return true})()"
+        );
+    }
+
     public function clickMenuItem(string $pattern): bool
     {
         $regex = json_encode('^('.$pattern.')$');
@@ -155,7 +168,7 @@ class XPage
               const user=a.querySelector('[data-testid="User-Name"]');
               return{id:m[2],author:m[1].toLowerCase(),name:user?.querySelector('span')?.innerText||null,
                 avatar:a.querySelector('[data-testid="Tweet-User-Avatar"] img')?.src||null,
-                text:a.querySelector('[data-testid="tweetText"]')?.innerText||'',
+                text:(n=>{if(!n)return'';const c=n.cloneNode(true);c.querySelectorAll('img').forEach(i=>i.replaceWith(i.alt));return c.innerText??c.textContent})(a.querySelector('[data-testid="tweetText"]')),
                 published_at:a.querySelector('time')?.getAttribute('datetime')||null,
                 stats:a.querySelector('[role="group"]')?.getAttribute('aria-label')||'',
                 pinned:/pinned|épinglé/i.test(social),reposted:/repost/i.test(social),
