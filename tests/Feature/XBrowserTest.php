@@ -33,6 +33,8 @@ class FakeCamofox extends CamofoxClient
 
     public bool $altersText = false;
 
+    public int $attached = 1;
+
     public string $clipboard = '';
 
     public bool $submitted = false;
@@ -81,6 +83,7 @@ class FakeCamofox extends CamofoxClient
         $connected = $this->loggedIn && ! $this->sessionLostUntilImport;
 
         return match (true) {
+            str_contains($expression, 'attachments') => $this->attached,
             str_contains($expression, 'getAttribute("href")') => $connected ? '/wildycaro' : null,
             str_contains($expression, 'rsmax-buffer\';t.value=') => tap(null, function () use ($expression) {
                 preg_match('/t\.value=(".*?(?<!\\\\)");/su', $expression, $m);
@@ -236,6 +239,21 @@ class XBrowserTest extends TestCase
 
         unlink($dir.'a.jpg');
         unlink($dir.'b.mp4');
+    }
+
+    public function test_un_media_refuse_annule_avant_le_clic(): void
+    {
+        $dir = storage_path('app/private/media/');
+        @mkdir($dir, 0777, true);
+        touch($dir.'c.mp4');
+        $this->browser->attached = 0;
+
+        $result = $this->adapter()->publish($this->account, 'Avec vidéo', [['local_path' => $dir.'c.mp4', 'mimetype' => 'video/mp4']]);
+
+        $this->assertFalse($result['success']);
+        $this->assertStringContainsString('Média refusé', $result['error']);
+        $this->assertFalse($this->browser->submitted);
+        unlink($dir.'c.mp4');
     }
 
     public function test_repondre_a_un_commentaire_passe_par_le_navigateur(): void

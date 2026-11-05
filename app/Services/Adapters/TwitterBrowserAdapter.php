@@ -96,10 +96,8 @@ class TwitterBrowserAdapter implements PlatformAdapterInterface, ResharingAdapte
             throw $page->identity() === null ? BrowserException::sessionLost() : new BrowserException('Éditeur X introuvable.');
         }
 
-        if ($content !== '' && ! $page->fill($content)) {
-            throw new BrowserException('Le texte saisi diffère du texte prévu : publication annulée.');
-        }
-
+        // Les médias d'abord : le bouton ne s'active qu'une fois X d'accord. Avec du texte
+        // déjà saisi, il serait actif même après un refus, et le tweet partirait sans eux.
         $temporary = [];
 
         try {
@@ -107,10 +105,18 @@ class TwitterBrowserAdapter implements PlatformAdapterInterface, ResharingAdapte
 
             if ($paths !== []) {
                 $page->upload($paths);
+
+                if (! $page->waitForSubmit((int) config('browser.media_timeout')) || ! $page->hasAttachments(count($paths))) {
+                    throw new BrowserException('Média refusé par X : '.($page->toast() ?? 'raison inconnue'));
+                }
             }
 
-            if (! $page->waitForSubmit($paths === [] ? 15 : (int) config('browser.media_timeout'))) {
-                throw new BrowserException('Bouton Poster inactif : '.($page->toast() ?? 'média refusé ou encore en traitement.'));
+            if ($content !== '' && ! $page->fill($content)) {
+                throw new BrowserException('Le texte saisi diffère du texte prévu : publication annulée.');
+            }
+
+            if (! $page->waitForSubmit(15)) {
+                throw new BrowserException('Bouton Poster inactif : '.($page->toast() ?? 'raison inconnue'));
             }
         } finally {
             Storage::disk('local')->delete($temporary);

@@ -71,6 +71,13 @@ class XPage
         return $this->waitFor(self::SUBMIT.':not([aria-disabled="true"])', $seconds);
     }
 
+    public function hasAttachments(int $count): bool
+    {
+        $found = $this->evaluate('document.querySelectorAll(\'[data-testid="attachments"] video,[data-testid="attachments"] img\').length');
+
+        return (int) $found >= $count;
+    }
+
     /** Nom du compte connecté, `null` si le navigateur est déconnecté. */
     public function identity(): ?string
     {
