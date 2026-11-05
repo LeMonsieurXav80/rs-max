@@ -97,8 +97,7 @@
                            class="rounded border-gray-300 text-indigo-600 focus:ring-indigo-500"
                            :checked="isChecked({{ $account->id }})"
                            @change="toggleAccount({{ $account->id }}, $event.target.checked)"
-                           @if($dispatchEvent) data-platform="{{ $account->platform->slug }}" @endif
-                           @if(isset($account->persona_id)) data-has-persona="{{ $account->persona_id ? '1' : '0' }}" @endif>
+                           @if($dispatchEvent) data-platform="{{ $account->platform->slug }}" @endif>
                     <div class="flex items-center gap-2 min-w-0 flex-1">
                         <x-platform-icon :platform="$account->platform->slug" size="sm" />
                         <span class="text-sm truncate">{{ $account->name }}</span>

@@ -155,16 +155,6 @@
                         </div>
 
                         <div>
-                            <label for="ai_prompt_publication_from_photo" class="block text-sm font-medium text-gray-700 mb-1">Generation de texte de publication depuis une photo</label>
-                            <p class="text-xs text-gray-400 mb-2">Variables : <code class="bg-gray-100 px-1 rounded">{contexte_utilisateur}</code>, <code class="bg-gray-100 px-1 rounded">{langue}</code>, <code class="bg-gray-100 px-1 rounded">{liste_plateformes}</code>, <code class="bg-gray-100 px-1 rounded">{liste_plateformes_json}</code></p>
-                            <textarea id="ai_prompt_publication_from_photo" name="ai_prompt_publication_from_photo" rows="14"
-                                class="w-full rounded-xl border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 text-xs font-mono">{{ $settings['ai_prompt_publication_from_photo'] }}</textarea>
-                            @error('ai_prompt_publication_from_photo')
-                                <p class="text-xs text-red-600 mt-1">{{ $message }}</p>
-                            @enderror
-                        </div>
-
-                        <div>
                             <label for="ai_prompt_metadata_extraction" class="block text-sm font-medium text-gray-700 mb-1">Extraction de metadonnees depuis une photo (catalogue media)</label>
                             <p class="text-xs text-gray-400 mb-2">Variables : <code class="bg-gray-100 px-1 rounded">{contexte}</code>, <code class="bg-gray-100 px-1 rounded">{personnes_attendues}</code>. Doit retourner du JSON parsable avec les cles : <code class="bg-gray-100 px-1 rounded">description_fr, thematic_tags, people_ids, person_count, city, region, country, brands, event, taken_at</code>.</p>
                             <textarea id="ai_prompt_metadata_extraction" name="ai_prompt_metadata_extraction" rows="20"

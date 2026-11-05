@@ -39,7 +39,7 @@ class BulkLibraryController extends Controller
         $user = $request->user();
 
         $accounts = $user->activeSocialAccounts()
-            ->with(['platform', 'persona'])
+            ->with('platform')
             ->orderBy('name')
             ->get();
 

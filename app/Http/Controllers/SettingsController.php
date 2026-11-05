@@ -60,7 +60,6 @@ class SettingsController extends Controller
         'ai_model_translation',
         'ai_model_rss',
         // AI vision prompts (éditables — défauts dans DEFAULT_PROMPT_*)
-        'ai_prompt_publication_from_photo',
         'ai_prompt_metadata_extraction',
         // Inbox / Messagerie
         'inbox_platform_facebook_enabled',
@@ -132,7 +131,6 @@ class SettingsController extends Controller
         'ai_model_vision' => 'gpt-4o',
         'ai_model_translation' => 'gpt-4o-mini',
         'ai_model_rss' => 'gpt-4o-mini',
-        'ai_prompt_publication_from_photo' => \App\Services\AiAssistService::DEFAULT_PROMPT_PUBLICATION_FROM_PHOTO,
         'ai_prompt_metadata_extraction' => \App\Services\AiAssistService::DEFAULT_PROMPT_METADATA_EXTRACTION,
         // Inbox / Messagerie
         'inbox_platform_facebook_enabled' => true,
@@ -290,7 +288,6 @@ class SettingsController extends Controller
             'ai_model_vision' => 'required|string|max:50',
             'ai_model_translation' => 'required|string|max:50',
             'ai_model_rss' => 'required|string|max:50',
-            'ai_prompt_publication_from_photo' => 'required|string|max:5000',
             'ai_prompt_metadata_extraction' => 'required|string|max:5000',
             // Inbox / Messagerie
             'inbox_platform_facebook_enabled' => 'nullable',

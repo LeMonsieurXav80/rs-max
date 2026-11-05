@@ -113,7 +113,7 @@
 
                 {{-- Persona IA --}}
                 <div class="mt-5">
-                    <label for="persona_id" class="block text-sm font-medium text-gray-700 mb-1.5">Persona IA par défaut</label>
+                    <label for="persona_id" class="block text-sm font-medium text-gray-700 mb-1.5">Persona des réponses</label>
                     <select name="persona_id" id="persona_id"
                             class="w-full rounded-xl border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 text-sm">
                         <option value="">Aucun</option>
@@ -123,7 +123,7 @@
                             </option>
                         @endforeach
                     </select>
-                    <p class="mt-1 text-xs text-gray-400">Persona utilisé pour la génération IA sur ce compte.</p>
+                    <p class="mt-1 text-xs text-gray-400">Utilisé pour répondre aux messages et commentaires, et pour poster des commentaires. Jamais pour les publications.</p>
                     @error('persona_id')
                         <p class="mt-1 text-sm text-red-600">{{ $message }}</p>
                     @enderror

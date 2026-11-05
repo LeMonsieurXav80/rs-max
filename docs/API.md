@@ -161,13 +161,11 @@ Les routes `POST /api/generate`, `POST /api/generate-thread`, `POST /api/bulk-sc
 
 Un **persona** est un `system_prompt` qui définit le ton, le style et la voix d'une marque. Il est stocké dans la table `personas` et rattaché à un compte social par `persona_id`, depuis l'écran `/personas` (rôle `manager`).
 
-### Il sert aux réponses
+### Il sert uniquement aux réponses et aux commentaires
 
 - **Inbox** : préparation et suggestion de réponses (§19).
 - **Extension Chrome** : commentaires TikTok et mentions X.
 - **Bot Bluesky** : commentaires, via les champs `bot_comment_context_*`.
-
-Seule exception côté publication : la génération depuis une source WordPress, disponible dans l'interface web, pas par l'API.
 
 ### Il n'est JAMAIS appliqué dans ces cas
 
@@ -802,9 +800,8 @@ D'autres codes sont acceptés (tout ce qu'OpenAI peut traduire), mais seuls ceux
 ### Source types
 
 - `manual` — créé via UI ou `POST /api/posts`.
-- `wordpress` — généré depuis une source WordPress.
 - `native` — publication faite hors RS-Max, puis adoptée.
-- `rss`, `youtube`, `reddit` — historique uniquement : ces sources sont retirées.
+- `rss`, `wordpress`, `youtube`, `reddit` — historique uniquement : la génération depuis ces sources est retirée.
 
 ### Limites
 

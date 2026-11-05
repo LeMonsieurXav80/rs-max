@@ -66,7 +66,7 @@
                 </svg>
             </div>
             <h3 class="text-base font-semibold text-gray-900 mb-2">Aucun site WordPress</h3>
-            <p class="text-sm text-gray-500 mb-8">Connectez des sites WordPress pour générer automatiquement des publications à partir de leur contenu.</p>
+            <p class="text-sm text-gray-500 mb-8">Connectez des sites WordPress pour alimenter les flux Pinterest et suivre l'usage des médias.</p>
             <a href="{{ route('wordpress-sites.create') }}"
                class="inline-flex items-center gap-2 px-5 py-2.5 bg-indigo-600 text-white text-sm font-medium rounded-xl hover:bg-indigo-700 transition-colors shadow-sm">
                 <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2">
@@ -105,14 +105,6 @@
                             @else
                                 <span class="text-amber-500">Jamais récupéré</span>
                             @endif
-                            @if($source->socialAccounts->count() > 0)
-                                <span class="flex items-center gap-1">
-                                    <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1.5">
-                                        <path stroke-linecap="round" stroke-linejoin="round" d="M13.19 8.688a4.5 4.5 0 0 1 1.242 7.244l-4.5 4.5a4.5 4.5 0 0 1-6.364-6.364l1.757-1.757m13.35-.622 1.757-1.757a4.5 4.5 0 0 0-6.364-6.364l-4.5 4.5a4.5 4.5 0 0 0 1.242 7.244" />
-                                    </svg>
-                                    {{ $source->socialAccounts->count() }} compte(s)
-                                </span>
-                            @endif
                         </div>
                     </div>
 
@@ -128,13 +120,6 @@
                                 </svg>
                             </button>
                         </form>
-                        <a href="{{ route('wordpress-sites.preview', $source) }}"
-                           class="p-2 text-gray-400 hover:text-purple-600 hover:bg-purple-50 rounded-lg transition-colors"
-                           title="Prévisualiser et générer">
-                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1.5">
-                                <path stroke-linecap="round" stroke-linejoin="round" d="M9.813 15.904 9 18.75l-.813-2.846a4.5 4.5 0 0 0-3.09-3.09L2.25 12l2.846-.813a4.5 4.5 0 0 0 3.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 0 0 3.09 3.09L15.75 12l-2.846.813a4.5 4.5 0 0 0-3.09 3.09ZM18.259 8.715 18 9.75l-.259-1.035a3.375 3.375 0 0 0-2.455-2.456L14.25 6l1.036-.259a3.375 3.375 0 0 0 2.455-2.456L18 2.25l.259 1.035a3.375 3.375 0 0 0 2.455 2.456L21.75 6l-1.036.259a3.375 3.375 0 0 0-2.455 2.456Z" />
-                            </svg>
-                        </a>
                         <a href="{{ route('wordpress-sites.edit', $source) }}"
                            class="p-2 text-gray-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg transition-colors"
                            title="Modifier">

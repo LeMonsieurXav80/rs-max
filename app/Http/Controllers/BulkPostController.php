@@ -3,10 +3,8 @@
 namespace App\Http\Controllers;
 
 use App\Models\Hashtag;
-use App\Models\Platform;
 use App\Models\Post;
 use App\Models\PostPlatform;
-use App\Models\SocialAccount;
 use App\Services\Media\MediaRatioService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -23,7 +21,7 @@ class BulkPostController extends Controller
         $user = $request->user();
 
         $accounts = $user->activeSocialAccounts()
-            ->with(['platform', 'persona'])
+            ->with('platform')
             ->orderBy('name')
             ->get();
 
@@ -39,14 +37,14 @@ class BulkPostController extends Controller
     public function saveRow(Request $request): JsonResponse
     {
         $validated = $request->validate([
-            'post_id'       => 'nullable|integer|exists:posts,id',
-            'content_fr'    => 'nullable|string|max:10000',
-            'hashtags'      => 'nullable|string|max:1000',
-            'media'         => 'nullable|array',
-            'media.*'       => 'nullable|string|max:5000',
-            'scheduled_at'  => 'nullable|date',
-            'accounts'      => 'required|array|min:1',
-            'accounts.*'    => 'integer|exists:social_accounts,id',
+            'post_id' => 'nullable|integer|exists:posts,id',
+            'content_fr' => 'nullable|string|max:10000',
+            'hashtags' => 'nullable|string|max:1000',
+            'media' => 'nullable|array',
+            'media.*' => 'nullable|string|max:5000',
+            'scheduled_at' => 'nullable|date',
+            'accounts' => 'required|array|min:1',
+            'accounts.*' => 'integer|exists:social_accounts,id',
         ]);
 
         $user = $request->user();
@@ -93,11 +91,11 @@ class BulkPostController extends Controller
                     ->firstOrFail();
 
                 $post->update([
-                    'content_fr'    => $validated['content_fr'] ?? '',
-                    'hashtags'      => $validated['hashtags'] ?? null,
-                    'media'         => $media,
-                    'scheduled_at'  => $validated['scheduled_at'] ?? null,
-                    'translations'  => null,
+                    'content_fr' => $validated['content_fr'] ?? '',
+                    'hashtags' => $validated['hashtags'] ?? null,
+                    'media' => $media,
+                    'scheduled_at' => $validated['scheduled_at'] ?? null,
+                    'translations' => null,
                 ]);
 
                 // Re-sync PostPlatform entries
@@ -105,22 +103,22 @@ class BulkPostController extends Controller
             } else {
                 // Create new post
                 $post = Post::create([
-                    'user_id'       => $user->id,
-                    'content_fr'    => $validated['content_fr'] ?? '',
-                    'hashtags'      => $validated['hashtags'] ?? null,
-                    'media'         => $media,
-                    'status'        => 'scheduled',
-                    'scheduled_at'  => $validated['scheduled_at'] ?? null,
+                    'user_id' => $user->id,
+                    'content_fr' => $validated['content_fr'] ?? '',
+                    'hashtags' => $validated['hashtags'] ?? null,
+                    'media' => $media,
+                    'status' => 'scheduled',
+                    'scheduled_at' => $validated['scheduled_at'] ?? null,
                     'auto_translate' => true,
                 ]);
             }
 
             foreach ($validAccounts as $account) {
                 PostPlatform::create([
-                    'post_id'           => $post->id,
+                    'post_id' => $post->id,
                     'social_account_id' => $account->id,
-                    'platform_id'       => $account->platform_id,
-                    'status'            => 'pending',
+                    'platform_id' => $account->platform_id,
+                    'status' => 'pending',
                 ]);
             }
 

@@ -270,8 +270,7 @@ Route::middleware(['auth', 'verified', 'throttle:600,1'])->group(function () {
         Route::get('partners/{partner}/posts', [PartnerController::class, 'posts'])->name('partners.posts');
         Route::resource('partners', PartnerController::class)->except(['show']);
 
-        // Personas : conserves avec le retrait de la generation IA, parce que le
-        // bot Bluesky et la generation WordPress s'en servent toujours. Sans cet
+        // Personas : ils ne servent qu'aux reponses et aux commentaires. Sans cet
         // ecran, les contextes de commentaire du bot ne seraient plus editables
         // que directement en base.
         Route::resource('personas', PersonaController::class)->except(['show']);
@@ -280,10 +279,6 @@ Route::middleware(['auth', 'verified', 'throttle:600,1'])->group(function () {
         Route::resource('wordpress-sites', WordPressSiteController::class)->except(['show'])->parameters(['wordpress-sites' => 'wpSource']);
         Route::post('wordpress-sites/test-connection', [WordPressSiteController::class, 'testConnection'])->name('wordpress-sites.testConnection');
         Route::post('wordpress-sites/{wpSource}/fetch', [WordPressSiteController::class, 'fetchNow'])->name('wordpress-sites.fetch');
-        Route::get('wordpress-sites/{wpSource}/preview', [WordPressSiteController::class, 'preview'])->name('wordpress-sites.preview');
-        Route::post('wordpress-sites/{wpSource}/generate-preview', [WordPressSiteController::class, 'generatePreview'])->name('wordpress-sites.generatePreview');
-        Route::post('wordpress-sites/{wpSource}/regenerate-item', [WordPressSiteController::class, 'regenerateItem'])->name('wordpress-sites.regenerateItem');
-        Route::post('wordpress-sites/{wpSource}/confirm-publications', [WordPressSiteController::class, 'confirmPublications'])->name('wordpress-sites.confirmPublications');
 
         // Bot actions
         // Bot — Hub + Logs

@@ -250,7 +250,6 @@
                                                 name="accounts[]"
                                                 value="{{ $account->id }}"
                                                 data-platform="{{ $slug }}"
-                                                data-has-persona="{{ $account->persona_id ? '1' : '0' }}"
                                                 data-premium="{{ $account->hasPaidSubscription() ? '1' : '0' }}"
                                                 :checked="!!checked[{{ $account->id }}]"
                                                 @change="toggleAccount({{ $account->id }}, $el.checked); $dispatch('accounts-changed')"

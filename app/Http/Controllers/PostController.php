@@ -238,7 +238,7 @@ class PostController extends Controller
 
         // Both admin and regular user see their own active accounts (per-user is_active)
         $accounts = $user->activeSocialAccounts()
-            ->with(['platform', 'persona'])
+            ->with('platform')
             ->orderBy('name')
             ->get()
             ->groupBy(fn (SocialAccount $account) => $account->platform->slug);
@@ -502,7 +502,7 @@ class PostController extends Controller
 
         // Both admin and regular user see their own active accounts (per-user is_active)
         $accounts = $user->activeSocialAccounts()
-            ->with(['platform', 'persona'])
+            ->with('platform')
             ->orderBy('name')
             ->get()
             ->groupBy(fn (SocialAccount $account) => $account->platform->slug);
