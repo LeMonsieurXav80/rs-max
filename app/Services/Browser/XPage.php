@@ -16,8 +16,7 @@ class XPage
 
     private const POLL_MICROSECONDS = 750000;
 
-    // Camofox coupe une action au-delà de 30 s, un post long doit être saisi par morceaux.
-    private const TYPING_CHUNK = 800;
+    private const FILL_SECONDS = 5;
 
     public function __construct(
         private CamofoxClient $client,
@@ -82,22 +81,20 @@ class XPage
     }
 
     /**
-     * Saisie au clavier, relue avant toute suite : l'autocomplétion de X peut
-     * remplacer un @ ou un # et publierait un texte différent sans le dire.
-     * L'espace en fin de ligne ferme cette autocomplétion avant le saut de ligne,
-     * sinon Entrée y sélectionnerait une suggestion.
+     * Vrai copier-coller, relu avant toute suite. La frappe au clavier perd des
+     * accents dans l'éditeur de X (« très » devient « trs ») et un collage simulé
+     * y arrive vide : seul un Ctrl+V réel transmet le texte exact.
      */
     public function fill(string $text): bool
     {
-        $this->evaluate('document.querySelector('.json_encode(self::EDITOR).').focus()');
+        $value = json_encode($text, JSON_UNESCAPED_UNICODE);
 
-        $typed = implode("\n", array_map(fn (string $line) => $line.' ', explode("\n", $text)));
+        $this->evaluate("(()=>{const t=document.createElement('textarea');t.id='rsmax-buffer';t.value={$value};t.style.cssText='position:fixed;top:0;opacity:0';document.body.appendChild(t);t.focus();t.select()})()");
+        $this->client->press($this->userId, $this->tabId, 'Control+c');
+        $this->evaluate("(()=>{document.getElementById('rsmax-buffer').remove();document.querySelector(".json_encode(self::EDITOR).').focus()})()');
+        $this->client->press($this->userId, $this->tabId, 'Control+v');
 
-        foreach (mb_str_split($typed, self::TYPING_CHUNK) as $chunk) {
-            $this->client->typeKeys($this->userId, $this->tabId, $chunk);
-        }
-
-        return $this->editorMatches($text);
+        return $this->poll(self::FILL_SECONDS, fn () => $this->editorMatches($text));
     }
 
     public function toast(): ?string

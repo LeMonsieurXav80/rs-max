@@ -33,6 +33,8 @@ class FakeCamofox extends CamofoxClient
 
     public bool $altersText = false;
 
+    public string $clipboard = '';
+
     public bool $submitted = false;
 
     public array $timeline = [];
@@ -45,6 +47,7 @@ class FakeCamofox extends CamofoxClient
     public function open(string $userId, string $url): string
     {
         $this->calls[] = ['open', $url];
+        $this->editorText = '';
 
         return 't1';
     }
@@ -56,10 +59,10 @@ class FakeCamofox extends CamofoxClient
         $this->calls[] = ['navigate', $url];
     }
 
-    public function typeKeys(string $userId, string $tabId, string $text): void
+    public function press(string $userId, string $tabId, string $key): void
     {
-        $this->calls[] = ['keys', $text];
-        $this->editorText .= $this->altersText ? 'x' : $text;
+        $this->calls[] = ['press', $key];
+        $this->editorText = $key === 'Control+v' ? ($this->altersText ? 'autre' : $this->clipboard) : $this->editorText;
     }
 
     public function upload(string $userId, string $tabId, array $paths, string $selector): void
@@ -79,6 +82,10 @@ class FakeCamofox extends CamofoxClient
 
         return match (true) {
             str_contains($expression, 'getAttribute("href")') => $connected ? '/wildycaro' : null,
+            str_contains($expression, 'rsmax-buffer\';t.value=') => tap(null, function () use ($expression) {
+                preg_match('/t\.value=(".*?(?<!\\\\)");/su', $expression, $m);
+                $this->clipboard = json_decode($m[1]);
+            }),
             str_ends_with($expression, '.click()') => tap(null, function () use ($expression) {
                 $this->calls[] = ['click', json_decode(substr($expression, strlen('document.querySelector('), -strlen(').click()')))];
                 $this->submitted = $this->submitted || str_contains($expression, 'tweetButton');

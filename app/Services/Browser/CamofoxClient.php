@@ -39,9 +39,9 @@ class CamofoxClient
         return $this->send('post', "/tabs/{$tabId}/evaluate", ['userId' => $userId, 'expression' => $expression])->json('result');
     }
 
-    public function typeKeys(string $userId, string $tabId, string $text): void
+    public function press(string $userId, string $tabId, string $key): void
     {
-        $this->send('post', "/tabs/{$tabId}/type", ['userId' => $userId, 'text' => $text, 'mode' => 'keyboard', 'delay' => 15]);
+        $this->send('post', "/tabs/{$tabId}/press", ['userId' => $userId, 'key' => $key]);
     }
 
     /** @param  array<int, string>  $paths  Chemins vus depuis le conteneur Camofox. */
