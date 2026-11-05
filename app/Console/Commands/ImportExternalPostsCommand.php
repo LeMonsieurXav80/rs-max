@@ -51,7 +51,7 @@ class ImportExternalPostsCommand extends Command
             ->when($this->option('account'), fn ($q, $id) => $q->where('id', (int) $id))
             ->when($this->option('platform'), fn ($q, $slug) => $q->whereHas('platform', fn ($p) => $p->where('slug', $slug)))
             ->get()
-            ->filter(fn (SocialAccount $a) => in_array($a->platform?->slug, self::IMPORTABLE, true));
+            ->filter(fn (SocialAccount $a) => in_array($a->platform?->slug, self::IMPORTABLE, true) && ! $a->usesBrowser());
 
         if ($accounts->isEmpty()) {
             $this->warn('Aucun compte a importer.');

@@ -64,7 +64,7 @@ class InboxApiTest extends TestCase
         $platform = Mockery::mock(PlatformInboxInterface::class);
         $platform->shouldReceive('sendReply')->times($calls)
             ->andReturn(['success' => $success, 'external_id' => $success ? 'sent-123' : null, 'error' => $success ? null : 'Refus du réseau']);
-        $this->mock(InboxSyncService::class)->shouldReceive('getServiceForPlatform')->times($calls)->andReturn($platform);
+        $this->mock(InboxSyncService::class)->shouldReceive('getServiceForAccount')->times($calls)->andReturn($platform);
     }
 
     public function test_token_authentication_is_required(): void

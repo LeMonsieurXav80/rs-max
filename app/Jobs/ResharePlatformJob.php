@@ -51,7 +51,7 @@ class ResharePlatformJob implements ShouldQueue
             return;
         }
 
-        $adapter = AdapterFactory::make($platform->slug);
+        $adapter = AdapterFactory::forAccount($account);
         if (! $adapter) {
             $this->markFailed($postPlatform, "Aucun adapter pour la plateforme : {$platform->slug}");
 

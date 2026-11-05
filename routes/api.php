@@ -149,6 +149,8 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::get('/extension/summary', [ExtensionApiController::class, 'summary']);
     Route::get('/extension/x/context', [\App\Http\Controllers\Api\XExtensionController::class, 'context']);
     Route::put('/extension/x/context', [\App\Http\Controllers\Api\XExtensionController::class, 'bind']);
+    Route::get('/extension/x/session', [\App\Http\Controllers\Api\XExtensionController::class, 'sessionStatus']);
+    Route::post('/extension/x/session', [\App\Http\Controllers\Api\XExtensionController::class, 'session'])->middleware('throttle:10,1');
     Route::post('/extension/x/suggest', [\App\Http\Controllers\Api\XExtensionController::class, 'suggest'])->middleware('throttle:30,1');
     Route::post('/extension/x/{id}/begin', [\App\Http\Controllers\Api\XExtensionController::class, 'begin']);
     Route::post('/extension/x/{id}/finish', [\App\Http\Controllers\Api\XExtensionController::class, 'finish']);

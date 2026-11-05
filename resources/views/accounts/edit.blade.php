@@ -111,6 +111,34 @@
                     @enderror
                 </div>
 
+                @if($account->platform->slug === 'twitter')
+                    {{-- Mode de connexion --}}
+                    <div class="mt-5">
+                        <label for="driver" class="block text-sm font-medium text-gray-700 mb-1.5">Mode de connexion</label>
+                        <select name="driver" id="driver"
+                                class="w-full rounded-xl border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 text-sm">
+                            <option value="api" {{ old('driver', $account->driver) === 'api' ? 'selected' : '' }}>API X (payante)</option>
+                            <option value="browser" {{ old('driver', $account->driver) === 'browser' ? 'selected' : '' }}>Navigateur du VPS</option>
+                        </select>
+                        <p class="mt-1 text-xs text-gray-400">
+                            En mode navigateur, les publications, réponses, stats et abonnés passent par le navigateur du VPS.
+                            Les articles X restent sur l'API.
+                        </p>
+                        <p class="mt-1 text-xs {{ $account->browser_session_status === 'connected' ? 'text-green-600' : 'text-amber-600' }}">
+                            @if($account->browser_session_status === 'connected')
+                                Session connectée{{ $account->browser_username ? ' (@'.$account->browser_username.')' : '' }}{{ $account->browser_session_checked_at ? ', vérifiée '.$account->browser_session_checked_at->diffForHumans() : '' }}.
+                            @elseif($account->browser_session_status === 'expired')
+                                Session expirée : ouvrez X dans Chrome avec ce compte, l'extension la renverra.
+                            @else
+                                Aucune session : ouvrez X dans Chrome avec ce compte, puis lancez « X — envoyer la session au VPS ».
+                            @endif
+                        </p>
+                        @error('driver')
+                            <p class="mt-1 text-sm text-red-600">{{ $message }}</p>
+                        @enderror
+                    </div>
+                @endif
+
                 {{-- Persona IA --}}
                 <div class="mt-5">
                     <label for="persona_id" class="block text-sm font-medium text-gray-700 mb-1.5">Persona des réponses</label>

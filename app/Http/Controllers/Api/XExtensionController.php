@@ -3,8 +3,11 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
+use App\Models\BotActionLog;
 use App\Models\InboxItem;
 use App\Models\SocialAccount;
+use App\Services\Browser\BrowserException;
+use App\Services\Browser\XSessionService;
 use App\Services\Inbox\InboxReplyGenerator;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -40,6 +43,62 @@ class XExtensionController extends Controller
         }
 
         return $a;
+    }
+
+    private function sessionAccount(Request $r, string $platformAccountId): SocialAccount
+    {
+        $account = $r->user()->activeSocialAccounts()
+            ->whereHas('platform', fn ($q) => $q->where('slug', 'twitter'))
+            ->where('platform_account_id', $platformAccountId)
+            ->first();
+        abort_unless($account, 422, 'Compte X inconnu de RS-Max.');
+
+        return $account;
+    }
+
+    public function sessionStatus(Request $r): JsonResponse
+    {
+        $v = $r->validate(['platform_account_id' => ['required', 'string', 'regex:/^\d+$/']]);
+        $account = $this->sessionAccount($r, $v['platform_account_id']);
+
+        return response()->json([
+            'driver' => $account->driver,
+            'status' => $account->browser_session_status,
+            'received_at' => $account->browser_session_received_at,
+        ]);
+    }
+
+    /** Les cookies d'un compte ne s'appliquent qu'à ce compte : `twid` le prouve. */
+    public function session(Request $r, XSessionService $sessions): JsonResponse
+    {
+        $v = $r->validate([
+            'cookies' => 'required|array|min:2|max:100',
+            'cookies.*.name' => 'required|string|max:200',
+            'cookies.*.value' => 'required|string|max:8000',
+            'cookies.*.domain' => ['required', 'string', 'regex:/^\.?(.+\.)?x\.com$/'],
+            'cookies.*.path' => 'nullable|string|max:500',
+            'cookies.*.expirationDate' => 'nullable|numeric',
+            'cookies.*.httpOnly' => 'nullable|boolean',
+            'cookies.*.secure' => 'nullable|boolean',
+            'cookies.*.sameSite' => 'nullable|string|max:20',
+        ]);
+
+        $id = XSessionService::accountIdFrom($v['cookies']);
+        abort_unless($id, 422, 'Aucun compte X connecté dans ce navigateur.');
+        $account = $this->sessionAccount($r, $id);
+        abort_unless($sessions->belongsTo($v['cookies'], $account), 422, 'Session X incomplète.');
+
+        try {
+            $connected = $sessions->store($account, $v['cookies']);
+        } catch (BrowserException $e) {
+            return response()->json(['message' => $e->getMessage()], 502);
+        }
+
+        BotActionLog::create(['social_account_id' => $account->id, 'action_type' => 'x.session', 'source' => 'extension',
+            'target_uri' => 'https://x.com/i/user/'.$id, 'success' => $connected, 'performed_at' => now()]);
+
+        return response()->json(['status' => $account->browser_session_status, 'username' => $account->browser_username],
+            $connected ? 200 : 409);
     }
 
     private function personaHash(SocialAccount $a): string

@@ -6,15 +6,7 @@ use App\Concerns\ResolvesPublishableMedia;
 use App\Models\Post;
 use App\Models\PostLog;
 use App\Models\PostPlatform;
-use App\Services\Adapters\BlueskyAdapter;
-use App\Services\Adapters\FacebookAdapter;
-use App\Services\Adapters\InstagramAdapter;
-use App\Services\Adapters\LinkedInAdapter;
-use App\Services\Adapters\PlatformAdapterInterface;
-use App\Services\Adapters\TelegramAdapter;
-use App\Services\Adapters\ThreadsAdapter;
-use App\Services\Adapters\TwitterAdapter;
-use App\Services\Adapters\YouTubeAdapter;
+use App\Services\Adapters\AdapterFactory;
 use App\Services\MediaPublicationTracker;
 use App\Services\PostUrlBuilder;
 use App\Services\PublishingService;
@@ -58,7 +50,7 @@ class PublishToPlatformJob implements ShouldQueue
         }
 
         // Get the right adapter
-        $adapter = $this->getAdapter($platform->slug);
+        $adapter = AdapterFactory::forAccount($account);
         if (! $adapter) {
             $this->markFailed("No adapter for platform: {$platform->slug}");
 
@@ -123,21 +115,6 @@ class PublishToPlatformJob implements ShouldQueue
         } else {
             $this->markFailed($result['error'] ?? 'Unknown error');
         }
-    }
-
-    private function getAdapter(string $slug): ?PlatformAdapterInterface
-    {
-        return match ($slug) {
-            'telegram' => new TelegramAdapter,
-            'facebook' => new FacebookAdapter,
-            'instagram' => new InstagramAdapter,
-            'threads' => new ThreadsAdapter,
-            'twitter' => new TwitterAdapter,
-            'youtube' => new YouTubeAdapter,
-            'bluesky' => new BlueskyAdapter,
-            'linkedin' => new LinkedInAdapter,
-            default => null,
-        };
     }
 
     private function markFailed(string $error): void

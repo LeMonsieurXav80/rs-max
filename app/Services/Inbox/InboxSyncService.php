@@ -93,7 +93,7 @@ class InboxSyncService
      */
     public function syncAccount(SocialAccount $account): array
     {
-        $service = $this->getServiceForPlatform($account->platform->slug);
+        $service = $this->getServiceForAccount($account);
 
         if (! $service) {
             return ['fetched' => 0, 'error' => "No inbox service for {$account->platform->slug}"];
@@ -105,6 +105,13 @@ class InboxSyncService
         Setting::set("inbox_last_fetch_{$account->id}", now()->toIso8601String());
 
         return ['fetched' => $stored, 'error' => null];
+    }
+
+    public function getServiceForAccount(SocialAccount $account): ?PlatformInboxInterface
+    {
+        return $account->platform->slug === 'twitter' && $account->usesBrowser()
+            ? app(TwitterBrowserInboxService::class)
+            : $this->getServiceForPlatform($account->platform->slug);
     }
 
     /**

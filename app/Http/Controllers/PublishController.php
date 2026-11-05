@@ -7,7 +7,6 @@ use App\Models\Post;
 use App\Models\PostLog;
 use App\Models\PostPlatform;
 use App\Services\Adapters\AdapterFactory;
-use App\Services\Adapters\PlatformAdapterInterface;
 use App\Services\PublishingService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -77,7 +76,7 @@ class PublishController extends Controller
 
         $platform = $account->platform;
 
-        $adapter = $this->getAdapter($platform->slug);
+        $adapter = AdapterFactory::forAccount($account);
         if (! $adapter) {
             return response()->json([
                 'success' => false,
@@ -195,7 +194,7 @@ class PublishController extends Controller
         foreach ($postPlatforms as $pp) {
             $account = $pp->socialAccount;
             $platform = $account->platform;
-            $adapter = $this->getAdapter($platform->slug);
+            $adapter = AdapterFactory::forAccount($account);
 
             if (! $adapter) {
                 $results[] = ['account' => $account->name, 'success' => false, 'error' => 'Pas d\'adaptateur'];
@@ -294,13 +293,6 @@ class PublishController extends Controller
         }
 
         return response()->json(['success' => true, 'message' => 'Remis en attente.']);
-    }
-
-    private function getAdapter(string $slug): ?PlatformAdapterInterface
-    {
-        // Source unique de vérité : évite qu'une plateforme ajoutée au job
-        // (linkedin) reste absente de la publication manuelle.
-        return AdapterFactory::make($slug);
     }
 
     private function buildOptions(Post $post): ?array

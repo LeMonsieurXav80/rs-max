@@ -11,11 +11,18 @@ class SocialAccount extends Model
 {
     protected $hidden = [
         'credentials',
+        'browser_session',
     ];
 
     protected $fillable = [
         'platform_id',
         'platform_account_id',
+        'driver',
+        'browser_session',
+        'browser_username',
+        'browser_session_status',
+        'browser_session_received_at',
+        'browser_session_checked_at',
         'subscription_type',
         'name',
         'profile_picture_url',
@@ -34,6 +41,9 @@ class SocialAccount extends Model
     {
         return [
             'credentials' => 'encrypted:array',
+            'browser_session' => 'encrypted:array',
+            'browser_session_received_at' => 'datetime',
+            'browser_session_checked_at' => 'datetime',
             'languages' => 'array',
             'show_branding' => 'boolean',
             'last_used_at' => 'datetime',
@@ -100,6 +110,12 @@ class SocialAccount extends Model
     public function externalPosts(): HasMany
     {
         return $this->hasMany(ExternalPost::class);
+    }
+
+    /** Vrai quand le compte passe par le navigateur du VPS, pas par l'API du réseau. */
+    public function usesBrowser(): bool
+    {
+        return $this->driver === 'browser';
     }
 
     public function snapshots(): HasMany

@@ -188,7 +188,7 @@ class ResharingService
 
     private function adapterSupportsNative(SocialAccount $account): bool
     {
-        $adapter = \App\Services\Adapters\AdapterFactory::make($account->platform->slug ?? '');
+        $adapter = \App\Services\Adapters\AdapterFactory::forAccount($account);
 
         return $adapter instanceof ResharingAdapterInterface;
     }

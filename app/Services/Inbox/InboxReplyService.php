@@ -31,7 +31,7 @@ class InboxReplyService
             }
 
             $account = $item->socialAccount()->with('platform')->first();
-            $service = app(InboxSyncService::class)->getServiceForPlatform($account->platform->slug);
+            $service = app(InboxSyncService::class)->getServiceForAccount($account);
 
             try {
                 $result = $service

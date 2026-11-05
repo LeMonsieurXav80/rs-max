@@ -77,6 +77,10 @@ Schedule::call(function () {
     }
 })->everyFiveMinutes()->name('prospect:recover-orphans')->withoutOverlapping(5);
 
+// Navigateur du VPS : la session est contrôlée, et restaurée au besoin, avant de servir
+Schedule::command('x:session-check')->hourly()->withoutOverlapping(30);
+Schedule::command('x:browser-sync')->everySixHours()->withoutOverlapping(60);
+
 // Check for application updates (hourly)
 Schedule::call(function () {
     app(\App\Services\UpdateService::class)->checkForUpdate();

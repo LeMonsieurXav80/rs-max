@@ -27,6 +27,10 @@ class StatsSyncService
             return false;
         }
 
+        if ($postPlatform->socialAccount?->usesBrowser()) {
+            return false;
+        }
+
         $service = $this->getStatsService($postPlatform->platform->slug);
 
         if (! $service) {
@@ -39,7 +43,19 @@ class StatsSyncService
             return false;
         }
 
+        $this->applyMetrics($postPlatform, $metrics);
+
+        return true;
+    }
+
+    /**
+     * Enregistre un relevé, quelle que soit sa provenance. Une valeur absente
+     * garde la précédente : X peut masquer les vues d'une ancienne publication.
+     */
+    public function applyMetrics(PostPlatform $postPlatform, array $metrics): void
+    {
         $previous = $postPlatform->metrics;
+        $metrics = array_merge($previous ?? [], array_filter($metrics, fn ($value) => $value !== null));
 
         $postPlatform->update([
             'metrics' => $metrics,
@@ -47,8 +63,6 @@ class StatsSyncService
         ]);
 
         $this->recordSnapshot($postPlatform, $metrics, $previous);
-
-        return true;
     }
 
     /**
@@ -150,7 +164,7 @@ class StatsSyncService
         $publishedAt = $postPlatform->published_at;
         $lastSync = $postPlatform->metrics_synced_at;
 
-        if (! $publishedAt) {
+        if (! $publishedAt || $postPlatform->socialAccount?->usesBrowser()) {
             return false;
         }
 

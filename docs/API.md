@@ -877,6 +877,20 @@ Compte rendu agrégé des actions de l'extension.
 }
 ```
 
+### `GET /api/extension/x/session`
+
+Indique si RS-Max attend une session pour un compte X. Paramètre : `platform_account_id`. Réponse : `driver`, `status` (`connected`, `expired` ou `null`) et `received_at`.
+
+### `POST /api/extension/x/session`
+
+Reçoit les cookies X du navigateur de l'utilisateur et les donne au navigateur du VPS. Plafond : 10 appels par minute.
+
+- Le compte est déduit du cookie `twid`. Il doit être rattaché à l'utilisateur du token, sinon : 422.
+- Les cookies sont stockés chiffrés et ne sont jamais renvoyés par l'API.
+- Réponse 200 : session active, avec `status` et `username`. Réponse 409 : X ne reconnaît pas le compte sur le VPS. Réponse 502 : navigateur du VPS injoignable.
+
+Le **Mode de connexion** de chaque compte X se règle dans sa fiche : API X, ou Navigateur du VPS.
+
 ---
 
 ## 16. Endpoints en session web (PAS accessibles par token)

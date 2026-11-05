@@ -8,15 +8,8 @@ use App\Models\SocialAccount;
 use App\Models\Thread;
 use App\Models\ThreadSegment;
 use App\Models\ThreadSegmentPlatform;
-use App\Services\Adapters\BlueskyAdapter;
-use App\Services\Adapters\FacebookAdapter;
-use App\Services\Adapters\InstagramAdapter;
-use App\Services\Adapters\PlatformAdapterInterface;
-use App\Services\Adapters\TelegramAdapter;
+use App\Services\Adapters\AdapterFactory;
 use App\Services\Adapters\ThreadableAdapterInterface;
-use App\Services\Adapters\ThreadsAdapter;
-use App\Services\Adapters\TwitterAdapter;
-use App\Services\Adapters\YouTubeAdapter;
 use App\Services\Media\MediaVariantService;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Storage;
@@ -44,7 +37,7 @@ class ThreadPublishingService
     public function publishThreadMode(Thread $thread, SocialAccount $account): array
     {
         $segments = $thread->segments()->orderBy('position')->get();
-        $adapter = $this->getAdapter($account->platform->slug);
+        $adapter = AdapterFactory::forAccount($account);
 
         if (! $adapter || ! $adapter instanceof ThreadableAdapterInterface) {
             return [['success' => false, 'error' => "Adapter does not support threading: {$account->platform->slug}"]];
@@ -227,7 +220,7 @@ class ThreadPublishingService
     public function publishCompiledMode(Thread $thread, SocialAccount $account): array
     {
         $segments = $thread->segments()->orderBy('position')->get();
-        $adapter = $this->getAdapter($account->platform->slug);
+        $adapter = AdapterFactory::forAccount($account);
 
         if (! $adapter) {
             return [['success' => false, 'error' => "No adapter for: {$account->platform->slug}"]];
@@ -652,20 +645,6 @@ class ThreadPublishingService
     private function buildPostUrl(SocialAccount $account, string $externalId): ?string
     {
         return PostUrlBuilder::build($account, $externalId);
-    }
-
-    private function getAdapter(string $slug): ?PlatformAdapterInterface
-    {
-        return match ($slug) {
-            'telegram' => new TelegramAdapter,
-            'facebook' => new FacebookAdapter,
-            'instagram' => new InstagramAdapter,
-            'threads' => new ThreadsAdapter,
-            'twitter' => new TwitterAdapter,
-            'youtube' => new YouTubeAdapter,
-            'bluesky' => new BlueskyAdapter,
-            default => null,
-        };
     }
 
     /**

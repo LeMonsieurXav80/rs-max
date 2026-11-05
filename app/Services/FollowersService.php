@@ -15,6 +15,10 @@ class FollowersService
      */
     public function syncFollowers(SocialAccount $account): ?int
     {
+        if ($account->usesBrowser()) {
+            return null;
+        }
+
         $slug = $account->platform->slug;
 
         $count = match ($slug) {
