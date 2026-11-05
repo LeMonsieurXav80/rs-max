@@ -267,6 +267,8 @@ La table `media_publications` est alimentée automatiquement par `MediaPublicati
 
 L'appel `ThreadContentGenerationService::generate()` accepte un 6ème paramètre `?string $pool = null`. Sans pool, l'auto-attach est skippé (pas d'erreur). Avec pool, le filtrage `allow_<pool>=true` s'applique.
 
+> **Retiré en novembre 2026 :** `POST /api/generate-thread` et le service de génération de fils n'existent plus. Cette partie reste comme historique.
+
 Sources du pool :
 - `POST /api/generate-thread` : champ `pool` du body (défaut `pdc_vantour`)
 - `POST /threads/generate-from-url` (web UI) : champ `pool` du form (défaut `pdc_vantour`)

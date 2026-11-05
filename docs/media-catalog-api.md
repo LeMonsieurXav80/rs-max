@@ -506,6 +506,8 @@ Agrège Pexels, Pixabay et Unsplash. Les images **ne sont jamais stockées local
 
 ### `POST /api/generate-thread`
 
+> **Retiré en novembre 2026 :** `POST /api/generate-thread` n'existe plus. Cette partie reste comme historique.
+
 Génère un thread complet via OpenAI **avec photos auto-attachées** (médiathèque locale + fallback stock si configuré).
 
 **Body** :
