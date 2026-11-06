@@ -118,6 +118,21 @@ class TikTokPlatformTest extends TestCase
         $this->assertSame('browser', $this->account()->driver);
     }
 
+    public function test_la_page_tiktok_liste_les_comptes_et_figure_au_menu(): void
+    {
+        $this->account();
+
+        $this->actingAs($this->user)->get(route('platforms.tiktok'))->assertOk()
+            ->assertSee('Comptes TikTok')->assertSee('Wildy Caro')->assertSee('Aucune session active')
+            ->assertSee(url('/platforms/tiktok'));
+    }
+
+    public function test_le_bouton_de_la_page_preselectionne_tiktok(): void
+    {
+        $this->actingAs($this->user)->get(route('accounts.create', ['platform_id' => $this->platform->id]))->assertOk()
+            ->assertSee("platformId: '{$this->platform->id}'", false);
+    }
+
     public function test_tiktok_se_choisit_dans_lajout_dun_compte(): void
     {
         $this->actingAs($this->user)->get(route('accounts.create'))->assertOk()->assertSee('TikTok');

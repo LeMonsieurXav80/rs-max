@@ -4,7 +4,7 @@
 
 @section('content')
     <div class="max-w-2xl" x-data="{
-        platformId: '{{ old('platform_id', '') }}',
+        platformId: '{{ old('platform_id', request('platform_id', '')) }}',
         platforms: @js($platforms->keyBy('id')),
         get credentialFields() {
             if (!this.platformId || !this.platforms[this.platformId]) return [];
@@ -32,7 +32,7 @@
                     >
                         <option value="">-- Choisir une plateforme --</option>
                         @foreach($platforms as $platform)
-                            <option value="{{ $platform->id }}" {{ old('platform_id') == $platform->id ? 'selected' : '' }}>
+                            <option value="{{ $platform->id }}" {{ old('platform_id', request('platform_id')) == $platform->id ? 'selected' : '' }}>
                                 {{ $platform->name }}
                             </option>
                         @endforeach

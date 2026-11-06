@@ -111,6 +111,17 @@ class PlatformController extends Controller
     }
 
     /**
+     * TikTok configuration page.
+     */
+    public function tiktok(Request $request): View
+    {
+        $accounts = $this->accountsForSlugs($request, ['tiktok']);
+        $platformId = Platform::where('slug', 'tiktok')->value('id');
+
+        return view('platforms.tiktok', compact('accounts', 'platformId'));
+    }
+
+    /**
      * Register a Telegram bot (validate + save).
      */
     public function registerTelegramBot(Request $request): RedirectResponse

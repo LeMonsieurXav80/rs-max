@@ -92,6 +92,7 @@ Route::middleware(['auth', 'verified', 'throttle:600,1'])->group(function () {
     Route::get('platforms/bluesky', [PlatformController::class, 'bluesky'])->name('platforms.bluesky');
     Route::get('platforms/linkedin', [PlatformController::class, 'linkedin'])->name('platforms.linkedin');
     Route::get('platforms/pinterest', [PlatformController::class, 'pinterest'])->name('platforms.pinterest');
+    Route::get('platforms/tiktok', [PlatformController::class, 'tiktok'])->name('platforms.tiktok');
 
     // Platform validation (AJAX test connection — read-only, no cost concern)
     Route::post('platforms/telegram/validate-bot', [PlatformController::class, 'validateTelegramBot'])->name('platforms.telegram.validateBot');
