@@ -11,18 +11,15 @@ use App\Services\Browser\TikTokSessionService;
 use Carbon\Carbon;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Log;
-use Illuminate\Support\Sleep;
 
-/** Commentaires TikTok lus et traités depuis le Chromium du VPS : aucune API publique. */
+/** Commentaires TikTok lus et traités depuis le navigateur Companion. */
 class TikTokInboxService implements PlatformInboxInterface
 {
     private const COMMENTS_URL = 'https://www.tiktok.com/tiktokstudio/comment';
 
     private const READ_TIMEOUT = 50;
 
-    private const SEND_TIMEOUT = 60;
-
-    private const CONFIRM_DELAY = 5;
+    private const ACTION_TIMEOUT = 90;
 
     public function __construct(private TikTokSessionService $sessions, private BrowserTaskQueue $queue) {}
 
@@ -68,32 +65,33 @@ class TikTokInboxService implements PlatformInboxInterface
 
     public function sendReply(SocialAccount $account, InboxItem $item, string $replyText): array
     {
-        return $this->act($account, $item, 'tiktok.reply', ['text' => $replyText], 'replied', 'TikTok n’affiche pas la réponse : à vérifier, ne pas renvoyer sans contrôle.');
+        return $this->act($account, $item, 'tiktok.reply', ['text' => $replyText]);
     }
 
     public function like(SocialAccount $account, InboxItem $item): array
     {
-        return $this->act($account, $item, 'tiktok.like', [], 'liked', 'TikTok n’affiche pas le like : à vérifier.');
+        return $this->act($account, $item, 'tiktok.like', []);
     }
 
-    /** Le 06/11/2026, la page a montré des réponses que TikTok n'a jamais gardées : seule une relecture prouve l'action. */
-    private function act(SocialAccount $account, InboxItem $item, string $kind, array $payload, string $proof, string $unconfirmed): array
+    /** Companion garde le profil occupé jusqu'à la vérification après rechargement. */
+    private function act(SocialAccount $account, InboxItem $item, string $kind, array $payload): array
     {
         $target = ['author' => $item->author_username, 'content' => $item->content, 'caption' => $item->post_content];
 
         try {
-            $this->queue->run($account, $kind, $payload + ['url' => self::COMMENTS_URL, 'username' => $account->browser_username, 'target' => $target], self::SEND_TIMEOUT);
-            Sleep::for(self::CONFIRM_DELAY)->seconds();
-            $comments = $this->queue->run($account, 'tiktok.comments', ['url' => self::COMMENTS_URL, 'username' => $account->browser_username, 'limit' => config('agent.read_limit')], self::READ_TIMEOUT)['items'] ?? [];
+            $result = $this->queue->run($account, $kind, $payload + [
+                'url' => self::COMMENTS_URL,
+                'username' => $account->browser_username,
+                'target' => $target,
+                'confirm_after_reload' => true,
+            ], self::ACTION_TIMEOUT);
         } catch (BrowserException $e) {
             return ['success' => false, 'external_id' => null, 'error' => $e->getMessage(), 'uncertain' => $e instanceof BrowserUncertainException];
         }
 
-        $seen = collect($comments)->first(fn (array $c) => $c['author'] === $target['author'] && $c['content'] === $target['content'] && $c['caption'] === $target['caption']);
-
-        return ($seen[$proof] ?? false) === true
+        return ($result['confirmed'] ?? false) === true
             ? ['success' => true, 'external_id' => null, 'error' => null]
-            : ['success' => false, 'external_id' => null, 'error' => $unconfirmed, 'uncertain' => true];
+            : ['success' => false, 'external_id' => null, 'error' => 'Action TikTok non confirmée après rechargement. Vérifiez le fil avant toute relance.', 'uncertain' => true];
     }
 
     /** Studio n'affiche qu'un texte : « 1h ago », « il y a 2 j », ou une date ; à défaut, la date de lecture. */

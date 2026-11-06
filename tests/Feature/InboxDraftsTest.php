@@ -23,7 +23,6 @@ use App\Services\Inbox\TikTokInboxService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Queue;
-use Illuminate\Support\Sleep;
 use Laravel\Sanctum\Sanctum;
 use Tests\TestCase;
 
@@ -40,7 +39,6 @@ class InboxDraftsTest extends TestCase
     protected function setUp(): void
     {
         parent::setUp();
-        Sleep::fake();
         $this->manager = User::factory()->create(['role' => 'manager']);
         Setting::setEncrypted('openai_api_key', 'cle');
         $this->persona = Persona::create(['name' => 'Caro', 'system_prompt' => 'Tu es Caro.', 'is_active' => true]);
@@ -67,7 +65,7 @@ class InboxDraftsTest extends TestCase
         return app(InboxDraftService::class)->prepare($this->account->fresh(['platform', 'persona']), 10);
     }
 
-    private function tiktok(array $comments = []): SocialAccount
+    private function tiktok(array $comments = [], bool $confirmed = false): SocialAccount
     {
         $platform = Platform::firstOrCreate(['slug' => 'tiktok'], ['name' => 'TikTok']);
         $account = SocialAccount::create(['platform_id' => $platform->id, 'name' => 'Caro', 'persona_id' => $this->persona->id, 'languages' => ['fr'],
@@ -78,7 +76,9 @@ class InboxDraftsTest extends TestCase
         $this->app->instance(TikTokSessionService::class, $sessions);
 
         $queue = $this->createMock(BrowserTaskQueue::class);
-        $queue->method('run')->willReturn(['items' => $comments]);
+        $queue->method('run')->willReturnCallback(fn ($account, string $kind) => $kind === 'tiktok.comments'
+            ? ['items' => $comments]
+            : ['confirmed' => $confirmed]);
         $this->app->instance(BrowserTaskQueue::class, $queue);
 
         return $account;
@@ -274,10 +274,10 @@ class InboxDraftsTest extends TestCase
         $account = $this->tiktok();
         $queue = $this->createMock(BrowserTaskQueue::class);
         $sent = [];
-        $queue->expects($this->exactly(2))->method('run')->willReturnCallback(function ($a, string $kind, array $p) use (&$sent) {
+        $queue->expects($this->once())->method('run')->willReturnCallback(function ($a, string $kind, array $p) use (&$sent) {
             $sent[$kind] = $p;
 
-            return $kind === 'tiktok.comments' ? ['items' => [$this->comment('fan', 'Bravo', ['replied' => true])]] : [];
+            return ['confirmed' => true];
         });
         $this->app->instance(BrowserTaskQueue::class, $queue);
         $item = InboxItem::create(['social_account_id' => $account->id, 'platform_id' => $account->platform_id, 'type' => 'comment', 'external_id' => 'h', 'author_username' => 'fan',
@@ -287,6 +287,7 @@ class InboxDraftsTest extends TestCase
         $this->assertSame('replied', $item->fresh()->status);
         $this->assertSame(['author' => 'fan', 'content' => 'Bravo', 'caption' => 'Ma vidéo'], $sent['tiktok.reply']['target']);
         $this->assertSame('Merci', $sent['tiktok.reply']['text']);
+        $this->assertTrue($sent['tiktok.reply']['confirm_after_reload']);
     }
 
     public function test_une_reponse_que_tiktok_ne_garde_pas_nest_pas_marquee_repondue(): void
@@ -311,7 +312,12 @@ class InboxDraftsTest extends TestCase
         $this->assertNull($item->fresh()->liked_at);
 
         $queue = $this->createMock(BrowserTaskQueue::class);
-        $queue->method('run')->willReturn(['items' => [$this->comment('fan', 'Bravo', ['liked' => true])]]);
+        $queue->expects($this->once())->method('run')->willReturnCallback(function ($account, string $kind, array $payload) {
+            $this->assertSame('tiktok.like', $kind);
+            $this->assertTrue($payload['confirm_after_reload']);
+
+            return ['confirmed' => true];
+        });
         $this->app->instance(BrowserTaskQueue::class, $queue);
         $this->app->forgetInstance(TikTokInboxService::class);
 
@@ -322,7 +328,7 @@ class InboxDraftsTest extends TestCase
     public function test_une_reponse_tiktok_confirmee_est_likee(): void
     {
         Queue::fake();
-        $account = $this->tiktok([$this->comment('fan', 'Bravo', ['replied' => true])]);
+        $account = $this->tiktok(confirmed: true);
         $item = InboxItem::create(['social_account_id' => $account->id, 'platform_id' => $account->platform_id, 'type' => 'comment', 'external_id' => 'h', 'author_username' => 'fan',
             'content' => 'Bravo', 'post_content' => 'Ma vidéo', 'status' => 'read', 'posted_at' => now()]);
 
