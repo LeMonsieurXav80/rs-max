@@ -40,7 +40,8 @@ class InboxController extends Controller
         }
         $selectedAccountIds = array_map('intval', array_filter($selectedAccountIds));
 
-        if (empty($selectedAccountIds)) {
+        // À valider montre tout ce qui attend : le compteur du menu ne dépend pas des comptes par défaut.
+        if (empty($selectedAccountIds) && $request->input('status') !== 'draft') {
             $selectedAccountIds = array_map('intval', $user->default_accounts ?? []);
         }
 

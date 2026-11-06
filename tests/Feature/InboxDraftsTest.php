@@ -200,6 +200,15 @@ class InboxDraftsTest extends TestCase
             ->assertSee('Merci beaucoup')->assertSee('Sur : Ma vidéo')->assertDontSee('Sans brouillon');
     }
 
+    public function test_longlet_a_valider_ignore_les_comptes_par_defaut(): void
+    {
+        $this->item('a', 'Bravo', ['reply_draft' => 'Merci beaucoup']);
+        $this->manager->update(['default_accounts' => [999]]);
+
+        $this->actingAs($this->manager)->get('/inbox?status=draft')->assertOk()->assertSee('Merci beaucoup');
+        $this->actingAs($this->manager)->get('/inbox')->assertOk()->assertDontSee('Merci beaucoup');
+    }
+
     public function test_le_lot_de_la_page_rend_les_textes_par_message(): void
     {
         $this->openai(['1' => 'Merci']);
