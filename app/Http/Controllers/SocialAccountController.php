@@ -67,7 +67,7 @@ class SocialAccountController extends Controller
             'name' => 'required|string|max:255',
             'languages' => 'required|array|min:1',
             'languages.*' => 'in:fr,en,pt,es,de,it',
-            'credentials' => 'required|array',
+            'credentials' => 'nullable|array',
             'credentials.*' => 'nullable|string|max:2000',
         ]);
 
@@ -112,6 +112,8 @@ class SocialAccountController extends Controller
                 'name' => $validated['name'],
                 'credentials' => $credentials,
                 'languages' => $validated['languages'],
+                'driver' => ($platform->config['browser_only'] ?? false) ? 'browser' : 'api',
+                'browser_profile' => $platform->config['browser_profile'] ?? null,
             ]);
         }
 

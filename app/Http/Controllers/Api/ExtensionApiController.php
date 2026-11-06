@@ -39,7 +39,7 @@ class ExtensionApiController extends Controller
 
         // On ne fait confiance à aucun social_account_id venu du navigateur :
         // seuls les comptes réellement rattachés à l'utilisateur sont acceptés.
-        $allowed = $request->user()->activeSocialAccounts()->pluck('social_accounts.id')->all();
+        $allowed = $request->user()->connectedSocialAccounts()->pluck('social_accounts.id')->all();
 
         $rows = [];
         $rejected = 0;
@@ -93,7 +93,7 @@ class ExtensionApiController extends Controller
         ]);
 
         $days = $validated['days'] ?? 30;
-        $allowed = $request->user()->activeSocialAccounts()->pluck('social_accounts.id')->all();
+        $allowed = $request->user()->connectedSocialAccounts()->pluck('social_accounts.id')->all();
 
         $accountIds = isset($validated['account_id'])
             ? array_values(array_intersect($allowed, [$validated['account_id']]))

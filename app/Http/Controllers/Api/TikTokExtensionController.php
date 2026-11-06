@@ -23,7 +23,7 @@ class TikTokExtensionController extends Controller
 
     private function account(Request $request, int $id): SocialAccount
     {
-        $account = $request->user()->activeSocialAccounts()->with(['persona', 'platform'])->find($id);
+        $account = $request->user()->connectedSocialAccounts()->with(['persona', 'platform'])->find($id);
         abort_unless($account, 403, 'Compte RS-Max non autorisé.');
         abort_unless($account->persona?->is_active && filled($account->persona->system_prompt), 422, 'Persona actif avec ses consignes obligatoire.');
 
@@ -49,7 +49,7 @@ class TikTokExtensionController extends Controller
         $username = $this->username($request);
         $profile = DB::table('extension_tiktok_profiles')->where('username', $username)->first();
         $account = $profile ? $this->account($request, $profile->social_account_id) : null;
-        $candidates = $request->user()->activeSocialAccounts()->with(['persona', 'platform'])->get()
+        $candidates = $request->user()->connectedSocialAccounts()->with(['persona', 'platform'])->get()
             ->filter(fn ($a) => $a->persona?->is_active && filled($a->persona->system_prompt))
             ->map(fn ($a) => ['id' => $a->id, 'name' => $a->name, 'platform' => $a->platform->slug,
                 'persona' => ['id' => $a->persona->id, 'name' => $a->persona->name]])->values();

@@ -16,6 +16,7 @@ class XSessionCheckCommand extends Command
     public function handle(XSessionService $sessions): int
     {
         $accounts = SocialAccount::where('driver', 'browser')
+            ->whereHas('platform', fn ($q) => $q->where('slug', 'twitter'))
             ->when($this->option('account'), fn ($q, $id) => $q->where('id', (int) $id))
             ->get();
 

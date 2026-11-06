@@ -90,6 +90,12 @@ class User extends Authenticatable
 
     public function activeSocialAccounts(): BelongsToMany
     {
+        return $this->connectedSocialAccounts()->whereRelation('platform', 'slug', '!=', 'tiktok');
+    }
+
+    /** Comptes actifs, y compris ceux vers lesquels RS-Max ne sait pas encore publier (TikTok). */
+    public function connectedSocialAccounts(): BelongsToMany
+    {
         return $this->socialAccounts()->wherePivot('is_active', true);
     }
 

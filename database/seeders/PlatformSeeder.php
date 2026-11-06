@@ -140,6 +140,18 @@ class PlatformSeeder extends Seeder
                     ],
                 ]),
             ],
+            [
+                'slug' => 'tiktok',
+                'name' => 'TikTok',
+                'description' => 'Comptes TikTok pilotés par le navigateur du VPS',
+                'color' => '#000000',
+                'auth_type' => 'browser',
+                'config' => json_encode([
+                    'browser_only' => true,
+                    'browser_profile' => 'wildycaro',
+                    'credential_fields' => [],
+                ]),
+            ],
         ];
 
         foreach ($platforms as $platform) {
