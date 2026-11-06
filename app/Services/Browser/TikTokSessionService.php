@@ -36,6 +36,18 @@ class TikTokSessionService
         return $this->verify($account, $username);
     }
 
+    /** Contrôle la session, et la réinstalle depuis la copie chiffrée si elle a disparu. */
+    public function check(SocialAccount $account): bool
+    {
+        if ($this->verify($account, $account->browser_username)) {
+            return true;
+        }
+
+        $this->queue->run($account, 'session.apply', ['cookies' => $account->browser_session], self::TASK_TIMEOUT);
+
+        return $this->verify($account, $account->browser_username);
+    }
+
     public function verify(SocialAccount $account, string $username): bool
     {
         $result = $this->queue->run($account, 'tiktok.whoami', ['url' => self::STUDIO_URL], self::TASK_TIMEOUT);

@@ -81,6 +81,31 @@ class TikTokPlatformTest extends TestCase
         $this->assertNull($account->fresh()->browser_username);
     }
 
+    public function test_une_session_perdue_est_restauree_depuis_la_copie(): void
+    {
+        $account = $this->account();
+        $account->update(['browser_username' => 'wildycaro', 'browser_session' => $this->cookies()['cookies']]);
+        $queue = new class extends BrowserTaskQueue
+        {
+            public array $kinds = [];
+
+            public function __construct() {}
+
+            public function run(SocialAccount $account, string $kind, array $payload, int $timeout = 120): array
+            {
+                $this->kinds[] = $kind;
+
+                return ['username' => in_array('session.apply', $this->kinds, true) ? 'wildycaro' : null];
+            }
+        };
+        $this->app->instance(BrowserTaskQueue::class, $queue);
+
+        $this->artisan('tiktok:session-check')->assertSuccessful();
+
+        $this->assertSame(['tiktok.whoami', 'session.apply', 'tiktok.whoami'], $queue->kinds);
+        $this->assertSame('connected', $account->fresh()->browser_session_status);
+    }
+
     public function test_un_navigateur_non_connecte_nenvoie_rien(): void
     {
         $this->account();
