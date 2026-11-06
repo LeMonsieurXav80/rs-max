@@ -5,8 +5,10 @@ namespace Tests\Feature;
 use App\Models\Platform;
 use App\Models\SocialAccount;
 use App\Models\User;
+use App\Services\Browser\BrowserTaskQueue;
 use Database\Seeders\PlatformSeeder;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Laravel\Sanctum\Sanctum;
 use Tests\TestCase;
 
 class TikTokPlatformTest extends TestCase
@@ -31,6 +33,80 @@ class TikTokPlatformTest extends TestCase
         ])->assertRedirect(route('accounts.index'));
 
         return SocialAccount::where('platform_id', $this->platform->id)->firstOrFail();
+    }
+
+    /** @return array<string, mixed> */
+    private function cookies(): array
+    {
+        return ['cookies' => [['name' => 'sessionid', 'value' => 'secret', 'domain' => '.tiktok.com']]];
+    }
+
+    private function fakeBrowser(?string $username): void
+    {
+        $this->app->instance(BrowserTaskQueue::class, new class($username) extends BrowserTaskQueue
+        {
+            public function __construct(private ?string $username) {}
+
+            public function run(SocialAccount $account, string $kind, array $payload, int $timeout = 120): array
+            {
+                return $kind === 'tiktok.whoami' ? ['username' => $this->username] : [];
+            }
+        });
+    }
+
+    public function test_la_session_senregistre_dans_le_compte_quand_studio_confirme(): void
+    {
+        $account = $this->account();
+        $this->fakeBrowser('wildycaro');
+        Sanctum::actingAs($this->user);
+
+        $this->postJson('/api/extension/tiktok/session', ['username' => 'WildyCaro'] + $this->cookies())
+            ->assertOk()->assertJson(['status' => 'connected', 'username' => 'wildycaro']);
+
+        $account->refresh();
+        $this->assertSame('secret', $account->browser_session[0]['value']);
+        $this->assertSame('wildycaro', $account->browser_username);
+        $this->actingAs($this->user)->get(route('accounts.edit', $account))->assertOk()->assertSee('Session enregistrée (@wildycaro)');
+    }
+
+    public function test_un_autre_compte_vu_dans_studio_nest_pas_une_session_valide(): void
+    {
+        $account = $this->account();
+        $this->fakeBrowser('quelquun');
+        Sanctum::actingAs($this->user);
+
+        $this->postJson('/api/extension/tiktok/session', ['username' => 'wildycaro'] + $this->cookies())
+            ->assertStatus(409)->assertJson(['status' => 'expired']);
+
+        $this->assertNull($account->fresh()->browser_username);
+    }
+
+    public function test_un_navigateur_non_connecte_nenvoie_rien(): void
+    {
+        $this->account();
+        Sanctum::actingAs($this->user);
+
+        $this->postJson('/api/extension/tiktok/session', ['username' => 'wildycaro', 'cookies' => [['name' => 'ttwid', 'value' => 'x', 'domain' => '.tiktok.com']]])
+            ->assertStatus(422);
+    }
+
+    public function test_des_cookies_dun_autre_site_sont_refuses(): void
+    {
+        $this->account();
+        Sanctum::actingAs($this->user);
+
+        $this->postJson('/api/extension/tiktok/session', ['username' => 'wildycaro', 'cookies' => [['name' => 'sessionid', 'value' => 'x', 'domain' => '.x.com']]])
+            ->assertStatus(422);
+    }
+
+    public function test_deux_comptes_libres_ne_se_devinent_pas(): void
+    {
+        $this->account();
+        SocialAccount::create(['platform_id' => $this->platform->id, 'name' => 'Planète', 'driver' => 'browser', 'languages' => ['fr']])
+            ->users()->attach($this->user->id, ['is_active' => true]);
+        Sanctum::actingAs($this->user);
+
+        $this->postJson('/api/extension/tiktok/session', ['username' => 'wildycaro'] + $this->cookies())->assertStatus(409);
     }
 
     public function test_le_seeder_du_demarrage_garde_un_compte_tiktok_en_mode_navigateur(): void

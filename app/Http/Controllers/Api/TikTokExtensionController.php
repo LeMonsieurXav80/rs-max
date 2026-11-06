@@ -3,8 +3,11 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
+use App\Models\BotActionLog;
 use App\Models\InboxItem;
 use App\Models\SocialAccount;
+use App\Services\Browser\BrowserException;
+use App\Services\Browser\TikTokSessionService;
 use App\Services\Inbox\InboxReplyGenerator;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -66,6 +69,52 @@ class TikTokExtensionController extends Controller
             ->orderByDesc('id')->limit(100)->get(['id', 'author', 'content', 'video_context', 'reply_text', 'status', 'liked', 'proof', 'updated_at']);
 
         return response()->json(['username' => $profile->username, 'comments' => $rows]);
+    }
+
+    /** Sans nom déjà connu, seule une fiche TikTok libre et unique peut recevoir la session. */
+    private function sessionAccount(Request $request, string $username): SocialAccount
+    {
+        $accounts = $request->user()->connectedSocialAccounts()->whereRelation('platform', 'slug', 'tiktok')->get();
+        $account = $accounts->firstWhere('browser_username', $username);
+        if ($account) {
+            return $account;
+        }
+
+        $free = $accounts->whereNull('browser_username');
+        abort_if($free->isEmpty(), 422, 'Crée d’abord un compte TikTok dans RS-Max.');
+        abort_if($free->count() > 1, 409, 'Plusieurs comptes TikTok attendent une session : envoie-les un par un, en créant chaque compte juste avant.');
+
+        return $free->first();
+    }
+
+    public function session(Request $request, TikTokSessionService $sessions): JsonResponse
+    {
+        $username = $this->username($request);
+        $data = $request->validate([
+            'cookies' => 'required|array|min:1|max:200',
+            'cookies.*.name' => 'required|string|max:200',
+            'cookies.*.value' => 'required|string|max:8000',
+            'cookies.*.domain' => ['required', 'string', 'regex:/^\.?(.+\.)?tiktok\.com$/'],
+            'cookies.*.path' => 'nullable|string|max:500',
+            'cookies.*.expirationDate' => 'nullable|numeric',
+            'cookies.*.httpOnly' => 'nullable|boolean',
+            'cookies.*.secure' => 'nullable|boolean',
+            'cookies.*.sameSite' => 'nullable|string|max:20',
+        ]);
+        abort_unless($sessions->hasSession($data['cookies']), 422, 'Aucune session TikTok dans ce navigateur.');
+        $account = $this->sessionAccount($request, $username);
+
+        try {
+            $connected = $sessions->store($account, $data['cookies'], $username);
+        } catch (BrowserException $e) {
+            return response()->json(['message' => $e->getMessage()], 502);
+        }
+
+        BotActionLog::create(['social_account_id' => $account->id, 'action_type' => 'tiktok.session', 'source' => 'extension',
+            'target_uri' => 'https://www.tiktok.com/@'.$username, 'success' => $connected, 'performed_at' => now()]);
+
+        return response()->json(['status' => $account->browser_session_status, 'username' => $account->browser_username],
+            $connected ? 200 : 409);
     }
 
     public function bind(Request $request): JsonResponse

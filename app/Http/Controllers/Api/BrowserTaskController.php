@@ -53,7 +53,7 @@ class BrowserTaskController extends Controller
         $task->update($v + ['finished_at' => now()]);
 
         // Chaque geste est journalisé, sauf les contrôles de session, trop fréquents pour être utiles.
-        if (! in_array($task->kind, ['x.whoami', 'session.apply'], true)) {
+        if (! in_array($task->kind, ['x.whoami', 'tiktok.whoami', 'session.apply'], true)) {
             BotActionLog::create([
                 'social_account_id' => $task->social_account_id,
                 'action_type' => $task->kind,

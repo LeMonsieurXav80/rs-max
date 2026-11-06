@@ -891,6 +891,10 @@ Reçoit les cookies X du navigateur de l'utilisateur et les donne au navigateur 
 
 Le **Mode de connexion** de chaque compte X se règle dans sa fiche : API X, ou Navigateur du VPS, avec son **Profil navigateur**. Plusieurs comptes peuvent partager un profil : ils passent alors chacun leur tour dans le même Chromium.
 
+### `POST /api/extension/tiktok/session`
+
+Corps : `username` et `cookies` (domaine `tiktok.com`, avec `sessionid`). Les cookies sont chiffrés dans le compte, installés dans le Chromium du VPS, puis TikTok Studio doit y afficher ce même nom. Compte choisi : celui qui porte déjà ce nom, sinon la seule fiche TikTok libre. Réponse 200 : session active. 409 : Studio montre un autre compte, ou plusieurs fiches libres. 422 : pas de session, ou aucune fiche TikTok. 502 : navigateur du VPS injoignable.
+
 ### `GET /api/extension/tasks/next`
 
 Réservé aux admins, et à la copie de Companion qui tourne sur le VPS. Paramètre : `profile`. Donne la prochaine tâche de ce profil, ou `{"id": null}`. Un profil ne reçoit qu'une tâche à la fois. Pour une tâche X, `account_id` donne l'identifiant X du compte attendu : Companion n'agit pas si un autre compte est connecté.
