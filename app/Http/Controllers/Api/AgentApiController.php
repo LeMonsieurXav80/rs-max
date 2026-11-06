@@ -3,9 +3,9 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
-use App\Jobs\PrepareAgentProposals;
-use App\Models\AgentProposal;
+use App\Jobs\PrepareInboxDrafts;
 use App\Models\BotActionLog;
+use App\Models\InboxItem;
 use App\Models\SocialAccount;
 use App\Services\Agent\AgentCatalog;
 use App\Services\Agent\AgentReader;
@@ -73,23 +73,24 @@ class AgentApiController extends Controller
         abort_unless($state['enabled'], 403, 'Action désactivée sur ce compte.');
         abort_unless($account->persona?->is_active && filled($account->persona->system_prompt), 422, 'Persona actif obligatoire pour répondre.');
 
-        PrepareAgentProposals::dispatch($account->id, $limit);
+        PrepareInboxDrafts::dispatch($account->id, $limit);
 
         return response()->json(['queued' => true], 202);
     }
 
-    public function proposals(Request $request): JsonResponse
+    /** Ce qui attend un humain dans la messagerie. */
+    public function drafts(Request $request): JsonResponse
     {
         abort_unless($request->user()->isManager(), 403);
-        $data = $request->validate(['status' => 'nullable|string|max:20', 'account' => 'nullable|integer', 'limit' => 'nullable|integer|min:1|max:50']);
+        $data = $request->validate(['account' => 'nullable|integer', 'limit' => 'nullable|integer|min:1|max:50']);
         $visible = $request->user()->visibleSocialAccounts()->select('social_accounts.id');
 
-        $rows = AgentProposal::whereIn('social_account_id', $visible)->where('status', $data['status'] ?? AgentProposal::PENDING)
+        $rows = InboxItem::awaitingValidation()->whereIn('social_account_id', $visible)
             ->when($data['account'] ?? null, fn ($q, $id) => $q->where('social_account_id', $id))
-            ->orderByDesc('id')->limit($data['limit'] ?? 20)->get(['id', 'social_account_id', 'author', 'reply_text', 'status', 'error']);
+            ->orderByDesc('id')->limit($data['limit'] ?? 20)->get(['id', 'social_account_id', 'author_username', 'author_name', 'reply_draft']);
 
-        return response()->json(['proposals' => $rows->map(fn (AgentProposal $p) => [
-            'id' => $p->id, 'account' => $p->social_account_id, 'author' => $p->author, 'reply' => $p->reply_text, 'status' => $p->status, 'error' => $p->error,
+        return response()->json(['drafts' => $rows->map(fn (InboxItem $i) => [
+            'id' => $i->id, 'account' => $i->social_account_id, 'author' => $i->author_username ?? $i->author_name, 'reply' => $i->reply_draft,
         ])]);
     }
 

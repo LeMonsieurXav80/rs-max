@@ -7,7 +7,7 @@ use App\Models\InboxItem;
 use App\Models\Setting;
 use App\Models\SocialAccount;
 use App\Models\User;
-use App\Services\Inbox\InboxReplyGenerator;
+use App\Services\Inbox\InboxDraftService;
 use App\Services\Inbox\InboxReplyService;
 use Carbon\Carbon;
 use Illuminate\Database\Eloquent\Builder;
@@ -17,7 +17,7 @@ use Illuminate\Validation\Rule;
 
 class InboxApiController extends Controller
 {
-    private const PLATFORMS = ['facebook', 'instagram', 'threads', 'youtube', 'bluesky', 'telegram', 'twitter'];
+    private const PLATFORMS = ['facebook', 'instagram', 'threads', 'youtube', 'bluesky', 'telegram', 'twitter', 'tiktok'];
 
     /** Read visibility follows the web inbox; answering requires an active account pivot. */
     public function index(Request $request): JsonResponse
@@ -32,7 +32,7 @@ class InboxApiController extends Controller
         }
 
         $items = $query->paginate($filters['limit'] ?? 20);
-        $writable = $request->user()->activeSocialAccounts()->pluck('social_accounts.id')->all();
+        $writable = $request->user()->connectedSocialAccounts()->pluck('social_accounts.id')->all();
 
         return response()->json([
             'items' => $items->getCollection()->map(fn ($item) => $this->format($item, in_array($item->social_account_id, $writable))),
@@ -49,7 +49,7 @@ class InboxApiController extends Controller
     public function prepare(Request $request): JsonResponse
     {
         $filters = $this->filters($request, prepare: true);
-        $writable = $request->user()->activeSocialAccounts()->pluck('social_accounts.id')->all();
+        $writable = $request->user()->connectedSocialAccounts()->pluck('social_accounts.id')->all();
         abort_if(array_diff($filters['accounts'] ?? [], $writable), 403, 'Compte non autorisé pour répondre.');
 
         $query = $this->query($request->user(), $filters)->whereIn('social_account_id', $writable);
@@ -152,7 +152,7 @@ class InboxApiController extends Controller
         ]);
     }
 
-    public function suggest(Request $request, InboxItem $inboxItem, InboxReplyGenerator $generator): JsonResponse
+    public function suggest(Request $request, InboxItem $inboxItem, InboxDraftService $drafts): JsonResponse
     {
         $this->authorizeReply($request->user(), $inboxItem);
         abort_unless($this->isUnanswered($inboxItem), 409, 'Message déjà traité ou réponse déjà préparée.');
@@ -162,7 +162,7 @@ class InboxApiController extends Controller
         abort_unless($persona?->is_active && filled($persona->system_prompt), 422, 'Ce compte doit avoir un persona actif avec ses consignes.');
 
         // The API explicitly promises the account persona, even when the web toggle is off.
-        $reply = $generator->generate($inboxItem, $account, usePersona: true);
+        $reply = $drafts->suggest($inboxItem, $account, usePersona: true);
         abort_unless($reply, 422, 'Impossible de générer la réponse. Vérifiez la configuration IA.');
 
         return response()->json([
@@ -303,7 +303,7 @@ class InboxApiController extends Controller
 
     private function authorizeReply(User $user, InboxItem $item): void
     {
-        abort_unless($user->activeSocialAccounts()->where('social_accounts.id', $item->social_account_id)->exists(), 403,
+        abort_unless($user->connectedSocialAccounts()->where('social_accounts.id', $item->social_account_id)->exists(), 403,
             'Compte non autorisé pour répondre.');
         $item->loadMissing(['socialAccount.platform', 'socialAccount.persona']);
         $slug = $item->socialAccount->platform->slug;
@@ -329,6 +329,7 @@ class InboxApiController extends Controller
             'status' => $item->status,
             'posted_at' => $item->posted_at?->toIso8601String(),
             'post_url' => $item->post_url,
+            'reply_draft' => $item->reply_draft,
             'reply_content' => $item->reply_content,
             'reply_external_id' => $item->reply_external_id,
             'replied_at' => $item->replied_at?->toIso8601String(),

@@ -918,10 +918,10 @@ Réservé aux rôles `manager` et `admin`. Réponses volontairement courtes, pou
 - `PUT /api/agent/accounts/{id}/actions/{action}` : corps `enabled` et `daily_limit`. Seules les actions réellement exécutables se règlent.
 - `GET /api/agent/log?account=&limit=20` : dernières actions de l'agent.
 
-- `POST /api/agent/accounts/{id}/proposals` : corps `limit` (20 au plus). Réponse 202 : RS-Max rassemble les conversations et rédige toutes les réponses en un seul prompt, avec le persona du compte. 403 action désactivée, 422 pas de persona actif.
-- `GET /api/agent/proposals?status=pending&account=&limit=20` : propositions et leur état (`pending`, `approved`, `sending`, `sent`, `rejected`, `failed`, `uncertain`).
+- `POST /api/agent/accounts/{id}/drafts` : corps `limit` (20 au plus). Réponse 202 : RS-Max relit le réseau, rassemble les conversations de la messagerie et rédige toutes les réponses en un seul prompt, avec le persona du compte. 403 action désactivée, 422 pas de persona actif. Chaque réponse rédigée compte une fois dans le quota `reply`.
+- `GET /api/agent/drafts?account=&limit=20` : réponses qui attendent une décision (`id` du message, `account`, `author`, `reply`).
 
-**Valider reste un geste humain.** Aucune route à jeton n'approuve une proposition : cela se fait sur la page **À valider**, en session web. Un envoi part une seule fois ; `uncertain` signifie qu'il a pu partir et qu'il faut contrôler sur le réseau.
+Les réponses préparées restent dans `inbox_items.reply_draft`, visibles dans `/inbox`, onglet **À valider**. **Valider reste un geste humain** : aucune route de l'agent n'envoie un brouillon. TikTok et X par le navigateur passent par la même messagerie que les autres réseaux. Une réponse non confirmée par le navigateur (`reply_failed`) n'est jamais relancée : elle a pu partir, il faut contrôler sur le réseau.
 
 Une action est désactivée tant qu'elle n'a pas été activée sur le compte. Le catalogue est dans `config/agent.php`.
 

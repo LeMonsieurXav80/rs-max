@@ -33,6 +33,13 @@
                 </div>
 
                 <div class="divide-y divide-gray-50">
+                    @if (($row['actions']['reply']['enabled'] ?? false) && $row['account']->persona_id)
+                        <form method="POST" action="{{ route('agent.prepare', $row['account']) }}" class="px-6 py-3 flex items-center justify-between gap-3">
+                            @csrf
+                            <span class="text-sm text-gray-600">Rédiger les réponses en attente, à valider dans la messagerie</span>
+                            <button type="submit" class="px-3 py-1.5 text-xs font-medium text-white bg-indigo-600 rounded-lg hover:bg-indigo-700 transition-colors">Préparer</button>
+                        </form>
+                    @endif
                     @foreach ($row['actions'] as $key => $action)
                         <div class="px-6 py-3">
                             @if ($action['status'] === 'ready')

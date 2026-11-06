@@ -66,6 +66,10 @@ class BrowserTaskQueue
             return $task->result ?? [];
         }
 
+        if ($task->status === BrowserTask::UNCERTAIN) {
+            throw new BrowserUncertainException($task->error ?? 'Résultat inconnu : vérifier sur le réseau.');
+        }
+
         throw new BrowserException($task->error ?? 'Tâche navigateur échouée.');
     }
 
@@ -82,6 +86,6 @@ class BrowserTaskQueue
         BrowserTask::whereKey($task->id)->where('status', BrowserTask::RUNNING)
             ->update(['status' => BrowserTask::UNCERTAIN, 'error' => 'Délai dépassé', 'finished_at' => now()]);
 
-        throw new BrowserException('Résultat inconnu : vérifier sur le réseau avant de relancer.');
+        throw new BrowserUncertainException('Résultat inconnu : vérifier sur le réseau avant de relancer.');
     }
 }

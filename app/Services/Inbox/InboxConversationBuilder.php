@@ -1,87 +1,38 @@
 <?php
 
-namespace App\Services\Agent;
+namespace App\Services\Inbox;
 
-use App\Models\AgentProposal;
 use App\Models\ExternalPost;
 use App\Models\InboxItem;
 use App\Models\PostPlatform;
 use App\Models\SocialAccount;
 use App\Services\Browser\BrowserException;
 use App\Services\Browser\BrowserTaskQueue;
+use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
 
 /**
  * Met chaque réseau au même format : une conversation est une suite de messages, du
- * message d'origine du compte jusqu'au dernier message reçu. Le reste du circuit
- * (génération, validation) ne connaît que ce format.
+ * message d'origine du compte jusqu'au dernier message reçu.
  */
-class ConversationCollector
+class InboxConversationBuilder
 {
     private const TIMEOUT = 80;
 
-    private const TIKTOK_COMMENTS = 'https://www.tiktok.com/tiktokstudio/comment';
-
     public function __construct(private BrowserTaskQueue $queue) {}
 
-    /** @return list<array{key: string, inbox_item_id: ?int, author: ?string, target: ?array, thread: list<array{author: string, mine: bool, text: string}>}> */
-    public function collect(SocialAccount $account, int $limit): array
+    /**
+     * @param  Collection<int, InboxItem>  $items
+     * @return list<array{inbox_item_id: int, thread: list<array{author: string, mine: bool, text: string}>}>
+     */
+    public function build(SocialAccount $account, Collection $items): array
     {
-        return $account->platform->slug === 'tiktok' ? $this->tiktok($account, $limit) : $this->inbox($account, $limit);
-    }
+        return $items->map(function (InboxItem $item) use ($account) {
+            $thread = $account->usesBrowser() && $account->platform->slug === 'twitter' ? $this->xThread($account, $item) : $this->inboxThread($account, $item);
 
-    private function known(SocialAccount $account): array
-    {
-        return AgentProposal::where('social_account_id', $account->id)->pluck('target_key')->all();
-    }
-
-    private function tiktok(SocialAccount $account, int $limit): array
-    {
-        $payload = ['url' => self::TIKTOK_COMMENTS, 'username' => $account->browser_username, 'limit' => config('agent.read_limit')];
-        $items = $this->queue->run($account, 'tiktok.comments', $payload, self::TIMEOUT)['items'] ?? [];
-        $known = $this->known($account);
-
-        return collect($items)
-            ->filter(fn (array $c) => ! $c['replied'] && filled($c['content']) && filled($c['caption']) && $c['author'] !== $account->browser_username)
-            ->map(fn (array $c) => [
-                'key' => sha1($c['author'].'|'.$c['content'].'|'.$c['caption']),
-                'inbox_item_id' => null,
-                'author' => $c['author'],
-                'target' => ['author' => $c['author'], 'content' => $c['content'], 'caption' => $c['caption']],
-                'thread' => [$this->message($account->name, true, $c['caption']), $this->message($c['author'], false, $c['content'])],
-            ])
-            ->reject(fn (array $c) => in_array($c['key'], $known, true))
-            ->take($limit)->values()->all();
-    }
-
-    private function inbox(SocialAccount $account, int $limit): array
-    {
-        $items = InboxItem::where('social_account_id', $account->id)
-            ->whereIn('status', ['unread', 'read'])->whereNull('replied_at')->whereNull('reply_scheduled_at')
-            ->whereNotIn('external_id', collect($this->known($account))->map(fn ($k) => $this->externalId($k))->all())
-            ->orderByDesc('posted_at')->limit($limit)->get();
-
-        return $items->map(fn (InboxItem $item) => $this->fromInbox($account, $item))->filter()->values()->all();
-    }
-
-    private function key(InboxItem $item): string
-    {
-        return 'inbox:'.$item->external_id;
-    }
-
-    private function externalId(string $key): string
-    {
-        return Str::after($key, 'inbox:');
-    }
-
-    private function fromInbox(SocialAccount $account, InboxItem $item): ?array
-    {
-        $thread = $account->usesBrowser() && $account->platform->slug === 'twitter' ? $this->xThread($account, $item) : $this->inboxThread($account, $item);
-
-        return $thread === null ? null : [
-            'key' => $this->key($item), 'inbox_item_id' => $item->id, 'author' => $item->author_username ?? $item->author_name, 'target' => null, 'thread' => $thread,
-        ];
+            return $thread === null ? null : ['inbox_item_id' => $item->id, 'thread' => $thread];
+        })->filter()->values()->all();
     }
 
     /** Sur X, seul le fil affiché donne le tweet d'origine : sans lui, pas de proposition. */
@@ -126,6 +77,10 @@ class ConversationCollector
 
     private function originalText(SocialAccount $account, InboxItem $item): ?string
     {
+        if ($item->post_content) {
+            return $item->post_content;
+        }
+
         if (! $item->external_post_id || $item->type === 'dm') {
             return null;
         }

@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Agent;
 
 use App\Http\Controllers\Controller;
+use App\Jobs\PrepareInboxDrafts;
 use App\Models\SocialAccount;
 use App\Services\Agent\AgentCatalog;
 use Illuminate\Http\RedirectResponse;
@@ -21,6 +22,13 @@ class AgentController extends Controller
             ->map(fn (SocialAccount $a) => ['account' => $a, 'actions' => $this->catalog->forAccount($a)]);
 
         return view('agent.platform', compact('platform', 'definition', 'accounts'));
+    }
+
+    public function prepare(SocialAccount $account): RedirectResponse
+    {
+        PrepareInboxDrafts::dispatch($account->id, 10);
+
+        return back()->with('success', 'Préparation lancée pour '.$account->name.' : les réponses arriveront dans la messagerie, onglet À valider.');
     }
 
     public function update(Request $request, SocialAccount $account, string $action): RedirectResponse

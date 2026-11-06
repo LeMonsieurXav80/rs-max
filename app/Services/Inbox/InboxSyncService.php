@@ -127,6 +127,7 @@ class InboxSyncService
             'bluesky' => app(BlueskyInboxService::class),
             'telegram' => app(TelegramInboxService::class),
             'twitter' => app(TwitterInboxService::class),
+            'tiktok' => app(TikTokInboxService::class),
             default => null,
         };
     }
@@ -191,7 +192,7 @@ class InboxSyncService
      */
     private function getEnabledPlatforms(): array
     {
-        $allPlatforms = ['facebook', 'instagram', 'threads', 'youtube', 'bluesky', 'telegram', 'twitter'];
+        $allPlatforms = ['facebook', 'instagram', 'threads', 'youtube', 'bluesky', 'telegram', 'twitter', 'tiktok'];
 
         return array_values(array_filter($allPlatforms, function ($slug) {
             return (bool) Setting::get("inbox_platform_{$slug}_enabled", true);

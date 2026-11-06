@@ -19,7 +19,6 @@ return [
     'thread_messages' => 8,
     'thread_text_limit' => 400,
     'reply_limits' => ['twitter' => 280, 'tiktok' => 150, 'bluesky' => 300, 'default' => 500],
-    'proposal_days' => 30,
 
     'platforms' => [
         'twitter' => ['name' => 'X', 'actions' => [

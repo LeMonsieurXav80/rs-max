@@ -5,7 +5,7 @@ namespace App\Http\Controllers;
 use App\Models\InboxItem;
 use App\Models\Setting;
 use App\Models\SocialAccount;
-use App\Services\Inbox\InboxReplyGenerator;
+use App\Services\Inbox\InboxDraftService;
 use App\Services\Inbox\InboxReplyService;
 use App\Services\Inbox\InboxSyncService;
 use Illuminate\Http\JsonResponse;
@@ -21,7 +21,7 @@ class InboxController extends Controller
         $user = $request->user();
 
         // Only include accounts from platforms that are enabled in inbox settings
-        $enabledSlugs = collect(['facebook', 'instagram', 'threads', 'youtube', 'bluesky', 'telegram', 'twitter'])
+        $enabledSlugs = collect(['facebook', 'instagram', 'threads', 'youtube', 'bluesky', 'telegram', 'twitter', 'tiktok'])
             ->filter(fn ($slug) => Setting::get("inbox_platform_{$slug}_enabled", true))
             ->values();
 
@@ -55,6 +55,9 @@ class InboxController extends Controller
         $statusIsFiltered = false;
         if (in_array($status, ['new', 'followup'])) {
             $query->whereIn('status', ['unread', 'read']);
+            $statusIsFiltered = true;
+        } elseif ($status === 'draft') {
+            $query->awaitingValidation();
             $statusIsFiltered = true;
         } elseif ($status !== '') {
             $query->where('status', $status);
@@ -242,6 +245,7 @@ class InboxController extends Controller
             'unreplied' => InboxItem::whereIn('social_account_id', $accountIds)->whereIn('status', ['unread', 'read'])->count(),
             'replied' => InboxItem::whereIn('social_account_id', $accountIds)->where('status', 'replied')->count(),
             'ignored' => InboxItem::whereIn('social_account_id', $accountIds)->where('status', 'ignored')->count(),
+            'draft' => InboxItem::whereIn('social_account_id', $accountIds)->awaitingValidation()->count(),
         ];
 
         // Scheduled replies progress
@@ -358,7 +362,7 @@ class InboxController extends Controller
     {
         $account = $inboxItem->socialAccount()->with(['platform', 'persona'])->first();
 
-        $reply = app(InboxReplyGenerator::class)->generate($inboxItem, $account);
+        $reply = app(InboxDraftService::class)->suggest($inboxItem, $account);
 
         if (! $reply) {
             return response()->json(['error' => 'Impossible de générer une réponse. Vérifiez la clé API OpenAI'.(Setting::get('inbox_use_persona', true) ? ' et la persona du compte' : '').'.'], 422);
@@ -387,13 +391,29 @@ class InboxController extends Controller
                 'content' => $item->content,
                 'author' => $item->author_name ?? $item->author_username,
                 'platform' => $item->socialAccount->platform->slug,
-                'reply' => null,
+                'account_id' => $item->social_account_id,
+                'reply' => $item->reply_draft,
                 'error' => null,
-                'loading' => true,
+                'loading' => ! $item->reply_draft,
             ])
             ->values();
 
         return response()->json(['items' => $items]);
+    }
+
+    /** Un prompt par compte : le navigateur attend chaque fil X, d'où des lots courts côté page. */
+    public function bulkAiGenerate(Request $request): JsonResponse
+    {
+        $validated = $request->validate([
+            'ids' => 'required|array|min:1|max:10',
+            'ids.*' => 'integer|exists:inbox_items,id',
+        ]);
+
+        $replies = InboxItem::with(['socialAccount.platform', 'socialAccount.persona'])->whereIn('id', $validated['ids'])->get()
+            ->groupBy('social_account_id')
+            ->reduce(fn (array $all, $items) => $all + app(InboxDraftService::class)->batch($items->first()->socialAccount, $items), []);
+
+        return response()->json(['replies' => (object) $replies]);
     }
 
     public function bulkSend(Request $request): JsonResponse
@@ -443,7 +463,10 @@ class InboxController extends Controller
                 continue;
             }
 
-            $result = app(InboxReplyService::class)->send($item, $itemData['reply_text']);
+            // Par le navigateur, une réponse prend de longues secondes : le lot partirait en timeout.
+            $result = $item->socialAccount->usesBrowser()
+                ? app(InboxReplyService::class)->schedule($item, $itemData['reply_text'], now())
+                : app(InboxReplyService::class)->send($item, $itemData['reply_text']);
             $results[] = ['id' => $item->id, 'success' => $result['success'], 'error' => $result['error'] ?? null];
 
             usleep(500000); // 500ms between sends

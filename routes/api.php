@@ -145,8 +145,8 @@ Route::middleware('auth:sanctum')->group(function () {
     // ── Agent : réponses compactes, voir docs/API.md ──
     Route::get('/agent/accounts', [\App\Http\Controllers\Api\AgentApiController::class, 'accounts']);
     Route::get('/agent/log', [\App\Http\Controllers\Api\AgentApiController::class, 'log']);
-    Route::get('/agent/proposals', [\App\Http\Controllers\Api\AgentApiController::class, 'proposals']);
-    Route::post('/agent/accounts/{id}/proposals', [\App\Http\Controllers\Api\AgentApiController::class, 'prepare'])->whereNumber('id')->middleware('throttle:20,1');
+    Route::get('/agent/drafts', [\App\Http\Controllers\Api\AgentApiController::class, 'drafts']);
+    Route::post('/agent/accounts/{id}/drafts', [\App\Http\Controllers\Api\AgentApiController::class, 'prepare'])->whereNumber('id')->middleware('throttle:20,1');
     Route::get('/agent/accounts/{id}/read/{action}', [\App\Http\Controllers\Api\AgentApiController::class, 'read'])->whereNumber('id');
     Route::put('/agent/accounts/{id}/actions/{action}', [\App\Http\Controllers\Api\AgentApiController::class, 'configure'])->whereNumber('id');
 

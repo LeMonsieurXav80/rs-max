@@ -2,7 +2,6 @@
 
 use App\Http\Controllers\AccountGroupController;
 use App\Http\Controllers\Agent\AgentController;
-use App\Http\Controllers\Agent\AgentValidationController;
 use App\Http\Controllers\Bot\BlueskyBotController;
 use App\Http\Controllers\Bot\FacebookBotController;
 use App\Http\Controllers\BotHubController;
@@ -121,6 +120,7 @@ Route::middleware(['auth', 'verified', 'throttle:600,1'])->group(function () {
     Route::post('inbox/{inboxItem}/reply', [InboxController::class, 'reply'])->name('inbox.reply');
     Route::post('inbox/{inboxItem}/ai-suggest', [InboxController::class, 'aiSuggest'])->name('inbox.aiSuggest');
     Route::post('inbox/bulk-ai-prepare', [InboxController::class, 'bulkAiPrepare'])->name('inbox.bulkAiPrepare');
+    Route::post('inbox/bulk-ai-generate', [InboxController::class, 'bulkAiGenerate'])->name('inbox.bulkAiGenerate');
     Route::post('inbox/bulk-send', [InboxController::class, 'bulkSend'])->name('inbox.bulkSend');
     Route::get('inbox/scheduled-status', [InboxController::class, 'scheduledStatus'])->name('inbox.scheduledStatus');
 
@@ -290,10 +290,7 @@ Route::middleware(['auth', 'verified', 'throttle:600,1'])->group(function () {
         Route::delete('bot/logs', [BotHubController::class, 'clearLogs'])->name('bot.clearLogs');
 
         // Agent — une page par réseau, une action réglable par compte
-        Route::get('agent/validations', [AgentValidationController::class, 'index'])->name('agent.validations');
-        Route::post('agent/validations/prepare/{account}', [AgentValidationController::class, 'prepare'])->name('agent.validations.prepare');
-        Route::post('agent/validations/{proposal}/approve', [AgentValidationController::class, 'approve'])->name('agent.validations.approve');
-        Route::post('agent/validations/{proposal}/reject', [AgentValidationController::class, 'reject'])->name('agent.validations.reject');
+        Route::post('agent/{account}/prepare', [AgentController::class, 'prepare'])->name('agent.prepare');
         Route::get('agent/{platform}', [AgentController::class, 'show'])->name('agent.platform');
         Route::put('agent/{account}/{action}', [AgentController::class, 'update'])->where('action', '[a-z.]+')->name('agent.update');
 

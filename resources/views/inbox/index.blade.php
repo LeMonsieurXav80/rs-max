@@ -109,13 +109,16 @@
             {{-- Status pills + sync button --}}
             <div class="flex flex-wrap items-center gap-3">
                 <div class="flex items-center gap-1 bg-gray-100 rounded-xl p-1">
-                    @foreach(['' => 'Tous', 'new' => 'Nouveau', 'followup' => 'Relance', 'replied' => 'Répondus', 'ignored' => 'Ignorés', 'archived' => 'Archivés'] as $val => $label)
+                    @foreach(['' => 'Tous', 'new' => 'Nouveau', 'followup' => 'Relance', 'draft' => 'À valider', 'replied' => 'Répondus', 'ignored' => 'Ignorés', 'archived' => 'Archivés'] as $val => $label)
                         <button type="submit"
                                 @click.prevent="$refs.statusInput.value = '{{ $val }}'; $refs.filterForm.submit()"
                                 class="px-3 py-1.5 rounded-lg text-sm font-medium transition-colors {{ $currentStatus === $val ? 'bg-white shadow-sm' . ($val === 'replied' ? ' text-green-600' : ($val === 'archived' ? ' text-gray-600' : ($val === 'ignored' ? ' text-gray-600' : ($val === 'new' ? ' text-amber-600' : ($val === 'followup' ? ' text-orange-600' : ' text-indigo-600'))))) : 'text-gray-500 hover:text-gray-700' }}">
                             {{ $label }}
                             @if($val === 'ignored' && $counts['ignored'] > 0)
                                 <span class="ml-1 text-xs text-gray-400">({{ $counts['ignored'] }})</span>
+                            @endif
+                            @if($val === 'draft' && $counts['draft'] > 0)
+                                <span class="ml-1 text-xs text-indigo-500">({{ $counts['draft'] }})</span>
                             @endif
                         </button>
                     @endforeach
@@ -189,6 +192,7 @@
                         $allItemIds = $items->pluck('id')->toArray();
                         $itemIds = match($currentStatus) {
                             'new', 'followup' => array_filter([$items->whereIn('status', ['unread', 'read'])->last()?->id]),
+                            'draft' => $items->whereNotNull('reply_draft')->pluck('id')->toArray(),
                             '' => $items->where('status', '!=', 'archived')->pluck('id')->toArray(),
                             default => $items->where('status', $currentStatus)->pluck('id')->toArray(),
                         };
@@ -242,10 +246,18 @@
                                             <span class="px-1.5 py-0.5 rounded-full bg-green-100 text-green-700 text-xs font-medium">Répondu</span>
                                         @elseif($firstItem->status === 'reply_failed')
                                             <span class="px-1.5 py-0.5 rounded-full bg-red-100 text-red-700 text-xs font-medium">Échec envoi</span>
+                                        @elseif($firstItem->reply_draft)
+                                            <span class="px-1.5 py-0.5 rounded-full bg-indigo-100 text-indigo-700 text-xs font-medium">À valider</span>
                                         @endif
                                     </div>
+                                    @if($firstItem->post_content)
+                                        <p class="text-xs text-gray-400 mb-1 line-clamp-1">Sur : {{ $firstItem->post_content }}</p>
+                                    @endif
                                     @if($firstItem->content)
                                         <p class="text-sm text-gray-700 line-clamp-2">{{ $firstItem->content }}</p>
+                                    @endif
+                                    @if($firstItem->reply_draft)
+                                        <p class="mt-1 text-sm text-indigo-700 bg-indigo-50 rounded-lg px-2 py-1">{{ $firstItem->reply_draft }}</p>
                                     @endif
                                     @if($firstItem->media_url)
                                         <div class="mt-1">
@@ -279,7 +291,7 @@
                             {{-- Actions --}}
                             <div class="flex items-center gap-1 flex-shrink-0" @click.stop>
                                 @if($isSingle && $firstItem->status !== 'replied')
-                                    <button @click="openReplyModal({{ $firstItem->id }}, {{ json_encode($firstItem->content) }}, {{ json_encode($firstItem->author_name ?: $firstItem->author_username) }})"
+                                    <button @click="openReplyModal({{ $firstItem->id }}, {{ json_encode($firstItem->content) }}, {{ json_encode($firstItem->author_name ?: $firstItem->author_username) }}, {{ json_encode($firstItem->reply_draft) }})"
                                             class="p-1.5 text-gray-400 hover:text-indigo-600 transition-colors rounded-lg hover:bg-indigo-50" title="Répondre">
                                         <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1.5">
                                             <path stroke-linecap="round" stroke-linejoin="round" d="M9 15 3 9m0 0 6-6M3 9h12a6 6 0 0 1 0 12h-3" />
@@ -330,10 +342,18 @@
                                                             <span class="px-1.5 py-0.5 rounded-full bg-green-100 text-green-700 text-xs font-medium">Répondu</span>
                                                         @elseif($item->status === 'reply_failed')
                                                             <span class="px-1.5 py-0.5 rounded-full bg-red-100 text-red-700 text-xs font-medium">Échec envoi</span>
+                                                        @elseif($item->reply_draft)
+                                                            <span class="px-1.5 py-0.5 rounded-full bg-indigo-100 text-indigo-700 text-xs font-medium">À valider</span>
                                                         @endif
                                                     </div>
+                                                    @if($item->post_content)
+                                                        <p class="text-xs text-gray-400 mb-1 line-clamp-1">Sur : {{ $item->post_content }}</p>
+                                                    @endif
                                                     @if($item->content)
                                                         <p class="text-sm text-gray-700">{{ $item->content }}</p>
+                                                    @endif
+                                                    @if($item->reply_draft)
+                                                        <p class="mt-1 text-sm text-indigo-700 bg-indigo-50 rounded-lg px-2 py-1">{{ $item->reply_draft }}</p>
                                                     @endif
                                                     @if($item->media_url)
                                                         <div class="mt-1">
@@ -351,7 +371,7 @@
                                                 </div>
                                                 @if($item->status !== 'replied')
                                                     <div class="flex items-center gap-1 flex-shrink-0">
-                                                        <button @click="openReplyModal({{ $item->id }}, {{ json_encode($item->content) }}, {{ json_encode($item->author_name ?: $item->author_username) }})"
+                                                        <button @click="openReplyModal({{ $item->id }}, {{ json_encode($item->content) }}, {{ json_encode($item->author_name ?: $item->author_username) }}, {{ json_encode($item->reply_draft) }})"
                                                                 class="p-1.5 text-gray-400 hover:text-indigo-600 transition-colors rounded-lg hover:bg-indigo-50" title="Répondre">
                                                             <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1.5">
                                                                 <path stroke-linecap="round" stroke-linejoin="round" d="M9 15 3 9m0 0 6-6M3 9h12a6 6 0 0 1 0 12h-3" />
@@ -395,7 +415,7 @@
                                                                     @endif
                                                                 </div>
                                                                 @if($reply->status !== 'replied')
-                                                                    <button @click="openReplyModal({{ $reply->id }}, {{ json_encode($reply->content) }}, {{ json_encode($reply->author_name ?: $reply->author_username) }})"
+                                                                    <button @click="openReplyModal({{ $reply->id }}, {{ json_encode($reply->content) }}, {{ json_encode($reply->author_name ?: $reply->author_username) }}, {{ json_encode($reply->reply_draft) }})"
                                                                             class="p-1 text-gray-400 hover:text-indigo-600 transition-colors rounded-lg hover:bg-indigo-50 flex-shrink-0" title="Répondre">
                                                                         <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1.5">
                                                                             <path stroke-linecap="round" stroke-linejoin="round" d="M9 15 3 9m0 0 6-6M3 9h12a6 6 0 0 1 0 12h-3" />
@@ -432,10 +452,18 @@
                                                             <span class="px-1.5 py-0.5 rounded-full bg-green-100 text-green-700 text-xs font-medium">Répondu</span>
                                                         @elseif($item->status === 'reply_failed')
                                                             <span class="px-1.5 py-0.5 rounded-full bg-red-100 text-red-700 text-xs font-medium">Échec envoi</span>
+                                                        @elseif($item->reply_draft)
+                                                            <span class="px-1.5 py-0.5 rounded-full bg-indigo-100 text-indigo-700 text-xs font-medium">À valider</span>
                                                         @endif
                                                     </div>
+                                                    @if($item->post_content)
+                                                        <p class="text-xs text-gray-400 mb-1 line-clamp-1">Sur : {{ $item->post_content }}</p>
+                                                    @endif
                                                     @if($item->content)
                                                         <p class="text-sm text-gray-700">{{ $item->content }}</p>
+                                                    @endif
+                                                    @if($item->reply_draft)
+                                                        <p class="mt-1 text-sm text-indigo-700 bg-indigo-50 rounded-lg px-2 py-1">{{ $item->reply_draft }}</p>
                                                     @endif
                                                     @if($item->media_url)
                                                         <div class="mt-1">
@@ -453,7 +481,7 @@
                                                 </div>
                                                 @if($item->status !== 'replied')
                                                     <div class="flex items-center gap-1 flex-shrink-0">
-                                                        <button @click="openReplyModal({{ $item->id }}, {{ json_encode($item->content) }}, {{ json_encode($item->author_name ?: $item->author_username) }})"
+                                                        <button @click="openReplyModal({{ $item->id }}, {{ json_encode($item->content) }}, {{ json_encode($item->author_name ?: $item->author_username) }}, {{ json_encode($item->reply_draft) }})"
                                                                 class="p-1.5 text-gray-400 hover:text-indigo-600 transition-colors rounded-lg hover:bg-indigo-50" title="Répondre">
                                                             <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1.5">
                                                                 <path stroke-linecap="round" stroke-linejoin="round" d="M9 15 3 9m0 0 6-6M3 9h12a6 6 0 0 1 0 12h-3" />
@@ -724,11 +752,11 @@ function inboxManager() {
             this.lastClickedConvoIndex = index;
         },
 
-        openReplyModal(id, content, author) {
+        openReplyModal(id, content, author, draft = '') {
             this.replyToId = id;
             this.replyToContent = content;
             this.replyToAuthor = author || 'Anonyme';
-            this.replyText = '';
+            this.replyText = draft || '';
             this.replyModalOpen = true;
         },
 
@@ -886,42 +914,33 @@ function inboxManager() {
 
             if (this.bulkSuggestions.length === 0) return;
 
-            // Phase 2: generate AI replies sequentially with delay and retry
+            // Phase 2: un prompt par compte, en lots courts (les fils X sont lus par le navigateur du VPS)
+            this.bulkProgress = this.bulkSuggestions.filter(s => !s.loading).length;
             this.bulkGenerating = true;
 
-            const delay = ms => new Promise(r => setTimeout(r, ms));
+            const batches = [];
+            const byAccount = Object.groupBy(this.bulkSuggestions.filter(s => s.loading), s => s.account_id);
+            Object.values(byAccount).forEach(group => {
+                for (let i = 0; i < group.length; i += 5) batches.push(group.slice(i, i + 5));
+            });
 
-            for (let i = 0; i < this.bulkSuggestions.length && !this.bulkAborted; i++) {
-                const item = this.bulkSuggestions[i];
-                let success = false;
-
-                for (let attempt = 0; attempt < 3 && !success; attempt++) {
-                    try {
-                        if (attempt > 0) await delay(2000 * attempt);
-                        const resp = await this.csrfFetch(`/inbox/${item.id}/ai-suggest`, { method: 'POST' });
-                        const data = await resp.json();
-                        if (resp.ok && data.reply) {
-                            item.reply = data.reply;
-                            success = true;
-                        } else if (resp.status === 429) {
-                            // Rate limited — wait and retry
-                            await delay(5000);
-                        } else {
-                            item.error = data.error || 'Échec de la génération';
-                            success = true; // Don't retry business errors
-                        }
-                    } catch (e) {
-                        if (attempt === 2) item.error = 'Erreur réseau';
-                    }
+            for (const batch of batches) {
+                if (this.bulkAborted) break;
+                try {
+                    const resp = await this.csrfFetch('/inbox/bulk-ai-generate', {
+                        method: 'POST',
+                        body: JSON.stringify({ ids: batch.map(s => s.id) }),
+                    });
+                    const data = await resp.json();
+                    batch.forEach(item => {
+                        item.reply = resp.ok ? (data.replies[item.id] || null) : null;
+                        if (!item.reply) item.error = resp.ok ? 'Pas de réponse proposée' : (data.message || 'Échec de la génération');
+                    });
+                } catch (e) {
+                    batch.forEach(item => { item.error = 'Erreur réseau'; });
                 }
-
-                item.loading = false;
-                this.bulkProgress++;
-
-                // Small pause between items to avoid overwhelming the server
-                if (i < this.bulkSuggestions.length - 1 && !this.bulkAborted) {
-                    await delay(300);
-                }
+                batch.forEach(item => { item.loading = false; });
+                this.bulkProgress += batch.length;
             }
 
             // Mark any remaining (aborted) items as cancelled

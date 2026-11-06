@@ -1,6 +1,5 @@
 <?php
 
-use App\Models\AgentProposal;
 use App\Models\BotTargetAccount;
 use App\Models\Setting;
 use Illuminate\Support\Facades\Cache;
@@ -38,14 +37,16 @@ match ($syncFreq) {
 Schedule::command('inbox:send-scheduled')->everyMinute()->withoutOverlapping(5);
 
 // Inbox sync - per-platform frequency configurable via Settings page
-$inboxPlatforms = ['facebook', 'instagram', 'threads', 'youtube', 'bluesky', 'telegram', 'twitter'];
+$inboxPlatforms = ['facebook', 'instagram', 'threads', 'youtube', 'bluesky', 'telegram', 'twitter', 'tiktok'];
 foreach ($inboxPlatforms as $slug) {
     $enabled = rescue(fn () => (bool) Setting::get("inbox_platform_{$slug}_enabled", true), true, false);
     if (! $enabled) {
         continue;
     }
 
-    $freq = rescue(fn () => Setting::get("inbox_sync_freq_{$slug}", 'every_15_min'), 'every_15_min', false);
+    // TikTok se lit par le navigateur du VPS, partagé avec les autres comptes : pas tous les quarts d'heure.
+    $defaultFreq = $slug === 'tiktok' ? 'hourly' : 'every_15_min';
+    $freq = rescue(fn () => Setting::get("inbox_sync_freq_{$slug}", $defaultFreq), $defaultFreq, false);
     $platformSchedule = Schedule::command("inbox:sync --platform={$slug}")->withoutOverlapping(10);
     match ($freq) {
         'every_30_min' => $platformSchedule->everyThirtyMinutes(),
@@ -82,10 +83,6 @@ Schedule::call(function () {
 Schedule::command('x:session-check')->hourly()->withoutOverlapping(30);
 Schedule::command('tiktok:session-check')->hourly()->withoutOverlapping(30);
 Schedule::command('x:browser-sync')->everySixHours()->withoutOverlapping(60);
-
-// Propositions de l'agent : les décisions anciennes n'ont plus d'utilité
-Schedule::call(fn () => AgentProposal::where('status', '!=', AgentProposal::PENDING)
-    ->where('updated_at', '<', now()->subDays(config('agent.proposal_days')))->delete())->daily();
 
 // Check for application updates (hourly)
 Schedule::call(function () {

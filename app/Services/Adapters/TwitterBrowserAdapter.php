@@ -5,6 +5,7 @@ namespace App\Services\Adapters;
 use App\Models\SocialAccount;
 use App\Services\Browser\BrowserException;
 use App\Services\Browser\BrowserTaskQueue;
+use App\Services\Browser\BrowserUncertainException;
 use App\Services\Browser\XSessionService;
 use Illuminate\Support\Facades\Log;
 
@@ -84,7 +85,7 @@ class TwitterBrowserAdapter implements PlatformAdapterInterface, ResharingAdapte
         } catch (BrowserException $e) {
             Log::error('TwitterBrowserAdapter: échec', ['account_id' => $account->id, 'kind' => $kind, 'error' => $e->getMessage()]);
 
-            return ['success' => false, 'external_id' => null, 'error' => $e->getMessage()];
+            return ['success' => false, 'external_id' => null, 'error' => $e->getMessage(), 'uncertain' => $e instanceof BrowserUncertainException];
         }
     }
 

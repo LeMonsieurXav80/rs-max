@@ -1,6 +1,6 @@
 <?php
 
-namespace App\Services\Agent;
+namespace App\Services\Inbox;
 
 use App\Models\Setting;
 use App\Models\SocialAccount;
@@ -8,7 +8,7 @@ use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 
 /** Un seul prompt par compte : son persona, puis toutes les conversations à traiter. */
-class AgentReplyGenerator
+class InboxBatchReplyGenerator
 {
     private const TOKENS_PER_REPLY = 120;
 
@@ -41,7 +41,7 @@ class AgentReplyGenerator
                 ],
             ]);
         } catch (\Throwable $e) {
-            Log::error('Agent : génération échouée', ['account' => $account->id, 'error' => $e->getMessage()]);
+            Log::error('Inbox : génération par lot échouée', ['account' => $account->id, 'error' => $e->getMessage()]);
 
             return ['replies' => [], 'tokens' => 0];
         }

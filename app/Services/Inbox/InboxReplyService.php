@@ -46,13 +46,17 @@ class InboxReplyService
                 $item->update([
                     'status' => 'replied',
                     'reply_content' => $text,
+                    'reply_draft' => null,
                     'reply_external_id' => $result['external_id'] ?? null,
                     'replied_at' => now(),
                     'reply_scheduled_at' => null,
                 ]);
             } else {
                 Log::warning('InboxReplyService: reply failed', ['item_id' => $item->id, 'error' => $result['error'] ?? 'unknown']);
-                if ($scheduled && $item->reply_attempts >= 3) {
+                if ($result['uncertain'] ?? false) {
+                    // La réponse a pu partir : ni l'humain ni la planification ne la renvoient.
+                    $item->update(['status' => 'reply_failed', 'reply_content' => $text, 'reply_scheduled_at' => null, 'reply_attempts' => 3]);
+                } elseif ($scheduled && $item->reply_attempts >= 3) {
                     $item->update(['status' => 'reply_failed', 'reply_scheduled_at' => null]);
                 }
             }
@@ -75,6 +79,7 @@ class InboxReplyService
 
             $item->update([
                 'reply_content' => $text,
+                'reply_draft' => null,
                 'reply_scheduled_at' => $at,
                 'reply_attempts' => 0,
                 'status' => $item->status === 'reply_failed' ? 'read' : $item->status,
