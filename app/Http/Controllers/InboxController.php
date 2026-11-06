@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Jobs\LikeInboxItem;
 use App\Models\InboxItem;
 use App\Models\Setting;
 use App\Models\SocialAccount;
@@ -354,9 +355,27 @@ class InboxController extends Controller
     {
         $validated = $request->validate([
             'reply_text' => 'required|string|max:5000',
+            'like' => 'sometimes|boolean',
         ]);
 
+        // Le like part d'abord : après une réponse, le commentaire peut changer de place dans Studio.
+        if ($request->boolean('like')) {
+            LikeInboxItem::dispatch($inboxItem->id);
+        }
+
         return response()->json(app(InboxReplyService::class)->send($inboxItem, $validated['reply_text']));
+    }
+
+    /** Par la file : chaque like occupe le navigateur du VPS plusieurs secondes. */
+    public function like(Request $request): JsonResponse
+    {
+        $validated = $request->validate(['ids' => 'required|array|min:1|max:50', 'ids.*' => 'integer|exists:inbox_items,id']);
+
+        foreach ($validated['ids'] as $id) {
+            LikeInboxItem::dispatch($id);
+        }
+
+        return response()->json(['success' => true]);
     }
 
     public function aiSuggest(Request $request, InboxItem $inboxItem): JsonResponse
@@ -424,7 +443,12 @@ class InboxController extends Controller
             'items.*.id' => 'required|integer|exists:inbox_items,id',
             'items.*.reply_text' => 'required|string|max:5000',
             'spread_minutes' => 'nullable|integer|min:0|max:1440',
+            'like' => 'sometimes|boolean',
         ]);
+
+        if ($request->boolean('like')) {
+            collect($validated['items'])->each(fn (array $item) => LikeInboxItem::dispatch($item['id']));
+        }
 
         $spreadMinutes = (int) ($validated['spread_minutes'] ?? 0);
         $itemCount = count($validated['items']);

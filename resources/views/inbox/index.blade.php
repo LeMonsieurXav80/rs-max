@@ -164,6 +164,7 @@
                     <option value="markread">Marquer lu</option>
                     <option value="ignore">Ignorer</option>
                     <option value="archive">Archiver</option>
+                    <option value="like">Liker (TikTok)</option>
                 </select>
                 <button @click="executeBulkAction()" class="px-3 py-1.5 bg-white text-sm font-medium text-gray-700 rounded-xl border border-gray-200 hover:bg-gray-50 transition-colors">Appliquer</button>
 
@@ -248,6 +249,9 @@
                                             <span class="px-1.5 py-0.5 rounded-full bg-red-100 text-red-700 text-xs font-medium">Échec envoi</span>
                                         @elseif($firstItem->reply_draft)
                                             <span class="px-1.5 py-0.5 rounded-full bg-indigo-100 text-indigo-700 text-xs font-medium">À valider</span>
+                                        @endif
+                                        @if($firstItem->liked_at)
+                                            <span class="px-1.5 py-0.5 rounded-full bg-pink-100 text-pink-700 text-xs font-medium">Liké</span>
                                         @endif
                                     </div>
                                     @if($firstItem->post_content)
@@ -544,6 +548,10 @@
                 </div>
 
                 {{-- Reply textarea --}}
+                <label class="flex items-center gap-2 mb-2 text-sm text-gray-600">
+                    <input type="checkbox" x-model="replyLike" class="rounded border-gray-300 text-indigo-600 focus:ring-indigo-500">
+                    Liker aussi le commentaire (TikTok)
+                </label>
                 <textarea x-model="replyText" rows="3"
                     class="w-full rounded-xl border-gray-300 text-sm shadow-sm focus:border-indigo-500 focus:ring-indigo-500"
                     placeholder="Votre réponse..."></textarea>
@@ -623,6 +631,10 @@
                 </div>
 
                 <div class="p-6 border-t border-gray-100">
+                    <label class="flex items-center gap-2 mb-3 text-sm text-gray-600">
+                        <input type="checkbox" x-model="bulkLike" class="rounded border-gray-300 text-indigo-600 focus:ring-indigo-500">
+                        Liker aussi les commentaires (TikTok)
+                    </label>
                     <div class="flex items-center gap-3 mb-4">
                         <span class="text-sm text-gray-600 whitespace-nowrap">Etaler sur :</span>
                         <div class="flex items-center gap-1">
@@ -671,6 +683,8 @@ function inboxManager() {
         replyToContent: '',
         replyToAuthor: '',
         replyText: '',
+        replyLike: false,
+        bulkLike: false,
         aiLoading: false,
         sendingReply: false,
         syncing: false,
@@ -757,6 +771,7 @@ function inboxManager() {
             this.replyToContent = content;
             this.replyToAuthor = author || 'Anonyme';
             this.replyText = draft || '';
+            this.replyLike = false;
             this.replyModalOpen = true;
         },
 
@@ -767,7 +782,7 @@ function inboxManager() {
             try {
                 const resp = await this.csrfFetch(`/inbox/${this.replyToId}/reply`, {
                     method: 'POST',
-                    body: JSON.stringify({ reply_text: this.replyText }),
+                    body: JSON.stringify({ reply_text: this.replyText, like: this.replyLike }),
                 });
 
                 if (!resp.ok) {
@@ -843,6 +858,16 @@ function inboxManager() {
             if (action === 'markread') this.markReadBulk();
             else if (action === 'ignore') this.ignoreBulk();
             else if (action === 'archive') this.archiveBulk();
+            else if (action === 'like') this.likeBulk();
+        },
+
+        async likeBulk() {
+            const resp = await this.csrfFetch('{{ route("inbox.like") }}', {
+                method: 'POST',
+                body: JSON.stringify({ ids: this.selectedIds }),
+            });
+            alert(resp.ok ? 'Likes lancés. Ils partent un par un depuis le navigateur du VPS.' : 'Likes refusés par le serveur.');
+            if (resp.ok) this.selectedIds = [];
         },
 
         async ignoreBulk() {
@@ -967,7 +992,7 @@ function inboxManager() {
             try {
                 const resp = await this.csrfFetch('/inbox/bulk-send', {
                     method: 'POST',
-                    body: JSON.stringify({ items, spread_minutes: spreadMinutes }),
+                    body: JSON.stringify({ items, spread_minutes: spreadMinutes, like: this.bulkLike }),
                 });
 
                 if (!resp.ok) {

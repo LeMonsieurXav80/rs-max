@@ -31,6 +31,7 @@ class InboxItem extends Model
         'reply_draft',
         'reply_external_id',
         'replied_at',
+        'liked_at',
         'reply_scheduled_at',
         'reply_attempts',
     ];
@@ -40,6 +41,7 @@ class InboxItem extends Model
         return [
             'posted_at' => 'datetime',
             'replied_at' => 'datetime',
+            'liked_at' => 'datetime',
             'reply_scheduled_at' => 'datetime',
         ];
     }
