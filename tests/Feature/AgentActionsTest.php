@@ -108,7 +108,7 @@ class AgentActionsTest extends TestCase
     {
         Sanctum::actingAs($this->manager);
 
-        $this->putJson("/api/agent/accounts/{$this->account->id}/actions/comment.reply", ['enabled' => true])->assertNotFound();
+        $this->putJson("/api/agent/accounts/{$this->account->id}/actions/feed.read", ['enabled' => true])->assertNotFound();
     }
 
     public function test_un_simple_utilisateur_na_pas_acces(): void

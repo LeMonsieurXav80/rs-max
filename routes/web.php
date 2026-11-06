@@ -2,6 +2,7 @@
 
 use App\Http\Controllers\AccountGroupController;
 use App\Http\Controllers\Agent\AgentController;
+use App\Http\Controllers\Agent\AgentValidationController;
 use App\Http\Controllers\Bot\BlueskyBotController;
 use App\Http\Controllers\Bot\FacebookBotController;
 use App\Http\Controllers\BotHubController;
@@ -289,6 +290,10 @@ Route::middleware(['auth', 'verified', 'throttle:600,1'])->group(function () {
         Route::delete('bot/logs', [BotHubController::class, 'clearLogs'])->name('bot.clearLogs');
 
         // Agent — une page par réseau, une action réglable par compte
+        Route::get('agent/validations', [AgentValidationController::class, 'index'])->name('agent.validations');
+        Route::post('agent/validations/prepare/{account}', [AgentValidationController::class, 'prepare'])->name('agent.validations.prepare');
+        Route::post('agent/validations/{proposal}/approve', [AgentValidationController::class, 'approve'])->name('agent.validations.approve');
+        Route::post('agent/validations/{proposal}/reject', [AgentValidationController::class, 'reject'])->name('agent.validations.reject');
         Route::get('agent/{platform}', [AgentController::class, 'show'])->name('agent.platform');
         Route::put('agent/{account}/{action}', [AgentController::class, 'update'])->where('action', '[a-z.]+')->name('agent.update');
 

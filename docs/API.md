@@ -918,6 +918,11 @@ Réservé aux rôles `manager` et `admin`. Réponses volontairement courtes, pou
 - `PUT /api/agent/accounts/{id}/actions/{action}` : corps `enabled` et `daily_limit`. Seules les actions réellement exécutables se règlent.
 - `GET /api/agent/log?account=&limit=20` : dernières actions de l'agent.
 
+- `POST /api/agent/accounts/{id}/proposals` : corps `limit` (20 au plus). Réponse 202 : RS-Max rassemble les conversations et rédige toutes les réponses en un seul prompt, avec le persona du compte. 403 action désactivée, 422 pas de persona actif.
+- `GET /api/agent/proposals?status=pending&account=&limit=20` : propositions et leur état (`pending`, `approved`, `sending`, `sent`, `rejected`, `failed`, `uncertain`).
+
+**Valider reste un geste humain.** Aucune route à jeton n'approuve une proposition : cela se fait sur la page **À valider**, en session web. Un envoi part une seule fois ; `uncertain` signifie qu'il a pu partir et qu'il faut contrôler sur le réseau.
+
 Une action est désactivée tant qu'elle n'a pas été activée sur le compte. Le catalogue est dans `config/agent.php`.
 
 ## 16. Endpoints en session web (PAS accessibles par token)

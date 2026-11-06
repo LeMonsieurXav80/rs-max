@@ -259,6 +259,16 @@
                                 </svg>
                                 Bot Actions
                             </a>
+                            <a href="{{ url('/agent/validations') }}"
+                               class="flex items-center justify-between gap-3 px-3 py-2 rounded-lg text-sm transition-colors {{ $currentRoute === 'agent/validations' ? 'bg-indigo-50 text-indigo-600 font-medium' : 'text-gray-500 hover:bg-gray-50 hover:text-gray-900' }}">
+                                À valider
+                                @php
+                                    $agentPending = \App\Models\AgentProposal::where('status', 'pending')->count();
+                                @endphp
+                                @if ($agentPending)
+                                    <span class="text-xs bg-indigo-600 text-white rounded-full px-1.5">{{ $agentPending }}</span>
+                                @endif
+                            </a>
                             @foreach (config('agent.platforms') as $agentSlug => $agentPlatform)
                                 <a href="{{ url('/agent/'.$agentSlug) }}"
                                    class="flex items-center gap-3 px-3 py-2 rounded-lg text-sm transition-colors {{ $currentRoute === 'agent/'.$agentSlug ? 'bg-indigo-50 text-indigo-600 font-medium' : 'text-gray-500 hover:bg-gray-50 hover:text-gray-900' }}">

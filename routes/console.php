@@ -1,5 +1,6 @@
 <?php
 
+use App\Models\AgentProposal;
 use App\Models\BotTargetAccount;
 use App\Models\Setting;
 use Illuminate\Support\Facades\Cache;
@@ -81,6 +82,10 @@ Schedule::call(function () {
 Schedule::command('x:session-check')->hourly()->withoutOverlapping(30);
 Schedule::command('tiktok:session-check')->hourly()->withoutOverlapping(30);
 Schedule::command('x:browser-sync')->everySixHours()->withoutOverlapping(60);
+
+// Propositions de l'agent : les décisions anciennes n'ont plus d'utilité
+Schedule::call(fn () => AgentProposal::where('status', '!=', AgentProposal::PENDING)
+    ->where('updated_at', '<', now()->subDays(config('agent.proposal_days')))->delete())->daily();
 
 // Check for application updates (hourly)
 Schedule::call(function () {
