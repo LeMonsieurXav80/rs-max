@@ -270,6 +270,7 @@ class InboxDraftsTest extends TestCase
 
     public function test_lenvoi_tiktok_cible_le_commentaire_exact(): void
     {
+        Queue::fake();
         $account = $this->tiktok();
         $queue = $this->createMock(BrowserTaskQueue::class);
         $sent = [];
@@ -318,16 +319,28 @@ class InboxDraftsTest extends TestCase
         $this->assertNotNull($item->fresh()->liked_at);
     }
 
-    public function test_le_lot_peut_liker_en_meme_temps(): void
+    public function test_une_reponse_tiktok_confirmee_est_likee(): void
     {
         Queue::fake();
-        $account = $this->tiktok();
+        $account = $this->tiktok([$this->comment('fan', 'Bravo', ['replied' => true])]);
         $item = InboxItem::create(['social_account_id' => $account->id, 'platform_id' => $account->platform_id, 'type' => 'comment', 'external_id' => 'h', 'author_username' => 'fan',
             'content' => 'Bravo', 'post_content' => 'Ma vidéo', 'status' => 'read', 'posted_at' => now()]);
 
-        $this->actingAs($this->manager)->postJson('/inbox/bulk-send', ['items' => [['id' => $item->id, 'reply_text' => 'Merci']], 'like' => true])->assertOk();
+        app(InboxReplyService::class)->send($item, 'Merci');
 
         Queue::assertPushed(LikeInboxItem::class, fn ($job) => $job->itemId === $item->id);
+    }
+
+    public function test_une_reponse_non_gardee_nest_pas_likee(): void
+    {
+        Queue::fake();
+        $account = $this->tiktok([$this->comment('fan', 'Bravo')]);
+        $item = InboxItem::create(['social_account_id' => $account->id, 'platform_id' => $account->platform_id, 'type' => 'comment', 'external_id' => 'h', 'author_username' => 'fan',
+            'content' => 'Bravo', 'post_content' => 'Ma vidéo', 'status' => 'read', 'posted_at' => now()]);
+
+        app(InboxReplyService::class)->send($item, 'Merci');
+
+        Queue::assertNotPushed(LikeInboxItem::class);
     }
 
     public function test_un_envoi_non_confirme_nest_jamais_relance(): void

@@ -2,6 +2,7 @@
 
 namespace App\Services\Inbox;
 
+use App\Jobs\LikeInboxItem;
 use App\Models\InboxItem;
 use Carbon\CarbonInterface;
 use Illuminate\Support\Facades\Cache;
@@ -51,6 +52,11 @@ class InboxReplyService
                     'replied_at' => now(),
                     'reply_scheduled_at' => null,
                 ]);
+
+                // Tous les chemins d'envoi passent ici : une réponse TikTok confirmée est toujours likée.
+                if ($account->platform->slug === 'tiktok') {
+                    LikeInboxItem::dispatch($item->id);
+                }
             } else {
                 Log::warning('InboxReplyService: reply failed', ['item_id' => $item->id, 'error' => $result['error'] ?? 'unknown']);
                 if ($result['uncertain'] ?? false) {
