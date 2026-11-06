@@ -142,6 +142,12 @@ Route::middleware('auth:sanctum')->group(function () {
     // ── Banques d'images externes (Pexels, Pixabay, Unsplash) ──
     Route::get('/stock-photos/search', [MediaApiController::class, 'stockPhotosSearch']);
 
+    // ── Agent : réponses compactes, voir docs/API.md ──
+    Route::get('/agent/accounts', [\App\Http\Controllers\Api\AgentApiController::class, 'accounts']);
+    Route::get('/agent/log', [\App\Http\Controllers\Api\AgentApiController::class, 'log']);
+    Route::get('/agent/accounts/{id}/read/{action}', [\App\Http\Controllers\Api\AgentApiController::class, 'read'])->whereNumber('id');
+    Route::put('/agent/accounts/{id}/actions/{action}', [\App\Http\Controllers\Api\AgentApiController::class, 'configure'])->whereNumber('id');
+
     // ── Extension Chrome (RS-Max Companion) ──
     // Remontée en lot : l'extension bufferise puis pousse, d'où le plafond large.
     Route::post('/extension/actions', [ExtensionApiController::class, 'actions'])

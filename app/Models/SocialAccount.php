@@ -116,6 +116,11 @@ class SocialAccount extends Model
         return $this->driver === 'browser';
     }
 
+    public function agentActions(): HasMany
+    {
+        return $this->hasMany(AgentAccountAction::class);
+    }
+
     public function snapshots(): HasMany
     {
         return $this->hasMany(SocialAccountSnapshot::class);

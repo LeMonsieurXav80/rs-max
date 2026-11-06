@@ -1,6 +1,7 @@
 <?php
 
 use App\Http\Controllers\AccountGroupController;
+use App\Http\Controllers\Agent\AgentController;
 use App\Http\Controllers\Bot\BlueskyBotController;
 use App\Http\Controllers\Bot\FacebookBotController;
 use App\Http\Controllers\BotHubController;
@@ -286,6 +287,10 @@ Route::middleware(['auth', 'verified', 'throttle:600,1'])->group(function () {
         Route::get('bot', [BotHubController::class, 'index'])->name('bot.index');
         Route::get('bot/logs', [BotHubController::class, 'logs'])->name('bot.logs');
         Route::delete('bot/logs', [BotHubController::class, 'clearLogs'])->name('bot.clearLogs');
+
+        // Agent — une page par réseau, une action réglable par compte
+        Route::get('agent/{platform}', [AgentController::class, 'show'])->name('agent.platform');
+        Route::put('agent/{account}/{action}', [AgentController::class, 'update'])->where('action', '[a-z.]+')->name('agent.update');
 
         // Bot — Bluesky
         Route::get('bot/bluesky', [BlueskyBotController::class, 'index'])->name('bot.bluesky.index');

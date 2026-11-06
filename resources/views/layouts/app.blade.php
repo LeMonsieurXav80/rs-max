@@ -235,7 +235,7 @@
                     @if(auth()->user()->isManager())
                     <p class="px-3 pt-4 pb-1 text-[10px] font-semibold uppercase tracking-widest text-gray-400">Automatisation</p>
 
-                    <div x-data="{ autoOpen: {{ str_starts_with($currentRoute, 'bot') || str_starts_with($currentRoute, 'tools/yt-translator') ? 'true' : 'false' }} }">
+                    <div x-data="{ autoOpen: {{ str_starts_with($currentRoute, 'bot') || str_starts_with($currentRoute, 'agent') || str_starts_with($currentRoute, 'tools/yt-translator') ? 'true' : 'false' }} }">
                         <button
                             @click="autoOpen = !autoOpen"
                             class="w-full flex items-center justify-between px-3 py-2.5 rounded-xl text-sm font-medium transition-colors {{ str_starts_with($currentRoute, 'bot') || str_starts_with($currentRoute, 'tools/yt-translator') ? 'text-indigo-600' : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900' }}"
@@ -259,6 +259,12 @@
                                 </svg>
                                 Bot Actions
                             </a>
+                            @foreach (config('agent.platforms') as $agentSlug => $agentPlatform)
+                                <a href="{{ url('/agent/'.$agentSlug) }}"
+                                   class="flex items-center gap-3 px-3 py-2 rounded-lg text-sm transition-colors {{ $currentRoute === 'agent/'.$agentSlug ? 'bg-indigo-50 text-indigo-600 font-medium' : 'text-gray-500 hover:bg-gray-50 hover:text-gray-900' }}">
+                                    {{ $agentPlatform['name'] }}
+                                </a>
+                            @endforeach
                             <a href="{{ url('/tools/yt-translator') }}"
                                class="flex items-center gap-3 px-3 py-2 rounded-lg text-sm transition-colors {{ str_starts_with($currentRoute, 'tools/yt-translator') ? 'bg-indigo-50 text-indigo-600 font-medium' : 'text-gray-500 hover:bg-gray-50 hover:text-gray-900' }}">
                                 <svg class="w-4 h-4" fill="currentColor" viewBox="0 0 24 24">

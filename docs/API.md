@@ -909,6 +909,17 @@ Corps : `status` (`done`, `failed` ou `uncertain`), `result` et `error`. Chaque 
 
 ---
 
+## 15 bis. Agent
+
+Réservé aux rôles `manager` et `admin`. Réponses volontairement courtes, pour limiter les jetons consommés.
+
+- `GET /api/agent/accounts` : comptes où l'agent peut agir, avec les actions activées et ce qu'il reste du quota du jour (`left`).
+- `GET /api/agent/accounts/{id}/read/{action}?limit=10` : exécute une lecture (`mentions.read` sur X, `comments.read` sur TikTok). `limit` vaut 30 au plus. Texte coupé à 280 caractères. Réponses : 403 action désactivée, 422 compte hors mode navigateur, 429 quota atteint, 502 navigateur du VPS injoignable. Une lecture en échec ne consomme pas le quota.
+- `PUT /api/agent/accounts/{id}/actions/{action}` : corps `enabled` et `daily_limit`. Seules les actions réellement exécutables se règlent.
+- `GET /api/agent/log?account=&limit=20` : dernières actions de l'agent.
+
+Une action est désactivée tant qu'elle n'a pas été activée sur le compte. Le catalogue est dans `config/agent.php`.
+
 ## 16. Endpoints en session web (PAS accessibles par token)
 
 Quatre endpoints commencent par `/api/` alors qu'ils sont déclarés dans
