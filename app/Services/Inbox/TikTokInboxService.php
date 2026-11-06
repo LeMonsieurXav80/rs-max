@@ -77,8 +77,24 @@ class TikTokInboxService implements PlatformInboxInterface
         return ['success' => true, 'external_id' => null, 'error' => null];
     }
 
+    /** Studio n'affiche qu'un texte : « 1h ago », « il y a 2 j », ou une date ; à défaut, la date de lecture. */
     private function postedAt(?string $date): Carbon
     {
-        return now();
+        if (preg_match('/(\d+)\s*(min|m|h|d|j|w|sem)/i', (string) $date, $match)) {
+            $unit = match (strtolower($match[2])) {
+                'min', 'm' => 'minutes',
+                'h' => 'hours',
+                'd', 'j' => 'days',
+                default => 'weeks',
+            };
+
+            return now()->sub($unit, (int) $match[1]);
+        }
+
+        try {
+            return Carbon::parse((string) $date);
+        } catch (\Throwable) {
+            return now();
+        }
     }
 }
