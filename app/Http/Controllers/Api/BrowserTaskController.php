@@ -19,7 +19,25 @@ class BrowserTaskController extends Controller
 
         $task = $queue->claim($v['profile']);
 
-        return response()->json($task ? ['id' => $task->id, 'kind' => $task->kind, 'payload' => $task->payload] : ['id' => null]);
+        if (! $task) {
+            return response()->json(['id' => null]);
+        }
+
+        // Plusieurs comptes X partagent le Chromium : Companion vérifie celui qui est connecté avant d'agir.
+        $accountId = str_starts_with($task->kind, 'x.') ? (string) $task->socialAccount->platform_account_id : null;
+
+        return response()->json(['id' => $task->id, 'kind' => $task->kind, 'payload' => $task->payload, 'account_id' => $accountId]);
+    }
+
+    /** Session du compte d'une tâche en cours, pour que Companion change de compte avant d'agir. */
+    public function session(Request $r, BrowserTask $task): JsonResponse
+    {
+        abort_unless($r->user()->isAdmin(), 403);
+        abort_unless($task->status === BrowserTask::RUNNING, 409, 'Tâche déjà terminée.');
+        $cookies = $task->socialAccount->browser_session;
+        abort_if(empty($cookies), 422, 'Aucune session enregistrée pour ce compte.');
+
+        return response()->json(['cookies' => $cookies]);
     }
 
     public function finish(Request $r, BrowserTask $task): JsonResponse

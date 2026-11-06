@@ -60,6 +60,58 @@ class BrowserTaskQueueTest extends TestCase
         $this->assertSame(1, BotActionLog::where('action_type', 'x.post')->where('source', 'browser')->where('success', true)->count());
     }
 
+    public function test_une_tache_x_annonce_le_compte_attendu(): void
+    {
+        $this->task();
+
+        $this->getJson('/api/extension/tasks/next?profile=wildycaro')->assertOk()->assertJson(['account_id' => '77']);
+    }
+
+    public function test_une_tache_hors_x_nannonce_aucun_compte(): void
+    {
+        BrowserTask::create(['social_account_id' => $this->account->id, 'profile' => 'wildycaro', 'kind' => 'session.apply', 'payload' => ['cookies' => []]]);
+
+        $this->getJson('/api/extension/tasks/next?profile=wildycaro')->assertOk()->assertJson(['account_id' => null]);
+    }
+
+    public function test_deux_comptes_partagent_un_profil_sans_jamais_agir_en_meme_temps(): void
+    {
+        $other = SocialAccount::create(['platform_id' => $this->account->platform_id, 'platform_account_id' => '88', 'name' => 'Planète', 'driver' => 'browser', 'browser_profile' => 'wildycaro', 'languages' => ['fr']]);
+        $first = $this->task();
+        $second = BrowserTask::create(['social_account_id' => $other->id, 'profile' => 'wildycaro', 'kind' => 'x.post', 'payload' => ['url' => 'https://x.com']]);
+
+        $this->getJson('/api/extension/tasks/next?profile=wildycaro')->assertJson(['id' => $first->id, 'account_id' => '77']);
+        $this->getJson('/api/extension/tasks/next?profile=wildycaro')->assertJson(['id' => null]);
+        $this->postJson("/api/extension/tasks/{$first->id}/finish", ['status' => 'done'])->assertOk();
+        $this->getJson('/api/extension/tasks/next?profile=wildycaro')->assertJson(['id' => $second->id, 'account_id' => '88']);
+    }
+
+    public function test_la_session_nest_remise_qua_une_tache_en_cours(): void
+    {
+        $this->account->update(['browser_session' => [['name' => 'twid', 'value' => 'u=77']]]);
+        $pending = $this->task();
+        $running = $this->task(BrowserTask::RUNNING);
+
+        $this->getJson("/api/extension/tasks/{$pending->id}/session")->assertStatus(409);
+        $this->getJson("/api/extension/tasks/{$running->id}/session")->assertOk()->assertJsonPath('cookies.0.value', 'u=77');
+    }
+
+    public function test_sans_session_enregistree_rien_nest_remis(): void
+    {
+        $task = $this->task(BrowserTask::RUNNING);
+
+        $this->getJson("/api/extension/tasks/{$task->id}/session")->assertStatus(422);
+    }
+
+    public function test_seul_un_admin_recoit_une_session(): void
+    {
+        $this->account->update(['browser_session' => [['name' => 'twid', 'value' => 'u=77']]]);
+        $task = $this->task(BrowserTask::RUNNING);
+        Sanctum::actingAs(User::factory()->create(['role' => 'user']));
+
+        $this->getJson("/api/extension/tasks/{$task->id}/session")->assertForbidden();
+    }
+
     public function test_seul_un_admin_recoit_les_taches(): void
     {
         Sanctum::actingAs(User::factory()->create(['role' => 'user']));

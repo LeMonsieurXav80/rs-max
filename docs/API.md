@@ -886,14 +886,18 @@ Indique si RS-Max attend une session pour un compte X. Paramètre : `platform_ac
 Reçoit les cookies X du navigateur de l'utilisateur et les donne au navigateur du VPS. Plafond : 10 appels par minute.
 
 - Le compte est déduit du cookie `twid`. Il doit être rattaché à l'utilisateur du token, sinon : 422.
-- Les cookies sont stockés chiffrés et ne sont jamais renvoyés par l'API.
+- Les cookies sont stockés chiffrés. Seule une tâche en cours peut les obtenir, voir `GET /api/extension/tasks/{id}/session`.
 - Réponse 200 : session active, avec `status` et `username`. Réponse 409 : X ne reconnaît pas le compte sur le VPS. Réponse 502 : navigateur du VPS injoignable.
 
-Le **Mode de connexion** de chaque compte X se règle dans sa fiche : API X, ou Navigateur du VPS, avec son **Profil navigateur**.
+Le **Mode de connexion** de chaque compte X se règle dans sa fiche : API X, ou Navigateur du VPS, avec son **Profil navigateur**. Plusieurs comptes peuvent partager un profil : ils passent alors chacun leur tour dans le même Chromium.
 
 ### `GET /api/extension/tasks/next`
 
-Réservé aux admins, et à la copie de Companion qui tourne sur le VPS. Paramètre : `profile`. Donne la prochaine tâche de ce profil, ou `{"id": null}`. Un profil ne reçoit qu'une tâche à la fois.
+Réservé aux admins, et à la copie de Companion qui tourne sur le VPS. Paramètre : `profile`. Donne la prochaine tâche de ce profil, ou `{"id": null}`. Un profil ne reçoit qu'une tâche à la fois. Pour une tâche X, `account_id` donne l'identifiant X du compte attendu : Companion n'agit pas si un autre compte est connecté.
+
+### `GET /api/extension/tasks/{id}/session`
+
+Réservé aux admins. Donne les cookies du compte d'une tâche en cours, pour que Companion change de compte avant d'agir. Réponse 409 : tâche qui n'est pas en cours. Réponse 422 : aucune session enregistrée.
 
 ### `POST /api/extension/tasks/{id}/finish`
 

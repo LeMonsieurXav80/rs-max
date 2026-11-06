@@ -129,6 +129,7 @@
                         <p class="mt-1 text-xs text-gray-400">
                             En mode navigateur, les publications, réponses, stats et abonnés passent par le navigateur du VPS.
                             Les articles X restent sur l'API.
+                            Les comptes qui ont le même profil passent chacun leur tour dans le même navigateur.
                         </p>
                         <p class="mt-1 text-xs {{ $account->browser_session_status === 'connected' ? 'text-green-600' : 'text-amber-600' }}">
                             @if($account->browser_session_status === 'connected')
