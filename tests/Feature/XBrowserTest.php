@@ -219,6 +219,18 @@ class XBrowserTest extends TestCase
         $this->assertInstanceOf(TwitterAdapter::class, AdapterFactory::forAccount($this->account->fresh()));
     }
 
+    public function test_le_formulaire_du_compte_bascule_le_mode_et_revient_a_lapi(): void
+    {
+        $form = ['name' => 'Wildy', 'languages' => ['fr'], 'driver' => 'api'];
+
+        $this->actingAs($this->user)->put(route('accounts.update', $this->account), $form)->assertRedirect();
+        $this->assertSame('api', $this->account->fresh()->driver);
+
+        $this->actingAs($this->user)->put(route('accounts.update', $this->account), ['driver' => 'browser', 'browser_profile' => 'planetedecaro'] + $form)->assertRedirect();
+        $this->assertTrue($this->account->fresh()->usesBrowser());
+        $this->assertSame('planetedecaro', $this->account->fresh()->browser_profile);
+    }
+
     public function test_les_stats_affichees_par_x_sont_lues_dans_les_deux_langues(): void
     {
         $this->assertSame(['replies' => 3, 'reposts' => 2, 'likes' => 1204, 'bookmarks' => 1, 'views' => 9000],
