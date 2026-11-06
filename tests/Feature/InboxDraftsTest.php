@@ -337,6 +337,48 @@ class InboxDraftsTest extends TestCase
         Queue::assertPushed(LikeInboxItem::class, fn ($job) => $job->itemId === $item->id);
     }
 
+    public function test_lenvoi_tiktok_immediat_attend_le_planificateur_avant_de_liker(): void
+    {
+        Queue::fake();
+        $account = $this->tiktok();
+        $account->users()->attach($this->manager->id, ['is_active' => true]);
+        Sanctum::actingAs($this->manager);
+        $item = $this->item('tiktok-async', 'Bravo', ['social_account_id' => $account->id, 'platform_id' => $account->platform_id]);
+        $queue = $this->createMock(BrowserTaskQueue::class);
+        $queue->expects($this->once())->method('run')->willReturnCallback(function ($account, $kind, $payload, $timeout) {
+            $this->assertSame('tiktok.reply', $kind);
+            $this->assertGreaterThan(105, $timeout);
+
+            return ['confirmed' => true];
+        });
+        $this->app->instance(BrowserTaskQueue::class, $queue);
+
+        $this->postJson('/api/inbox/'.$item->id.'/reply', ['reply_text' => 'Merci', 'dry_run' => false])
+            ->assertAccepted()->assertJsonPath('success', true)->assertJsonStructure(['scheduled_at']);
+        $this->assertNull($item->fresh()->replied_at);
+        Queue::assertNotPushed(LikeInboxItem::class);
+
+        $this->artisan('inbox:send-scheduled')->assertSuccessful();
+        $this->assertSame('replied', $item->fresh()->status);
+        Queue::assertPushed(LikeInboxItem::class, fn ($job) => $job->itemId === $item->id);
+    }
+
+    public function test_une_tentative_tiktok_interrompue_nest_pas_rejouee(): void
+    {
+        $account = $this->tiktok();
+        $item = $this->item('tiktok-interrupted', 'Bravo', [
+            'social_account_id' => $account->id, 'platform_id' => $account->platform_id,
+            'reply_scheduled_at' => now(), 'reply_content' => 'Merci', 'reply_attempts' => 1,
+        ]);
+        $queue = $this->createMock(BrowserTaskQueue::class);
+        $queue->expects($this->never())->method('run');
+        $this->app->instance(BrowserTaskQueue::class, $queue);
+
+        $this->assertFalse(app(InboxReplyService::class)->send($item, 'Merci', scheduled: true)['success']);
+        $this->assertSame('reply_failed', $item->fresh()->status);
+        $this->assertFalse(app(InboxReplyService::class)->submit($item->fresh(), 'Merci')['success']);
+    }
+
     public function test_une_reponse_non_gardee_nest_pas_likee(): void
     {
         Queue::fake();

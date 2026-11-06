@@ -21,6 +21,8 @@ class TikTokInboxService implements PlatformInboxInterface
 
     private const ACTION_TIMEOUT = 90;
 
+    private const REPLY_TIMEOUT = 195;
+
     public function __construct(private TikTokSessionService $sessions, private BrowserTaskQueue $queue) {}
 
     public function fetchInbox(SocialAccount $account, ?Carbon $since = null): Collection
@@ -84,7 +86,7 @@ class TikTokInboxService implements PlatformInboxInterface
                 'username' => $account->browser_username,
                 'target' => $target,
                 'confirm_after_reload' => true,
-            ], self::ACTION_TIMEOUT);
+            ], $kind === 'tiktok.reply' ? self::REPLY_TIMEOUT : self::ACTION_TIMEOUT);
         } catch (BrowserException $e) {
             return ['success' => false, 'external_id' => null, 'error' => $e->getMessage(), 'uncertain' => $e instanceof BrowserUncertainException];
         }

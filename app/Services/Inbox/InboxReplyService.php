@@ -10,6 +10,15 @@ use Illuminate\Support\Facades\Log;
 
 class InboxReplyService
 {
+    public function submit(InboxItem $item, string $text): array
+    {
+        if ($item->platform->slug === 'tiktok' && ! ($item->replied_at || $item->reply_external_id || $item->status === 'replied')) {
+            return $this->schedule($item, $text, now());
+        }
+
+        return $this->send($item, $text);
+    }
+
     /** Shared by the API, web inbox and scheduler so two callers cannot send together. */
     public function send(InboxItem $item, string $text, bool $scheduled = false): array
     {
@@ -20,18 +29,25 @@ class InboxReplyService
                     : $this->conflict('Ce message a déjà reçu une réponse.');
             }
 
+            $account = $item->socialAccount()->with('platform')->first();
+            $tiktok = $account->platform->slug === 'tiktok';
+
             if ($scheduled) {
                 if (! $item->reply_scheduled_at || $item->reply_scheduled_at->isFuture() || $item->reply_attempts >= 3) {
                     return $this->conflict('Cette réponse ne doit pas être envoyée maintenant.');
                 }
                 // Reload the persisted text: the scheduler may have selected it before an edit.
                 $text = $item->reply_content;
+                if ($tiktok && $item->reply_attempts > 0) {
+                    $item->update(['status' => 'reply_failed', 'reply_scheduled_at' => null, 'reply_attempts' => 3]);
+
+                    return $this->conflict('Tentative TikTok interrompue. Vérifiez le fil avant toute relance.');
+                }
                 $item->increment('reply_attempts');
             } elseif ($item->reply_scheduled_at) {
                 return $this->conflict('Une réponse est déjà programmée pour ce message.');
             }
 
-            $account = $item->socialAccount()->with('platform')->first();
             $service = app(InboxSyncService::class)->getServiceForAccount($account);
 
             try {
@@ -54,12 +70,12 @@ class InboxReplyService
                 ]);
 
                 // Tous les chemins d'envoi passent ici : une réponse TikTok confirmée est toujours likée.
-                if ($account->platform->slug === 'tiktok') {
+                if ($tiktok) {
                     LikeInboxItem::dispatch($item->id);
                 }
             } else {
                 Log::warning('InboxReplyService: reply failed', ['item_id' => $item->id, 'error' => $result['error'] ?? 'unknown']);
-                if ($result['uncertain'] ?? false) {
+                if (($result['uncertain'] ?? false) || ($scheduled && $tiktok)) {
                     // La réponse a pu partir : ni l'humain ni la planification ne la renvoient.
                     $item->update(['status' => 'reply_failed', 'reply_content' => $text, 'reply_scheduled_at' => null, 'reply_attempts' => 3]);
                 } elseif ($scheduled && $item->reply_attempts >= 3) {
@@ -82,6 +98,9 @@ class InboxReplyService
                     ? ['success' => true, 'scheduled_at' => $item->reply_scheduled_at->toIso8601String(), 'already_scheduled' => true]
                     : $this->conflict('Une réponse est déjà programmée pour ce message.');
             }
+            if ($item->platform->slug === 'tiktok' && ($item->reply_attempts > 0 || ! in_array($item->status, ['unread', 'read'], true))) {
+                return $this->conflict('Ce commentaire TikTok ne peut plus être programmé. Vérifiez son état dans Studio.');
+            }
 
             $item->update([
                 'reply_content' => $text,
@@ -97,7 +116,7 @@ class InboxReplyService
 
     private function locked(InboxItem $item, callable $callback): array
     {
-        $lock = Cache::lock('inbox-reply:'.$item->id, 120);
+        $lock = Cache::lock('inbox-reply:'.$item->id, $item->platform->slug === 'tiktok' ? 240 : 120);
         if (! $lock->get()) {
             return $this->conflict('Une réponse à ce message est déjà en cours.');
         }

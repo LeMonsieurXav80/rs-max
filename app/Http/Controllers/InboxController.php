@@ -357,7 +357,7 @@ class InboxController extends Controller
             'reply_text' => 'required|string|max:5000',
         ]);
 
-        return response()->json(app(InboxReplyService::class)->send($inboxItem, $validated['reply_text']));
+        return response()->json(app(InboxReplyService::class)->submit($inboxItem, $validated['reply_text']));
     }
 
     /** Par la file : chaque like occupe le navigateur du VPS plusieurs secondes. */

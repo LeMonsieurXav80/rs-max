@@ -207,10 +207,10 @@ class InboxApiController extends Controller
 
         $result = ! empty($data['scheduled_at']) && ! $alreadyReplied
             ? $service->schedule($inboxItem, $text, Carbon::parse($data['scheduled_at']))
-            : $service->send($inboxItem, $text);
+            : $service->submit($inboxItem, $text);
 
         return response()->json(['dry_run' => false, 'id' => $inboxItem->id] + $result,
-            $result['success'] ? 200 : ($result['status_code'] ?? 502));
+            $result['success'] ? (empty($data['scheduled_at']) && isset($result['scheduled_at']) ? 202 : 200) : ($result['status_code'] ?? 502));
     }
 
     private function filters(Request $request, bool $prepare = false): array

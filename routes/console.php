@@ -34,7 +34,7 @@ match ($syncFreq) {
 };
 
 // Send scheduled inbox replies every minute
-Schedule::command('inbox:send-scheduled')->everyMinute()->withoutOverlapping(5);
+Schedule::command('inbox:send-scheduled')->everyMinute()->withoutOverlapping(15)->runInBackground();
 
 // Inbox sync - per-platform frequency configurable via Settings page
 $inboxPlatforms = ['facebook', 'instagram', 'threads', 'youtube', 'bluesky', 'telegram', 'twitter', 'tiktok'];
