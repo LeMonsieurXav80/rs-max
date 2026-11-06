@@ -8,17 +8,14 @@ use Illuminate\Console\Command;
 
 class XBrowserRehearseCommand extends Command
 {
-    protected $signature = 'x:browser-rehearse {account} {--text=Répétition RS-Max} {--media=* : Fichier relatif au dossier des médias}';
+    protected $signature = 'x:browser-rehearse {account} {--text=Répétition RS-Max} {--media=* : URL du média}';
 
-    protected $description = 'Répète une publication X sans cliquer sur Poster, et enregistre une capture';
+    protected $description = 'Répète une publication X sans cliquer sur Poster';
 
     public function handle(TwitterBrowserAdapter $adapter): int
     {
         $account = SocialAccount::with('platform')->findOrFail($this->argument('account'));
-        $media = array_map(fn (string $file) => [
-            'local_path' => storage_path("app/private/media/{$file}"),
-            'mimetype' => mime_content_type(storage_path("app/private/media/{$file}")),
-        ], $this->option('media'));
+        $media = array_map(fn (string $url) => ['url' => $url, 'mimetype' => str_ends_with($url, '.mp4') ? 'video/mp4' : 'image/jpeg'], $this->option('media'));
 
         $result = $adapter->rehearse($account, (string) $this->option('text'), $media);
 
@@ -28,9 +25,7 @@ class XBrowserRehearseCommand extends Command
             return self::FAILURE;
         }
 
-        $path = storage_path('logs/x-rehearsal.png');
-        file_put_contents($path, $result['screenshot']);
-        $this->info("Prêt à publier, rien n'a été envoyé. Capture : {$path}");
+        $this->info("Prêt à publier, rien n'a été envoyé.");
 
         return self::SUCCESS;
     }

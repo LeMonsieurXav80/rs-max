@@ -120,6 +120,12 @@
                             <option value="api" {{ old('driver', $account->driver) === 'api' ? 'selected' : '' }}>API X (payante)</option>
                             <option value="browser" {{ old('driver', $account->driver) === 'browser' ? 'selected' : '' }}>Navigateur du VPS</option>
                         </select>
+                        <label for="browser_profile" class="block text-sm font-medium text-gray-700 mt-3 mb-1.5">Profil navigateur</label>
+                        <input type="text" name="browser_profile" id="browser_profile" value="{{ old('browser_profile', $account->browser_profile) }}" placeholder="wildycaro"
+                               class="w-full rounded-xl border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 text-sm">
+                        @error('browser_profile')
+                            <p class="mt-1 text-sm text-red-600">{{ $message }}</p>
+                        @enderror
                         <p class="mt-1 text-xs text-gray-400">
                             En mode navigateur, les publications, réponses, stats et abonnés passent par le navigateur du VPS.
                             Les articles X restent sur l'API.

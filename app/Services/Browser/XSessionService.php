@@ -6,8 +6,8 @@ use App\Models\SocialAccount;
 use Illuminate\Support\Facades\Log;
 
 /**
- * Session X du navigateur du VPS. Une copie chiffrée des cookies reste en base pour
- * reconstruire la session si le profil Camofox est perdu, sans repasser par l'humain.
+ * Session X du Chromium du VPS. Une copie chiffrée des cookies reste en base pour
+ * la réinstaller si le profil la perd, sans repasser par l'humain.
  */
 class XSessionService
 {
@@ -17,12 +17,9 @@ class XSessionService
 
     private const REQUIRED_COOKIES = ['auth_token', 'ct0'];
 
-    public function __construct(private CamofoxClient $client) {}
+    private const TASK_TIMEOUT = 60;
 
-    public static function userId(SocialAccount $account): string
-    {
-        return 'rsmax-x-'.$account->id;
-    }
+    public function __construct(private BrowserTaskQueue $queue) {}
 
     /** Vrai seulement si les cookies sont bien ceux de ce compte : `twid` porte son identifiant. */
     public function belongsTo(array $cookies, SocialAccount $account): bool
@@ -35,7 +32,7 @@ class XSessionService
 
     public static function accountIdFrom(array $cookies): ?string
     {
-        $twid = urldecode((string) collect($cookies)->firstWhere('name', 'twid')['value'] ?? '');
+        $twid = urldecode((string) (collect($cookies)->firstWhere('name', 'twid')['value'] ?? ''));
 
         return preg_match('/^u=(\d+)$/', trim($twid, '"'), $m) ? $m[1] : null;
     }
@@ -43,12 +40,12 @@ class XSessionService
     public function store(SocialAccount $account, array $cookies): bool
     {
         $account->update(['browser_session' => $cookies, 'browser_session_received_at' => now()]);
-        $this->client->importCookies(self::userId($account), self::forPlaywright($cookies));
+        $this->apply($account);
 
         return $this->verify($account);
     }
 
-    /** Contrôle la session, et la restaure depuis la copie chiffrée si elle a disparu. */
+    /** Contrôle la session, et la réinstalle depuis la copie chiffrée si elle a disparu. */
     public function check(SocialAccount $account): bool
     {
         if ($this->verify($account)) {
@@ -59,60 +56,34 @@ class XSessionService
             return false;
         }
 
-        $this->client->importCookies(self::userId($account), self::forPlaywright($account->browser_session));
+        $this->apply($account);
 
         return $this->verify($account);
     }
 
-    /** Ouvre un onglet connecté, ou échoue explicitement : rien ne doit se saisir sur la page de login. */
-    public function open(SocialAccount $account, string $url): XPage
-    {
-        $userId = self::userId($account);
-        $page = new XPage($this->client, $userId, $this->client->open($userId, $url));
-
-        return $page;
-    }
-
     public function verify(SocialAccount $account): bool
     {
-        $page = $this->open($account, 'https://x.com/home');
+        $result = $this->queue->run($account, 'x.whoami', ['url' => 'https://x.com/home'], self::TASK_TIMEOUT);
+        $username = $result['username'] ?? null;
 
-        try {
-            $username = $page->identity();
-        } finally {
-            $page->close();
-        }
+        // Le profil d'une marque ne doit pas agir pour une autre.
+        $connected = $username !== null && ($account->browser_username === null || $account->browser_username === $username);
 
         $account->update([
-            'browser_session_status' => $username ? self::CONNECTED : self::EXPIRED,
+            'browser_session_status' => $connected ? self::CONNECTED : self::EXPIRED,
             'browser_session_checked_at' => now(),
-            'browser_username' => $username ?? $account->browser_username,
+            'browser_username' => $connected ? $username : $account->browser_username,
         ]);
 
-        if (! $username) {
-            Log::warning('Session X expirée sur le navigateur du VPS', ['account_id' => $account->id]);
+        if (! $connected) {
+            Log::warning('Session X absente du navigateur du VPS', ['account_id' => $account->id, 'vu' => $username]);
         }
 
-        return $username !== null;
+        return $connected;
     }
 
-    /** @return array<int, array<string, mixed>> */
-    private static function forPlaywright(array $cookies): array
+    private function apply(SocialAccount $account): void
     {
-        return array_map(fn (array $c) => array_filter([
-            'name' => $c['name'],
-            'value' => $c['value'],
-            'domain' => $c['domain'],
-            'path' => $c['path'] ?? '/',
-            'expires' => isset($c['expirationDate']) ? (int) $c['expirationDate'] : null,
-            'httpOnly' => $c['httpOnly'] ?? null,
-            'secure' => $c['secure'] ?? null,
-            'sameSite' => match ($c['sameSite'] ?? null) {
-                'strict' => 'Strict',
-                'lax' => 'Lax',
-                'no_restriction' => 'None',
-                default => null,
-            },
-        ], fn ($v) => $v !== null), $cookies);
+        $this->queue->run($account, 'session.apply', ['cookies' => $account->browser_session], self::TASK_TIMEOUT);
     }
 }

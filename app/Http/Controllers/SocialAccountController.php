@@ -169,6 +169,7 @@ class SocialAccountController extends Controller
             'show_branding' => 'nullable|boolean',
             'persona_id' => 'nullable|exists:personas,id',
             'driver' => 'nullable|in:api,browser',
+            'browser_profile' => ['nullable', 'string', 'regex:/^[a-z0-9_-]{1,40}$/'],
             'credentials' => 'nullable|array',
             'credentials.*' => 'nullable|string|max:2000',
         ]);
@@ -197,6 +198,7 @@ class SocialAccountController extends Controller
             'show_branding' => $validated['show_branding'] ?? false,
             'persona_id' => $validated['persona_id'] ?? null,
             'driver' => $validated['driver'] ?? $account->driver,
+            'browser_profile' => $validated['browser_profile'] ?? $account->browser_profile,
             'credentials' => $account->credentials,
         ]);
 

@@ -18,6 +18,7 @@ class SocialAccount extends Model
         'platform_id',
         'platform_account_id',
         'driver',
+        'browser_profile',
         'browser_session',
         'browser_username',
         'browser_session_status',

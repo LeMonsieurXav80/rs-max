@@ -3,13 +3,13 @@
 namespace App\Services\Stats;
 
 use App\Models\SocialAccount;
-use App\Services\Browser\XPage;
+use App\Services\Browser\BrowserTaskQueue;
 use App\Services\Browser\XSessionService;
 
-/** Relève les abonnés et les stats sur le profil X, dans le navigateur du VPS. */
+/** Relève les abonnés et les stats sur le profil X, dans le Chromium du VPS. */
 class XBrowserStatsService
 {
-    public function __construct(private XSessionService $sessions, private XObservationService $observations) {}
+    public function __construct(private XSessionService $sessions, private BrowserTaskQueue $queue, private XObservationService $observations) {}
 
     /** @return array<string, mixed>|null `null` si la session n'est plus valide. */
     public function sync(SocialAccount $account, int $screens = 3): ?array
@@ -18,41 +18,36 @@ class XBrowserStatsService
             return null;
         }
 
-        $username = $account->browser_username;
-        $page = $this->sessions->open($account, "https://x.com/{$username}");
+        $username = strtolower((string) $account->browser_username);
+        $page = $this->queue->run($account, 'x.tweets', ['url' => "https://x.com/{$username}", 'screens' => $screens, 'followers' => true], 180);
 
-        try {
-            $page->waitFor('article[data-testid="tweet"]', 20);
-            $followers = $page->followers();
-            $tweets = $this->read($page, $username, $screens);
-        } finally {
-            $page->close();
-        }
+        $tweets = collect($page['tweets'] ?? [])
+            ->filter(fn (array $t) => $t['author'] === $username)
+            ->map(fn (array $t) => [
+                'id' => $t['id'],
+                'text' => $t['text'],
+                'published_at' => $t['published_at'],
+                'is_reply' => $t['reply'],
+                'is_repost' => $t['reposted'],
+            ] + self::parseStats((string) $t['stats']))
+            ->values()->all();
 
-        return $this->observations->record($account, $followers, $tweets);
+        return $this->observations->record($account, $page['followers'] ?? null, $tweets);
     }
 
-    private function read(XPage $page, string $username, int $screens): array
+    /** « 3 réponses, 2 reposts, 12 J'aime, 1 signet, 900 vues », selon la langue du compte. */
+    public static function parseStats(string $label): array
     {
-        $found = [];
+        $patterns = ['replies' => 'r[ée]ponses?|repl(?:y|ies)', 'reposts' => 'reposts?|retweets?', 'likes' => "j[’']+aime|likes?",
+            'bookmarks' => 'signets?|bookmarks?', 'views' => 'vues?|views?'];
+        $stats = [];
 
-        for ($i = 0; $i < $screens; $i++) {
-            foreach ($page->tweets() as $tweet) {
-                if ($tweet['author'] === strtolower($username)) {
-                    $found[$tweet['id']] = [
-                        'id' => $tweet['id'],
-                        'text' => $tweet['text'],
-                        'published_at' => $tweet['published_at'],
-                        'is_reply' => $tweet['reply'],
-                        'is_repost' => $tweet['reposted'],
-                    ] + XPage::parseStats($tweet['stats']);
-                }
+        foreach ($patterns as $key => $pattern) {
+            if (preg_match('/([\d\s\x{202F}\x{A0},.]*\d)\s*(?:'.$pattern.')/iu', $label, $m)) {
+                $stats[$key] = (int) preg_replace('/\D/', '', $m[1]);
             }
-
-            $page->scrollDown();
-            usleep(1500000);
         }
 
-        return array_values($found);
+        return $stats;
     }
 }

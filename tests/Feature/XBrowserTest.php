@@ -9,111 +9,53 @@ use App\Models\User;
 use App\Services\Adapters\AdapterFactory;
 use App\Services\Adapters\TwitterAdapter;
 use App\Services\Adapters\TwitterBrowserAdapter;
-use App\Services\Browser\CamofoxClient;
-use App\Services\Browser\XPage;
+use App\Services\Browser\BrowserException;
+use App\Services\Browser\BrowserTaskQueue;
 use App\Services\Browser\XSessionService;
 use App\Services\Inbox\InboxSyncService;
 use App\Services\Inbox\TwitterBrowserInboxService;
+use App\Services\Stats\XBrowserStatsService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Laravel\Sanctum\Sanctum;
 use Tests\TestCase;
 
-/** Navigateur simulé : assez fidèle pour vérifier l'ordre des gestes et les refus. */
-class FakeCamofox extends CamofoxClient
+/** Companion simulé : répond aux tâches, sans navigateur. */
+class FakeQueue extends BrowserTaskQueue
 {
     public array $calls = [];
 
-    public array $imported = [];
+    public ?string $username = 'wildycaro';
 
-    public bool $loggedIn = true;
+    public bool $lostUntilApply = false;
 
-    public bool $sessionLostUntilImport = false;
+    public array $results = [];
 
-    public string $editorText = '';
+    public ?string $failure = null;
 
-    public bool $altersText = false;
-
-    public int $attached = 1;
-
-    public bool $targetVisible = true;
-
-    public ?string $rejection = null;
-
-    public string $clipboard = '';
-
-    public bool $submitted = false;
-
-    public array $timeline = [];
-
-    public function isConfigured(): bool
+    public function run(SocialAccount $account, string $kind, array $payload, int $timeout = 120): array
     {
-        return true;
+        $this->calls[] = [$kind, $payload];
+
+        if ($kind === 'session.apply') {
+            $this->lostUntilApply = false;
+
+            return [];
+        }
+
+        if ($kind === 'x.whoami') {
+            return ['username' => $this->lostUntilApply ? null : $this->username];
+        }
+
+        if ($this->failure) {
+            throw new BrowserException($this->failure);
+        }
+
+        return $this->results[$kind] ?? [];
     }
 
-    public function open(string $userId, string $url): string
+    public function kinds(): array
     {
-        $this->calls[] = ['open', $url];
-        $this->editorText = '';
-
-        return 't1';
-    }
-
-    public function close(string $userId, string $tabId): void {}
-
-    public function navigate(string $userId, string $tabId, string $url): void
-    {
-        $this->calls[] = ['navigate', $url];
-    }
-
-    public function click(string $userId, string $tabId, string $selector): void
-    {
-        $this->calls[] = ['click', $selector];
-        $this->submitted = $this->submitted || $selector === XPage::SUBMIT;
-    }
-
-    public function press(string $userId, string $tabId, string $key): void
-    {
-        $this->calls[] = ['press', $key];
-        $this->editorText = $key === 'Control+v' ? ($this->altersText ? 'autre' : $this->clipboard) : $this->editorText;
-    }
-
-    public function upload(string $userId, string $tabId, array $paths, string $selector): void
-    {
-        $this->calls[] = ['upload', $paths];
-    }
-
-    public function importCookies(string $userId, array $cookies): void
-    {
-        $this->imported[] = [$userId, $cookies];
-        $this->sessionLostUntilImport = false;
-    }
-
-    public function evaluate(string $userId, string $tabId, string $expression): mixed
-    {
-        $connected = $this->loggedIn && ! $this->sessionLostUntilImport;
-
-        return match (true) {
-            str_contains($expression, 'location.pathname') => $this->submitted && $this->rejection === null,
-            str_contains($expression, 'caret') => $this->targetVisible,
-            str_contains($expression, 'data-testid="toast"') => $this->submitted ? $this->rejection : null,
-            str_contains($expression, 'attachments') => $this->attached,
-            str_contains($expression, 'getAttribute("href")') => $connected ? '/wildycaro' : null,
-            str_contains($expression, 'rsmax-buffer\';t.value=') => tap(null, function () use ($expression) {
-                preg_match('/t\.value=(".*?(?<!\\\\)");/su', $expression, $m);
-                $this->clipboard = json_decode($m[1]);
-            }),
-            str_ends_with($expression, '.click()') => tap(null, function () use ($expression) {
-                $this->calls[] = ['click', json_decode(substr($expression, strlen('document.querySelector('), -strlen(').click()')))];
-            }),
-            str_contains($expression, 'article[data-testid="tweet"]\')].map') => $this->timeline,
-            str_contains($expression, 'innerText||\'\'') => $this->editorText,
-            str_contains($expression, '!!document.querySelector') => match (true) {
-                str_contains($expression, 'AppTabBar_Profile_Link') => true,
-                str_contains($expression, 'tweetTextarea_0') => ! $this->submitted,
-                default => true,
-            },
-            default => null,
-        };
+        return array_column($this->calls, 0);
     }
 }
 
@@ -121,7 +63,7 @@ class XBrowserTest extends TestCase
 {
     use RefreshDatabase;
 
-    private FakeCamofox $browser;
+    private FakeQueue $queue;
 
     private SocialAccount $account;
 
@@ -130,19 +72,20 @@ class XBrowserTest extends TestCase
     protected function setUp(): void
     {
         parent::setUp();
-        $this->browser = new FakeCamofox;
-        $this->app->instance(CamofoxClient::class, $this->browser);
-        $this->user = User::factory()->create();
+        $this->queue = new FakeQueue;
+        $this->app->instance(BrowserTaskQueue::class, $this->queue);
+        $this->user = User::factory()->create(['role' => 'admin']);
         Sanctum::actingAs($this->user);
         $platform = Platform::firstOrCreate(['slug' => 'twitter'], ['name' => 'X']);
-        $this->account = SocialAccount::create(['platform_id' => $platform->id, 'platform_account_id' => '77', 'name' => 'Wildy', 'driver' => 'browser', 'browser_username' => 'wildycaro', 'languages' => ['fr']]);
+        $this->account = SocialAccount::create(['platform_id' => $platform->id, 'platform_account_id' => '77', 'name' => 'Wildy', 'driver' => 'browser',
+            'browser_profile' => 'wildycaro', 'browser_username' => 'wildycaro', 'languages' => ['fr']]);
         $this->account->users()->attach($this->user, ['is_active' => true]);
     }
 
     private function cookies(string $id = '77'): array
     {
         return [
-            ['name' => 'auth_token', 'value' => 'secret', 'domain' => '.x.com', 'sameSite' => 'no_restriction', 'expirationDate' => 1900000000.5],
+            ['name' => 'auth_token', 'value' => 'secret', 'domain' => '.x.com'],
             ['name' => 'ct0', 'value' => 'csrf', 'domain' => '.x.com'],
             ['name' => 'twid', 'value' => "u%3D{$id}", 'domain' => '.x.com'],
         ];
@@ -153,20 +96,13 @@ class XBrowserTest extends TestCase
         return app(TwitterBrowserAdapter::class);
     }
 
-    private function tweet(string $id, string $text, array $extra = []): array
-    {
-        return $extra + ['id' => $id, 'author' => 'wildycaro', 'name' => 'Wildy', 'avatar' => null, 'text' => $text, 'published_at' => now()->toIso8601String(),
-            'stats' => '', 'pinned' => false, 'reposted' => false, 'reply' => false];
-    }
-
-    public function test_la_session_recue_est_chiffree_importee_et_verifiee(): void
+    public function test_la_session_recue_est_chiffree_appliquee_et_verifiee(): void
     {
         $this->postJson('/api/extension/x/session', ['cookies' => $this->cookies()])
             ->assertOk()->assertJson(['status' => 'connected', 'username' => 'wildycaro']);
 
         $this->account->refresh();
-        $this->assertSame('rsmax-x-'.$this->account->id, $this->browser->imported[0][0]);
-        $this->assertSame('None', $this->browser->imported[0][1][0]['sameSite']);
+        $this->assertSame(['session.apply', 'x.whoami'], $this->queue->kinds());
         $this->assertSame('secret', $this->account->browser_session[0]['value']);
         $this->assertStringNotContainsString('secret', (string) $this->account->getRawOriginal('browser_session'));
         $this->assertArrayNotHasKey('browser_session', $this->account->toArray());
@@ -176,35 +112,41 @@ class XBrowserTest extends TestCase
     {
         $this->postJson('/api/extension/x/session', ['cookies' => $this->cookies('88')])->assertStatus(422);
 
-        $this->assertSame([], $this->browser->imported);
+        $this->assertSame([], $this->queue->calls);
     }
 
     public function test_une_session_perdue_est_restauree_depuis_la_copie_chiffree(): void
     {
         $this->account->update(['browser_session' => $this->cookies()]);
-        $this->browser->sessionLostUntilImport = true;
+        $this->queue->lostUntilApply = true;
 
         $this->assertTrue(app(XSessionService::class)->check($this->account));
-        $this->assertCount(1, $this->browser->imported);
+        $this->assertSame(['x.whoami', 'session.apply', 'x.whoami'], $this->queue->kinds());
         $this->assertSame('connected', $this->account->fresh()->browser_session_status);
     }
 
-    public function test_une_session_expiree_nest_pas_masquee(): void
+    public function test_une_session_expiree_bloque_avant_toute_action(): void
     {
-        $this->account->update(['browser_session' => $this->cookies()]);
-        $this->browser->loggedIn = false;
+        $this->queue->username = null;
 
         $result = $this->adapter()->publish($this->account, 'Bonjour');
 
         $this->assertFalse($result['success']);
-        $this->assertStringContainsString('Session', $result['error']);
         $this->assertSame('expired', $this->account->fresh()->browser_session_status);
-        $this->assertFalse($this->browser->submitted);
+        $this->assertNotContains('x.post', $this->queue->kinds());
     }
 
-    public function test_publier_renvoie_lid_du_tweet_reconnu_sur_le_profil(): void
+    public function test_le_profil_dun_autre_compte_ne_publie_pas(): void
     {
-        $this->browser->timeline = [$this->tweet('1', 'Ancien épinglé', ['pinned' => true]), $this->tweet('500', 'Bonjour le monde')];
+        $this->queue->username = 'autrecompte';
+
+        $this->assertFalse($this->adapter()->publish($this->account, 'Bonjour')['success']);
+        $this->assertNotContains('x.post', $this->queue->kinds());
+    }
+
+    public function test_publier_renvoie_lid_et_le_lien_du_tweet(): void
+    {
+        $this->queue->results['x.post'] = ['id' => '500'];
 
         $result = $this->adapter()->publish($this->account, 'Bonjour le monde');
 
@@ -213,49 +155,24 @@ class XBrowserTest extends TestCase
         $this->assertSame('https://x.com/wildycaro/status/500', $result['permalink']);
     }
 
-    public function test_un_texte_altere_annule_avant_le_clic(): void
+    public function test_une_video_part_seule_et_quatre_images_au_plus(): void
     {
-        $this->browser->altersText = true;
+        $this->queue->results['x.post'] = ['id' => '500'];
+        $image = ['url' => 'https://rs/a.jpg', 'mimetype' => 'image/jpeg'];
 
-        $result = $this->adapter()->publish($this->account, 'Bonjour');
+        $this->adapter()->publish($this->account, 'Texte', array_fill(0, 6, $image));
+        $this->assertCount(4, collect($this->queue->calls)->firstWhere(0, 'x.post')[1]['media']);
 
-        $this->assertFalse($result['success']);
-        $this->assertFalse($this->browser->submitted);
+        $this->queue->calls = [];
+        $this->adapter()->publish($this->account, 'Texte', [$image, ['url' => 'https://rs/b.mp4', 'mimetype' => 'video/mp4']]);
+        $media = collect($this->queue->calls)->firstWhere(0, 'x.post')[1]['media'];
+        $this->assertCount(1, $media);
+        $this->assertSame('video/mp4', $media[0]['mimetype']);
     }
 
-    public function test_un_envoi_sans_confirmation_le_dit_sans_pretendre_reussir(): void
+    public function test_un_refus_de_x_remonte_son_motif(): void
     {
-        $result = $this->adapter()->publish($this->account, 'Bonjour');
-
-        $this->assertFalse($result['success']);
-        $this->assertStringContainsString('non confirmé', $result['error']);
-        $this->assertSame(1, collect($this->browser->calls)->where(0, 'click')->where(1, XPage::SUBMIT)->count());
-    }
-
-    public function test_photos_et_video_passent_par_le_dossier_partage(): void
-    {
-        $dir = storage_path('app/private/media/');
-        @mkdir($dir, 0777, true);
-        touch($dir.'a.jpg');
-        touch($dir.'b.mp4');
-        $this->browser->timeline = [$this->tweet('500', 'Avec média')];
-        $image = ['local_path' => $dir.'a.jpg', 'mimetype' => 'image/jpeg'];
-
-        $this->adapter()->publish($this->account, 'Avec média', [$image]);
-        $this->assertSame(['/uploads/a.jpg'], collect($this->browser->calls)->firstWhere(0, 'upload')[1]);
-
-        $this->browser->calls = [];
-        $this->browser->submitted = false;
-        $this->adapter()->publish($this->account, 'Avec média', [$image, ['local_path' => $dir.'b.mp4', 'mimetype' => 'video/mp4']]);
-        $this->assertSame(['/uploads/b.mp4'], collect($this->browser->calls)->firstWhere(0, 'upload')[1]);
-
-        unlink($dir.'a.jpg');
-        unlink($dir.'b.mp4');
-    }
-
-    public function test_le_motif_de_refus_de_x_est_rapporte_meme_apres_sa_disparition(): void
-    {
-        $this->browser->rejection = 'Vous avez atteint votre limite quotidienne';
+        $this->queue->failure = 'Vous avez atteint votre limite quotidienne';
 
         $result = $this->adapter()->publish($this->account, 'Bonjour');
 
@@ -263,34 +180,9 @@ class XBrowserTest extends TestCase
         $this->assertStringContainsString('limite quotidienne', $result['error']);
     }
 
-    public function test_supprimer_vise_le_tweet_demande_et_non_son_parent(): void
-    {
-        $this->browser->targetVisible = false;
-
-        $result = $this->adapter()->deleteTweet($this->account, '555');
-
-        $this->assertFalse($result['success']);
-        $this->assertSame('Tweet visé introuvable sur la page.', $result['error']);
-    }
-
-    public function test_un_media_refuse_annule_avant_le_clic(): void
-    {
-        $dir = storage_path('app/private/media/');
-        @mkdir($dir, 0777, true);
-        touch($dir.'c.mp4');
-        $this->browser->attached = 0;
-
-        $result = $this->adapter()->publish($this->account, 'Avec vidéo', [['local_path' => $dir.'c.mp4', 'mimetype' => 'video/mp4']]);
-
-        $this->assertFalse($result['success']);
-        $this->assertStringContainsString('Média refusé', $result['error']);
-        $this->assertFalse($this->browser->submitted);
-        unlink($dir.'c.mp4');
-    }
-
     public function test_repondre_a_un_commentaire_passe_par_le_navigateur(): void
     {
-        $this->browser->timeline = [$this->tweet('600', 'Merci à toi')];
+        $this->queue->results['x.post'] = ['id' => '600'];
         $item = InboxItem::create(['platform_id' => $this->account->platform_id, 'social_account_id' => $this->account->id, 'type' => 'comment', 'external_id' => '555', 'status' => 'unread']);
 
         $service = app(InboxSyncService::class)->getServiceForAccount($this->account);
@@ -298,36 +190,24 @@ class XBrowserTest extends TestCase
 
         $this->assertInstanceOf(TwitterBrowserInboxService::class, $service);
         $this->assertSame('600', $result['external_id']);
-        $this->assertContains(['open', 'https://x.com/intent/post?in_reply_to=555'], $this->browser->calls);
-    }
-
-    public function test_une_reponse_en_emoji_est_reconnue_sur_le_profil(): void
-    {
-        $this->browser->timeline = [$this->tweet('700', 'Merci')];
-
-        $result = $this->adapter()->publishReply($this->account, 'Merci 🤍', '555');
-
-        $this->assertSame('700', $result['external_id']);
+        $this->assertSame('https://x.com/intent/post?in_reply_to=555', collect($this->queue->calls)->firstWhere(0, 'x.post')[1]['url']);
     }
 
     public function test_citer_colle_le_lien_du_tweet_dans_le_texte(): void
     {
-        $this->browser->timeline = [$this->tweet('701', 'Mon avis')];
+        $this->adapter()->nativeQuote($this->account, 'Mon avis', '555');
 
-        $result = $this->adapter()->nativeQuote($this->account, 'Mon avis', '555');
-
-        $this->assertSame('701', $result['external_id']);
-        $this->assertSame('Mon avis https://x.com/i/web/status/555', $this->browser->clipboard);
+        $this->assertSame('Mon avis https://x.com/i/web/status/555', collect($this->queue->calls)->firstWhere(0, 'x.post')[1]['text']);
     }
 
     public function test_les_mentions_lues_excluent_le_compte_lui_meme(): void
     {
-        $this->browser->timeline = [$this->tweet('600', 'Moi'), $this->tweet('601', '@wildycaro super', ['author' => 'visiteur'])];
+        $tweet = fn ($id, $author) => ['id' => $id, 'author' => $author, 'name' => 'N', 'avatar' => null, 'text' => 'T', 'published_at' => null];
+        $this->queue->results['x.tweets'] = ['tweets' => [$tweet('600', 'wildycaro'), $tweet('601', 'visiteur')]];
 
         $items = app(TwitterBrowserInboxService::class)->fetchInbox($this->account);
 
         $this->assertSame(['601'], $items->pluck('external_id')->all());
-        $this->assertSame('visiteur', $items->first()['author_username']);
     }
 
     public function test_le_mode_de_connexion_change_le_chemin_de_chaque_compte(): void
@@ -342,8 +222,8 @@ class XBrowserTest extends TestCase
     public function test_les_stats_affichees_par_x_sont_lues_dans_les_deux_langues(): void
     {
         $this->assertSame(['replies' => 3, 'reposts' => 2, 'likes' => 1204, 'bookmarks' => 1, 'views' => 9000],
-            XPage::parseStats("3 réponses, 2 reposts, 1 204 J''aime, 1 signet, 9 000 vues"));
+            XBrowserStatsService::parseStats("3 réponses, 2 reposts, 1 204 J''aime, 1 signet, 9 000 vues"));
         $this->assertSame(['replies' => 1, 'likes' => 12, 'views' => 345],
-            XPage::parseStats('1 reply, 12 likes, 345 views'));
+            XBrowserStatsService::parseStats('1 reply, 12 likes, 345 views'));
     }
 }

@@ -5,14 +5,15 @@ namespace App\Services\Inbox;
 use App\Models\InboxItem;
 use App\Models\SocialAccount;
 use App\Services\Adapters\TwitterBrowserAdapter;
+use App\Services\Browser\BrowserTaskQueue;
 use App\Services\Browser\XSessionService;
 use Carbon\Carbon;
 use Illuminate\Support\Collection;
 
-/** Mentions X lues et traitées depuis le navigateur du VPS. */
+/** Mentions X lues et traitées depuis le Chromium du VPS. */
 class TwitterBrowserInboxService implements PlatformInboxInterface
 {
-    public function __construct(private XSessionService $sessions, private TwitterBrowserAdapter $adapter) {}
+    public function __construct(private XSessionService $sessions, private TwitterBrowserAdapter $adapter, private BrowserTaskQueue $queue) {}
 
     public function fetchInbox(SocialAccount $account, ?Carbon $since = null): Collection
     {
@@ -20,14 +21,7 @@ class TwitterBrowserInboxService implements PlatformInboxInterface
             return collect();
         }
 
-        $page = $this->sessions->open($account, 'https://x.com/notifications/mentions');
-
-        try {
-            $page->waitFor('article[data-testid="tweet"]', 20);
-            $tweets = $page->tweets();
-        } finally {
-            $page->close();
-        }
+        $tweets = $this->queue->run($account, 'x.tweets', ['url' => 'https://x.com/notifications/mentions'])['tweets'] ?? [];
 
         return collect($tweets)
             ->reject(fn (array $t) => $t['author'] === strtolower((string) $account->browser_username))

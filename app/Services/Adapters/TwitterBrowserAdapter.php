@@ -4,29 +4,23 @@ namespace App\Services\Adapters;
 
 use App\Models\SocialAccount;
 use App\Services\Browser\BrowserException;
-use App\Services\Browser\XPage;
+use App\Services\Browser\BrowserTaskQueue;
 use App\Services\Browser\XSessionService;
-use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
-use Illuminate\Support\Facades\Storage;
-use Illuminate\Support\Str;
 
-/** Publie sur X depuis le navigateur du VPS, avec la session du compte. */
+/** Publie sur X par Companion, dans le Chromium du VPS. */
 class TwitterBrowserAdapter implements PlatformAdapterInterface, ResharingAdapterInterface, ThreadableAdapterInterface
 {
     private const COMPOSE_URL = 'https://x.com/compose/post';
 
-    private const INTENT_URL = 'https://x.com/intent/post';
-
     private const MAX_IMAGES = 4;
 
-    private const CONFIRM_MINUTES = 10;
+    // Une vidéo reste « en traitement » côté X avant que le bouton Poster s'active.
+    private const POST_TIMEOUT = 900;
 
-    private const CONFIRM_ATTEMPTS = 4;
+    private const ACTION_TIMEOUT = 120;
 
-    private const CONFIRM_PAUSE_SECONDS = 4;
-
-    public function __construct(private XSessionService $sessions) {}
+    public function __construct(private XSessionService $sessions, private BrowserTaskQueue $queue) {}
 
     public function publish(SocialAccount $account, string $content, ?array $media = null, ?array $options = null): array
     {
@@ -35,214 +29,75 @@ class TwitterBrowserAdapter implements PlatformAdapterInterface, ResharingAdapte
             return (new TwitterAdapter)->publish($account, $content, $media, $options);
         }
 
-        return $this->post($account, self::COMPOSE_URL, $content, $media, 'https://x.com/%s');
+        return $this->post($account, self::COMPOSE_URL, $content, $media);
     }
 
     public function publishReply(SocialAccount $account, string $content, string $replyToId, ?array $media = null, ?array $options = null): array
     {
-        return $this->post($account, self::INTENT_URL.'?in_reply_to='.$replyToId, $content, $media, 'https://x.com/%s/with_replies');
+        return $this->post($account, 'https://x.com/intent/post?in_reply_to='.$replyToId, $content, $media);
     }
 
     public function nativeQuote(SocialAccount $account, string $text, string $sourceExternalId, ?array $media = null): array
     {
-        // Le lien collé dans le texte devient la citation : le paramètre `url` préremplit
-        // l'éditeur, et la relecture y verrait un texte différent de celui prévu.
-        return $this->post($account, self::COMPOSE_URL, trim($text.' https://x.com/i/web/status/'.$sourceExternalId), $media, 'https://x.com/%s');
+        // Le lien dans le texte devient la citation, comme quand on le colle à la main.
+        return $this->post($account, self::COMPOSE_URL, trim($text.' https://x.com/i/web/status/'.$sourceExternalId), $media);
     }
 
     public function nativeRepost(SocialAccount $account, string $sourceExternalId): array
     {
-        return $this->inBrowser($account, 'https://x.com/intent/retweet?tweet_id='.$sourceExternalId, function (XPage $page) use ($sourceExternalId) {
-            $confirm = '[data-testid="confirmationSheetConfirm"]';
-
-            if (! $page->waitFor($confirm, 20)) {
-                return $this->failure('Bouton de repost introuvable.');
-            }
-
-            $page->click($confirm);
-
-            return ['success' => true, 'external_id' => $sourceExternalId, 'error' => null];
-        });
+        return $this->action($account, 'x.repost', ['url' => 'https://x.com/intent/retweet?tweet_id='.$sourceExternalId],
+            ['external_id' => $sourceExternalId]);
     }
 
     public function deleteTweet(SocialAccount $account, string $tweetId): array
     {
-        return $this->inBrowser($account, "https://x.com/i/web/status/{$tweetId}", function (XPage $page) use ($tweetId) {
-            $confirm = '[data-testid="confirmationSheetConfirm"]';
-
-            if (! $page->waitFor('article[data-testid="tweet"]', 20)) {
-                return $this->failure('Tweet introuvable.');
-            }
-
-            sleep(self::CONFIRM_PAUSE_SECONDS);
-
-            if (! $page->openTweetMenu($tweetId)) {
-                return $this->failure('Tweet visé introuvable sur la page.');
-            }
-
-            if (! $page->clickMenuItem('Supprimer|Delete') || ! $page->waitFor($confirm, 10)) {
-                return $this->failure('Suppression indisponible : ce tweet n’est sans doute pas celui du compte.');
-            }
-
-            $page->click($confirm);
-
-            return $page->waitUntilGone($confirm, 15)
-                ? ['success' => true, 'external_id' => null, 'error' => null]
-                : $this->failure('Suppression non confirmée.');
-        });
+        return $this->action($account, 'x.delete', ['url' => "https://x.com/{$account->browser_username}/status/{$tweetId}", 'id' => $tweetId]);
     }
 
-    /** Parcours complet sans le clic final : prouve la session et les médias sans rien publier. */
+    /** Parcours complet sans le clic final : prouve les médias sans rien publier. */
     public function rehearse(SocialAccount $account, string $content, ?array $media = null): array
     {
-        return $this->inBrowser($account, self::COMPOSE_URL, function (XPage $page) use ($content, $media) {
-            $this->prepare($page, $content, $media);
-
-            return ['success' => true, 'external_id' => null, 'error' => null, 'screenshot' => $page->screenshot()];
-        });
+        return $this->post($account, self::COMPOSE_URL, $content, $media, dry: true);
     }
 
-    private function post(SocialAccount $account, string $url, string $content, ?array $media, string $timeline): array
+    private function post(SocialAccount $account, string $url, string $content, ?array $media, bool $dry = false): array
     {
-        return $this->inBrowser($account, $url, function (XPage $page) use ($account, $content, $media, $timeline) {
-            $this->prepare($page, $content, $media);
-            $page->submit();
+        $payload = ['url' => $url, 'text' => $content, 'username' => $account->browser_username,
+            'media' => $this->selectMedia($media ?? []), 'dry' => $dry];
 
-            // À partir d'ici, le tweet est peut-être parti : un échec ne doit jamais relancer l'envoi.
-            if (! $page->waitForPublished(30)) {
-                return $this->failure('X n’a pas accepté la publication : '.($page->lastToast ?? 'raison inconnue'));
-            }
-
-            $tweetId = $this->confirm($page, sprintf($timeline, $account->browser_username), $account->browser_username, $content);
-
-            return $tweetId
-                ? ['success' => true, 'external_id' => $tweetId, 'error' => null, 'permalink' => "https://x.com/{$account->browser_username}/status/{$tweetId}"]
-                : $this->failure('Envoi non confirmé : vérifier sur X avant de relancer, le tweet est peut-être parti.');
-        });
+        return $this->action($account, 'x.post', $payload, [], self::POST_TIMEOUT);
     }
 
-    private function prepare(XPage $page, string $content, ?array $media): void
-    {
-        if (! $page->waitFor(XPage::EDITOR, 25)) {
-            throw $page->identity() === null ? BrowserException::sessionLost() : new BrowserException('Éditeur X introuvable.');
-        }
-
-        // Les médias d'abord : le bouton ne s'active qu'une fois X d'accord. Avec du texte
-        // déjà saisi, il serait actif même après un refus, et le tweet partirait sans eux.
-        $temporary = [];
-
-        try {
-            $paths = $this->uploadPaths($media ?? [], $temporary);
-
-            if ($paths !== []) {
-                $page->upload($paths);
-
-                if (! $page->waitForSubmit((int) config('browser.media_timeout')) || ! $page->hasAttachments(count($paths))) {
-                    throw new BrowserException('Média refusé par X : '.($page->toast() ?? 'raison inconnue'));
-                }
-            }
-
-            if ($content !== '' && ! $page->fill($content)) {
-                throw new BrowserException('Le texte saisi diffère du texte prévu : publication annulée.');
-            }
-
-            if (! $page->waitForSubmit(15)) {
-                throw new BrowserException('Bouton Poster inactif : '.($page->toast() ?? 'raison inconnue'));
-            }
-        } finally {
-            Storage::disk('local')->delete($temporary);
-        }
-    }
-
-    /** Le tweet envoyé est reconnu sur la timeline du compte : X ne donne son id qu'à sa page. */
-    private function confirm(XPage $page, string $timeline, string $username, string $content): ?string
-    {
-        $wanted = self::fingerprint($content);
-        $since = now()->subMinutes(self::CONFIRM_MINUTES);
-
-        // Juste après l'envoi, le profil affiche encore l'ancienne liste.
-        for ($attempt = 0; $attempt < self::CONFIRM_ATTEMPTS; $attempt++) {
-            $page->goTo($timeline);
-            $page->waitFor('article[data-testid="tweet"]', 15);
-            sleep(self::CONFIRM_PAUSE_SECONDS);
-
-            foreach ($page->tweets() as $tweet) {
-                $recent = $tweet['published_at'] && now()->parse($tweet['published_at'])->gte($since);
-
-                if ($tweet['author'] === strtolower($username) && $recent && ! $tweet['pinned']
-                    && ($wanted === '' || str_starts_with(self::fingerprint($tweet['text']), $wanted))) {
-                    return $tweet['id'];
-                }
-            }
-        }
-
-        return null;
-    }
-
-    /** Début du texte, sans liens ni emoji : X raccourcit les uns et affiche les autres en images. */
-    private static function fingerprint(string $text): string
-    {
-        $text = preg_replace('~https?://\S+~u', '', $text);
-
-        return mb_substr(preg_replace('/[^\p{L}\p{N}]+/u', '', $text), 0, 30);
-    }
-
-    /**
-     * Chemins vus par Camofox. Un fichier hors médiathèque (fil publié par URL) est
-     * d'abord copié dans le dossier partagé ; `$temporary` liste ce qu'il faudra retirer.
-     *
-     * @return array<int, string>
-     */
-    private function uploadPaths(array $media, array &$temporary): array
-    {
-        $videos = array_values(array_filter($media, fn ($m) => str_starts_with((string) ($m['mimetype'] ?? ''), 'video/')));
-        $selected = $videos !== [] ? array_slice($videos, 0, 1) : array_slice($media, 0, self::MAX_IMAGES);
-        $root = storage_path('app/private/media/');
-
-        return array_map(function (array $item) use ($root, &$temporary) {
-            $local = $item['local_path'] ?? null;
-
-            if ($local && str_starts_with($local, $root) && is_file($local)) {
-                return rtrim(config('browser.uploads_dir'), '/').'/'.substr($local, strlen($root));
-            }
-
-            $relative = 'browser/'.Str::uuid().'.'.Str::afterLast((string) ($item['mimetype'] ?? 'image/jpeg'), '/');
-            $response = Http::timeout(120)->get((string) ($item['url'] ?? ''));
-
-            if (! $response->successful()) {
-                throw new BrowserException('Média inaccessible pour la publication.');
-            }
-
-            Storage::disk('local')->put('media/'.$relative, $response->body());
-            $temporary[] = 'media/'.$relative;
-
-            return rtrim(config('browser.uploads_dir'), '/').'/'.$relative;
-        }, $selected);
-    }
-
-    private function inBrowser(SocialAccount $account, string $url, callable $action): array
+    private function action(SocialAccount $account, string $kind, array $payload, array $extra = [], int $timeout = self::ACTION_TIMEOUT): array
     {
         try {
             if (! $this->sessions->check($account)) {
-                throw BrowserException::sessionLost();
+                throw new BrowserException('Session X absente ou expirée sur le navigateur du VPS.');
             }
 
-            $page = $this->sessions->open($account, $url);
+            $result = $this->queue->run($account, $kind, $payload, $timeout);
+            $id = $extra['external_id'] ?? ($result['id'] ?? null);
 
-            try {
-                return $action($page);
-            } finally {
-                $page->close();
-            }
+            return ['success' => true, 'external_id' => $id, 'error' => null]
+                + ($id && $kind === 'x.post' ? ['permalink' => "https://x.com/{$account->browser_username}/status/{$id}"] : [])
+                + $result;
         } catch (BrowserException $e) {
-            Log::error('TwitterBrowserAdapter: échec', ['account_id' => $account->id, 'error' => $e->getMessage()]);
+            Log::error('TwitterBrowserAdapter: échec', ['account_id' => $account->id, 'kind' => $kind, 'error' => $e->getMessage()]);
 
-            return $this->failure($e->getMessage());
+            return ['success' => false, 'external_id' => null, 'error' => $e->getMessage()];
         }
     }
 
-    private function failure(string $error): array
+    /** Une vidéo seule, ou jusqu'à 4 images : X refuse de mélanger les deux. */
+    private function selectMedia(array $media): array
     {
-        return ['success' => false, 'external_id' => null, 'error' => $error];
+        $videos = array_values(array_filter($media, fn ($m) => str_starts_with((string) ($m['mimetype'] ?? ''), 'video/')));
+        $selected = $videos !== [] ? array_slice($videos, 0, 1) : array_slice($media, 0, self::MAX_IMAGES);
+
+        return array_map(fn (array $m) => [
+            'url' => $m['url'] ?? null,
+            'mimetype' => $m['mimetype'] ?? 'image/jpeg',
+            'name' => basename(parse_url((string) ($m['url'] ?? 'media'), PHP_URL_PATH) ?: 'media'),
+        ], $selected);
     }
 }
