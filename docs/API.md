@@ -889,7 +889,15 @@ Reçoit les cookies X du navigateur de l'utilisateur et les donne au navigateur 
 - Les cookies sont stockés chiffrés et ne sont jamais renvoyés par l'API.
 - Réponse 200 : session active, avec `status` et `username`. Réponse 409 : X ne reconnaît pas le compte sur le VPS. Réponse 502 : navigateur du VPS injoignable.
 
-Le **Mode de connexion** de chaque compte X se règle dans sa fiche : API X, ou Navigateur du VPS.
+Le **Mode de connexion** de chaque compte X se règle dans sa fiche : API X, ou Navigateur du VPS, avec son **Profil navigateur**.
+
+### `GET /api/extension/tasks/next`
+
+Réservé aux admins, et à la copie de Companion qui tourne sur le VPS. Paramètre : `profile`. Donne la prochaine tâche de ce profil, ou `{"id": null}`. Un profil ne reçoit qu'une tâche à la fois.
+
+### `POST /api/extension/tasks/{id}/finish`
+
+Corps : `status` (`done`, `failed` ou `uncertain`), `result` et `error`. Chaque geste est journalisé dans `bot_action_logs` avec `source` à `browser`. Une tâche `uncertain` n'est jamais relancée : l'action a peut-être eu lieu.
 
 ---
 
