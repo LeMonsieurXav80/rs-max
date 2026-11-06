@@ -146,11 +146,12 @@ class PlatformSeeder extends Seeder
                 'description' => 'Comptes TikTok pilotés par le navigateur du VPS',
                 'color' => '#000000',
                 'auth_type' => 'browser',
-                'config' => json_encode([
+                // Un tableau, pas json_encode() : le cast l'encoderait une seconde fois et `browser_only` serait illisible.
+                'config' => [
                     'browser_only' => true,
                     'browser_profile' => 'wildycaro',
                     'credential_fields' => [],
-                ]),
+                ],
             ],
         ];
 

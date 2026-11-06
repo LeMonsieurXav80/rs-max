@@ -5,6 +5,7 @@ namespace Tests\Feature;
 use App\Models\Platform;
 use App\Models\SocialAccount;
 use App\Models\User;
+use Database\Seeders\PlatformSeeder;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
 
@@ -30,6 +31,15 @@ class TikTokPlatformTest extends TestCase
         ])->assertRedirect(route('accounts.index'));
 
         return SocialAccount::where('platform_id', $this->platform->id)->firstOrFail();
+    }
+
+    public function test_le_seeder_du_demarrage_garde_un_compte_tiktok_en_mode_navigateur(): void
+    {
+        $this->seed(PlatformSeeder::class);
+        $this->platform->refresh();
+
+        $this->assertTrue($this->platform->config['browser_only']);
+        $this->assertSame('browser', $this->account()->driver);
     }
 
     public function test_tiktok_se_choisit_dans_lajout_dun_compte(): void
