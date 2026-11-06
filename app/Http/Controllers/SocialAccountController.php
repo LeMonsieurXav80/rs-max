@@ -67,8 +67,6 @@ class SocialAccountController extends Controller
             'name' => 'required|string|max:255',
             'languages' => 'required|array|min:1',
             'languages.*' => 'in:fr,en,pt,es,de,it',
-            'branding' => 'nullable|string|max:500',
-            'show_branding' => 'nullable|boolean',
             'credentials' => 'required|array',
             'credentials.*' => 'nullable|string|max:2000',
         ]);
@@ -106,8 +104,6 @@ class SocialAccountController extends Controller
                 'name' => $validated['name'],
                 'credentials' => $credentials,
                 'languages' => $validated['languages'],
-                'branding' => $validated['branding'] ?? $account->branding,
-                'show_branding' => $validated['show_branding'] ?? $account->show_branding,
             ]);
         } else {
             $account = SocialAccount::create([
@@ -116,8 +112,6 @@ class SocialAccountController extends Controller
                 'name' => $validated['name'],
                 'credentials' => $credentials,
                 'languages' => $validated['languages'],
-                'branding' => $validated['branding'] ?? null,
-                'show_branding' => $validated['show_branding'] ?? false,
             ]);
         }
 
@@ -165,8 +159,6 @@ class SocialAccountController extends Controller
             'name' => 'required|string|max:255',
             'languages' => 'required|array|min:1',
             'languages.*' => 'in:fr,en,pt,es,de,it',
-            'branding' => 'nullable|string|max:500',
-            'show_branding' => 'nullable|boolean',
             'persona_id' => 'nullable|exists:personas,id',
             'driver' => 'nullable|in:api,browser',
             'browser_profile' => ['nullable', 'string', 'regex:/^[a-z0-9_-]{1,40}$/'],
@@ -194,8 +186,6 @@ class SocialAccountController extends Controller
         $account->update([
             'name' => $validated['name'],
             'languages' => $validated['languages'],
-            'branding' => $validated['branding'] ?? $account->branding,
-            'show_branding' => $validated['show_branding'] ?? false,
             'persona_id' => $validated['persona_id'] ?? null,
             'driver' => $validated['driver'] ?? $account->driver,
             'browser_profile' => $validated['browser_profile'] ?? $account->browser_profile,

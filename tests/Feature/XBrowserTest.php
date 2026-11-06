@@ -219,6 +219,11 @@ class XBrowserTest extends TestCase
         $this->assertInstanceOf(TwitterAdapter::class, AdapterFactory::forAccount($this->account->fresh()));
     }
 
+    public function test_la_fiche_du_compte_ne_propose_plus_de_signature(): void
+    {
+        $this->actingAs($this->user)->get(route('accounts.edit', $this->account))->assertOk()->assertDontSee('Branding');
+    }
+
     public function test_le_formulaire_du_compte_bascule_le_mode_et_revient_a_lapi(): void
     {
         $form = ['name' => 'Wildy', 'languages' => ['fr'], 'driver' => 'api'];

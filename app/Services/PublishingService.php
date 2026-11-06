@@ -96,11 +96,6 @@ class PublishingService
             $content .= "\n\n".$post->hashtags;
         }
 
-        // Append branding if enabled
-        if ($account->show_branding && $account->branding) {
-            $content .= "\n\n".$account->branding;
-        }
-
         return $content;
     }
 

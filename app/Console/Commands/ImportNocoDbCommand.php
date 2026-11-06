@@ -133,19 +133,6 @@ class ImportNocoDbCommand extends Command
 
             $language = $client[$languageMap[$platformSlug]] ?? $client['default_language'] ?? 'fr';
 
-            // Branding
-            $branding = null;
-            $showBranding = false;
-            if (!empty($client['branding_configs'])) {
-                $brandingConfigs = is_string($client['branding_configs'])
-                    ? json_decode($client['branding_configs'], true)
-                    : $client['branding_configs'];
-                if ($brandingConfigs) {
-                    $branding = json_encode($brandingConfigs);
-                    $showBranding = true;
-                }
-            }
-
             // For Telegram, create one account per channel
             if ($platformSlug === 'telegram') {
                 foreach ($configs as $channelName => $channelConfig) {
@@ -159,8 +146,6 @@ class ImportNocoDbCommand extends Command
                                 'chat_id' => $channelConfig['chat_id'] ?? '',
                             ],
                             'languages' => [$language],
-                            'branding' => $branding,
-                            'show_branding' => $channelConfig['show_branding'] ?? $showBranding,
                         ]
                     );
                 }
@@ -192,8 +177,6 @@ class ImportNocoDbCommand extends Command
                     [
                         'credentials' => $credentials,
                         'languages' => [$language],
-                        'branding' => $branding,
-                        'show_branding' => $mainConfig['show_branding'] ?? $showBranding,
                     ]
                 );
             }

@@ -79,38 +79,6 @@
                     @enderror
                 </div>
 
-                {{-- Branding --}}
-                <div class="mb-5">
-                    <label for="branding" class="block text-sm font-medium text-gray-700 mb-1.5">Branding / Signature</label>
-                    <textarea
-                        id="branding"
-                        name="branding"
-                        rows="3"
-                        class="w-full rounded-xl border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 text-sm"
-                        placeholder="Texte ajouté automatiquement à vos publications..."
-                    >{{ old('branding', $account->branding) }}</textarea>
-                    @error('branding')
-                        <p class="mt-1 text-sm text-red-600">{{ $message }}</p>
-                    @enderror
-                </div>
-
-                {{-- Afficher le branding --}}
-                <div>
-                    <label class="flex items-center gap-3 cursor-pointer">
-                        <input
-                            type="checkbox"
-                            name="show_branding"
-                            value="1"
-                            class="rounded border-gray-300 text-indigo-600 focus:ring-indigo-500"
-                            {{ old('show_branding', $account->show_branding) ? 'checked' : '' }}
-                        />
-                        <span class="text-sm text-gray-700">Afficher le branding dans les publications</span>
-                    </label>
-                    @error('show_branding')
-                        <p class="mt-1 text-sm text-red-600">{{ $message }}</p>
-                    @enderror
-                </div>
-
                 @if($account->platform->slug === 'twitter')
                     {{-- Mode de connexion --}}
                     <div class="mt-5">
