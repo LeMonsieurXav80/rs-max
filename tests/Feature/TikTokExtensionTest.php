@@ -2,6 +2,7 @@
 
 namespace Tests\Feature;
 
+use App\Models\BrowserTask;
 use App\Models\Persona;
 use App\Models\Platform;
 use App\Models\Setting;
@@ -87,6 +88,29 @@ class TikTokExtensionTest extends TestCase
         $this->postJson('/api/extension/tiktok/'.$r['id'].'/finish', ['username' => 'test.xav', 'status' => 'uncertain', 'liked' => true, 'proof' => 'Délai dépassé'])->assertOk();
         $this->postJson('/api/extension/tiktok/suggest', $this->payload())->assertConflict();
         $this->assertDatabaseHas('extension_tiktok_comments', ['id' => $r['id'], 'status' => 'uncertain', 'liked' => true]);
+    }
+
+    public function test_inbox_task_uses_the_same_reservation_with_the_approved_text(): void
+    {
+        $this->bind();
+        $platform = Platform::firstOrCreate(['slug' => 'tiktok'], ['name' => 'TikTok']);
+        $account = SocialAccount::create(['platform_id' => $platform->id, 'name' => 'TikTok', 'driver' => 'browser', 'browser_username' => 'test.xav']);
+        $account->users()->attach($this->user, ['is_active' => true]);
+        $task = BrowserTask::create(['social_account_id' => $account->id, 'kind' => 'tiktok.reply', 'profile' => 'nas', 'status' => BrowserTask::RUNNING,
+            'payload' => ['username' => 'test.xav', 'text' => 'Merci !', 'target' => ['author' => 'visiteur', 'content' => 'Belle vidéo !', 'caption' => 'Une randonnée à Lisbonne.']]]);
+        $payload = $this->payload() + ['browser_task_id' => $task->id];
+
+        $this->postJson('/api/extension/tiktok/suggest', $payload)->assertForbidden();
+        $this->user->update(['role' => 'admin']);
+        $this->postJson('/api/extension/tiktok/suggest', array_replace($payload, ['content' => 'Autre commentaire']))->assertConflict();
+        $reply = $this->postJson('/api/extension/tiktok/suggest', $payload)->assertOk()->assertJsonPath('reply_text', 'Merci !')->json();
+        Http::assertNothingSent();
+
+        $begin = ['username' => 'test.xav', 'reply_text' => $reply['reply_text']];
+        $this->postJson('/api/extension/tiktok/'.$reply['id'].'/begin', $begin)->assertOk();
+        $this->postJson('/api/extension/tiktok/'.$reply['id'].'/begin', $begin)->assertConflict();
+        $this->postJson('/api/extension/tiktok/'.$reply['id'].'/finish', $begin + ['status' => 'published', 'liked' => false, 'proof' => 'Texte et auteur vérifiés après rechargement'])->assertOk();
+        $this->assertDatabaseHas('extension_tiktok_comments', ['id' => $reply['id'], 'status' => 'published']);
     }
 
     public function test_changed_persona_or_wrong_text_cannot_send_old_draft(): void

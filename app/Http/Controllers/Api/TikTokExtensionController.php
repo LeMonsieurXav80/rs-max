@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Models\BotActionLog;
+use App\Models\BrowserTask;
 use App\Models\InboxItem;
 use App\Models\SocialAccount;
 use App\Services\Browser\BrowserException;
@@ -138,22 +139,31 @@ class TikTokExtensionController extends Controller
         $profile = $this->profile($request);
         $data = $request->validate(['fingerprint' => 'required|string|size:64|regex:/^[a-f0-9]+$/',
             'author' => 'required|string|max:255', 'content' => 'required|string|max:10000',
-            'video_context' => 'required|string|max:10000', 'max_length' => 'required|integer|min:1|max:150']);
+            'video_context' => 'required|string|max:10000', 'max_length' => 'required|integer|min:1|max:150',
+            'browser_task_id' => 'sometimes|required|integer|min:1']);
         abort_if(strtolower(ltrim($data['author'], '@')) === $profile->username, 409, 'Commentaire du compte lui-même.');
+        $approvedReply = isset($data['browser_task_id']) ? $this->approvedReply($request, $profile, $data) : null;
 
-        return Cache::lock('tt-suggest:'.$profile->id.':'.$data['fingerprint'], 60)->block(2, function () use ($request, $profile, $data, $generator) {
+        return Cache::lock('tt-suggest:'.$profile->id.':'.$data['fingerprint'], 60)->block(2, function () use ($request, $profile, $data, $generator, $approvedReply) {
             $existing = DB::table('extension_tiktok_comments')->where('profile_id', $profile->id)->where('fingerprint', $data['fingerprint'])->first();
             $account = $this->account($request, $profile->social_account_id);
             if ($existing) {
                 abort_unless($existing->persona_hash === $this->personaHash($account), 409, 'Persona modifié depuis la préparation : vérifier le brouillon.');
                 abort_unless($existing->status === 'prepared', 409, 'Envoi déjà tenté : vérifier TikTok avant toute reprise.');
                 abort_unless($existing->content === $data['content'] && $existing->video_context === $data['video_context'] && $existing->author === $data['author'], 409, 'Empreinte de commentaire ambiguë.');
-                abort_if(strlen(mb_convert_encoding($existing->reply_text, 'UTF-16LE', 'UTF-8')) / 2 > $data['max_length'], 422, 'Brouillon trop long pour cet éditeur.');
+                $reply = $approvedReply ?? $existing->reply_text;
+                abort_if(strlen(mb_convert_encoding($reply, 'UTF-16LE', 'UTF-8')) / 2 > $data['max_length'], 422, 'Brouillon trop long pour cet éditeur.');
+                if ($reply !== $existing->reply_text) {
+                    $updated = DB::table('extension_tiktok_comments')->where('id', $existing->id)
+                        ->where('status', 'prepared')->where('reply_text', $existing->reply_text)
+                        ->update(['reply_text' => $reply, 'updated_at' => now()]);
+                    abort_unless($updated, 409, 'Le brouillon a changé avant réservation.');
+                }
 
-                return response()->json(['id' => $existing->id, 'reply_text' => $existing->reply_text, 'status' => 'prepared']);
+                return response()->json(['id' => $existing->id, 'reply_text' => $reply, 'status' => 'prepared']);
             }
             $item = new InboxItem(['type' => 'comment', 'author_name' => $data['author'], 'content' => $data['content']]);
-            $reply = $generator->generate($item, $account, true, $data['max_length'], $data['video_context']);
+            $reply = $approvedReply ?? $generator->generate($item, $account, true, $data['max_length'], $data['video_context']);
             abort_unless(filled($reply), 503, 'Génération indisponible : aucun envoi.');
             // La limite textarea est mesurée en unités UTF-16 (les emojis peuvent en occuper deux).
             abort_if(strlen(mb_convert_encoding($reply, 'UTF-16LE', 'UTF-8')) / 2 > $data['max_length'], 422, 'Réponse trop longue : aucun texte tronqué ni envoyé.');
@@ -165,6 +175,24 @@ class TikTokExtensionController extends Controller
             return response()->json(['id' => $id, 'reply_text' => $reply, 'status' => 'prepared',
                 'persona' => ['id' => $account->persona->id, 'name' => $account->persona->name]]);
         });
+    }
+
+    private function approvedReply(Request $request, object $profile, array $data): string
+    {
+        abort_unless($request->user()->isAdmin(), 403);
+        $task = BrowserTask::where('kind', 'tiktok.reply')->where('status', BrowserTask::RUNNING)->find($data['browser_task_id']);
+        abort_unless($task, 409, 'Tâche de réponse TikTok inactive.');
+
+        $account = $this->sessionAccount($request, $profile->username);
+        $payload = $task->payload;
+        abort_unless($task->social_account_id === $account->id && ($payload['username'] ?? null) === $profile->username, 409, 'Identité de la tâche TikTok différente.');
+        abort_unless(($payload['target']['author'] ?? null) === $data['author']
+            && ($payload['target']['content'] ?? null) === $data['content']
+            && ($payload['target']['caption'] ?? null) === $data['video_context'], 409, 'Commentaire différent de la tâche TikTok.');
+        $reply = $payload['text'] ?? null;
+        abort_unless(is_string($reply) && filled($reply), 422, 'Réponse validée manquante.');
+
+        return $reply;
     }
 
     public function begin(Request $request, int $id): JsonResponse
