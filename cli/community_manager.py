@@ -99,6 +99,10 @@ def main(argv=None):
     parser.add_argument('--config', type=Path, default=Path(os.environ.get('COMMUNITY_MANAGER_CONFIG', str(Path(os.environ.get('HERMES_HOME', '~/.hermes')).expanduser() / 'community-manager.json'))))
     subs = parser.add_subparsers(dest='command', required=True)
     subs.add_parser('accounts')
+    p = subs.add_parser('strategy'); p.add_argument('--account', type=int, required=True); p.add_argument('--update-file', type=Path)
+    p = subs.add_parser('inbox'); p.add_argument('--account', type=int, required=True); p.add_argument('--status', choices=['all','unanswered','replied','reply_failed'], default='unanswered')
+    p = subs.add_parser('reply-context'); p.add_argument('id', type=int)
+    p = subs.add_parser('reply'); p.add_argument('id', type=int); p.add_argument('--context', required=True); p.add_argument('--text-file', type=Path, required=True); p.add_argument('--commit', action='store_true')
     scan = subs.add_parser('scan'); scan.add_argument('--account', type=int); scan.add_argument('--limit', type=int, choices=range(1, 6), default=3)
     for name in ['like', 'like-comment', 'comment']:
         p = subs.add_parser(name); p.add_argument('--account', type=int, required=True); p.add_argument('--snapshot', required=True); p.add_argument('--commit', action='store_true')
@@ -114,6 +118,16 @@ def main(argv=None):
         print(json.dumps({'state': 'sleep', 'window': '06:00-22:00 Europe/Lisbon'})); return 0
     client = Client(json.loads(args.config.read_text()))
     if args.command == 'accounts': result = client.api('GET', 'accounts')
+    elif args.command == 'strategy': result = client.api('PATCH' if args.update_file else 'GET', f'accounts/{args.account}/strategy', json.loads(args.update_file.read_text()) if args.update_file else None)
+    elif args.command == 'inbox': result = client.api('GET', f'accounts/{args.account}/inbox?' + urlencode({'order':'newest','limit':10,'status':args.status}))
+    elif args.command == 'reply-context': result = client.api('GET', f'inbox/{args.id}/context')
+    elif args.command == 'reply':
+        key = -args.id  # espace distinct des engagements, intention avant HTTP
+        if args.commit and client.db.execute('SELECT 1 FROM attempts WHERE id=?', (key,)).fetchone():
+            result = {'status':'check_required','reason':'Réponse déjà demandée : consulter inbox, sans renvoi.'}
+        else:
+            if args.commit: client.remember(key, 'execution_requested')
+            result = client.api('POST', f'inbox/{args.id}/reply', {'context_id':args.context, 'reply_text':args.text_file.read_text().strip(), 'dry_run':not args.commit})
     elif args.command == 'scan': result = client.scan(args.account, args.limit)
     elif args.command in ('like', 'like-comment', 'comment'):
         action = {'like': 'video.like', 'like-comment': 'comment.like', 'comment': 'video.comment'}[args.command]

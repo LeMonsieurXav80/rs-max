@@ -1386,3 +1386,16 @@ python3 cli/rsmax.py etat-reponses --plan /tmp/cycle.json
 
 Le suivi décrit l'état **dans RS-Max**. Un texte seulement généré en aperçu local
 reste `unprepared` dans ces compteurs jusqu'à son envoi ou sa programmation.
+
+
+### Stratégie et cadence par compte (Community Manager)
+`GET /api/accounts/{id}/strategy` et `PATCH` au même endroit ; mêmes routes sous `/api/community-manager/accounts/{id}/strategy` pour le jeton dédié. Manager et compte attribué actif requis. PATCH partiel :
+```json
+{"agent_hourly_limit":2,"agent_min_interval_seconds":60,"agent_strategy":{"audience":"Public francophone","objective":"Échanges utiles","hashtags":["#mode"],"target_accounts":["@exemple"],"search_queries":["idées de tenue"],"exclusions":[]}}
+```
+Listes : 100 entrées maximum, une ligne par entrée dans le formulaire. `null` enlève le plafond supplémentaire, `0` bloque les gestes. Le ciblage n’active aucun follow/unfollow. Chaque réseau et compte conserve ses propres réglages.
+La réponse contient `cadence` (tentatives sur 60 minutes glissantes, confirmées, restantes), `hourly_history` (24 h, heures de Lisbonne) et `actions` avec `channel=api|browser`, disponibilité et quotas quotidiens. Échec/incertitude consomment aussi une tentative ; lecture et contrôle de session ne consomment pas de geste. Une réponse et son like sont deux gestes. Pas de hausse automatique.
+`account_action_events` conserve les tentatives indépendamment des journaux purgés à 7 jours. Réservation sous verrou du compte avant prise d’une tâche d’écriture NAS ou réponse inbox API ; aucun geste quand le plafond/délai est atteint. Le contrôle couvre les écritures navigateur et les réponses inbox ; les moteurs historiques dédiés gardent leurs propres quotas.
+
+Inbox du jeton dédié : `GET /api/community-manager/accounts/{id}/inbox`, `GET /api/community-manager/inbox/{item}/context` (persona actif, texte, légende, contexte valable 15 min), puis `POST /api/community-manager/inbox/{item}/reply` avec `context_id`, `reply_text`, `dry_run:false` explicite. Par défaut : aperçu. Rédaction par Hermès via son abonnement ; aucun appel IA RS-Max. Persona modifié/contexte expiré : refus. Même service d’envoi et mêmes protections anti-doublon que la messagerie. TikTok part en planification, puis preuve après rechargement et like automatique si réponse confirmée. La fenêtre 06–22 h du jour est persistée avec la réponse et vérifiée avant le geste NAS. Lire l’état via inbox après un timeout, jamais renvoyer.
+CLI : `strategy --account ID [--update-file JSON]`, `inbox --account ID`, `reply-context ITEM`, `reply ITEM --context UUID --text-file FICHIER [--commit]`. IDs découverts dans le catalogue, jamais figés dans les consignes.

@@ -50,6 +50,19 @@ class InboxReplyService
 
             $service = app(InboxSyncService::class)->getServiceForAccount($account);
 
+            $event = null;
+            if (! $account->usesBrowser()) {
+                try {
+                    $event = app(\App\Services\Agent\AccountActionBudget::class)->reserve($account, 'inbox.reply', 'api', (string) $item->id);
+                } catch (\App\Services\Browser\BrowserException $e) {
+                    // Aucun appel réseau. Ne pas épuiser les essais du planificateur.
+                    if ($scheduled) {
+                        $item->decrement('reply_attempts');
+                    }
+
+                    return ['success' => false, 'status_code' => 429, 'error' => $e->getMessage()];
+                }
+            }
             try {
                 $result = $service
                     ? $service->sendReply($account, $item, $text)
@@ -59,6 +72,8 @@ class InboxReplyService
                 $result = ['success' => false, 'error' => 'Envoi non confirmé. Vérifiez le réseau avant de réessayer.'];
             }
 
+            $event?->update(['status' => $result['success'] ? 'completed' : (($result['uncertain'] ?? false) ? 'uncertain' : 'failed'),
+                'error' => isset($result['error']) ? mb_substr($result['error'], 0, 1000) : null]);
             if ($result['success']) {
                 $item->update([
                     'status' => 'replied',
@@ -107,6 +122,7 @@ class InboxReplyService
                 'reply_draft' => null,
                 'reply_scheduled_at' => $at,
                 'reply_attempts' => 0,
+                'reply_activity_window' => request()->attributes->get('community_manager') ? app(\App\Services\Agent\CommunityManagerWindow::class)->specification() : null,
                 'status' => $item->status === 'reply_failed' ? 'read' : $item->status,
             ]);
 

@@ -51,6 +51,7 @@ class BrowserTaskController extends Controller
         abort_unless($task->status === BrowserTask::RUNNING, 409, 'Tâche déjà terminée.');
 
         $task->update($v + ['finished_at' => now()]);
+        app(\App\Services\Agent\AccountActionBudget::class)->finish($task);
 
         // Chaque geste est journalisé, sauf les contrôles de session, trop fréquents pour être utiles.
         if (! in_array($task->kind, ['x.whoami', 'tiktok.whoami', 'session.apply'], true)) {

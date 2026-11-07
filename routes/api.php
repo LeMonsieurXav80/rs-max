@@ -17,6 +17,11 @@ use Illuminate\Support\Facades\Route;
 Route::middleware(['auth:sanctum', \App\Http\Middleware\CommunityManagerTokenScope::class])->group(function () {
     Route::prefix('community-manager')->controller(\App\Http\Controllers\Api\CommunityManagerController::class)->group(function () {
         Route::get('/accounts/{id}/comment-context', 'commentContext');
+        Route::get('accounts/{id}/strategy', [\App\Http\Controllers\Api\AccountStrategyController::class, 'show']);
+        Route::patch('accounts/{id}/strategy', [\App\Http\Controllers\Api\AccountStrategyController::class, 'update']);
+        Route::get('accounts/{id}/inbox', [\App\Http\Controllers\Api\CommunityManagerInboxController::class, 'index']);
+        Route::get('inbox/{inboxItem}/context', [\App\Http\Controllers\Api\CommunityManagerInboxController::class, 'context']);
+        Route::post('inbox/{inboxItem}/reply', [\App\Http\Controllers\Api\CommunityManagerInboxController::class, 'reply']);
         Route::get('accounts', 'accounts');
         Route::post('read', 'read')->middleware('throttle:20,1');
         Route::get('snapshots/{id}', 'snapshot')->whereUuid('id');
@@ -28,6 +33,8 @@ Route::middleware(['auth:sanctum', \App\Http\Middleware\CommunityManagerTokenSco
     // ── Auth ──
     Route::get('/me', [ApiController::class, 'me']);
     Route::get('/accounts', [ApiController::class, 'accounts']);
+    Route::get('/accounts/{id}/strategy', [\App\Http\Controllers\Api\AccountStrategyController::class, 'show']);
+    Route::patch('/accounts/{id}/strategy', [\App\Http\Controllers\Api\AccountStrategyController::class, 'update']);
 
     // ── Inbox : lots bornes, persona du compte, apercu avant envoi ──
     Route::get('/inbox', [InboxApiController::class, 'index']);

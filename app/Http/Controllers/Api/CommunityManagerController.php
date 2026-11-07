@@ -41,9 +41,10 @@ class CommunityManagerController extends Controller
 
         return response()->json(['daytime' => $this->window->isOpen(), 'window' => $this->window->specification(),
             'accounts' => $accounts->map(fn ($a) => ['id' => $a->id, 'name' => $a->name, 'platform' => $a->platform->slug,
+                'strategy' => $a->agent_strategy ?? (object) [], 'cadence' => app(\App\Services\Agent\AccountActionBudget::class)->usage($a),
                 'session' => $a->browser_session_status, 'persona' => $a->persona?->is_active ? $a->persona->id : null,
                 'actions' => $this->catalog->forAccount($a)->where('enabled', true)->where('status', 'ready')
-                    ->map(fn ($s) => ['kind' => $s['kind'], 'left' => $s['left']])])->values()]);
+                    ->map(fn ($s) => ['kind' => $s['kind'], 'channel' => $s['channel'], 'left' => $s['left']])])->values()]);
     }
 
     public function read(Request $request, TikTokFeedController $feed, BrowserTaskQueue $browser): JsonResponse

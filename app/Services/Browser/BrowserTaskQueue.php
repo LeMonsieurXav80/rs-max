@@ -72,6 +72,13 @@ class BrowserTaskQueue
 
                     continue;
                 }
+                try {
+                    app(\App\Services\Agent\AccountActionBudget::class)->forTask($task);
+                } catch (BrowserException $e) {
+                    $task->update(['status' => BrowserTask::CANCELLED, 'finished_at' => now(), 'error' => $e->getMessage()]);
+
+                    continue;
+                }
                 $task->update(['status' => BrowserTask::RUNNING, 'claimed_at' => now()]);
 
                 return $task;
@@ -83,6 +90,7 @@ class BrowserTaskQueue
 
     private function outcome(BrowserTask $task): array
     {
+        app(\App\Services\Agent\AccountActionBudget::class)->finish($task);
         if ($task->status === BrowserTask::DONE) {
             return $task->result ?? [];
         }
@@ -106,6 +114,8 @@ class BrowserTaskQueue
 
         BrowserTask::whereKey($task->id)->where('status', BrowserTask::RUNNING)
             ->update(['status' => BrowserTask::UNCERTAIN, 'error' => 'Délai dépassé', 'finished_at' => now()]);
+
+        app(\App\Services\Agent\AccountActionBudget::class)->finish($task->fresh());
 
         throw new BrowserUncertainException('Résultat inconnu : vérifier sur le réseau avant de relancer.');
     }

@@ -78,6 +78,9 @@ class TikTokInboxService implements PlatformInboxInterface
     /** Companion garde le profil occupé jusqu'à la vérification après rechargement. */
     private function act(SocialAccount $account, InboxItem $item, string $kind, array $payload): array
     {
+        if ($item->reply_activity_window) {
+            $payload['activity_window'] = $item->reply_activity_window;
+        }
         $target = ['author' => $item->author_username, 'content' => $item->content, 'caption' => $item->post_content];
 
         try {

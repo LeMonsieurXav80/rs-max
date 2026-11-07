@@ -86,7 +86,7 @@
                         @elseif($account->browser_session_status === 'stored')
                             Session reçue et enregistrée. Navigateur suspendu ou non configuré : aucun test TikTok effectué.
                         @else
-                            Aucune session active. Ouvre TikTok Studio dans ton Chrome avec ce compte, puis lance « TikTok — envoyer la session au VPS » dans Companion.
+                            Aucune session active. Ouvre TikTok Studio dans ton Chrome avec ce compte, puis lance « TikTok — transmettre la session à RS-Max » dans Companion.
                         @endif
                     </p>
                 @endif
@@ -98,16 +98,16 @@
                         <select name="driver" id="driver"
                                 class="w-full rounded-xl border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 text-sm">
                             <option value="api" {{ old('driver', $account->driver) === 'api' ? 'selected' : '' }}>API X (payante)</option>
-                            <option value="browser" {{ old('driver', $account->driver) === 'browser' ? 'selected' : '' }}>Navigateur du VPS</option>
+                            <option value="browser" {{ old('driver', $account->driver) === 'browser' ? 'selected' : '' }}>Companion sur le NAS</option>
                         </select>
                         <label for="browser_profile" class="block text-sm font-medium text-gray-700 mt-3 mb-1.5">Profil navigateur</label>
-                        <input type="text" name="browser_profile" id="browser_profile" value="{{ old('browser_profile', $account->browser_profile) }}" placeholder="wildycaro"
+                        <input type="text" name="browser_profile" id="browser_profile" value="{{ old('browser_profile', $account->browser_profile) }}" placeholder="profil-nas"
                                class="w-full rounded-xl border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 text-sm">
                         @error('browser_profile')
                             <p class="mt-1 text-sm text-red-600">{{ $message }}</p>
                         @enderror
                         <p class="mt-1 text-xs text-gray-400">
-                            En mode navigateur, les publications, réponses, stats et abonnés passent par le navigateur du VPS.
+                            En mode navigateur, les publications, réponses, stats et abonnés passent par le navigateur du NAS.
                             Les articles X restent sur l'API.
                             Les comptes qui ont le même profil passent chacun leur tour dans le même navigateur.
                         </p>
@@ -143,6 +143,56 @@
                         <p class="mt-1 text-sm text-red-600">{{ $message }}</p>
                     @enderror
                 </div>
+            </div>
+
+            <div class="bg-white rounded-2xl shadow-sm border border-gray-100 p-6 mb-6">
+                <h2 class="text-base font-semibold text-gray-900 mb-2">Community Manager : cadence et ciblage</h2>
+                <p class="text-xs text-gray-500 mb-5">Réglages propres à ce compte et à ce réseau, accessibles à l’agent par API. Ils ne déclenchent aucune action.</p>
+                <div class="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-5">
+                    <div>
+                        <label for="agent_hourly_limit" class="block text-sm font-medium mb-1">Maximum d’actions sur 60 minutes</label>
+                        <input id="agent_hourly_limit" name="agent_hourly_limit" type="number" min="0" max="1000" value="{{ old('agent_hourly_limit', $account->agent_hourly_limit) }}" class="w-full rounded-xl border-gray-300 text-sm">
+                        <p class="text-xs text-gray-500 mt-1">Vide : pas de plafond supplémentaire ; 0 : gestes bloqués. Réponse et like comptent séparément.</p>
+                    </div>
+                    <div>
+                        <label for="agent_min_interval_seconds" class="block text-sm font-medium mb-1">Délai minimal entre actions (secondes)</label>
+                        <input id="agent_min_interval_seconds" name="agent_min_interval_seconds" type="number" min="0" max="86400" required value="{{ old('agent_min_interval_seconds', $account->agent_min_interval_seconds) }}" class="w-full rounded-xl border-gray-300 text-sm">
+                    </div>
+                </div>
+                <p class="text-sm text-gray-700 mb-5">Sur les 60 dernières minutes : {{ $agentCadence['attempted'] }} tentative(s), {{ $agentCadence['confirmed'] }} confirmée(s). Les échecs et incertitudes consomment aussi la cadence. Aucune hausse automatique.</p>
+                @foreach(['audience' => 'Audience cible', 'objective' => 'Objectif du compte'] as $field => $label)
+                    <label for="agent_{{ $field }}" class="block text-sm font-medium mb-1">{{ $label }}</label>
+                    <textarea id="agent_{{ $field }}" name="agent_strategy[{{ $field }}]" rows="2" maxlength="{{ $field === 'audience' ? 4000 : 2000 }}" class="w-full rounded-xl border-gray-300 text-sm mb-4">{{ old('agent_strategy.'.$field, $account->agent_strategy[$field] ?? '') }}</textarea>
+                @endforeach
+                <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    @foreach(\App\Services\Agent\AccountStrategy::LISTS as $field => $label)
+                        @php
+                            $entries = old('agent_strategy.'.$field, $account->agent_strategy[$field] ?? []);
+                        @endphp
+                        <div>
+                            <label for="agent_{{ $field }}" class="block text-sm font-medium mb-1">{{ $label }}</label>
+                            <textarea id="agent_{{ $field }}" name="agent_strategy[{{ $field }}]" rows="4" class="w-full rounded-xl border-gray-300 text-sm" placeholder="Une entrée par ligne">{{ is_array($entries) ? implode("\n", $entries) : $entries }}</textarea>
+                        </div>
+                    @endforeach
+                </div>
+                @foreach($errors->getMessages() as $field => $messages)
+                    @if(str_starts_with($field, 'agent_'))<p class="text-sm text-red-600 mt-2">{{ implode(' ', $messages) }}</p>@endif
+                @endforeach
+                <p class="text-xs text-gray-500 mt-3">La liste des comptes sert au ciblage. Elle ne lance pas de follow/unfollow.</p>
+                <h3 class="text-sm font-semibold mt-6 mb-2">Technique par action</h3>
+                <div class="overflow-x-auto"><table class="w-full text-sm text-left"><thead><tr><th class="py-2">Action</th><th>Technique</th><th>Disponibilité</th></tr></thead><tbody>
+                @foreach($agentActions as $action)
+                    <tr class="border-t border-gray-100"><td class="py-2">{{ $action['label'] }}</td><td>{{ $action['channel'] === 'browser' ? 'Companion · NAS' : 'API officielle' }}</td><td>{{ $action['status'] === 'ready' ? ($action['enabled'] ? 'Autorisée' : 'Désactivée') : ($action['status'] === 'engine' ? 'Moteur dédié' : 'À développer') }}</td></tr>
+                @endforeach
+                </tbody></table></div>
+                <h3 class="text-sm font-semibold mt-6 mb-2">Historique par heure · Lisbonne</h3>
+                <div class="overflow-x-auto"><table class="w-full text-sm text-left"><thead><tr><th class="py-2">Heure</th><th>Tentatives</th><th>Confirmées</th><th>Échecs</th><th>À contrôler</th></tr></thead><tbody>
+                @forelse($agentHistory as $hour)
+                    <tr class="border-t border-gray-100"><td class="py-2">{{ $hour['hour'] }}</td><td>{{ $hour['attempted'] }}</td><td>{{ $hour['confirmed'] }}</td><td>{{ $hour['failed'] }}</td><td>{{ $hour['uncertain'] }}</td></tr>
+                @empty
+                    <tr><td colspan="5" class="py-2 text-gray-500">Aucune tentative enregistrée sur les dernières 24 heures.</td></tr>
+                @endforelse
+                </tbody></table></div>
             </div>
 
             {{-- Section : Identifiants de connexion --}}

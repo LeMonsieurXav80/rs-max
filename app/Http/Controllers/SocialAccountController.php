@@ -143,7 +143,11 @@ class SocialAccountController extends Controller
 
         $personas = Persona::where('is_active', true)->orderBy('name')->get();
 
-        return view('accounts.edit', compact('account', 'platforms', 'personas'));
+        $agentCadence = app(\App\Services\Agent\AccountActionBudget::class)->usage($account);
+        $agentHistory = app(\App\Services\Agent\AccountActionBudget::class)->history($account);
+        $agentActions = app(\App\Services\Agent\AgentCatalog::class)->forAccount($account);
+
+        return view('accounts.edit', compact('account', 'platforms', 'personas', 'agentCadence', 'agentHistory', 'agentActions'));
     }
 
     /**
@@ -167,6 +171,9 @@ class SocialAccountController extends Controller
             'credentials' => 'nullable|array',
             'credentials.*' => 'nullable|string|max:2000',
         ]);
+
+        $strategy = app(\App\Services\Agent\AccountStrategy::class);
+        $strategy->validate($request);
 
         // Build credentials: merge with existing so blank fields don't wipe saved values
         if (isset($validated['credentials'])) {
@@ -194,7 +201,9 @@ class SocialAccountController extends Controller
             'credentials' => $account->credentials,
         ]);
 
-        return redirect()->route('accounts.index')
+        $strategy->save($request, $account);
+
+        return redirect()->route('accounts.edit', $account)
             ->with('success', 'Compte social mis à jour.');
     }
 

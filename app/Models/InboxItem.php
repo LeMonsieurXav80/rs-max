@@ -34,6 +34,7 @@ class InboxItem extends Model
         'liked_at',
         'reply_scheduled_at',
         'reply_attempts',
+        'reply_activity_window',
     ];
 
     protected function casts(): array
@@ -42,6 +43,7 @@ class InboxItem extends Model
             'posted_at' => 'datetime',
             'replied_at' => 'datetime',
             'liked_at' => 'datetime',
+            'reply_activity_window' => 'array',
             'reply_scheduled_at' => 'datetime',
         ];
     }
