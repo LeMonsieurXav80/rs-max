@@ -46,7 +46,7 @@ class TwitterBrowserInboxService implements PlatformInboxInterface
     {
         app(\App\Services\Agent\XEngagementService::class)->assertReplyAvailable($account, (string) $item->external_id, ignoreInbox: $item->id);
 
-        return $this->adapter->publishReply($account, $replyText, (string) $item->external_id, options: ['publication_key' => 'inbox-reply:'.$item->id]);
+        return $this->adapter->publishReply($account, $replyText, (string) $item->external_id, options: ['publication_key' => 'inbox-reply:'.$item->id, 'activity_window' => $item->reply_activity_window]);
     }
 
     public function like(SocialAccount $account, InboxItem $item): array

@@ -82,6 +82,18 @@ class XBrowserTest extends TestCase
         $this->account->users()->attach($this->user, ['is_active' => true]);
     }
 
+    public function test_la_fenetre_autonome_suit_la_reponse_jusqu_a_la_tache_nas(): void
+    {
+        $this->travelTo(\Illuminate\Support\Carbon::parse('2026-11-07T12:00:00Z'));
+        $window = app(\App\Services\Agent\CommunityManagerWindow::class)->specification();
+        $item = InboxItem::create(['social_account_id' => $this->account->id, 'platform_id' => $this->account->platform_id,
+            'type' => 'comment', 'external_id' => '555', 'content' => 'Bonjour', 'status' => 'unread', 'reply_activity_window' => $window]);
+        $this->queue->results['x.post'] = ['id' => '666', 'confirmed' => true, 'proof' => 'after_reload'];
+        $result = app(TwitterBrowserInboxService::class)->sendReply($this->account, $item, 'Bonjour !');
+        $this->assertTrue($result['success']);
+        $this->assertSame($window, collect($this->queue->calls)->firstWhere(0, 'x.post')[1]['activity_window']);
+    }
+
     private function cookies(string $id = '77'): array
     {
         return [

@@ -45,7 +45,7 @@ class TwitterBrowserAdapter implements PlatformAdapterInterface, ResharingAdapte
 
     public function publishReply(SocialAccount $account, string $content, string $replyToId, ?array $media = null, ?array $options = null): array
     {
-        return $this->post($account, 'https://x.com/compose/post?in_reply_to='.$replyToId, $content, $media, key: $options['publication_key'] ?? null);
+        return $this->post($account, 'https://x.com/compose/post?in_reply_to='.$replyToId, $content, $media, key: $options['publication_key'] ?? null, window: $options['activity_window'] ?? null);
     }
 
     public function nativeQuote(SocialAccount $account, string $text, string $sourceExternalId, ?array $media = null): array
@@ -81,10 +81,14 @@ class TwitterBrowserAdapter implements PlatformAdapterInterface, ResharingAdapte
         return $this->post($account, self::COMPOSE_URL, $content, $media, dry: true);
     }
 
-    private function post(SocialAccount $account, string $url, string $content, ?array $media, bool $dry = false, ?string $key = null): array
+    private function post(SocialAccount $account, string $url, string $content, ?array $media, bool $dry = false, ?string $key = null, ?array $window = null): array
     {
         $payload = ['url' => $url, 'text' => $content, 'username' => $account->browser_username,
             'media' => $this->selectMedia($media ?? []), 'dry' => $dry, 'publication_key' => $dry ? null : ($key ?? $this->deliveryKey)];
+
+        if ($window !== null) {
+            $payload['activity_window'] = $window;
+        }
 
         return $this->action($account, 'x.post', $payload, [], self::POST_TIMEOUT);
     }
