@@ -141,6 +141,7 @@ def main(argv=None):
     parser.add_argument('--config', type=Path, default=Path(os.environ.get('COMMUNITY_MANAGER_CONFIG', str(Path(os.environ.get('HERMES_HOME', '~/.hermes')).expanduser() / 'community-manager.json'))))
     subs = parser.add_subparsers(dest='command', required=True)
     subs.add_parser('accounts')
+    p = subs.add_parser('note'); p.add_argument('--text',required=True)
     p = subs.add_parser('logs'); p.add_argument('--account', type=int); p.add_argument('--platform'); p.add_argument('--status'); p.add_argument('--action'); p.add_argument('--limit',type=int,default=20); p.add_argument('--before',type=int)
     p = subs.add_parser('strategy'); p.add_argument('--account', type=int, required=True); p.add_argument('--update-file', type=Path)
     p = subs.add_parser('inbox'); p.add_argument('--account', type=int, required=True); p.add_argument('--pending',action='store_true'); p.add_argument('--limit',type=int,default=10); p.add_argument('--status', choices=['all','unanswered','replied','reply_failed'], default='unanswered')
@@ -166,12 +167,17 @@ def main(argv=None):
     p.add_argument('--snapshot', required=True); p.add_argument('--target'); p.add_argument('--context'); p.add_argument('--text-file', type=Path); p.add_argument('--commit', action='store_true')
     p = subs.add_parser('x-status'); p.add_argument('id', type=int)
     p = subs.add_parser('x-contacts'); p.add_argument('--account', type=int, required=True); p.add_argument('--page', type=int, default=1)
-    p = subs.add_parser('report'); p.add_argument('--hours', type=int, default=24); p.add_argument('--note-file', type=Path); p.add_argument('--note'); p.add_argument('--commit', action='store_true'); p.add_argument('--key')
+    p = subs.add_parser('report'); p.add_argument('--hours', type=int, default=24); p.add_argument('--scheduled',action='store_true'); p.add_argument('--note-file', type=Path); p.add_argument('--note'); p.add_argument('--commit', action='store_true'); p.add_argument('--key')
     args = parser.parse_args(argv)
-    if args.command not in ('accounts', 'logs', 'status', 'x-status', 'x-contacts', 'report', 'reply-status') and not daytime():
+    if args.command not in ('accounts', 'note', 'logs', 'status', 'x-status', 'x-contacts', 'report', 'reply-status') and not daytime():
         print(json.dumps({'state': 'sleep', 'window': '06:00-22:00 Europe/Lisbon'})); return 0
     client = Client(json.loads(args.config.read_text()))
     if args.command == 'accounts': result = client.api('GET', 'accounts')
+    elif args.command == 'note':
+        home=Path(os.environ.get('HERMES_HOME','~/.hermes')).expanduser()
+        (home/'workspace').mkdir(parents=True,exist_ok=True)
+        (home/'workspace/last-x-cycle-note.txt').write_text(args.text[:600])
+        result={'status':'saved','sent':False}
     elif args.command == 'logs':
         query={k:v for k,v in {'account_id':args.account,'platform':args.platform,'status':args.status,'action':args.action,'limit':args.limit,'before_id':args.before}.items() if v is not None}
         result=client.api('GET','logs?'+urlencode(query))
@@ -181,6 +187,10 @@ def main(argv=None):
             home = Path(os.environ.get('HERMES_HOME', '~/.hermes')).expanduser()
             (home/'workspace').mkdir(parents=True, exist_ok=True)
             (home/'workspace/last-x-cycle-note.txt').write_text(note[:600])
+        if args.commit and client.config.get('report_schedule_only') and not args.scheduled:
+            print(json.dumps({'status':'saved_for_scheduled_report','sent':False,'schedule':['08:00','20:00'],'timezone':'Europe/Lisbon'}))
+            client.db.close()
+            return 0
         key = args.key or str(uuid.uuid5(uuid.NAMESPACE_URL, client.config['base_url'] + '/report/' + dt.datetime.now(ZoneInfo('Europe/Lisbon')).date().isoformat() + '/' + str(args.hours) + '/' + (note or '')))
         if args.commit and client.db.execute('SELECT 1 FROM reports WHERE id=?', (key,)).fetchone():
             result = {'status':'check_required', 'report_key':key, 'reason':'Rapport déjà demandé : aucun renvoi.'}

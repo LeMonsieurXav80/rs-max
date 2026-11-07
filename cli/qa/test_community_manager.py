@@ -108,4 +108,26 @@ class CommunityManagerTest(unittest.TestCase):
                 self.assertEqual(api.call_args.args[2]['note'],'Deux gestes confirmés.')
             self.assertEqual((Path(tmp)/'workspace/last-x-cycle-note.txt').read_text(),'Deux gestes confirmés.')
 
+    def test_les_anciens_bilans_de_cycle_sont_conserves_sans_envoi(self):
+        import json,io,contextlib
+        with tempfile.TemporaryDirectory() as tmp:
+            config=Path(tmp)/'config.json';config.write_text(json.dumps({'state_path':tmp+'/state.sqlite','report_schedule_only':True,'base_url':'https://example.test'}))
+            output=io.StringIO()
+            with patch.dict(cm.os.environ,{'HERMES_HOME':tmp}),patch.object(cm.Client,'api') as api,contextlib.redirect_stdout(output):
+                self.assertEqual(cm.main(['--config',str(config),'report','--note','Bilan local.','--commit']),0)
+                api.assert_not_called()
+            self.assertFalse(json.loads(output.getvalue())['sent'])
+            self.assertEqual((Path(tmp)/'workspace/last-x-cycle-note.txt').read_text(),'Bilan local.')
+            with patch.object(cm.Client,'api',return_value={'delivery':{'sent':True}}) as api,contextlib.redirect_stdout(io.StringIO()):
+                self.assertEqual(cm.main(['--config',str(config),'report','--scheduled','--commit','--hours','12']),0)
+                self.assertEqual(api.call_args.args[2]['hours'],12)
+
+    def test_la_note_de_cycle_n_envoie_aucune_requete(self):
+        import json,io,contextlib
+        with tempfile.TemporaryDirectory() as tmp:
+            config=Path(tmp)/'config.json';config.write_text(json.dumps({'state_path':tmp+'/state.sqlite'}))
+            with patch.dict(cm.os.environ,{'HERMES_HOME':tmp}),patch.object(cm.Client,'api') as api,contextlib.redirect_stdout(io.StringIO()):
+                self.assertEqual(cm.main(['--config',str(config),'note','--text','Deux gestes.']),0);api.assert_not_called()
+            self.assertEqual((Path(tmp)/'workspace/last-x-cycle-note.txt').read_text(),'Deux gestes.')
+
 if __name__=='__main__': unittest.main()

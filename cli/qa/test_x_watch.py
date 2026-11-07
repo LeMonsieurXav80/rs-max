@@ -57,3 +57,14 @@ class XWatchTest(unittest.TestCase):
         second=watch.snapshot(c,dt.datetime.fromisoformat('2026-11-07T12:35:00+00:00'))
         self.assertNotEqual(first['cycle_key'],second['cycle_key']);self.assertEqual(first['accounts'],second['accounts'])
         self.assertIn('agent_queue=1',c.api.call_args.args[1])
+
+
+class ReportScheduleTest(unittest.TestCase):
+    def test_les_creneaux_du_matin_et_du_soir_ont_des_cles_distinctes(self):
+        spec=importlib.util.spec_from_file_location('scheduled_report',Path(__file__).resolve().parents[2]/'hermes/scripts/rsmax_morning_report.py')
+        module=importlib.util.module_from_spec(spec);spec.loader.exec_module(module)
+        morning=module.report_arguments(dt.datetime.fromisoformat('2026-11-07T08:00:00+00:00'))
+        morning_retry=module.report_arguments(dt.datetime.fromisoformat('2026-11-07T08:05:00+00:00'))
+        evening=module.report_arguments(dt.datetime.fromisoformat('2026-11-07T20:00:00+00:00'))
+        self.assertEqual(morning,morning_retry);self.assertNotEqual(morning[-1],evening[-1])
+        self.assertIn('--scheduled',morning);self.assertEqual(morning[morning.index('--hours')+1],'12')

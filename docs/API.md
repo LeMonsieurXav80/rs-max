@@ -1429,7 +1429,7 @@ Une réponse inbox X par navigateur est désormais programmée, comme TikTok : H
 
 Pour résoudre une incertitude sans renvoyer : lire l’URL propre de la réponse retrouvée par `x/read` avec `action=thread.read`, puis `POST /api/community-manager/inbox/{item}/reconcile` avec `snapshot_id`. Aperçu par défaut ; `dry_run:false` rapproche la preuve. Auteur, texte, parent, heure de publication et lecture postérieure à la tentative doivent correspondre. La même tentative devient confirmée, l’incertitude initiale reste dans son résultat et seul le like automatique est déclenché. Aucun nouvel envoi de réponse. Client : `reconcile-reply ITEM --snapshot UUID [--commit]`.
 
-Scripts Hermès : `rsmax_x_watch.py` fournit une prélecture compacte sans IA ; `rsmax_morning_report.py` envoie le bilan quotidien sans modèle. Aucun compte en dur ; attribution, session, stratégie, horaires et cadence viennent de RS-Max.
+Scripts Hermès : `rsmax_x_watch.py` fournit une prélecture compacte sans IA ; `rsmax_morning_report.py` envoie les bilans de 08 h et 20 h Lisbonne sans modèle. Aucun compte en dur ; attribution, session, stratégie, horaires et cadence viennent de RS-Max.
 
 ### Adaptation de la cadence par compte
 `PATCH /api/accounts/{id}/strategy` (gestionnaire, jeton complet) :
@@ -1457,3 +1457,6 @@ Le moniteur Hermès limite chaque lot à cinq conversations pertinentes, attend 
 Le moniteur réveille chaque créneau de travail disponible, même avec une prélecture identique ; un état inactif reste silencieux. Les réponses X autorisées via Community Manager sont sauvegardées et confiées immédiatement à `SendAutonomousInboxReply` (un essai, cadence et anti-doublon conservés), avec `validation_required:false`. Pas de passage par les brouillons à valider, ni d’attente du cron minute. Les routes de préparation manuelle restent distinctes.
 
 Client : `inbox --account ID --pending`, `reply-context ITEM`, puis `reply ITEM --context UUID --text "RÉPONSE" --commit`. `report --note "BILAN" --commit --key UUID` conserve la note et envoie le bilan. Pas de fichier à créer par une commande séparée ni de Python -c en cron. Le skill demande de poursuivre après un candidat écarté ; il ne demande aucune validation humaine pour les réponses autonomes autorisées.
+
+### Cadence des bilans Telegram
+Le profil Hermès transmet deux bilans automatiques : 08 h et 20 h, heure de Lisbonne, sur les douze dernières heures. Une clé par jour/créneau empêche les doublons. Les cycles enregistrent seulement `note --text "BILAN"`, sans envoi. Le profil `report_schedule_only:true` neutralise aussi les anciens appels de cycle `report --commit` ; le script planifié emploie `--scheduled`. Les alertes techniques dédiées sont distinctes des bilans.
