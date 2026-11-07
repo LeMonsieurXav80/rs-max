@@ -130,4 +130,49 @@ class BrowserTaskQueueTest extends TestCase
             $this->assertSame(BrowserTask::CANCELLED, BrowserTask::first()->status);
         }
     }
+
+    public function test_une_livraison_deja_prouvee_est_reutilisee_sans_second_ordre(): void
+    {
+        $task = $this->task(BrowserTask::DONE);
+        $task->update(['idempotency_key' => 'post-platform:9', 'result' => ['id' => '500', 'confirmed' => true, 'proof' => 'after_reload']]);
+        $result = app(BrowserTaskQueue::class)->run($this->account, 'x.post', ['text' => 'Bonjour', 'publication_key' => 'post-platform:9']);
+        $this->assertSame('500', $result['id']);
+        $this->assertSame(1, BrowserTask::count());
+    }
+
+    public function test_une_livraison_incertaine_ne_peut_pas_etre_reenvoyee(): void
+    {
+        $this->task(BrowserTask::UNCERTAIN)->update(['idempotency_key' => 'post-platform:9']);
+        $this->expectException(\App\Services\Browser\BrowserUncertainException::class);
+        try {
+            app(BrowserTaskQueue::class)->run($this->account, 'x.post', ['text' => 'Bonjour', 'publication_key' => 'post-platform:9']);
+        } finally {
+            $this->assertSame(1, BrowserTask::count());
+        }
+    }
+
+    public function test_changer_les_medias_dune_livraison_existante_est_refuse(): void
+    {
+        $this->task(BrowserTask::DONE)->update(['idempotency_key' => 'post-platform:9', 'payload' => ['text' => 'Bonjour', 'media' => [['url' => 'https://rs/a.jpg', 'mimetype' => 'image/jpeg']]]]);
+        $this->expectException(BrowserException::class);
+        app(BrowserTaskQueue::class)->run($this->account, 'x.post', ['text' => 'Bonjour', 'publication_key' => 'post-platform:9', 'media' => [['url' => 'https://rs/b.jpg', 'mimetype' => 'image/jpeg']]]);
+    }
+
+    public function test_le_delai_de_redistribution_depasse_le_timeout_des_publications_video(): void
+    {
+        $this->assertGreaterThan((new \App\Jobs\PublishToPlatformJob(new \App\Models\PostPlatform))->timeout, config('queue.connections.database.retry_after'));
+    }
+
+    public function test_un_second_poll_du_meme_profil_ne_depasse_pas_le_verrou_de_prise(): void
+    {
+        $this->task();
+        $lock = \Illuminate\Support\Facades\Cache::lock('browser-claim:wildycaro', 10);
+        $lock->get();
+        try {
+            $this->assertNull(app(BrowserTaskQueue::class)->claim('wildycaro'));
+        } finally {
+            $lock->release();
+        }
+        $this->assertNotNull(app(BrowserTaskQueue::class)->claim('wildycaro'));
+    }
 }

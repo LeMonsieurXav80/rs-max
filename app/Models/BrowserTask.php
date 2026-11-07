@@ -19,7 +19,7 @@ class BrowserTask extends Model
 
     public const CANCELLED = 'cancelled';
 
-    protected $fillable = ['social_account_id', 'profile', 'kind', 'payload', 'status', 'result', 'error', 'claimed_at', 'finished_at'];
+    protected $fillable = ['social_account_id', 'idempotency_key', 'profile', 'kind', 'payload', 'status', 'result', 'error', 'claimed_at', 'finished_at'];
 
     protected function casts(): array
     {

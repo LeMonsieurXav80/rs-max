@@ -23,7 +23,8 @@ class AccountStrategy
         }
         $rules = ['agent_hourly_limit' => 'sometimes|nullable|integer|min:0|max:1000',
             'agent_min_interval_seconds' => 'sometimes|integer|min:0|max:86400',
-            'agent_strategy' => 'sometimes|array:audience,objective,hashtags,target_accounts,search_queries,exclusions',
+            'agent_strategy' => 'sometimes|array:audience,objective,hashtags,target_accounts,search_queries,exclusions,unfollow_after_days',
+            'agent_strategy.unfollow_after_days' => 'sometimes|integer|min:1|max:365',
             'agent_strategy.audience' => 'sometimes|nullable|string|max:4000', 'agent_strategy.objective' => 'sometimes|nullable|string|max:2000'];
         foreach (array_keys(self::LISTS) as $key) {
             $rules['agent_strategy.'.$key] = 'sometimes|array|max:100';

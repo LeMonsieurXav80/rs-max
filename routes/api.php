@@ -22,6 +22,12 @@ Route::middleware(['auth:sanctum', \App\Http\Middleware\CommunityManagerTokenSco
         Route::get('accounts/{id}/inbox', [\App\Http\Controllers\Api\CommunityManagerInboxController::class, 'index']);
         Route::get('inbox/{inboxItem}/context', [\App\Http\Controllers\Api\CommunityManagerInboxController::class, 'context']);
         Route::post('inbox/{inboxItem}/reply', [\App\Http\Controllers\Api\CommunityManagerInboxController::class, 'reply']);
+        Route::post('accounts/{id}/x/read', [\App\Http\Controllers\Api\XAgentController::class, 'read']);
+        Route::get('accounts/{id}/x/context', [\App\Http\Controllers\Api\XAgentController::class, 'context']);
+        Route::post('accounts/{id}/x/prepare', [\App\Http\Controllers\Api\XAgentController::class, 'prepare']);
+        Route::get('accounts/{id}/x/contacts', [\App\Http\Controllers\Api\XAgentController::class, 'contacts']);
+        Route::post('x/engagements/{engagement}/execute', [\App\Http\Controllers\Api\XAgentController::class, 'execute']);
+        Route::get('x/engagements/{engagement}', [\App\Http\Controllers\Api\XAgentController::class, 'result']);
         Route::get('accounts', 'accounts');
         Route::post('read', 'read')->middleware('throttle:20,1');
         Route::get('snapshots/{id}', 'snapshot')->whereUuid('id');
@@ -30,6 +36,12 @@ Route::middleware(['auth:sanctum', \App\Http\Middleware\CommunityManagerTokenSco
         Route::get('engagements/{engagement}', 'result');
         Route::post('upload/inspect', 'uploadInspect')->middleware('throttle:5,1');
     });
+    Route::post('agent/accounts/{id}/x/read', [\App\Http\Controllers\Api\XAgentController::class, 'read']);
+    Route::get('agent/accounts/{id}/x/context', [\App\Http\Controllers\Api\XAgentController::class, 'context']);
+    Route::post('agent/accounts/{id}/x/prepare', [\App\Http\Controllers\Api\XAgentController::class, 'prepare']);
+    Route::get('agent/accounts/{id}/x/contacts', [\App\Http\Controllers\Api\XAgentController::class, 'contacts']);
+    Route::post('agent/x/engagements/{engagement}/execute', [\App\Http\Controllers\Api\XAgentController::class, 'execute']);
+    Route::get('agent/x/engagements/{engagement}', [\App\Http\Controllers\Api\XAgentController::class, 'result']);
     // ── Auth ──
     Route::get('/me', [ApiController::class, 'me']);
     Route::get('/accounts', [ApiController::class, 'accounts']);

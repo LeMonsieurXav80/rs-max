@@ -26,7 +26,9 @@ class AgentController extends Controller
         $engagements = $platform === 'tiktok' ? TikTokEngagement::with('socialAccount')
             ->whereIn('social_account_id', $accounts->pluck('account.id'))->latest()->limit(20)->get() : collect();
 
-        return view('agent.platform', compact('platform', 'definition', 'accounts', 'engagements'));
+        $xEngagements = $platform === 'twitter' ? \App\Models\XEngagement::with('socialAccount')->whereIn('social_account_id', $accounts->pluck('account.id'))->latest()->limit(30)->get() : collect();
+
+        return view('agent.platform', compact('platform', 'definition', 'accounts', 'engagements', 'xEngagements'));
     }
 
     public function sendEngagement(Request $request, TikTokEngagement $engagement, TikTokFeedController $feed): RedirectResponse
@@ -35,6 +37,17 @@ class AgentController extends Controller
         $feed->send($request, $engagement);
 
         return back()->with('success', 'Action TikTok lancée sur le NAS. Son résultat sera confirmé après rechargement.');
+    }
+
+    public function sendXEngagement(Request $request, \App\Models\XEngagement $engagement, \App\Http\Controllers\Api\XAgentController $api, \App\Services\Agent\XEngagementService $service): RedirectResponse
+    {
+        $request->merge(['dry_run' => false]);
+        $response = $api->execute($request, $engagement, $service);
+        if ($response->getStatusCode() >= 400) {
+            return back()->withErrors(['agent' => $response->getData(true)['message'] ?? 'Action refusée.']);
+        }
+
+        return back()->with('success', 'Action X lancée sur le NAS. Attendre sa confirmation après rechargement.');
     }
 
     public function prepare(SocialAccount $account): RedirectResponse

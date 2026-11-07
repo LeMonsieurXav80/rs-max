@@ -84,9 +84,10 @@ class InboxReplyService
                     'reply_scheduled_at' => null,
                 ]);
 
-                // Tous les chemins d'envoi passent ici : une réponse TikTok confirmée est toujours likée.
-                if ($tiktok) {
-                    LikeInboxItem::dispatch($item->id);
+                // Après une réponse confirmée, le like suit avec la cadence du compte.
+                if ($tiktok || ($account->platform->slug === 'twitter' && $account->usesBrowser())) {
+                    $next = app(\App\Services\Agent\AccountActionBudget::class)->usage($account)['next_allowed_at'];
+                    LikeInboxItem::dispatch($item->id)->delay($next ? \Illuminate\Support\Carbon::parse($next)->addSeconds(2) : now());
                 }
             } else {
                 Log::warning('InboxReplyService: reply failed', ['item_id' => $item->id, 'error' => $result['error'] ?? 'unknown']);

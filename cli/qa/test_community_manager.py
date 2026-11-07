@@ -49,4 +49,20 @@ class CommunityManagerTest(unittest.TestCase):
                     api.assert_not_called()
             finally:client.db.close()
 
+    def test_x_timeout_keeps_its_own_intent_without_colliding_with_tiktok(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            client=cm.Client({'state_path':tmp+'/state.sqlite'})
+            client.remember(42, 'confirmed')
+            responses=[{'id':42,'status':'prepared'}, RuntimeError('connexion perdue')]
+            def call(*args):
+                result=responses.pop(0)
+                if isinstance(result,Exception): raise result
+                return result
+            with patch.object(cm,'daytime',return_value=True), patch.object(client,'api',side_effect=call):
+                with self.assertRaises(RuntimeError):client.x_action(7,'like','snapshot',True,'987')
+            with patch.object(cm,'daytime',return_value=True), patch.object(client,'api',return_value={'id':42,'status':'prepared'}) as api:
+                self.assertEqual(client.x_action(7,'like','snapshot',True,'987')['status'],'check_required')
+                self.assertEqual(api.call_count,1)
+            client.db.close()
+
 if __name__=='__main__': unittest.main()

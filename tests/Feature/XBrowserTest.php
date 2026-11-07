@@ -146,7 +146,7 @@ class XBrowserTest extends TestCase
 
     public function test_publier_renvoie_lid_et_le_lien_du_tweet(): void
     {
-        $this->queue->results['x.post'] = ['id' => '500'];
+        $this->queue->results['x.post'] = ['id' => '500', 'confirmed' => true, 'proof' => 'after_reload'];
 
         $result = $this->adapter()->publish($this->account, 'Bonjour le monde');
 
@@ -157,7 +157,7 @@ class XBrowserTest extends TestCase
 
     public function test_une_video_part_seule_et_quatre_images_au_plus(): void
     {
-        $this->queue->results['x.post'] = ['id' => '500'];
+        $this->queue->results['x.post'] = ['id' => '500', 'confirmed' => true, 'proof' => 'after_reload'];
         $image = ['url' => 'https://rs/a.jpg', 'mimetype' => 'image/jpeg'];
 
         $this->adapter()->publish($this->account, 'Texte', array_fill(0, 6, $image));
@@ -182,7 +182,7 @@ class XBrowserTest extends TestCase
 
     public function test_repondre_a_un_commentaire_passe_par_le_navigateur(): void
     {
-        $this->queue->results['x.post'] = ['id' => '600'];
+        $this->queue->results['x.post'] = ['id' => '600', 'confirmed' => true, 'proof' => 'after_reload'];
         $item = InboxItem::create(['platform_id' => $this->account->platform_id, 'social_account_id' => $this->account->id, 'type' => 'comment', 'external_id' => '555', 'status' => 'unread']);
 
         $service = app(InboxSyncService::class)->getServiceForAccount($this->account);
@@ -190,14 +190,16 @@ class XBrowserTest extends TestCase
 
         $this->assertInstanceOf(TwitterBrowserInboxService::class, $service);
         $this->assertSame('600', $result['external_id']);
-        $this->assertSame('https://x.com/intent/post?in_reply_to=555', collect($this->queue->calls)->firstWhere(0, 'x.post')[1]['url']);
+        $this->assertSame('https://x.com/compose/post?in_reply_to=555', collect($this->queue->calls)->firstWhere(0, 'x.post')[1]['url']);
     }
 
-    public function test_citer_colle_le_lien_du_tweet_dans_le_texte(): void
+    public function test_citer_ouvre_le_composer_avec_la_source_exacte(): void
     {
         $this->adapter()->nativeQuote($this->account, 'Mon avis', '555');
 
-        $this->assertSame('Mon avis https://x.com/i/web/status/555', collect($this->queue->calls)->firstWhere(0, 'x.post')[1]['text']);
+        $payload = collect($this->queue->calls)->firstWhere(0, 'x.post')[1];
+        $this->assertSame('Mon avis', $payload['text']);
+        $this->assertSame('https://x.com/compose/post?quote_tweet_id=555', $payload['url']);
     }
 
     public function test_les_mentions_lues_excluent_le_compte_lui_meme(): void
@@ -242,5 +244,52 @@ class XBrowserTest extends TestCase
             XBrowserStatsService::parseStats("3 réponses, 2 reposts, 1 204 J''aime, 1 signet, 9 000 vues"));
         $this->assertSame(['replies' => 1, 'likes' => 12, 'views' => 345],
             XBrowserStatsService::parseStats('1 reply, 12 likes, 345 views'));
+    }
+
+    public function test_un_article_en_mode_navigateur_ne_se_replie_jamais_sur_lapi(): void
+    {
+        \Illuminate\Support\Facades\Http::preventStrayRequests();
+        $result = $this->adapter()->publish($this->account, 'Texte', null, ['article_title' => 'Article']);
+        $this->assertFalse($result['success']);
+        $this->assertSame([], $this->queue->calls);
+    }
+
+    public function test_la_livraison_planifiee_transmet_sa_cle_et_refuse_une_confirmation_sans_relecture(): void
+    {
+        $this->queue->results['x.post'] = ['id' => '500'];
+        $result = $this->adapter()->publish($this->account, 'Texte', null, ['publication_key' => 'post-platform:32']);
+        $this->assertFalse($result['success']);
+        $this->assertTrue($result['uncertain']);
+        $this->assertSame('post-platform:32', collect($this->queue->calls)->firstWhere(0, 'x.post')[1]['publication_key']);
+    }
+
+    public function test_le_nouveau_vocabulaire_des_metriques_x_est_reconnu(): void
+    {
+        $this->assertSame(['replies' => 1, 'likes' => 160, 'views' => 1200], XBrowserStatsService::parseStats('1 Répondre, 160 aimer, 1 200 vues'));
+    }
+
+    public function test_les_abonnes_arrondis_sont_exposes_sans_ecraser_le_compteur_exact(): void
+    {
+        $this->account->update(['followers_count' => 22598]);
+        $this->queue->results['x.tweets'] = ['tweets' => [], 'followers' => null,
+            'followers_observation' => ['value' => 22600, 'precision' => 'rounded', 'display' => '22,6 k Abonnés']];
+        $result = app(XBrowserStatsService::class)->sync($this->account);
+        $this->assertFalse($result['followers']);
+        $this->assertSame(22598, $this->account->fresh()->followers_count);
+        $this->assertSame('rounded', $this->account->fresh()->browser_followers_observation['precision']);
+        $this->getJson('/api/accounts')->assertOk()->assertJsonPath('accounts.0.browser_followers_observation.value', 22600);
+    }
+
+    public function test_le_job_dune_publication_planifiee_utilise_companion_sans_appel_x_api(): void
+    {
+        \Illuminate\Support\Facades\Http::preventStrayRequests();
+        $this->queue->results['x.post'] = ['id' => '500', 'confirmed' => true, 'proof' => 'after_reload'];
+        $post = \App\Models\Post::create(['user_id' => $this->user->id, 'content_fr' => 'Une publication planifiée', 'status' => 'scheduled', 'scheduled_at' => now()->addHour()]);
+        $pp = \App\Models\PostPlatform::create(['post_id' => $post->id, 'platform_id' => $this->account->platform_id, 'social_account_id' => $this->account->id, 'status' => 'pending']);
+        (new \App\Jobs\PublishToPlatformJob($pp))->handle(app(\App\Services\PublishingService::class));
+        $this->assertSame('published', $pp->fresh()->status);
+        $this->assertSame('500', $pp->fresh()->external_id);
+        $this->assertSame('post-platform:'.$pp->id, collect($this->queue->calls)->firstWhere(0, 'x.post')[1]['publication_key']);
+        \Illuminate\Support\Facades\Http::assertNothingSent();
     }
 }

@@ -23,11 +23,16 @@ class LikeInboxItem implements ShouldQueue
     public function handle(TikTokInboxService $tiktok): void
     {
         $item = InboxItem::with('socialAccount.platform')->find($this->itemId);
-        if (! $item || $item->liked_at || $item->socialAccount->platform->slug !== 'tiktok') {
+        if (! $item || $item->liked_at || ! in_array($item->socialAccount->platform->slug, ['tiktok', 'twitter'], true)) {
             return;
         }
 
-        $result = $tiktok->like($item->socialAccount, $item);
+        $account = $item->socialAccount;
+        if ($account->platform->slug === 'twitter' && ! $account->usesBrowser()) {
+            return;
+        }
+        $service = $account->platform->slug === 'twitter' ? app(\App\Services\Inbox\TwitterBrowserInboxService::class) : $tiktok;
+        $result = $service->like($account, $item);
         if ($result['success']) {
             $item->update(['liked_at' => now()]);
         } else {

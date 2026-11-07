@@ -132,6 +132,8 @@ class ThreadPublishingService
                 }
             }
 
+            $options ??= [];
+            $options['publication_key'] = 'thread-segment-platform:'.$segmentPlatform->id;
             try {
                 if ($previousExternalId === null) {
                     // First segment: standard publish. $options compte aussi ici — un
@@ -266,7 +268,7 @@ class ThreadPublishingService
         $media = $this->resolveMediaUrls($rawMedia, $account->platform->slug);
 
         try {
-            $result = $adapter->publish($account, $compiledContent, $media);
+            $result = $adapter->publish($account, $compiledContent, $media, ['publication_key' => 'compiled-thread:'.$thread->id]);
         } finally {
             $this->cleanupOverlayTemp($overlayTemp);
         }

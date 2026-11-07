@@ -9,7 +9,7 @@ use App\Models\SocialAccount;
 use App\Models\SocialAccountSnapshot;
 
 /**
- * Enregistre ce que le navigateur du VPS a lu sur X.
+ * Enregistre ce que le navigateur du NAS a lu sur X.
  *
  * Mêmes tables que l'API X : stats, snapshots et abonnés restent lus par les
  * écrans existants, quelle que soit la provenance du relevé.
@@ -97,7 +97,8 @@ class XObservationService
     /** Réponses et reposts restent en base pour leurs stats, hors du flux d'adoption. */
     private function newExternalPost(SocialAccount $account, array $tweet, array $metrics): array
     {
-        $isNoise = ! empty($tweet['is_reply']) || ! empty($tweet['is_repost']);
+        $unknown = ($tweet['classification_known'] ?? true) === false;
+        $isNoise = $unknown || ! empty($tweet['is_reply']) || ! empty($tweet['is_repost']);
 
         return [
             'social_account_id' => $account->id,
@@ -110,7 +111,7 @@ class XObservationService
             'metrics' => $metrics,
             'metrics_synced_at' => now(),
             'ignored_at' => $isNoise ? now() : null,
-            'ignored_reason' => $isNoise ? 'auto_noise' : null,
+            'ignored_reason' => $unknown ? 'browser_unclassified' : ($isNoise ? 'auto_noise' : null),
         ];
     }
 

@@ -10,7 +10,7 @@ use App\Services\Browser\XSessionService;
 use Carbon\Carbon;
 use Illuminate\Support\Collection;
 
-/** Mentions X lues et traitées depuis le Chromium du VPS. */
+/** Mentions X lues et traitées depuis le Chromium du NAS. */
 class TwitterBrowserInboxService implements PlatformInboxInterface
 {
     public function __construct(private XSessionService $sessions, private TwitterBrowserAdapter $adapter, private BrowserTaskQueue $queue) {}
@@ -44,6 +44,28 @@ class TwitterBrowserInboxService implements PlatformInboxInterface
 
     public function sendReply(SocialAccount $account, InboxItem $item, string $replyText): array
     {
-        return $this->adapter->publishReply($account, $replyText, (string) $item->external_id);
+        app(\App\Services\Agent\XEngagementService::class)->assertReplyAvailable($account, (string) $item->external_id, ignoreInbox: $item->id);
+
+        return $this->adapter->publishReply($account, $replyText, (string) $item->external_id, options: ['publication_key' => 'inbox-reply:'.$item->id]);
+    }
+
+    public function like(SocialAccount $account, InboxItem $item): array
+    {
+        try {
+            $payload = ['url' => 'https://x.com/'.ltrim($item->author_username, '@').'/status/'.$item->external_id,
+                'username' => $account->browser_username, 'action' => 'like', 'publication_key' => 'inbox-like:'.$item->id,
+                'target' => ['id' => (string) $item->external_id, 'author' => strtolower(ltrim($item->author_username, '@')), 'text' => $item->content]];
+            if ($item->reply_activity_window) {
+                $payload['activity_window'] = $item->reply_activity_window;
+            }
+            $result = $this->queue->run($account, 'x.like', $payload, 120);
+            if (($result['confirmed'] ?? false) !== true || ($result['proof'] ?? null) !== 'after_reload') {
+                throw new \App\Services\Browser\BrowserUncertainException('Like X non prouvé après rechargement.');
+            }
+
+            return ['success' => true, 'confirmed' => true];
+        } catch (\App\Services\Browser\BrowserException $e) {
+            return ['success' => false, 'error' => $e->getMessage(), 'uncertain' => $e instanceof \App\Services\Browser\BrowserUncertainException];
+        }
     }
 }

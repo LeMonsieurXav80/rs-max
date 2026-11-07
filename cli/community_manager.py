@@ -26,6 +26,7 @@ class Client:
         db.parent.mkdir(parents=True, exist_ok=True)
         self.db = sqlite3.connect(db)
         self.db.execute('CREATE TABLE IF NOT EXISTS attempts(id INTEGER PRIMARY KEY, state TEXT NOT NULL, updated_at TEXT NOT NULL)')
+        self.db.execute('CREATE TABLE IF NOT EXISTS x_attempts(id INTEGER PRIMARY KEY, state TEXT NOT NULL, updated_at TEXT NOT NULL)')
         self.db.commit()
 
     def api(self, method, path, data=None):
@@ -94,6 +95,36 @@ class Client:
         return {'id': ident, 'status': 'check_required', 'reason': 'Attente terminée : relire status, sans nouveau geste.'}
 
 
+    def x_action(self, account, action, snapshot, commit=False, target=None, text=None, context=None):
+        if not daytime():
+            return {'state': 'sleep'}
+        data = {'action': action, 'snapshot_id': snapshot}
+        if target: data['target_id'] = target
+        if action in ('reply', 'quote'):
+            if not text or not context:
+                raise RuntimeError('Lire x-context et fournir --context et --text-file. Aucun appel IA dans RS-Max.')
+            data.update(text=text, context_id=context)
+        prepared = self.api('POST', f'accounts/{account}/x/prepare', data)
+        ident = prepared['id']
+        if not commit or prepared['status'] != 'prepared':
+            return prepared
+        if self.db.execute('SELECT 1 FROM x_attempts WHERE id=?', (ident,)).fetchone():
+            return {'id': ident, 'status': 'check_required', 'reason': 'Demande X déjà enregistrée : consulter x-status, sans renvoyer.'}
+        self.db.execute('INSERT INTO x_attempts VALUES(?,?,?)', (ident, 'execution_requested', dt.datetime.now(dt.timezone.utc).isoformat()))
+        self.db.commit()  # avant le HTTP, y compris en cas de coupure ou de délai dépassé
+        self.api('POST', f'x/engagements/{ident}/execute', {'dry_run': False})
+        deadline = time.monotonic() + 325
+        while time.monotonic() < deadline:
+            result = self.api('GET', f'x/engagements/{ident}')
+            if result['status'] not in ('queued', 'running'):
+                self.db.execute('UPDATE x_attempts SET state=?, updated_at=? WHERE id=?',
+                    (result['status'], dt.datetime.now(dt.timezone.utc).isoformat(), ident))
+                self.db.commit()
+                return result
+            time.sleep(5)
+        return {'id': ident, 'status': 'check_required', 'reason': 'Délai local dépassé : consulter x-status, sans renvoyer.'}
+
+
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--config', type=Path, default=Path(os.environ.get('COMMUNITY_MANAGER_CONFIG', str(Path(os.environ.get('HERMES_HOME', '~/.hermes')).expanduser() / 'community-manager.json'))))
@@ -113,11 +144,26 @@ def main(argv=None):
     p = subs.add_parser('comments'); p.add_argument('--account', type=int, required=True); p.add_argument('--url', required=True)
     p = subs.add_parser('status'); p.add_argument('id', type=int)
     p = subs.add_parser('inspect-upload'); p.add_argument('--account', type=int, required=True)
+    p = subs.add_parser('x-read'); p.add_argument('--account', type=int, required=True); p.add_argument('--action', choices=['feed.read','search.read','mentions.read','thread.read','profile.read'], required=True)
+    p.add_argument('--query'); p.add_argument('--url'); p.add_argument('--handle'); p.add_argument('--feed', choices=['following','foryou']); p.add_argument('--limit', type=int, default=10); p.add_argument('--screens', type=int, default=2)
+    p = subs.add_parser('x-context'); p.add_argument('--account', type=int, required=True); p.add_argument('--snapshot', required=True); p.add_argument('--purpose', choices=['reply','quote'], default='reply')
+    p = subs.add_parser('x-action'); p.add_argument('--account', type=int, required=True); p.add_argument('--action', choices=['like','unlike','bookmark','unbookmark','repost','unrepost','reply','quote','follow','unfollow'], required=True)
+    p.add_argument('--snapshot', required=True); p.add_argument('--target'); p.add_argument('--context'); p.add_argument('--text-file', type=Path); p.add_argument('--commit', action='store_true')
+    p = subs.add_parser('x-status'); p.add_argument('id', type=int)
+    p = subs.add_parser('x-contacts'); p.add_argument('--account', type=int, required=True); p.add_argument('--page', type=int, default=1)
     args = parser.parse_args(argv)
-    if args.command not in ('accounts', 'status') and not daytime():
+    if args.command not in ('accounts', 'status', 'x-status', 'x-contacts') and not daytime():
         print(json.dumps({'state': 'sleep', 'window': '06:00-22:00 Europe/Lisbon'})); return 0
     client = Client(json.loads(args.config.read_text()))
     if args.command == 'accounts': result = client.api('GET', 'accounts')
+    elif args.command == 'x-read':
+        data = {k: getattr(args, k) for k in ('action','query','url','handle','feed','limit','screens') if getattr(args,k) is not None}
+        result = client.api('POST', f'accounts/{args.account}/x/read', data)
+    elif args.command == 'x-context': result = client.api('GET', f'accounts/{args.account}/x/context?' + urlencode({'snapshot_id':args.snapshot, 'purpose':args.purpose}))
+    elif args.command == 'x-action': result = client.x_action(args.account, args.action, args.snapshot, args.commit, args.target,
+        args.text_file.read_text(encoding='utf-8').strip() if args.text_file else None, args.context)
+    elif args.command == 'x-status': result = client.api('GET', f'x/engagements/{args.id}')
+    elif args.command == 'x-contacts': result = client.api('GET', f'accounts/{args.account}/x/contacts?' + urlencode({'page':args.page}))
     elif args.command == 'strategy': result = client.api('PATCH' if args.update_file else 'GET', f'accounts/{args.account}/strategy', json.loads(args.update_file.read_text()) if args.update_file else None)
     elif args.command == 'inbox': result = client.api('GET', f'accounts/{args.account}/inbox?' + urlencode({'order':'newest','limit':10,'status':args.status}))
     elif args.command == 'reply-context': result = client.api('GET', f'inbox/{args.id}/context')

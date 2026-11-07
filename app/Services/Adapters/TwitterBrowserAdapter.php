@@ -9,7 +9,7 @@ use App\Services\Browser\BrowserUncertainException;
 use App\Services\Browser\XSessionService;
 use Illuminate\Support\Facades\Log;
 
-/** Publie sur X par Companion, dans le Chromium du VPS. */
+/** Publie sur X par Companion, dans le Chromium du NAS. */
 class TwitterBrowserAdapter implements PlatformAdapterInterface, ResharingAdapterInterface, ThreadableAdapterInterface
 {
     private const COMPOSE_URL = 'https://x.com/compose/post';
@@ -21,33 +21,53 @@ class TwitterBrowserAdapter implements PlatformAdapterInterface, ResharingAdapte
 
     private const ACTION_TIMEOUT = 120;
 
+    private ?string $deliveryKey = null;
+
+    public function forDelivery(string $key): self
+    {
+        $copy = clone $this;
+        $copy->deliveryKey = $key;
+
+        return $copy;
+    }
+
     public function __construct(private XSessionService $sessions, private BrowserTaskQueue $queue) {}
 
     public function publish(SocialAccount $account, string $content, ?array $media = null, ?array $options = null): array
     {
-        // L'éditeur d'articles n'a pas de parcours ici : le texte d'un article reste sur l'API.
+        // Le mode navigateur n'autorise aucun repli implicite vers l'API X.
         if (trim((string) ($options['article_title'] ?? '')) !== '') {
-            return (new TwitterAdapter)->publish($account, $content, $media, $options);
+            return ['success' => false, 'external_id' => null, 'error' => 'Les articles X ne sont pas encore pris en charge par Companion. Aucun appel API effectué.'];
         }
 
-        return $this->post($account, self::COMPOSE_URL, $content, $media);
+        return $this->post($account, isset($options['quote_to_id']) ? self::COMPOSE_URL.'?quote_tweet_id='.$options['quote_to_id'] : self::COMPOSE_URL, $content, $media, key: $options['publication_key'] ?? null);
     }
 
     public function publishReply(SocialAccount $account, string $content, string $replyToId, ?array $media = null, ?array $options = null): array
     {
-        return $this->post($account, 'https://x.com/intent/post?in_reply_to='.$replyToId, $content, $media);
+        return $this->post($account, 'https://x.com/compose/post?in_reply_to='.$replyToId, $content, $media, key: $options['publication_key'] ?? null);
     }
 
     public function nativeQuote(SocialAccount $account, string $text, string $sourceExternalId, ?array $media = null): array
     {
-        // Le lien dans le texte devient la citation, comme quand on le colle à la main.
-        return $this->post($account, self::COMPOSE_URL, trim($text.' https://x.com/i/web/status/'.$sourceExternalId), $media);
+        return $this->post($account, self::COMPOSE_URL.'?quote_tweet_id='.$sourceExternalId, $text, $media);
     }
 
     public function nativeRepost(SocialAccount $account, string $sourceExternalId): array
     {
-        return $this->action($account, 'x.repost', ['url' => 'https://x.com/intent/retweet?tweet_id='.$sourceExternalId],
-            ['external_id' => $sourceExternalId]);
+        try {
+            $read = $this->queue->run($account, 'x.agent.read', ['url' => 'https://x.com/i/web/status/'.$sourceExternalId,
+                'action' => 'thread.read', 'username' => $account->browser_username, 'target_id' => $sourceExternalId], 110);
+            $target = $read['target'] ?? null;
+            if (! $target || (string) $target['id'] !== $sourceExternalId) {
+                throw new BrowserException('Publication source du repost non confirmée.');
+            }
+
+            return $this->action($account, 'x.repost', ['url' => $target['url'], 'username' => $account->browser_username,
+                'action' => 'repost', 'target' => $target, 'publication_key' => $this->deliveryKey], ['external_id' => $sourceExternalId]);
+        } catch (BrowserException $e) {
+            return ['success' => false, 'external_id' => null, 'error' => $e->getMessage()];
+        }
     }
 
     public function deleteTweet(SocialAccount $account, string $tweetId): array
@@ -61,10 +81,10 @@ class TwitterBrowserAdapter implements PlatformAdapterInterface, ResharingAdapte
         return $this->post($account, self::COMPOSE_URL, $content, $media, dry: true);
     }
 
-    private function post(SocialAccount $account, string $url, string $content, ?array $media, bool $dry = false): array
+    private function post(SocialAccount $account, string $url, string $content, ?array $media, bool $dry = false, ?string $key = null): array
     {
         $payload = ['url' => $url, 'text' => $content, 'username' => $account->browser_username,
-            'media' => $this->selectMedia($media ?? []), 'dry' => $dry];
+            'media' => $this->selectMedia($media ?? []), 'dry' => $dry, 'publication_key' => $dry ? null : ($key ?? $this->deliveryKey)];
 
         return $this->action($account, 'x.post', $payload, [], self::POST_TIMEOUT);
     }
@@ -73,11 +93,14 @@ class TwitterBrowserAdapter implements PlatformAdapterInterface, ResharingAdapte
     {
         try {
             if (! $this->sessions->check($account)) {
-                throw new BrowserException('Session X absente ou expirée sur le navigateur du VPS.');
+                throw new BrowserException('Session X absente ou expirée sur le navigateur du NAS.');
             }
 
             $result = $this->queue->run($account, $kind, $payload, $timeout);
             $id = $extra['external_id'] ?? ($result['id'] ?? null);
+            if (in_array($kind, ['x.post', 'x.repost'], true) && empty($payload['dry']) && (! preg_match('/^[0-9]+$/', (string) $id) || ($result['confirmed'] ?? false) !== true || ($result['proof'] ?? null) !== 'after_reload')) {
+                throw new BrowserUncertainException('Publication X non prouvée après rechargement : ne pas renvoyer.');
+            }
 
             return ['success' => true, 'external_id' => $id, 'error' => null]
                 + ($id && $kind === 'x.post' ? ['permalink' => "https://x.com/{$account->browser_username}/status/{$id}"] : [])

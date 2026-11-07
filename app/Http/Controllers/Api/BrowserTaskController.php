@@ -51,6 +51,7 @@ class BrowserTaskController extends Controller
         abort_unless($task->status === BrowserTask::RUNNING, 409, 'Tâche déjà terminée.');
 
         $task->update($v + ['finished_at' => now()]);
+        app(\App\Services\Agent\XEngagementService::class)->finish($task);
         app(\App\Services\Agent\AccountActionBudget::class)->finish($task);
 
         // Chaque geste est journalisé, sauf les contrôles de session, trop fréquents pour être utiles.
@@ -61,8 +62,8 @@ class BrowserTaskController extends Controller
                 'source' => 'browser',
                 'target_uri' => (string) ($task->payload['url'] ?? ''),
                 'target_text' => isset($task->payload['text']) ? mb_substr($task->payload['text'], 0, 2000) : null,
-                'success' => $v['status'] === BrowserTask::DONE,
-                'error' => $v['error'] ?? null,
+                'success' => $task->status === BrowserTask::DONE,
+                'error' => $task->error,
                 'performed_at' => now(),
             ]);
         }

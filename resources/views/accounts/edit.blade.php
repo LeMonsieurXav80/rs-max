@@ -108,7 +108,7 @@
                         @enderror
                         <p class="mt-1 text-xs text-gray-400">
                             En mode navigateur, les publications, réponses, stats et abonnés passent par le navigateur du NAS.
-                            Les articles X restent sur l'API.
+                            Les publications planifiées utilisent aussi Companion. Les articles attendent un parcours navigateur ; aucun repli vers l’API.
                             Les comptes qui ont le même profil passent chacun leur tour dans le même navigateur.
                         </p>
                         <p class="mt-1 text-xs {{ $account->browser_session_status === 'connected' ? 'text-green-600' : 'text-amber-600' }}">
@@ -117,9 +117,15 @@
                             @elseif($account->browser_session_status === 'expired')
                                 Session expirée : ouvrez X dans Chrome avec ce compte, l'extension la renverra.
                             @else
-                                Aucune session : ouvrez X dans Chrome avec ce compte, puis lancez « X — envoyer la session au VPS ».
+                                Aucune session : ouvrez X dans Chrome avec ce compte, puis lancez « X — transmettre la session à RS-Max ».
                             @endif
                         </p>
+                        @if($account->browser_followers_observation)
+                            <p class="mt-2 text-xs text-gray-500">
+                                Abonnés lus dans X : {{ $account->browser_followers_observation['display'] ?? '—' }}
+                                ({{ ($account->browser_followers_observation['precision'] ?? '') === 'exact' ? 'valeur exacte' : 'valeur arrondie par X' }}).
+                            </p>
+                        @endif
                         @error('driver')
                             <p class="mt-1 text-sm text-red-600">{{ $message }}</p>
                         @enderror
@@ -178,6 +184,9 @@
                 @foreach($errors->getMessages() as $field => $messages)
                     @if(str_starts_with($field, 'agent_'))<p class="text-sm text-red-600 mt-2">{{ implode(' ', $messages) }}</p>@endif
                 @endforeach
+                <label for="agent_unfollow_after_days" class="block text-sm font-medium mt-4 mb-1">Délai avant un désabonnement (jours)</label>
+                <input id="agent_unfollow_after_days" name="agent_strategy[unfollow_after_days]" type="number" min="1" max="365" value="{{ old('agent_strategy.unfollow_after_days', $account->agent_strategy['unfollow_after_days'] ?? 7) }}" class="w-24 rounded-xl border-gray-300 text-sm">
+                <p class="text-xs text-gray-500 mt-1">X : uniquement après un abonnement confirmé de l’agent et deux constats récents espacés d’au moins 15 min sans retour d’abonnement. Aucune suppression de suivi n’est lancée en enregistrant cette fiche.</p>
                 <p class="text-xs text-gray-500 mt-3">La liste des comptes sert au ciblage. Elle ne lance pas de follow/unfollow.</p>
                 <h3 class="text-sm font-semibold mt-6 mb-2">Technique par action</h3>
                 <div class="overflow-x-auto"><table class="w-full text-sm text-left"><thead><tr><th class="py-2">Action</th><th>Technique</th><th>Disponibilité</th></tr></thead><tbody>

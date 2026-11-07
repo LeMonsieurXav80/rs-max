@@ -6,7 +6,7 @@ use App\Models\SocialAccount;
 use App\Services\Browser\BrowserTaskQueue;
 use App\Services\Browser\XSessionService;
 
-/** Relève les abonnés et les stats sur le profil X, dans le Chromium du VPS. */
+/** Relève les abonnés et les stats sur le profil X, dans le Chromium du NAS. */
 class XBrowserStatsService
 {
     public function __construct(private XSessionService $sessions, private BrowserTaskQueue $queue, private XObservationService $observations) {}
@@ -21,6 +21,10 @@ class XBrowserStatsService
         $username = strtolower((string) $account->browser_username);
         $page = $this->queue->run($account, 'x.tweets', ['url' => "https://x.com/{$username}", 'screens' => $screens, 'followers' => true], 180);
 
+        if (isset($page['followers_observation'])) {
+            $account->update(['browser_followers_observation' => $page['followers_observation'] + ['read_at' => now()->toIso8601String()]]);
+        }
+
         $tweets = collect($page['tweets'] ?? [])
             ->filter(fn (array $t) => $t['author'] === $username)
             ->map(fn (array $t) => [
@@ -29,16 +33,17 @@ class XBrowserStatsService
                 'published_at' => $t['published_at'],
                 'is_reply' => $t['reply'],
                 'is_repost' => $t['reposted'],
+                'classification_known' => $t['classification_known'] ?? true,
             ] + self::parseStats((string) $t['stats']))
             ->values()->all();
 
-        return $this->observations->record($account, $page['followers'] ?? null, $tweets);
+        return $this->observations->record($account, $page['followers'] ?? null, $tweets) + ['followers_observation' => $account->browser_followers_observation];
     }
 
     /** « 3 réponses, 2 reposts, 12 J'aime, 1 signet, 900 vues », selon la langue du compte. */
     public static function parseStats(string $label): array
     {
-        $patterns = ['replies' => 'r[ée]ponses?|repl(?:y|ies)', 'reposts' => 'reposts?|retweets?', 'likes' => "j[’']+aime|likes?",
+        $patterns = ['replies' => 'r[ée]ponses?|r[ée]pondre|repl(?:y|ies)', 'reposts' => 'reposts?|retweets?', 'likes' => "j[’']+aime|aimer|likes?",
             'bookmarks' => 'signets?|bookmarks?', 'views' => 'vues?|views?'];
         $stats = [];
 

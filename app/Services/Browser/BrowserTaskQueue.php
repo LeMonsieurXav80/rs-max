@@ -5,6 +5,7 @@ namespace App\Services\Browser;
 use App\Models\BrowserTask;
 use App\Models\SocialAccount;
 use App\Services\Agent\CommunityManagerWindow;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 
 /**
@@ -29,12 +30,26 @@ class BrowserTaskQueue
             throw new BrowserException('Aucun profil navigateur pour ce compte.');
         }
 
-        $task = BrowserTask::create([
-            'social_account_id' => $account->id,
-            'profile' => $account->browser_profile,
-            'kind' => $kind,
-            'payload' => $payload,
-        ]);
+        $task = DB::transaction(function () use ($account, $kind, $payload) {
+            $key = in_array($kind, ['x.post', 'x.like', 'x.repost'], true) ? ($payload['publication_key'] ?? null) : null;
+            if ($key !== null) {
+                // Verrou du compte, même quand la ligne de tâche n'existe pas encore.
+                SocialAccount::whereKey($account->id)->lockForUpdate()->firstOrFail();
+                $existing = BrowserTask::where('social_account_id', $account->id)->where('idempotency_key', $key)->first();
+                if ($existing) {
+                    if ($existing->kind !== $kind || $this->targetIdentity($existing->payload) !== $this->targetIdentity($payload) || ($existing->payload['text'] ?? '') !== ($payload['text'] ?? '') || $this->mediaIdentity($existing->payload['media'] ?? []) !== $this->mediaIdentity($payload['media'] ?? [])) {
+                        throw new BrowserException('Cette livraison possède déjà une intention différente : vérifier avant toute nouvelle publication.');
+                    }
+
+                    return $existing;
+                }
+            }
+
+            return BrowserTask::create([
+                'social_account_id' => $account->id, 'idempotency_key' => $key,
+                'profile' => $account->browser_profile, 'kind' => $kind, 'payload' => $payload,
+            ]);
+        });
 
         $deadline = microtime(true) + $timeout;
 
@@ -51,10 +66,24 @@ class BrowserTaskQueue
         return $this->expire($task);
     }
 
+    private function targetIdentity(array $payload): array
+    {
+        parse_str(parse_url($payload['url'] ?? '', PHP_URL_QUERY) ?? '', $query);
+
+        return [array_intersect_key($payload['target'] ?? [], array_flip(['id', 'author', 'text'])),
+            $query['in_reply_to'] ?? null, $query['quote_tweet_id'] ?? null];
+    }
+
+    /** Les URLs signées changent, pas l'identité du média livré. */
+    private function mediaIdentity(array $media): array
+    {
+        return array_map(fn ($m) => [parse_url($m['url'] ?? '', PHP_URL_HOST), parse_url($m['url'] ?? '', PHP_URL_PATH), $m['mimetype'] ?? null], $media);
+    }
+
     /** Une seule tâche à la fois par profil : deux onglets se voleraient la session. */
     public function claim(string $profile): ?BrowserTask
     {
-        return DB::transaction(function () use ($profile) {
+        $claimed = Cache::lock('browser-claim:'.$profile, 10)->get(fn () => DB::transaction(function () use ($profile) {
             if (BrowserTask::where('profile', $profile)->where('status', BrowserTask::RUNNING)->lockForUpdate()->exists()) {
                 return null;
             }
@@ -73,9 +102,11 @@ class BrowserTaskQueue
                     continue;
                 }
                 try {
+                    app(\App\Services\Agent\XEngagementService::class)->claim($task);
                     app(\App\Services\Agent\AccountActionBudget::class)->forTask($task);
                 } catch (BrowserException $e) {
                     $task->update(['status' => BrowserTask::CANCELLED, 'finished_at' => now(), 'error' => $e->getMessage()]);
+                    app(\App\Services\Agent\XEngagementService::class)->finish($task);
 
                     continue;
                 }
@@ -85,7 +116,9 @@ class BrowserTaskQueue
             }
 
             return null;
-        });
+        }));
+
+        return $claimed instanceof BrowserTask ? $claimed : null;
     }
 
     private function outcome(BrowserTask $task): array

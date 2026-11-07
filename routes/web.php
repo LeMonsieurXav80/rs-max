@@ -291,6 +291,7 @@ Route::middleware(['auth', 'verified', 'throttle:600,1'])->group(function () {
         Route::delete('bot/logs', [BotHubController::class, 'clearLogs'])->name('bot.clearLogs');
 
         // Agent — une page par réseau, une action réglable par compte
+        Route::post('agent/twitter/engagements/{engagement}/send', [AgentController::class, 'sendXEngagement'])->name('agent.twitter.send');
         Route::post('agent/tiktok/engagements/{engagement}/send', [AgentController::class, 'sendEngagement'])->name('agent.tiktok.send');
         Route::post('agent/{account}/prepare', [AgentController::class, 'prepare'])->name('agent.prepare');
         Route::get('agent/{platform}', [AgentController::class, 'show'])->name('agent.platform');

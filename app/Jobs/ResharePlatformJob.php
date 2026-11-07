@@ -24,7 +24,7 @@ class ResharePlatformJob implements ShouldQueue
 
     public int $tries = 1;
 
-    public int $timeout = 600;
+    public int $timeout = 1080;
 
     public function __construct(
         public int $postPlatformId,
@@ -56,6 +56,10 @@ class ResharePlatformJob implements ShouldQueue
             $this->markFailed($postPlatform, "Aucun adapter pour la plateforme : {$platform->slug}");
 
             return;
+        }
+
+        if ($adapter instanceof \App\Services\Adapters\TwitterBrowserAdapter) {
+            $adapter = $adapter->forDelivery('post-platform:'.$postPlatform->id);
         }
 
         PostLog::create([

@@ -21,6 +21,7 @@ class SocialAccount extends Model
         'browser_profile',
         'browser_session',
         'browser_username',
+        'browser_followers_observation',
         'browser_session_status',
         'browser_session_received_at',
         'browser_session_checked_at',
@@ -44,6 +45,7 @@ class SocialAccount extends Model
         return [
             'credentials' => 'encrypted:array',
             'browser_session' => 'encrypted:array',
+            'browser_followers_observation' => 'array',
             'browser_session_received_at' => 'datetime',
             'browser_session_checked_at' => 'datetime',
             'languages' => 'array',

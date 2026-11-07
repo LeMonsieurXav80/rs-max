@@ -3,10 +3,11 @@
 namespace App\Services\Browser;
 
 use App\Models\SocialAccount;
+use App\Services\TelegramNotificationService;
 use Illuminate\Support\Facades\Log;
 
 /**
- * Session X du Chromium du VPS. Une copie chiffrée des cookies reste en base pour
+ * Session X du Chromium du NAS. Une copie chiffrée des cookies reste en base pour
  * la réinstaller si le profil la perd, sans repasser par l'humain.
  */
 class XSessionService
@@ -42,23 +43,39 @@ class XSessionService
         $account->update(['browser_session' => $cookies, 'browser_session_received_at' => now()]);
         $this->apply($account);
 
-        return $this->verify($account);
+        return $this->notifyResult($account, $this->verify($account));
     }
 
     /** Contrôle la session, et la réinstalle depuis la copie chiffrée si elle a disparu. */
     public function check(SocialAccount $account): bool
     {
         if ($this->verify($account)) {
-            return true;
+            return $this->notifyResult($account, true);
         }
 
         if (empty($account->browser_session)) {
-            return false;
+            return $this->notifyResult($account, false);
         }
 
-        $this->apply($account);
+        try {
+            $this->apply($account);
 
-        return $this->verify($account);
+            return $this->notifyResult($account, $this->verify($account));
+        } catch (BrowserException $e) {
+            TelegramNotificationService::notifyExpiredSession($account, 'https://x.com/');
+            throw $e;
+        }
+    }
+
+    private function notifyResult(SocialAccount $account, bool $connected): bool
+    {
+        if ($connected) {
+            TelegramNotificationService::clearSessionAlert($account);
+        } else {
+            TelegramNotificationService::notifyExpiredSession($account, 'https://x.com/');
+        }
+
+        return $connected;
     }
 
     public function verify(SocialAccount $account): bool
@@ -76,7 +93,7 @@ class XSessionService
         ]);
 
         if (! $connected) {
-            Log::warning('Session X absente du navigateur du VPS', ['account_id' => $account->id, 'vu' => $username]);
+            Log::warning('Session X absente du navigateur du NAS', ['account_id' => $account->id, 'vu' => $username]);
         }
 
         return $connected;

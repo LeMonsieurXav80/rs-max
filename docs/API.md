@@ -1399,3 +1399,23 @@ La réponse contient `cadence` (tentatives sur 60 minutes glissantes, confirmée
 
 Inbox du jeton dédié : `GET /api/community-manager/accounts/{id}/inbox`, `GET /api/community-manager/inbox/{item}/context` (persona actif, texte, légende, contexte valable 15 min), puis `POST /api/community-manager/inbox/{item}/reply` avec `context_id`, `reply_text`, `dry_run:false` explicite. Par défaut : aperçu. Rédaction par Hermès via son abonnement ; aucun appel IA RS-Max. Persona modifié/contexte expiré : refus. Même service d’envoi et mêmes protections anti-doublon que la messagerie. TikTok part en planification, puis preuve après rechargement et like automatique si réponse confirmée. La fenêtre 06–22 h du jour est persistée avec la réponse et vérifiée avant le geste NAS. Lire l’état via inbox après un timeout, jamais renvoyer.
 CLI : `strategy --account ID [--update-file JSON]`, `inbox --account ID`, `reply-context ITEM`, `reply ITEM --context UUID --text-file FICHIER [--commit]`. IDs découverts dans le catalogue, jamais figés dans les consignes.
+
+### X — Community Manager par Companion sur le NAS
+Les routes suivantes existent sous `/api/agent` et `/api/community-manager` (ce dernier exige le jeton dédié et le compte attribué). Aucune API X ni génération IA RS-Max n’est appelée.
+
+| Méthode et chemin après le préfixe | Usage |
+|---|---|
+| `POST accounts/{id}/x/read` | `action=feed.read|search.read|mentions.read|thread.read|profile.read`, `feed=following|foryou`, `query`, `url`, `handle`, `limit<=30`, `screens<=5` ; renvoie `snapshot_id` valable 1 h et complétude réelle |
+| `GET accounts/{id}/x/context?snapshot_id=UUID&purpose=reply` | Fil lu requis ; persona actif et contexte valable 15 min pour rédiger dans Hermès. `purpose=quote` prépare une citation sans persona |
+| `POST accounts/{id}/x/prepare` | `action`, `snapshot_id`, `target_id` pour un post ; réponse/citation : `context_id`, `text`. Déduplication persistante compte/action/cible |
+| `POST x/engagements/{id}/execute` | Aperçu par défaut ; seul `dry_run:false` explicite enfile un geste |
+| `GET x/engagements/{id}` | État, résultat, `confirmed`, `unchanged`, erreur ; reste lisible après expiration de session |
+| `GET accounts/{id}/x/contacts?page=1` | Découvertes, suivi/désuivi confirmé, retour d’abonnement observé |
+
+Actions d’écriture : `like`, `unlike`, `bookmark`, `unbookmark`, `reply`, `quote`, `repost`, `unrepost`, `follow`, `unfollow`. Elles sont désactivées par défaut ; activation et quotas dans `/agent/twitter`. Contrôle 06–22 h à Lisbonne, identité, persona, quota et cadence à la prise puis dans Companion avant clic. Un seul envoi, preuve après rechargement ; aucun renvoi d’un résultat incertain. `social_contacts` garde la mémoire au-delà des journaux de 7 jours. `agent_strategy.unfollow_after_days` (1–365, défaut 7) n’autorise pas un désuivi à lui seul : suivi de l’agent daté, deux absences espacées de 15 min et relecture récente sans retour exigés.
+
+Client Hermès : `x-read`, `x-context`, `x-action [--commit]`, `x-status`, `x-contacts`. Mémoire SQLite `x_attempts` distincte de TikTok et inbox ; intention enregistrée avant HTTP. Le skill est livré dans `hermes/skills/community-manager-x/SKILL.md`.
+
+Publications X en mode navigateur : publications planifiées/manuelles et segments de fil portent une clé de livraison dans `browser_tasks`, réutilisée après reprise. Un résultat incertain ne crée aucun deuxième ordre. Médias avant texte, un seul clic final, ID et preuve après rechargement exigés. Les articles non pris en charge échouent explicitement, sans API. Le délai de redistribution de queue est au moins 1 200 s, au-dessus du timeout du job vidéo (1 080 s).
+
+`GET /api/accounts` expose `browser_followers_observation={value,precision,display,read_at}` : `precision=rounded` n’écrase ni le compteur exact ni ses snapshots. Les nouvelles publications natives dont le navigateur ne peut déterminer le statut de réponse restent `ignored_reason=browser_unclassified`, avec leurs métriques ; aucune adoption automatique hasardeuse.

@@ -16,12 +16,19 @@ class AccountActionBudget
         return DB::transaction(function () use ($account, $action, $executor, $target, $taskId) {
             $account = SocialAccount::whereKey($account->id)->lockForUpdate()->firstOrFail();
             $events = AccountActionEvent::where('social_account_id', $account->id);
+            if ($account->platform->slug === 'twitter' && str_starts_with($action, 'x.')) {
+                $key = substr($action, 2);
+                $setting = $account->agentActions()->where('action', $key)->first();
+                if ($setting && (clone $events)->where('action', $action)->where('created_at', '>=', today())->count() >= $setting->daily_limit) {
+                    throw new BrowserException('Quota quotidien atteint : aucun geste effectué.');
+                }
+            }
             $last = (clone $events)->latest('id')->first();
             $used = (clone $events)->where('created_at', '>', now()->subHour())->count();
             if ($account->agent_hourly_limit !== null && $used >= $account->agent_hourly_limit) {
                 throw new BrowserException('Cadence horaire atteinte : aucun geste effectué.');
             }
-            if ($last && $last->created_at->copy()->addSeconds($account->agent_min_interval_seconds)->isFuture()) {
+            if ($last && $account->agent_min_interval_seconds > 0 && $last->created_at->copy()->addSeconds($account->agent_min_interval_seconds)->isFuture()) {
                 throw new BrowserException('Délai minimal entre actions non écoulé : aucun geste effectué.');
             }
 
@@ -35,15 +42,21 @@ class AccountActionBudget
         if (($task->payload['dry'] ?? false) === true) {
             return;
         }
+        if ($task->kind === 'x.agent.act') {
+            $this->reserve($task->socialAccount, 'x.'.$task->payload['action'], 'browser', $task->payload['url'], $task->id);
+
+            return;
+        }
         if (! preg_match('/^(tiktok\.(reply|like|video\.like|comment\.like|video\.comment|publish.*|upload\.(stage|draft))|x\.(post|repost|publish|reply|like|delete).*)$/', $task->kind)) {
             return;
         }
-        $this->reserve($task->socialAccount, $task->kind, 'browser', $task->payload['url'] ?? null, $task->id);
+        $action = $task->kind === 'x.post' && str_contains($task->payload['url'] ?? '', 'in_reply_to=') ? 'x.reply' : $task->kind;
+        $this->reserve($task->socialAccount, $action, 'browser', $task->payload['url'] ?? null, $task->id);
     }
 
     public function finish(BrowserTask $task): void
     {
-        $status = $task->status === 'done' ? (($task->result['confirmed'] ?? null) === true ? 'confirmed' : 'completed') : $task->status;
+        $status = $task->status === 'done' ? (($task->result['confirmed'] ?? null) === true ? (($task->result['unchanged'] ?? false) ? 'unchanged' : 'confirmed') : 'completed') : $task->status;
         AccountActionEvent::where('browser_task_id', $task->id)->update(['status' => $status, 'error' => $task->error, 'updated_at' => now()]);
     }
 
@@ -51,7 +64,17 @@ class AccountActionBudget
     {
         $events = AccountActionEvent::where('social_account_id', $account->id)->where('created_at', '>', now()->subHour())->get();
 
-        return ['window' => 'rolling_60_minutes', 'limit' => $account->agent_hourly_limit, 'min_interval_seconds' => $account->agent_min_interval_seconds,
+        $last = AccountActionEvent::where('social_account_id', $account->id)->latest('created_at')->first();
+        $next = $last && $account->agent_min_interval_seconds > 0 ? $last->created_at->copy()->addSeconds($account->agent_min_interval_seconds) : null;
+        if ($account->agent_hourly_limit !== null && $account->agent_hourly_limit > 0 && $events->count() >= $account->agent_hourly_limit) {
+            $old = $events->sortBy('created_at')->values()->get($events->count() - $account->agent_hourly_limit)->created_at->copy()->addHour();
+            if (! $next || $old->greaterThan($next)) {
+                $next = $old;
+            }
+        }
+
+        return ['next_allowed_at' => $next?->isFuture() ? $next->toIso8601String() : null, 'blocked' => $account->agent_hourly_limit === 0,
+            'window' => 'rolling_60_minutes', 'limit' => $account->agent_hourly_limit, 'min_interval_seconds' => $account->agent_min_interval_seconds,
             'attempted' => $events->count(), 'confirmed' => $events->where('status', 'confirmed')->count(),
             'remaining' => $account->agent_hourly_limit === null ? null : max(0, $account->agent_hourly_limit - $events->count())];
     }
@@ -62,6 +85,6 @@ class AccountActionBudget
             ->groupBy(fn ($e) => $e->created_at->timezone('Europe/Lisbon')->format('Y-m-d H:00 P'))
             ->map(fn ($rows, $hour) => ['hour' => $hour, 'attempted' => $rows->count(), 'confirmed' => $rows->where('status', 'confirmed')->count(),
                 'completed' => $rows->where('status', 'completed')->count(), 'failed' => $rows->where('status', 'failed')->count(),
-                'uncertain' => $rows->whereIn('status', ['attempted', 'uncertain'])->count()])->values()->all();
+                'in_progress' => $rows->where('status', 'attempted')->count(), 'uncertain' => $rows->where('status', 'uncertain')->count()])->values()->all();
     }
 }

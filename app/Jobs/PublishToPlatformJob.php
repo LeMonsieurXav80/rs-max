@@ -24,7 +24,7 @@ class PublishToPlatformJob implements ShouldQueue
 
     public int $tries = 1;
 
-    public int $timeout = 900;
+    public int $timeout = 1080;
 
     public function __construct(
         public PostPlatform $postPlatform,
@@ -75,6 +75,7 @@ class PublishToPlatformJob implements ShouldQueue
         // ignorent les options qu'ils ne connaissent pas.
         $result = $adapter->publish($account, $content, $media, [
             'article_title' => $post->article_title,
+            'publication_key' => 'post-platform:'.$postPlatform->id,
         ]);
 
         if ($result['success']) {

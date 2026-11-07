@@ -187,11 +187,18 @@ class XExtensionController extends Controller
     {
         $a = $this->profileAccount($r);
         $v = $r->validate(['reply_text' => 'required|string|max:280']);
-        $ok = DB::table('extension_x_replies')->where('id', $id)->where('social_account_id', $a->id)->where('status', 'prepared')
-            ->where('reply_text', $v['reply_text'])->where('persona_hash', $this->personaHash($a))->update(['status' => 'publishing', 'updated_at' => now()]);
-        abort_unless($ok, 409, 'Envoi déjà réservé, persona ou texte modifié.');
 
-        return response()->json(['status' => 'publishing']);
+        return DB::transaction(function () use ($a, $v, $id) {
+            SocialAccount::whereKey($a->id)->lockForUpdate()->firstOrFail();
+            $draft = DB::table('extension_x_replies')->where('id', $id)->where('social_account_id', $a->id)->first();
+            abort_unless($draft, 404);
+            app(\App\Services\Agent\XEngagementService::class)->assertReplyAvailable($a, $draft->tweet_id);
+            $ok = DB::table('extension_x_replies')->where('id', $id)->where('social_account_id', $a->id)->where('status', 'prepared')
+                ->where('reply_text', $v['reply_text'])->where('persona_hash', $this->personaHash($a))->update(['status' => 'publishing', 'updated_at' => now()]);
+            abort_unless($ok, 409, 'Envoi déjà réservé, persona ou texte modifié.');
+
+            return response()->json(['status' => 'publishing']);
+        });
     }
 
     public function finish(Request $r, int $id): JsonResponse

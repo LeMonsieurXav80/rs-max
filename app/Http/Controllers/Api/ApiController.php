@@ -46,6 +46,7 @@ class ApiController extends Controller
                 'platform_account_id' => $a->platform_account_id,
                 'languages' => $a->languages ?? ['fr'],
                 'followers_count' => $a->followers_count,
+                'browser_followers_observation' => $a->browser_followers_observation,
             ]);
 
         return response()->json(['accounts' => $accounts]);
