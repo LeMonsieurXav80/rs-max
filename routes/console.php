@@ -108,3 +108,5 @@ if (rescue(fn () => (bool) Setting::get('external_auto_import_enabled', true), t
 if (rescue(fn () => (bool) Setting::get('external_auto_adopt_enabled', true), true, false)) {
     Schedule::command('external:auto-adopt --commit')->dailyAt('05:45')->withoutOverlapping(20);
 }
+
+Schedule::command('agent:adapt-limits')->everyFiveMinutes()->withoutOverlapping(5);

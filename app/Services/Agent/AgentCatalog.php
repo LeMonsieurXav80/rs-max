@@ -31,14 +31,14 @@ class AgentCatalog
     public function usedToday(SocialAccount $account, string $action): int
     {
         if ($account->platform->slug === 'twitter' && in_array($action, \App\Models\XEngagement::ACTIONS, true)) {
-            return \App\Models\AccountActionEvent::where('social_account_id', $account->id)->where('action', 'x.'.$action)->where('created_at', '>=', today())->count()
-                + \App\Models\XEngagement::where('social_account_id', $account->id)->where('action', $action)->where('status', 'queued')->where('requested_at', '>=', today())->count();
+            return \App\Models\AccountActionEvent::where('social_account_id', $account->id)->where('action', 'x.'.$action)->where('created_at', '>=', app(AccountActionBudget::class)->dayStart())->count()
+                + \App\Models\XEngagement::where('social_account_id', $account->id)->where('action', $action)->where('status', 'queued')->where('requested_at', '>=', app(AccountActionBudget::class)->dayStart())->count();
         }
 
         return BotActionLog::where('social_account_id', $account->id)
             ->where('action_type', $this->logType($action))
             ->where('success', true)
-            ->where('created_at', '>=', today())
+            ->where('created_at', '>=', app(AccountActionBudget::class)->dayStart())
             ->count();
     }
 

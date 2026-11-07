@@ -27,3 +27,18 @@ class XWatchTest(unittest.TestCase):
         r=watch.snapshot(c,dt.datetime.fromisoformat('2026-11-07T12:30:00+00:00'))
         self.assertEqual(r['accounts'][0]['account_id'],11);self.assertEqual(r['accounts'][0]['items'][0]['id'],99)
         self.assertIn('accounts/11/inbox?',c.api.call_args.args[1])
+
+    def test_le_plafond_quotidien_et_la_pause_bloquent_avant_lecture(self):
+        for extra in [{'daily':{'remaining':1}}, {'blocked':True}]:
+            c=Mock();a=self.account();a['cadence'].update(extra);c.api.return_value={'daytime':True,'accounts':[a]}
+            self.assertEqual(watch.snapshot(c,dt.datetime.fromisoformat('2026-11-07T12:30:00+00:00'))['state'],'idle');self.assertEqual(c.api.call_count,1)
+
+    def test_le_navigateur_reste_libre_autour_d_une_publication(self):
+        c=Mock();c.api.return_value={'daytime':True,'accounts':[self.account(120,'2026-11-07T12:33:00+00:00')]}
+        self.assertEqual(watch.snapshot(c,dt.datetime.fromisoformat('2026-11-07T12:30:00+00:00'))['state'],'idle');self.assertEqual(c.api.call_count,1)
+
+    def test_le_flux_reste_possible_sans_quota_de_reponse(self):
+        c=Mock();a=self.account();a['actions']['reply']['left']=0;a['actions']['feed.read']={'left':2}
+        c.api.return_value={'daytime':True,'accounts':[a]}
+        r=watch.snapshot(c,dt.datetime.fromisoformat('2026-11-07T12:30:00+00:00'))
+        self.assertEqual(r['state'],'work');self.assertEqual(r['accounts'][0]['items'],[]);self.assertEqual(c.api.call_count,1)

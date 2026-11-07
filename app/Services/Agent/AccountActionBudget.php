@@ -19,9 +19,16 @@ class AccountActionBudget
             if ($account->platform->slug === 'twitter' && str_starts_with($action, 'x.')) {
                 $key = substr($action, 2);
                 $setting = $account->agentActions()->where('action', $key)->first();
-                if ($setting && (clone $events)->where('action', $action)->where('created_at', '>=', today())->count() >= $setting->daily_limit) {
+                if ($setting && (clone $events)->where('action', $action)->where('created_at', '>=', $this->dayStart())->count() >= $setting->daily_limit) {
                     throw new BrowserException('Quota quotidien atteint : aucun geste effectué.');
                 }
+            }
+            $usage = $this->usage($account);
+            if (($usage['adaptation']['state']['cooldown_until'] ?? null) && \Illuminate\Support\Carbon::parse($usage['adaptation']['state']['cooldown_until'])->isFuture()) {
+                throw new BrowserException('Pause adaptative RS-Max : aucun geste effectué.');
+            }
+            if ($account->agent_daily_limit !== null && $usage['daily']['attempted'] >= $account->agent_daily_limit) {
+                throw new BrowserException('Plafond quotidien RS-Max atteint : aucun geste effectué.');
             }
             $last = (clone $events)->latest('id')->first();
             $used = (clone $events)->where('created_at', '>', now()->subHour())->count();
@@ -57,7 +64,10 @@ class AccountActionBudget
     public function finish(BrowserTask $task): void
     {
         $status = $task->status === 'done' ? (($task->result['confirmed'] ?? null) === true ? (($task->result['unchanged'] ?? false) ? 'unchanged' : 'confirmed') : 'completed') : $task->status;
-        AccountActionEvent::where('browser_task_id', $task->id)->update(['status' => $status, 'error' => $task->error, 'updated_at' => now()]);
+        AccountActionEvent::where('browser_task_id', $task->id)->where('status', '!=', $status)->update(['status' => $status, 'error' => $task->error, 'updated_at' => now()]);
+        if ($adjustment = app(AdaptiveAccountLimits::class)->evaluate($task->socialAccount)) {
+            \App\Jobs\NotifyAccountLimitAdjustment::dispatch($adjustment->id)->afterCommit();
+        }
     }
 
     public function usage(SocialAccount $account): array
@@ -73,10 +83,29 @@ class AccountActionBudget
             }
         }
 
-        return ['next_allowed_at' => $next?->isFuture() ? $next->toIso8601String() : null, 'blocked' => $account->agent_hourly_limit === 0,
+        $daily = AccountActionEvent::where('social_account_id', $account->id)->where('created_at', '>=', $this->dayStart())->count();
+        if ($account->agent_daily_limit !== null && $daily >= $account->agent_daily_limit) {
+            $reset = now('Europe/Lisbon')->addDay()->startOfDay()->setTimezone(config('app.timezone'));
+            if (! $next || $reset->greaterThan($next)) {
+                $next = $reset;
+            }
+        }
+        $cooldown = ($account->agent_adaptation['enabled'] ?? false) ? ($account->agent_adaptation_state['cooldown_until'] ?? null) : null;
+        if ($cooldown && \Illuminate\Support\Carbon::parse($cooldown)->isFuture() && (! $next || \Illuminate\Support\Carbon::parse($cooldown)->greaterThan($next))) {
+            $next = \Illuminate\Support\Carbon::parse($cooldown);
+        }
+
+        return ['daily' => ['timezone' => 'Europe/Lisbon', 'limit' => $account->agent_daily_limit, 'attempted' => $daily,
+            'remaining' => $account->agent_daily_limit === null ? null : max(0, $account->agent_daily_limit - $daily)],
+            'adaptation' => app(AdaptiveAccountLimits::class)->describe($account), 'next_allowed_at' => $next?->isFuture() ? $next->toIso8601String() : null, 'blocked' => $account->agent_hourly_limit === 0 || $account->agent_daily_limit === 0 || ($cooldown && \Illuminate\Support\Carbon::parse($cooldown)->isFuture()),
             'window' => 'rolling_60_minutes', 'limit' => $account->agent_hourly_limit, 'min_interval_seconds' => $account->agent_min_interval_seconds,
             'attempted' => $events->count(), 'confirmed' => $events->where('status', 'confirmed')->count(),
             'remaining' => $account->agent_hourly_limit === null ? null : max(0, $account->agent_hourly_limit - $events->count())];
+    }
+
+    public function dayStart(): \Illuminate\Support\Carbon
+    {
+        return now('Europe/Lisbon')->startOfDay()->setTimezone(config('app.timezone'));
     }
 
     public function history(SocialAccount $account): array

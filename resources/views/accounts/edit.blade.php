@@ -165,7 +165,33 @@
                         <input id="agent_min_interval_seconds" name="agent_min_interval_seconds" type="number" min="0" max="86400" required value="{{ old('agent_min_interval_seconds', $account->agent_min_interval_seconds) }}" class="w-full rounded-xl border-gray-300 text-sm">
                     </div>
                 </div>
-                <p class="text-sm text-gray-700 mb-5">Sur les 60 dernières minutes : {{ $agentCadence['attempted'] }} tentative(s), {{ $agentCadence['confirmed'] }} confirmée(s). Les échecs et incertitudes consomment aussi la cadence. Aucune hausse automatique.</p>
+                <p class="text-sm text-gray-700 mb-5">Sur les 60 dernières minutes : {{ $agentCadence['attempted'] }} tentative(s), {{ $agentCadence['confirmed'] }} confirmée(s). Les échecs et incertitudes consomment aussi la cadence. Hausse progressive seulement si l’adaptation est activée ci-dessous.</p>
+                <div class="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-5">
+                    <div>
+                        <label class="block text-sm font-medium mb-1" for="agent_daily_limit">Cadence actuelle par jour · Lisbonne</label>
+                        <input id="agent_daily_limit" name="agent_daily_limit" type="number" min="0" max="100000" value="{{ old('agent_daily_limit', $account->agent_daily_limit) }}" class="w-full rounded-xl border-gray-300 text-sm">
+                        <p class="text-xs text-gray-500 mt-1">{{ $agentCadence['daily']['attempted'] }} tentative(s) aujourd’hui. Vide : sans plafond quotidien supplémentaire.</p>
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium mb-1">Plafond autorisé par heure</label>
+                        <input name="agent_adaptation[max_hourly]" type="number" min="1" max="1000" value="{{ old('agent_adaptation.max_hourly', $account->agent_adaptation['max_hourly'] ?? '') }}" class="w-full rounded-xl border-gray-300 text-sm">
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium mb-1">Plafond autorisé par jour</label>
+                        <input name="agent_adaptation[max_daily]" type="number" min="2" max="100000" value="{{ old('agent_adaptation.max_daily', $account->agent_adaptation['max_daily'] ?? '') }}" class="w-full rounded-xl border-gray-300 text-sm">
+                    </div>
+                </div>
+                <input type="hidden" name="agent_adaptation[enabled]" value="0">
+                <label class="flex items-center gap-2 text-sm mb-2"><input type="checkbox" name="agent_adaptation[enabled]" value="1" @checked(old('agent_adaptation.enabled', $account->agent_adaptation['enabled'] ?? false)) class="rounded border-gray-300"> Adapter progressivement la cadence de ce compte</label>
+                <p class="text-xs text-gray-500 mb-4">Paliers de 25 % dans les plafonds autorisés, après 10 gestes confirmés et 30 minutes stables. Le délai minimal suit la cadence. Les quotas des réponses et likes activés suivent le plafond quotidien actuel ; les autres actions gardent leur réglage. Aucun volume à remplir.</p>
+                @if($account->agent_adaptation_state['cooldown_until'] ?? null)
+                    <p class="text-sm text-amber-700 mb-3">Pause jusqu’au {{ $account->agent_adaptation_state['cooldown_until'] }} · {{ $account->agent_adaptation_state['reason'] ?? '' }}</p>
+                @endif
+                <details class="mb-5 text-sm"><summary class="cursor-pointer">Historique des ajustements de ce compte</summary>
+                    @forelse($agentCadence['adaptation']['history'] as $adjustment)
+                        <p class="mt-2">{{ $adjustment['created_at'] }} · {{ $adjustment['old_hourly'] ?? '—' }} → {{ $adjustment['new_hourly'] ?? '—' }}/h · {{ $adjustment['old_daily'] ?? '—' }} → {{ $adjustment['new_daily'] ?? '—' }}/jour · {{ $adjustment['reason'] }}</p>
+                    @empty<p class="mt-2 text-gray-500">Aucun ajustement.</p>@endforelse
+                </details>
                 @foreach(['audience' => 'Audience cible', 'objective' => 'Objectif du compte'] as $field => $label)
                     <label for="agent_{{ $field }}" class="block text-sm font-medium mb-1">{{ $label }}</label>
                     <textarea id="agent_{{ $field }}" name="agent_strategy[{{ $field }}]" rows="2" maxlength="{{ $field === 'audience' ? 4000 : 2000 }}" class="w-full rounded-xl border-gray-300 text-sm mb-4">{{ old('agent_strategy.'.$field, $account->agent_strategy[$field] ?? '') }}</textarea>

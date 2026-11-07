@@ -20,22 +20,26 @@ def snapshot(client, now=None):
         if account.get('platform') != 'twitter' or account.get('driver') != 'browser' or account.get('session') != 'connected':
             continue
         actions, cadence = account.get('actions', {}), account.get('cadence', {})
-        if actions.get('reply', {}).get('left', 0) < 1 or actions.get('like', {}).get('left', 0) < 1 or cadence.get('blocked'):
+        can_reply = actions.get('reply', {}).get('enabled', True) and actions.get('reply', {}).get('left', 0) > 0 and actions.get('like', {}).get('enabled', True) and actions.get('like', {}).get('left', 0) > 0
+        can_feed = actions.get('feed.read', {}).get('left', 0) > 0 and any(actions.get(k, {}).get('enabled', True) and actions.get(k, {}).get('left', 0) > 0 for k in ('like', 'bookmark'))
+        if (not can_reply and not can_feed) or cadence.get('blocked'):
             continue
-        required = 2  # réponse + like automatique
+        required = 2 if can_reply else 1  # réponse et like, ou geste de flux
         upcoming = account.get('next_publication_at')
+        if upcoming and now - dt.timedelta(minutes=5) <= dt.datetime.fromisoformat(upcoming).astimezone(dt.timezone.utc) <= now + dt.timedelta(minutes=5):
+            continue  # laisser le navigateur libre autour de la publication
         if upcoming and dt.datetime.fromisoformat(upcoming).astimezone(dt.timezone.utc) <= now.astimezone(dt.timezone.utc) + dt.timedelta(hours=1):
             required += 1  # laisser une place à la publication planifiée
-        if cadence.get('remaining') is not None and cadence['remaining'] < required:
+        if any(left is not None and left < required for left in (cadence.get('remaining'), cadence.get('daily', {}).get('remaining'))):
             continue
         next_allowed = cadence.get('next_allowed_at')
         if next_allowed and dt.datetime.fromisoformat(next_allowed).astimezone(dt.timezone.utc) > now.astimezone(dt.timezone.utc):
             continue
-        inbox = client.api('GET', f"accounts/{account['id']}/inbox?" + urlencode({'order':'newest','limit':3,'status':'unanswered'}))
+        inbox = client.api('GET', f"accounts/{account['id']}/inbox?" + urlencode({'order':'newest','limit':5,'status':'unanswered'})) if can_reply else {}
         items = [{'id':i['id'], 'content':i['content'], 'post_url':i.get('post_url')} for i in inbox.get('items', []) if i.get('can_reply')]
-        if items or actions.get('feed.read', {}).get('left', 0) > 0:
+        if items or can_feed:
             work.append({'account_id':account['id'], 'strategy':account.get('strategy', {}), 'items':items,
-                         'persona':account.get('persona'), 'remaining':cadence.get('remaining'), 'next_publication_at':upcoming})
+                         'persona':account.get('persona'), 'remaining':cadence.get('remaining'), 'daily_remaining':cadence.get('daily', {}).get('remaining'), 'batch_max':min(5, max(1, (cadence.get('remaining') or 10)//2)), 'next_publication_at':upcoming})
     return {'state':'work','accounts':work} if work else {'state':'idle'}
 
 

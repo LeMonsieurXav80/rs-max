@@ -4,6 +4,7 @@ namespace App\Services\Agent;
 
 use App\Models\SocialAccount;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 
 class AccountStrategy
 {
@@ -21,7 +22,19 @@ class AccountStrategy
             }
             $request->merge(['agent_strategy' => $strategy]);
         }
+        foreach (['max_hourly', 'max_daily'] as $field) {
+            if ($request->exists('agent_adaptation.'.$field) && $request->input('agent_adaptation.'.$field) === null) {
+                $adaptation = $request->input('agent_adaptation', []);
+                unset($adaptation[$field]);
+                $request->merge(['agent_adaptation' => $adaptation]);
+            }
+        }
         $rules = ['agent_hourly_limit' => 'sometimes|nullable|integer|min:0|max:1000',
+            'agent_daily_limit' => 'sometimes|nullable|integer|min:0|max:100000',
+            'agent_adaptation' => 'sometimes|array:enabled,max_hourly,max_daily',
+            'agent_adaptation.enabled' => 'sometimes|boolean',
+            'agent_adaptation.max_hourly' => 'sometimes|integer|min:1|max:1000',
+            'agent_adaptation.max_daily' => 'sometimes|integer|min:2|max:100000',
             'agent_min_interval_seconds' => 'sometimes|integer|min:0|max:86400',
             'agent_strategy' => 'sometimes|array:audience,objective,hashtags,target_accounts,search_queries,exclusions,unfollow_after_days',
             'agent_strategy.unfollow_after_days' => 'sometimes|integer|min:1|max:365',
@@ -40,6 +53,40 @@ class AccountStrategy
         if (isset($data['agent_strategy'])) {
             $data['agent_strategy'] = array_replace($account->agent_strategy ?? [], $data['agent_strategy']);
         }
-        $account->update($data);
+        $token = $request->user()?->currentAccessToken();
+        $scoped = $token instanceof \Laravel\Sanctum\PersonalAccessToken && in_array('community-manager', (array) $token->abilities, true);
+        if ($scoped && (array_key_exists('agent_adaptation', $data) || (($account->agent_adaptation['enabled'] ?? false)
+            && array_intersect(array_keys($data), ['agent_hourly_limit', 'agent_daily_limit', 'agent_min_interval_seconds'])))) {
+            abort(403, 'La politique adaptative se règle avec un accès gestionnaire complet.');
+        }
+        $adaptive = app(AdaptiveAccountLimits::class);
+        DB::transaction(function () use ($data, $account, $adaptive) {
+            $account = SocialAccount::whereKey($account->id)->lockForUpdate()->firstOrFail();
+            $old = $adaptive->values($account);
+            $oldPolicy = $account->agent_adaptation;
+            if (isset($data['agent_adaptation'])) {
+                $data['agent_adaptation'] = array_replace($oldPolicy ?? [], $data['agent_adaptation']);
+            }
+            $account->fill($data);
+            $policy = $account->agent_adaptation ?? [];
+            if ($policy['enabled'] ?? false) {
+                if (empty($policy['max_hourly']) || empty($policy['max_daily']) || ! $account->agent_hourly_limit || ! $account->agent_daily_limit) {
+                    throw \Illuminate\Validation\ValidationException::withMessages(['agent_adaptation' => 'Indiquer une cadence actuelle positive et les deux plafonds pour activer l’adaptation.']);
+                }
+                $account->agent_hourly_limit = min($account->agent_hourly_limit, $policy['max_hourly']);
+                $account->agent_daily_limit = min($account->agent_daily_limit, $policy['max_daily']);
+                $account->agent_min_interval_seconds = $adaptive->interval($account->agent_hourly_limit);
+            }
+            if ($policy !== ($oldPolicy ?? []) || $old !== $adaptive->values($account)) {
+                $account->agent_adaptation_state = ($policy['enabled'] ?? false) ? ['enabled_at' => now()->toIso8601String(), 'window_started_at' => now()->toIso8601String()] : null;
+                $account->save();
+                if ($policy['enabled'] ?? false) {
+                    $adaptive->scaleActions($account);
+                }
+                $adaptive->record($account, $old, 'Réglage gestionnaire de la cadence et de ses plafonds.');
+            } else {
+                $account->save();
+            }
+        });
     }
 }
