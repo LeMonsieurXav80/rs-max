@@ -83,6 +83,8 @@
                     <p class="mt-5 text-xs {{ $account->browser_session_status === 'connected' ? 'text-green-600' : 'text-amber-600' }}">
                         @if($account->browser_session_status === 'connected')
                             Session enregistrée ({{ '@'.$account->browser_username }}), vérifiée {{ $account->browser_session_checked_at?->diffForHumans() }}.
+                        @elseif($account->browser_session_status === 'stored')
+                            Session reçue et enregistrée. Navigateur suspendu ou non configuré : aucun test TikTok effectué.
                         @else
                             Aucune session active. Ouvre TikTok Studio dans ton Chrome avec ce compte, puis lance « TikTok — envoyer la session au VPS » dans Companion.
                         @endif

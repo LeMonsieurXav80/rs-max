@@ -15,6 +15,8 @@ class TikTokSessionService
 
     public const EXPIRED = 'expired';
 
+    public const STORED = 'stored';
+
     public const REQUIRED_COOKIE = 'sessionid';
 
     private const STUDIO_URL = 'https://www.tiktok.com/tiktokstudio';
@@ -30,7 +32,13 @@ class TikTokSessionService
 
     public function store(SocialAccount $account, array $cookies, string $username): bool
     {
-        $account->update(['browser_session' => $cookies, 'browser_session_received_at' => now()]);
+        $account->update(['browser_session' => $cookies, 'browser_session_received_at' => now(),
+            'browser_session_status' => self::STORED, 'browser_username' => $username]);
+        // La réception reste disponible quand le routage est suspendu. Aucune
+        // installation ni visite TikTok ne doit servir à confirmer un simple stockage.
+        if (blank($account->browser_profile)) {
+            return false;
+        }
         $this->queue->run($account, 'session.apply', ['cookies' => $cookies], self::TASK_TIMEOUT);
 
         return $this->verify($account, $username);

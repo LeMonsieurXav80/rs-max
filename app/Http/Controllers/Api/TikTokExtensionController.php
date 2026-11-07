@@ -111,11 +111,16 @@ class TikTokExtensionController extends Controller
             return response()->json(['message' => $e->getMessage()], 502);
         }
 
+        $storedOnly = $account->browser_session_status === TikTokSessionService::STORED;
         BotActionLog::create(['social_account_id' => $account->id, 'action_type' => 'tiktok.session', 'source' => 'extension',
-            'target_uri' => 'https://www.tiktok.com/@'.$username, 'success' => $connected, 'performed_at' => now()]);
+            'target_uri' => 'https://www.tiktok.com/@'.$username, 'success' => $connected || $storedOnly,
+            'metadata' => ['browser_connected' => $connected], 'performed_at' => now()]);
 
-        return response()->json(['status' => $account->browser_session_status, 'username' => $account->browser_username],
-            $connected ? 200 : 409);
+        return response()->json(['status' => $account->browser_session_status, 'username' => $account->browser_username,
+            'stored' => true, 'browser_connected' => $connected,
+            'message' => $storedOnly ? 'Session enregistrée dans RS-Max ; navigateur suspendu ou non configuré. Aucun test TikTok effectué.'
+                : ($connected ? 'Session vérifiée sur le navigateur NAS.' : 'Session reçue, mais connexion navigateur non confirmée.')],
+            $connected || $storedOnly ? 200 : 409);
     }
 
     public function bind(Request $request): JsonResponse

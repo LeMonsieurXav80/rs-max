@@ -893,7 +893,7 @@ Le **Mode de connexion** de chaque compte X se règle dans sa fiche : API X, ou 
 
 ### `POST /api/extension/tiktok/session`
 
-Corps : `username` et `cookies` (domaine `tiktok.com`, avec `sessionid`). Les cookies sont chiffrés dans le compte, installés dans le Chromium du VPS, puis TikTok Studio doit y afficher ce même nom. Compte choisi : celui qui porte déjà ce nom, sinon la seule fiche TikTok libre. Réponse 200 : session active. 409 : Studio montre un autre compte, ou plusieurs fiches libres. 422 : pas de session, ou aucune fiche TikTok. 502 : navigateur du VPS injoignable.
+Corps : `username` et `cookies` (domaine `tiktok.com`, avec `sessionid`). Les cookies sont chiffrés dans le compte. Si un profil navigateur est configuré, ils sont installés sur le NAS puis Studio doit y afficher le même nom. Sans profil (routage suspendu ou non configuré), stockage seul : aucune installation ni visite TikTok. Compte choisi : celui qui porte déjà ce nom, sinon la seule fiche TikTok libre. Réponse 200 avec `status:connected`, `stored:true`, `browser_connected:true` après vérification ; ou `status:stored`, `stored:true`, `browser_connected:false` pour le stockage seul. Le champ `message` distingue ces cas. 409 : Studio montre un autre compte, ou plusieurs fiches libres. 422 : pas de session, ou aucune fiche TikTok. 502 : activation du navigateur indisponible ; la copie a pu être enregistrée auparavant.
 
 ### `GET /api/extension/tasks/next`
 
