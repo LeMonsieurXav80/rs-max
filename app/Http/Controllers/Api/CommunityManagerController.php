@@ -42,10 +42,20 @@ class CommunityManagerController extends Controller
         return response()->json(['daytime' => $this->window->isOpen(), 'window' => $this->window->specification(),
             'accounts' => $accounts->map(fn ($a) => ['id' => $a->id, 'name' => $a->name, 'platform' => $a->platform->slug,
                 'strategy' => $a->agent_strategy ?? (object) [], 'cadence' => app(\App\Services\Agent\AccountActionBudget::class)->usage($a),
+                'next_publication_at' => $this->nextPublicationAt($a),
                 'session' => $a->browser_session_status, 'driver' => $a->driver,
                 'followers_observation' => $a->browser_followers_observation, 'persona' => $a->persona?->is_active ? $a->persona->id : null,
                 'actions' => $this->catalog->forAccount($a)->where('enabled', true)->where('status', 'ready')
                     ->map(fn ($s) => ['kind' => $s['kind'], 'channel' => $s['channel'], 'left' => $s['left']])])->values()]);
+    }
+
+    private function nextPublicationAt(SocialAccount $account): ?string
+    {
+        $next = \App\Models\PostPlatform::join('posts', 'posts.id', '=', 'post_platform.post_id')
+            ->where('post_platform.social_account_id', $account->id)->where('post_platform.status', 'pending')
+            ->where('posts.status', 'scheduled')->where('posts.scheduled_at', '>=', now())->min('posts.scheduled_at');
+
+        return $next ? \Illuminate\Support\Carbon::parse($next)->toIso8601String() : null;
     }
 
     public function read(Request $request, TikTokFeedController $feed, BrowserTaskQueue $browser): JsonResponse

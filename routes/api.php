@@ -28,6 +28,7 @@ Route::middleware(['auth:sanctum', \App\Http\Middleware\CommunityManagerTokenSco
         Route::get('accounts/{id}/x/contacts', [\App\Http\Controllers\Api\XAgentController::class, 'contacts']);
         Route::post('x/engagements/{engagement}/execute', [\App\Http\Controllers\Api\XAgentController::class, 'execute']);
         Route::get('x/engagements/{engagement}', [\App\Http\Controllers\Api\XAgentController::class, 'result']);
+        Route::match(['get', 'post'], 'report', [\App\Http\Controllers\Api\CommunityManagerReportController::class, 'report']);
         Route::get('accounts', 'accounts');
         Route::post('read', 'read')->middleware('throttle:20,1');
         Route::get('snapshots/{id}', 'snapshot')->whereUuid('id');
@@ -172,6 +173,7 @@ Route::middleware(['auth:sanctum', \App\Http\Middleware\CommunityManagerTokenSco
     Route::get('/stock-photos/search', [MediaApiController::class, 'stockPhotosSearch']);
 
     // ── Agent : réponses compactes, voir docs/API.md ──
+    Route::match(['get', 'post'], '/agent/report', [\App\Http\Controllers\Api\CommunityManagerReportController::class, 'report']);
     Route::get('/agent/accounts', [\App\Http\Controllers\Api\AgentApiController::class, 'accounts']);
     Route::post('/agent/accounts/{id}/tiktok/read', [\App\Http\Controllers\Api\TikTokFeedController::class, 'read'])->whereNumber('id')->middleware('throttle:20,1');
     Route::post('/agent/accounts/{id}/tiktok/prepare', [\App\Http\Controllers\Api\TikTokFeedController::class, 'prepare'])->whereNumber('id')->middleware('throttle:20,1');

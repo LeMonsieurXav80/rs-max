@@ -133,7 +133,7 @@ class XAgentController extends Controller
             app(XEngagementService::class)->assertReplyAvailable($a, $result['target']['id']);
             abort_unless($a->persona?->is_active && filled($a->persona->system_prompt), 422, 'Persona actif requis.');
             abort_if(strtolower($result['target']['author']) === strtolower($a->browser_username), 422, 'Pas de réponse automatique au compte lui-même.');
-            abort_if(collect(array_slice($result['conversation'], 1))->contains(fn ($p) => strtolower($p['author']) === strtolower($a->browser_username)), 409, 'Le compte est déjà intervenu dans ce fil.');
+            abort_if(collect(array_merge(array_slice($result['conversation'], 1), $result['visible_replies'] ?? []))->contains(fn ($p) => strtolower($p['author']) === strtolower($a->browser_username)), 409, 'Le compte est déjà intervenu dans ce fil.');
             $hash = TikTokEngagement::personaHash($a);
         }
         $key = (string) Str::uuid();

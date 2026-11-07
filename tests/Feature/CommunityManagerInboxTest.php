@@ -55,4 +55,27 @@ class CommunityManagerInboxTest extends TestCase
         $this->postJson('/api/inbox/'.$i->id.'/reply', ['reply_text' => 'Bonjour !', 'dry_run' => false])->assertStatus(429);
         $this->assertNull($i->fresh()->replied_at);
     }
+
+    public function test_le_contexte_x_contient_la_publication_origine_et_refuse_un_fil_deja_traite(): void
+    {
+        $this->travelTo(\Illuminate\Support\Carbon::parse('2026-11-07T12:00:00Z'));
+        Http::preventStrayRequests();
+        $u = User::factory()->create(['role' => 'manager']);
+        $p = Persona::create(['name' => 'Voix associée', 'system_prompt' => 'Chaleureux', 'is_active' => true]);
+        $a = SocialAccount::create(['name' => 'Compte attribué', 'platform_id' => Platform::firstOrCreate(['slug' => 'twitter'], ['name' => 'X', 'auth_type' => 'oauth2'])->id,
+            'driver' => 'browser', 'browser_username' => 'owner', 'browser_profile' => 'nas-test', 'persona_id' => $p->id]);
+        $a->users()->attach($u, ['is_active' => true]);
+        Sanctum::actingAs($u);
+        $i = InboxItem::create(['social_account_id' => $a->id, 'platform_id' => $a->platform_id, 'type' => 'comment', 'external_id' => '987',
+            'author_username' => 'visitor', 'content' => 'Très jolie tenue', 'status' => 'unread']);
+        $data = ['target' => ['id' => '987', 'author' => 'visitor', 'text' => 'Très jolie tenue'], 'context_complete' => true,
+            'conversation' => [['author' => 'owner', 'text' => 'La robe du jour'], ['author' => 'visitor', 'text' => 'Très jolie tenue']], 'visible_replies' => []];
+        $queue = $this->mock(\App\Services\Browser\BrowserTaskQueue::class);
+        $queue->shouldReceive('run')->twice()->withArgs(fn ($account, $kind, $payload) => $account->id === $a->id && $kind === 'x.agent.read' && $payload['target_id'] === '987')
+            ->andReturn($data, array_replace($data, ['visible_replies' => [['author' => 'owner', 'text' => 'Merci !']]]));
+        $url = '/api/community-manager/inbox/'.$i->id.'/context';
+        $this->getJson($url)->assertOk()->assertJsonPath('conversation.0.text', 'La robe du jour')->assertJsonPath('persona.instructions', 'Chaleureux');
+        $this->getJson($url)->assertConflict();
+        Http::assertNothingSent();
+    }
 }

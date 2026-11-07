@@ -9,6 +9,7 @@ import sqlite3
 import subprocess
 import sys
 import time
+import uuid
 from urllib.parse import urlencode
 from zoneinfo import ZoneInfo
 
@@ -27,6 +28,7 @@ class Client:
         self.db = sqlite3.connect(db)
         self.db.execute('CREATE TABLE IF NOT EXISTS attempts(id INTEGER PRIMARY KEY, state TEXT NOT NULL, updated_at TEXT NOT NULL)')
         self.db.execute('CREATE TABLE IF NOT EXISTS x_attempts(id INTEGER PRIMARY KEY, state TEXT NOT NULL, updated_at TEXT NOT NULL)')
+        self.db.execute('CREATE TABLE IF NOT EXISTS reports(id TEXT PRIMARY KEY, state TEXT NOT NULL, updated_at TEXT NOT NULL)')
         self.db.commit()
 
     def api(self, method, path, data=None):
@@ -150,12 +152,21 @@ def main(argv=None):
     p = subs.add_parser('x-action'); p.add_argument('--account', type=int, required=True); p.add_argument('--action', choices=['like','unlike','bookmark','unbookmark','repost','unrepost','reply','quote','follow','unfollow'], required=True)
     p.add_argument('--snapshot', required=True); p.add_argument('--target'); p.add_argument('--context'); p.add_argument('--text-file', type=Path); p.add_argument('--commit', action='store_true')
     p = subs.add_parser('x-status'); p.add_argument('id', type=int)
-    p = subs.add_parser('x-contacts'); p.add_argument('--account', type=int, required=True); p.add_argument('--page', type=int, default=1)
+    p = subs.add_parser('x-contacts', 'report'); p.add_argument('--account', type=int, required=True); p.add_argument('--page', type=int, default=1)
+    p = subs.add_parser('report'); p.add_argument('--hours', type=int, default=24); p.add_argument('--note-file', type=Path); p.add_argument('--commit', action='store_true'); p.add_argument('--key')
     args = parser.parse_args(argv)
-    if args.command not in ('accounts', 'status', 'x-status', 'x-contacts') and not daytime():
+    if args.command not in ('accounts', 'status', 'x-status', 'x-contacts', 'report') and not daytime():
         print(json.dumps({'state': 'sleep', 'window': '06:00-22:00 Europe/Lisbon'})); return 0
     client = Client(json.loads(args.config.read_text()))
     if args.command == 'accounts': result = client.api('GET', 'accounts')
+    elif args.command == 'report':
+        key = args.key or str(uuid.uuid5(uuid.NAMESPACE_URL, client.config['base_url'] + '/report/' + dt.datetime.now(ZoneInfo('Europe/Lisbon')).date().isoformat() + '/' + str(args.hours) + '/' + (args.note_file.read_text() if args.note_file else '')))
+        if args.commit and client.db.execute('SELECT 1 FROM reports WHERE id=?', (key,)).fetchone():
+            result = {'status':'check_required', 'report_key':key, 'reason':'Rapport déjà demandé : aucun renvoi.'}
+        else:
+            if args.commit:
+                client.db.execute('INSERT INTO reports VALUES(?,?,?)', (key,'requested',dt.datetime.now(dt.timezone.utc).isoformat())); client.db.commit()
+            result = client.api('POST', 'report', {'hours':args.hours, 'note':args.note_file.read_text() if args.note_file else None, 'report_key':key, 'dry_run':not args.commit})
     elif args.command == 'x-read':
         data = {k: getattr(args, k) for k in ('action','query','url','handle','feed','limit','screens') if getattr(args,k) is not None}
         result = client.api('POST', f'accounts/{args.account}/x/read', data)

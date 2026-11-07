@@ -48,6 +48,21 @@ class InboxReplyService
                 return $this->conflict('Une réponse est déjà programmée pour ce message.');
             }
 
+            if ($account->usesBrowser() && $account->platform->slug === 'twitter' && ! $scheduled) {
+                try {
+                    \Illuminate\Support\Facades\DB::transaction(function () use ($account, $item) {
+                        \App\Models\SocialAccount::whereKey($account->id)->lockForUpdate()->firstOrFail();
+                        abort_if($item->reply_attempts > 0, 409, 'Un envoi X a déjà été tenté : vérifier sans renvoyer.');
+                        app(\App\Services\Agent\XEngagementService::class)->assertReplyAvailable($account, (string) $item->external_id, ignoreInbox: $item->id);
+                        $item->increment('reply_attempts');
+                        if (request()->attributes->get('community_manager')) {
+                            $item->update(['reply_activity_window' => app(\App\Services\Agent\CommunityManagerWindow::class)->specification()]);
+                        }
+                    });
+                } catch (\Throwable $e) {
+                    return $this->conflict($e->getMessage());
+                }
+            }
             $service = app(InboxSyncService::class)->getServiceForAccount($account);
 
             $event = null;

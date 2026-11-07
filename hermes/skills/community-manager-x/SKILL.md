@@ -3,7 +3,7 @@ name: community-manager-x
 description: Lire et traiter les conversations X et rechercher des échanges pertinents avec le persona et les limites des comptes RS-Max attribués, via Companion sur le NAS.
 ---
 
-Utiliser `scripts/community_manager.py --config community-manager.json` depuis le profil Hermès existant. Commencer par `accounts`, puis `strategy --account ID` : compte, réseau, session, persona, actions activées, audience, recherches, exclusions et quotas viennent de RS-Max. Aucun identifiant dans les consignes. Travailler entre 06 h et 22 h, heure de Lisbonne.
+Utiliser `scripts/community_manager.py --config community-manager.json` depuis le profil Hermès existant. Commencer par `accounts`, puis `strategy --account ID` : compte, réseau, session, persona, actions activées, audience, recherches, exclusions et quotas viennent de RS-Max. Aucun identifiant dans les consignes. Travailler entre 06 h et 22 h, heure de Lisbonne. Réserver deux gestes pour une réponse et son like ; si `next_publication_at` est à moins d’une heure, laisser la place à la publication planifiée.
 
 Pour les mentions déjà en messagerie : `inbox --account ID`, `reply-context ITEM`, rédiger avec le persona reçu et l’abonnement connecté, puis `reply ITEM --context UUID --text-file FICHIER --commit`. Ne pas appeler la génération IA RS-Max. Vérifier ensuite l’état dans `inbox` et le like automatique, qui est un second geste et attend la cadence.
 
@@ -19,4 +19,4 @@ Lire `x-status ID` après une coupure : l’intention locale et RS-Max interdise
 
 Les publications planifiées restent pilotées par RS-Max ; Companion les envoie sur le NAS, médias avant texte. Ne pas les recopier dans `x-action`. Aucun repli API X pour un compte en mode navigateur. Les articles attendent un parcours pris en charge. Le compteur d’abonnés arrondi est exposé comme tel, sans remplacer un relevé exact.
 
-Terminer le cycle par un rapport Telegram court : compte/réseau découverts, gestes tentés/confirmés/incertains, quota horaire, blocages et amélioration concrète. Aucune donnée de session ni jeton. Une alerte de session indique le compte, le réseau et le site ; ne pas multiplier les tentatives de connexion.
+Préparer `report --hours 24 [--note-file FICHIER]`, puis `report --hours 24 [--note-file FICHIER] --commit` pour le rapport Telegram demandé. La clé quotidienne stable et la mémoire locale empêchent un renvoi après coupure ; `--key UUID` distingue un autre cycle voulu. Inclure : compte/réseau découverts, gestes tentés/confirmés/incertains, quota horaire, blocages et amélioration concrète. Aucune donnée de session ni jeton. Une alerte de session indique le compte, le réseau et le site ; ne pas multiplier les tentatives de connexion.
