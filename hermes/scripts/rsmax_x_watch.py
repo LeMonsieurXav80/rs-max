@@ -30,7 +30,8 @@ def snapshot(client, now=None):
             continue  # laisser le navigateur libre autour de la publication
         if upcoming and dt.datetime.fromisoformat(upcoming).astimezone(dt.timezone.utc) <= now.astimezone(dt.timezone.utc) + dt.timedelta(hours=1):
             required += 1  # laisser une place à la publication planifiée
-        if any(left is not None and left < required for left in (cadence.get('remaining'), cadence.get('daily', {}).get('remaining'))):
+        daily_required = (2 if can_reply else 1) + (1 if upcoming else 0)
+        if (cadence.get('remaining') is not None and cadence['remaining'] < required) or (cadence.get('daily', {}).get('remaining') is not None and cadence['daily']['remaining'] < daily_required):
             continue
         next_allowed = cadence.get('next_allowed_at')
         if next_allowed and dt.datetime.fromisoformat(next_allowed).astimezone(dt.timezone.utc) > now.astimezone(dt.timezone.utc):
@@ -39,7 +40,7 @@ def snapshot(client, now=None):
         items = [{'id':i['id'], 'content':i['content'], 'post_url':i.get('post_url')} for i in inbox.get('items', []) if i.get('can_reply')]
         if items or can_feed:
             work.append({'account_id':account['id'], 'strategy':account.get('strategy', {}), 'items':items,
-                         'persona':account.get('persona'), 'remaining':cadence.get('remaining'), 'daily_remaining':cadence.get('daily', {}).get('remaining'), 'batch_max':min(5, max(1, (cadence.get('remaining') or 10)//2)), 'next_publication_at':upcoming})
+                         'persona':account.get('persona'), 'remaining':cadence.get('remaining'), 'daily_remaining':cadence.get('daily', {}).get('remaining'), 'batch_max':min(5, max(1, ((cadence.get('remaining') if cadence.get('remaining') is not None else 11) - (required - (2 if can_reply else 1)))//2), max(1, ((cadence.get('daily', {}).get('remaining') if cadence.get('daily', {}).get('remaining') is not None else 11) - (1 if upcoming else 0))//2)), 'next_publication_at':upcoming})
     return {'state':'work','accounts':work} if work else {'state':'idle'}
 
 

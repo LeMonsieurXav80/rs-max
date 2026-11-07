@@ -60,8 +60,11 @@ class AccountStrategy
             abort(403, 'La politique adaptative se règle avec un accès gestionnaire complet.');
         }
         $adaptive = app(AdaptiveAccountLimits::class);
-        DB::transaction(function () use ($data, $account, $adaptive) {
+        DB::transaction(function () use ($data, $account, $adaptive, $scoped) {
             $account = SocialAccount::whereKey($account->id)->lockForUpdate()->firstOrFail();
+            if ($scoped && (($account->agent_adaptation['enabled'] ?? false) && array_intersect(array_keys($data), ['agent_hourly_limit', 'agent_daily_limit', 'agent_min_interval_seconds']))) {
+                abort(403, 'La politique adaptative se règle avec un accès gestionnaire complet.');
+            }
             $old = $adaptive->values($account);
             $oldPolicy = $account->agent_adaptation;
             if (isset($data['agent_adaptation'])) {
@@ -83,7 +86,7 @@ class AccountStrategy
                 if ($policy['enabled'] ?? false) {
                     $adaptive->scaleActions($account);
                 }
-                $adaptive->record($account, $old, 'Réglage gestionnaire de la cadence et de ses plafonds.');
+                $adaptive->record($account, $old, 'Réglage gestionnaire de la cadence et de ses plafonds.', ['previous_policy' => $oldPolicy, 'policy' => $policy]);
             } else {
                 $account->save();
             }

@@ -42,3 +42,11 @@ class XWatchTest(unittest.TestCase):
         c.api.return_value={'daytime':True,'accounts':[a]}
         r=watch.snapshot(c,dt.datetime.fromisoformat('2026-11-07T12:30:00+00:00'))
         self.assertEqual(r['state'],'work');self.assertEqual(r['accounts'][0]['items'],[]);self.assertEqual(c.api.call_count,1)
+
+    def test_reserve_quotidienne_pour_publication_lointaine_et_lot_borne(self):
+        c=Mock();a=self.account(120,'2026-11-07T17:00:00+00:00');a['cadence']['daily']={'remaining':2};c.api.return_value={'daytime':True,'accounts':[a]}
+        now=dt.datetime.fromisoformat('2026-11-07T12:30:00+00:00')
+        self.assertEqual(watch.snapshot(c,now)['state'],'idle')
+        a['cadence']['daily']['remaining']=5
+        c.api.side_effect=[{'daytime':True,'accounts':[a]},{'items':[{'id':99,'content':'Merci','can_reply':True}]}]
+        self.assertEqual(watch.snapshot(c,now)['accounts'][0]['batch_max'],2)
