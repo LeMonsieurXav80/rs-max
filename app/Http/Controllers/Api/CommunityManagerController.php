@@ -85,6 +85,7 @@ class CommunityManagerController extends Controller
     {
         return ['snapshot_id' => $data['snapshot_id'], 'url' => $data['video']['url'],
             'caption' => Str::limit($data['video']['caption'] ?? '', 180), 'complete' => $data['complete'],
+            'accessible_complete' => $data['accessible_complete'] ?? $data['complete'],
             'observed' => $data['observed'] ?? count($data['comments']), 'expected' => $data['expected'] ?? null,
             'at_bottom' => $data['progress']['at_bottom'] ?? null,
             'sample' => array_map(fn ($c) => ['key' => $c['key'], 'text' => Str::limit($c['text'] ?? '', 120),

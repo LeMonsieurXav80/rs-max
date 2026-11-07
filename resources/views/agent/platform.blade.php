@@ -87,6 +87,9 @@
                         @if ($engagement->payload['text'] ?? null)
                             <p class="text-gray-800">{{ $engagement->payload['text'] }}</p>
                         @endif
+                        @if ($engagement->payload['discussion'] ?? null)
+                            <p class="text-xs text-gray-500">{{ $engagement->payload['discussion']['observed'] }} commentaires lus{{ isset($engagement->payload['discussion']['expected']) ? ' / '.$engagement->payload['discussion']['expected'].' annoncés par TikTok' : '' }}{{ $engagement->payload['discussion']['coverage'] === 'accessible' ? ' — tous les commentaires accessibles' : '' }}.</p>
+                        @endif
                         @if ($engagement->error)
                             <p class="text-amber-700">{{ $engagement->error }}</p>
                         @endif

@@ -93,13 +93,15 @@ class TikTokFeedController extends Controller
             $payload = ['username' => $account->browser_username, 'url' => $url, 'target' => $target];
             $personaHash = null;
             if ($data['action'] === 'video.comment') {
-                abort_unless($snapshot['complete'] === true, 422, 'Lecture des commentaires incomplète : poursuivre la lecture avant de rédiger.');
+                abort_unless($snapshot['complete'] === true || ($snapshot['accessible_complete'] ?? false) === true, 422, 'Lecture des commentaires accessibles incomplète : poursuivre la lecture avant de rédiger.');
                 abort_unless($account->persona?->is_active && filled($account->persona->system_prompt), 422, 'Persona actif du compte obligatoire.');
                 abort_if(collect($snapshot['comments'])->contains('author', $account->browser_username), 409, 'Ce compte a déjà commenté cette vidéo.');
                 $text = $generator->generate($account, $snapshot);
                 abort_unless(filled($text), 503, 'Génération indisponible.');
                 abort_if(strlen(mb_convert_encoding($text, 'UTF-16LE', 'UTF-8')) / 2 > 150, 422, 'Commentaire trop long : aucun texte tronqué.');
                 $payload['text'] = $text;
+                $payload['discussion'] = ['observed' => count($snapshot['comments']), 'expected' => $snapshot['expected'] ?? null,
+                    'coverage' => $snapshot['complete'] ? 'reported_total' : 'accessible'];
                 $personaHash = TikTokEngagement::personaHash($account);
             }
             $row = TikTokEngagement::create(['social_account_id' => $account->id, 'action' => $data['action'],
@@ -136,6 +138,7 @@ class TikTokFeedController extends Controller
     {
         return ['id' => $row->id, 'account_id' => $row->social_account_id, 'action' => $row->action, 'status' => $row->status,
             'url' => $row->payload['url'], 'text' => $row->payload['text'] ?? null,
+            'discussion' => $row->payload['discussion'] ?? null,
             'target' => $row->payload['target'] ?? null, 'result' => $row->result, 'error' => $row->error];
     }
 }

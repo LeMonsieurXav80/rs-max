@@ -102,6 +102,23 @@ class TikTokFeedTest extends TestCase
         Queue::assertNothingPushed();
     }
 
+    public function test_tous_les_commentaires_accessibles_suffisent_avec_nombre_reel_expose(): void
+    {
+        $this->complete = false;
+        $snapshot = $this->snapshot();
+        $cache = \Illuminate\Support\Facades\Cache::get('tiktok-video:'.$snapshot);
+        $cache['accessible_complete'] = true;
+        $cache['expected'] = 78;
+        \Illuminate\Support\Facades\Cache::put('tiktok-video:'.$snapshot, $cache, 3600);
+        $id = $this->prepare('video.comment', $snapshot);
+        $this->getJson('/api/tiktok/engagements/'.$id)->assertOk()
+            ->assertJsonPath('discussion.observed', 1)->assertJsonPath('discussion.expected', 78)->assertJsonPath('discussion.coverage', 'accessible');
+        Http::assertSent(fn ($r) => str_contains($r['messages'][1]['content'], '"observed":1')
+            && str_contains($r['messages'][1]['content'], '"expected":78')
+            && str_contains($r['messages'][0]['content'], 'Voix du compte associé'));
+        $this->actingAs(auth()->user())->get('/agent/tiktok')->assertOk()->assertSee('1 commentaires lus')->assertSee('78 annoncés par TikTok');
+    }
+
     public function test_persona_et_snapshot_du_meme_compte_obligatoires(): void
     {
         $snapshot = $this->snapshot();
