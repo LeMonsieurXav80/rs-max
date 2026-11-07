@@ -14,7 +14,16 @@ use App\Http\Controllers\Api\StatsApiController;
 use App\Http\Controllers\Api\ThreadApiController;
 use Illuminate\Support\Facades\Route;
 
-Route::middleware('auth:sanctum')->group(function () {
+Route::middleware(['auth:sanctum', \App\Http\Middleware\CommunityManagerTokenScope::class])->group(function () {
+    Route::prefix('community-manager')->controller(\App\Http\Controllers\Api\CommunityManagerController::class)->group(function () {
+        Route::get('accounts', 'accounts');
+        Route::post('read', 'read')->middleware('throttle:20,1');
+        Route::get('snapshots/{id}', 'snapshot')->whereUuid('id');
+        Route::post('prepare', 'prepare')->middleware('throttle:20,1');
+        Route::post('engagements/{engagement}/execute', 'execute')->middleware('throttle:20,1');
+        Route::get('engagements/{engagement}', 'result');
+        Route::post('upload/inspect', 'uploadInspect')->middleware('throttle:5,1');
+    });
     // ── Auth ──
     Route::get('/me', [ApiController::class, 'me']);
     Route::get('/accounts', [ApiController::class, 'accounts']);

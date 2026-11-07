@@ -1,0 +1,39 @@
+import datetime as dt
+import importlib.util
+from pathlib import Path
+import tempfile
+import unittest
+from unittest.mock import patch
+
+spec = importlib.util.spec_from_file_location('community_manager', Path(__file__).resolve().parents[1] / 'community_manager.py')
+cm = importlib.util.module_from_spec(spec); spec.loader.exec_module(cm)
+
+class CommunityManagerTest(unittest.TestCase):
+    def test_night_and_summer_boundary(self):
+        self.assertTrue(cm.daytime(dt.datetime.fromisoformat('2026-07-07T15:59:00+00:00')))
+        self.assertFalse(cm.daytime(dt.datetime.fromisoformat('2026-07-07T16:00:00+00:00')))
+        self.assertFalse(cm.daytime(dt.datetime.fromisoformat('2026-11-07T23:00:00+00:00')))
+
+    def test_timeout_after_intent_never_sends_again(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            client = cm.Client({'state_path': tmp+'/state.sqlite'})
+            replies = [{'id': 42, 'status': 'prepared'}, RuntimeError('connexion coupée')]
+            def call(*args):
+                item=replies.pop(0)
+                if isinstance(item,Exception): raise item
+                return item
+            with patch.object(cm,'daytime',return_value=True), patch.object(client,'api',side_effect=call):
+                with self.assertRaises(RuntimeError): client.action(63,'video.like','read-id',True)
+            with patch.object(cm,'daytime',return_value=True), patch.object(client,'api',return_value={'id':42,'status':'prepared'}) as api:
+                result=client.action(63,'video.like','read-id',True)
+                self.assertEqual(result['status'],'check_required')
+                self.assertEqual(api.call_count,1)
+
+    def test_no_social_request_at_night(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            client=cm.Client({'state_path':tmp+'/state.sqlite'})
+            with patch.object(cm,'daytime',return_value=False), patch.object(client,'api') as api:
+                self.assertEqual(client.scan()['state'],'sleep')
+                api.assert_not_called()
+
+if __name__=='__main__': unittest.main()

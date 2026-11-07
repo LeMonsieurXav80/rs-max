@@ -4,10 +4,11 @@ namespace App\Services\Browser;
 
 use App\Models\BrowserTask;
 use App\Models\SocialAccount;
+use App\Services\Agent\CommunityManagerWindow;
 use Illuminate\Support\Facades\DB;
 
 /**
- * File d'ordres pour Companion, qui tourne dans le Chromium du VPS. RS-Max écrit
+ * File d'ordres pour Companion, qui tourne dans le Chromium du NAS. RS-Max écrit
  * une tâche et attend son résultat : un profil exécute une tâche à la fois.
  */
 class BrowserTaskQueue
@@ -17,6 +18,13 @@ class BrowserTaskQueue
     /** @return array<string, mixed> Résultat de la tâche. */
     public function run(SocialAccount $account, string $kind, array $payload, int $timeout = 120): array
     {
+        $window = app(CommunityManagerWindow::class);
+        if (app()->bound('request') && request()->attributes->get('community_manager')) {
+            $payload['activity_window'] = $window->specification();
+        }
+        if (isset($payload['activity_window'])) {
+            $window->assertOpen($payload['activity_window']);
+        }
         if (blank($account->browser_profile)) {
             throw new BrowserException('Aucun profil navigateur pour ce compte.');
         }
@@ -33,7 +41,7 @@ class BrowserTaskQueue
         while (microtime(true) < $deadline) {
             $task->refresh();
 
-            if (in_array($task->status, [BrowserTask::DONE, BrowserTask::FAILED, BrowserTask::UNCERTAIN], true)) {
+            if (in_array($task->status, [BrowserTask::DONE, BrowserTask::FAILED, BrowserTask::UNCERTAIN, BrowserTask::CANCELLED], true)) {
                 return $this->outcome($task);
             }
 
@@ -51,12 +59,25 @@ class BrowserTaskQueue
                 return null;
             }
 
-            $task = BrowserTask::where('profile', $profile)->where('status', BrowserTask::PENDING)
-                ->orderBy('id')->lockForUpdate()->first();
+            for ($skipped = 0; $skipped < 50; $skipped++) {
+                $task = BrowserTask::where('profile', $profile)->where('status', BrowserTask::PENDING)
+                    ->orderBy('id')->lockForUpdate()->first();
+                if (! $task) {
+                    return null;
+                }
+                $window = $task->payload['activity_window'] ?? null;
+                if ($window !== null && ! app(CommunityManagerWindow::class)->isOpen($window)) {
+                    $task->update(['status' => BrowserTask::CANCELLED, 'finished_at' => now(),
+                        'error' => 'Plage de journée Community Manager terminée : tâche annulée sans exécution.']);
 
-            $task?->update(['status' => BrowserTask::RUNNING, 'claimed_at' => now()]);
+                    continue;
+                }
+                $task->update(['status' => BrowserTask::RUNNING, 'claimed_at' => now()]);
 
-            return $task;
+                return $task;
+            }
+
+            return null;
         });
     }
 
@@ -80,7 +101,7 @@ class BrowserTaskQueue
             ->update(['status' => BrowserTask::CANCELLED, 'finished_at' => now()]);
 
         if ($cancelled) {
-            throw new BrowserException('Navigateur du VPS injoignable : tâche annulée, rien n’a été fait.');
+            throw new BrowserException('Navigateur du NAS injoignable : tâche annulée, rien n’a été fait.');
         }
 
         BrowserTask::whereKey($task->id)->where('status', BrowserTask::RUNNING)

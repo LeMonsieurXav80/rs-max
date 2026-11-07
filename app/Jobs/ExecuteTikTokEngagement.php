@@ -5,6 +5,7 @@ namespace App\Jobs;
 use App\Models\BotActionLog;
 use App\Models\TikTokEngagement;
 use App\Services\Agent\AgentCatalog;
+use App\Services\Agent\CommunityManagerWindow;
 use App\Services\Browser\BrowserException;
 use App\Services\Browser\BrowserTaskQueue;
 use App\Services\Browser\BrowserUncertainException;
@@ -36,6 +37,7 @@ class ExecuteTikTokEngagement implements ShouldQueue
                 $state = $catalog->forAccount($account)->get($row->action);
                 if (! $state || ! $state['enabled'] || $state['left'] < 1 || ! $account->usesBrowser()
                     || $account->browser_session_status !== 'connected' || $account->browser_username !== $row->payload['username']
+                    || (isset($row->payload['activity_window']) && ! app(CommunityManagerWindow::class)->isOpen($row->payload['activity_window']))
                     || ($row->persona_hash && (! $account->persona?->is_active || $row->persona_hash !== TikTokEngagement::personaHash($account)))) {
                     $row->update(['status' => 'failed', 'error' => 'Compte, quota ou persona modifié : aucun geste.']);
 
