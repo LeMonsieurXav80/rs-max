@@ -43,7 +43,10 @@ class Client:
         if p.returncode:
             raise RuntimeError('RS-Max injoignable : aucun renvoi automatique.')
         body, code = p.stdout.rsplit('\n', 1)
-        result = json.loads(body)
+        try:
+            result = json.loads(body)
+        except ValueError:
+            raise RuntimeError('HTTP ' + code + ': réponse non JSON. Consulter l’état enregistré, sans renvoyer une écriture.') from None
         if not 200 <= int(code) < 300:
             raise RuntimeError('HTTP ' + code + ': ' + str(result.get('message', 'requête refusée'))[:240])
         return result
@@ -134,6 +137,8 @@ def main(argv=None):
     subs.add_parser('accounts')
     p = subs.add_parser('strategy'); p.add_argument('--account', type=int, required=True); p.add_argument('--update-file', type=Path)
     p = subs.add_parser('inbox'); p.add_argument('--account', type=int, required=True); p.add_argument('--status', choices=['all','unanswered','replied','reply_failed'], default='unanswered')
+    p = subs.add_parser('reply-status'); p.add_argument('id',type=int)
+    p = subs.add_parser('reconcile-reply'); p.add_argument('id',type=int); p.add_argument('--snapshot',required=True); p.add_argument('--commit',action='store_true')
     p = subs.add_parser('reply-context'); p.add_argument('id', type=int)
     p = subs.add_parser('reply'); p.add_argument('id', type=int); p.add_argument('--context', required=True); p.add_argument('--text-file', type=Path, required=True); p.add_argument('--commit', action='store_true')
     scan = subs.add_parser('scan'); scan.add_argument('--account', type=int); scan.add_argument('--limit', type=int, choices=range(1, 6), default=3)
@@ -152,10 +157,10 @@ def main(argv=None):
     p = subs.add_parser('x-action'); p.add_argument('--account', type=int, required=True); p.add_argument('--action', choices=['like','unlike','bookmark','unbookmark','repost','unrepost','reply','quote','follow','unfollow'], required=True)
     p.add_argument('--snapshot', required=True); p.add_argument('--target'); p.add_argument('--context'); p.add_argument('--text-file', type=Path); p.add_argument('--commit', action='store_true')
     p = subs.add_parser('x-status'); p.add_argument('id', type=int)
-    p = subs.add_parser('x-contacts', 'report'); p.add_argument('--account', type=int, required=True); p.add_argument('--page', type=int, default=1)
+    p = subs.add_parser('x-contacts'); p.add_argument('--account', type=int, required=True); p.add_argument('--page', type=int, default=1)
     p = subs.add_parser('report'); p.add_argument('--hours', type=int, default=24); p.add_argument('--note-file', type=Path); p.add_argument('--commit', action='store_true'); p.add_argument('--key')
     args = parser.parse_args(argv)
-    if args.command not in ('accounts', 'status', 'x-status', 'x-contacts', 'report') and not daytime():
+    if args.command not in ('accounts', 'status', 'x-status', 'x-contacts', 'report', 'reply-status') and not daytime():
         print(json.dumps({'state': 'sleep', 'window': '06:00-22:00 Europe/Lisbon'})); return 0
     client = Client(json.loads(args.config.read_text()))
     if args.command == 'accounts': result = client.api('GET', 'accounts')
@@ -177,6 +182,8 @@ def main(argv=None):
     elif args.command == 'x-contacts': result = client.api('GET', f'accounts/{args.account}/x/contacts?' + urlencode({'page':args.page}))
     elif args.command == 'strategy': result = client.api('PATCH' if args.update_file else 'GET', f'accounts/{args.account}/strategy', json.loads(args.update_file.read_text()) if args.update_file else None)
     elif args.command == 'inbox': result = client.api('GET', f'accounts/{args.account}/inbox?' + urlencode({'order':'newest','limit':10,'status':args.status}))
+    elif args.command == 'reply-status': result = client.api('GET', f'inbox/{args.id}')
+    elif args.command == 'reconcile-reply': result = client.api('POST', f'inbox/{args.id}/reconcile', {'snapshot_id':args.snapshot,'dry_run':not args.commit})
     elif args.command == 'reply-context': result = client.api('GET', f'inbox/{args.id}/context')
     elif args.command == 'reply':
         key = -args.id  # espace distinct des engagements, intention avant HTTP

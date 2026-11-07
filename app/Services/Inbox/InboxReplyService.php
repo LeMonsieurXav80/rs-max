@@ -12,7 +12,7 @@ class InboxReplyService
 {
     public function submit(InboxItem $item, string $text): array
     {
-        if ($item->platform->slug === 'tiktok' && ! ($item->replied_at || $item->reply_external_id || $item->status === 'replied')) {
+        if (($item->platform->slug === 'tiktok' || ($item->platform->slug === 'twitter' && $item->socialAccount->usesBrowser())) && ! ($item->replied_at || $item->reply_external_id || $item->status === 'replied')) {
             return $this->schedule($item, $text, now());
         }
 
@@ -114,6 +114,10 @@ class InboxReplyService
                 }
             }
 
+            if (($result['uncertain'] ?? false) === true) {
+                $result['status_code'] = 409;
+            }
+
             return $result;
         });
     }
@@ -129,8 +133,8 @@ class InboxReplyService
                     ? ['success' => true, 'scheduled_at' => $item->reply_scheduled_at->toIso8601String(), 'already_scheduled' => true]
                     : $this->conflict('Une réponse est déjà programmée pour ce message.');
             }
-            if ($item->platform->slug === 'tiktok' && ($item->reply_attempts > 0 || ! in_array($item->status, ['unread', 'read'], true))) {
-                return $this->conflict('Ce commentaire TikTok ne peut plus être programmé. Vérifiez son état dans Studio.');
+            if (($item->platform->slug === 'tiktok' || ($item->platform->slug === 'twitter' && $item->socialAccount->usesBrowser())) && ($item->reply_attempts > 0 || ! in_array($item->status, ['unread', 'read'], true))) {
+                return $this->conflict('Ce commentaire ne peut plus être programmé. Vérifiez son état sur le réseau.');
             }
 
             $item->update([

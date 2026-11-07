@@ -3,7 +3,7 @@ name: community-manager-x
 description: Lire et traiter les conversations X et rechercher des échanges pertinents avec le persona et les limites des comptes RS-Max attribués, via Companion sur le NAS.
 ---
 
-Utiliser `scripts/community_manager.py --config community-manager.json` depuis le profil Hermès existant. Commencer par `accounts`, puis `strategy --account ID` : compte, réseau, session, persona, actions activées, audience, recherches, exclusions et quotas viennent de RS-Max. Aucun identifiant dans les consignes. Travailler entre 06 h et 22 h, heure de Lisbonne. Réserver deux gestes pour une réponse et son like ; si `next_publication_at` est à moins d’une heure, laisser la place à la publication planifiée.
+Utiliser `scripts/community_manager.py --config community-manager.json` depuis le profil Hermès existant. Commencer par `accounts`, puis `strategy --account ID` : compte, réseau, session, persona, actions activées, audience, recherches, exclusions et quotas viennent de RS-Max. Aucun identifiant dans les consignes. Travailler entre 06 h et 22 h, heure de Lisbonne. Réserver deux gestes pour une réponse et son like ; si `next_publication_at` est à moins d’une heure, garder au moins un geste disponible pour elle.
 
 Pour les mentions déjà en messagerie : `inbox --account ID`, `reply-context ITEM`, rédiger avec le persona reçu et l’abonnement connecté, puis `reply ITEM --context UUID --text-file FICHIER --commit`. Ne pas appeler la génération IA RS-Max. Vérifier ensuite l’état dans `inbox` et le like automatique, qui est un second geste et attend la cadence.
 
@@ -13,7 +13,7 @@ Avant une réponse hors inbox, lire `thread.read --url URL`, puis `x-context --a
 
 `x-action --account ID --action ACTION --snapshot UUID [--target POST_ID] [--context UUID --text-file FICHIER]` prépare seulement ; `--commit` demande l’exécution. Actions : like/unlike, bookmark/unbookmark, reply, quote, repost/unrepost, follow/unfollow. N’exécuter que des gestes utiles au regard de la mission et des actions activées, sans recherche de volume. La préparation est aussi visible dans RS-Max pour validation humaine.
 
-Lire `x-status ID` après une coupure : l’intention locale et RS-Max interdisent un second envoi. Seuls `confirmed:true` et `proof:after_reload` prouvent un geste. `unchanged:true` signifie qu’aucun nouveau geste n’a été fait. Un like présent reste présent. Une action incertaine exige une vérification, jamais un retry.
+Lire `x-status ID` après une coupure : l’intention locale et RS-Max interdisent un second envoi. Seuls `confirmed:true` et `proof:after_reload` prouvent un geste. `unchanged:true` signifie qu’aucun nouveau geste n’a été fait. Un like présent reste présent. Une réponse inbox acceptée est programmée : suivre `reply-status ITEM` jusqu’à la réponse et au like confirmés. Si une réponse incertaine est retrouvée, lire son URL propre avec `x-read --action thread.read`, puis préparer `reconcile-reply ITEM --snapshot UUID`. Seul `--commit` rapproche cette preuve et déclenche le like ; aucune réponse n’est renvoyée. Une action incertaine exige une vérification, jamais un retry.
 
 `x-contacts --account ID` conserve découvertes, dates de suivi et retours. Ne désuivre que les personnes suivies par l’agent, après le délai réglé et deux observations espacées d’au moins 15 minutes, sans indicateur de retour. Une absence ambiguë reste inconnue. Ne pas inventer la date d’un suivi déjà présent.
 

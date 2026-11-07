@@ -65,4 +65,12 @@ class CommunityManagerTest(unittest.TestCase):
                 self.assertEqual(api.call_count,1)
             client.db.close()
 
+    def test_le_client_demarre_et_expose_ses_commandes_sans_configuration(self):
+        import subprocess
+        import sys
+        result = subprocess.run([sys.executable, str(Path(cm.__file__)), '--help'], capture_output=True, text=True)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn('x-read', result.stdout)
+        self.assertIn('report', result.stdout)
+
 if __name__=='__main__': unittest.main()

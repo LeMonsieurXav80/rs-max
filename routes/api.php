@@ -20,6 +20,8 @@ Route::middleware(['auth:sanctum', \App\Http\Middleware\CommunityManagerTokenSco
         Route::get('accounts/{id}/strategy', [\App\Http\Controllers\Api\AccountStrategyController::class, 'show']);
         Route::patch('accounts/{id}/strategy', [\App\Http\Controllers\Api\AccountStrategyController::class, 'update']);
         Route::get('accounts/{id}/inbox', [\App\Http\Controllers\Api\CommunityManagerInboxController::class, 'index']);
+        Route::get('inbox/{inboxItem}', [\App\Http\Controllers\Api\CommunityManagerInboxController::class, 'status']);
+        Route::post('inbox/{inboxItem}/reconcile', [\App\Http\Controllers\Api\CommunityManagerInboxController::class, 'reconcile']);
         Route::get('inbox/{inboxItem}/context', [\App\Http\Controllers\Api\CommunityManagerInboxController::class, 'context']);
         Route::post('inbox/{inboxItem}/reply', [\App\Http\Controllers\Api\CommunityManagerInboxController::class, 'reply']);
         Route::post('accounts/{id}/x/read', [\App\Http\Controllers\Api\XAgentController::class, 'read']);

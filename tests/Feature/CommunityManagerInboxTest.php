@@ -74,7 +74,11 @@ class CommunityManagerInboxTest extends TestCase
         $queue->shouldReceive('run')->twice()->withArgs(fn ($account, $kind, $payload) => $account->id === $a->id && $kind === 'x.agent.read' && $payload['target_id'] === '987')
             ->andReturn($data, array_replace($data, ['visible_replies' => [['author' => 'owner', 'text' => 'Merci !']]]));
         $url = '/api/community-manager/inbox/'.$i->id.'/context';
-        $this->getJson($url)->assertOk()->assertJsonPath('conversation.0.text', 'La robe du jour')->assertJsonPath('persona.instructions', 'Chaleureux');
+        $context = $this->getJson($url)->assertOk()->assertJsonPath('conversation.0.text', 'La robe du jour')->assertJsonPath('persona.instructions', 'Chaleureux')->json('context_id');
+        $this->postJson('/api/community-manager/inbox/'.$i->id.'/reply', ['context_id' => $context, 'reply_text' => 'Merci à vous !', 'dry_run' => false])->assertAccepted();
+        $this->assertNotNull($i->fresh()->reply_scheduled_at);
+        $this->assertSame(0, (int) $i->fresh()->reply_attempts);
+        $this->assertSame(0, \App\Models\AccountActionEvent::count());
         $this->getJson($url)->assertConflict();
         Http::assertNothingSent();
     }

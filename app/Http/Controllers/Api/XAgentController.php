@@ -76,7 +76,7 @@ class XAgentController extends Controller
         }
         abort_unless(is_array($result) && strlen(json_encode($result, JSON_THROW_ON_ERROR)) < 150000, 502, 'Lecture X invalide ou trop volumineuse.');
         $snapshot = (string) Str::uuid();
-        Cache::put('x-agent-snapshot:'.$snapshot, ['account_id' => $a->id, 'result' => $result, 'source' => $payload], now()->addHour());
+        Cache::put('x-agent-snapshot:'.$snapshot, ['account_id' => $a->id, 'result' => $result, 'source' => $payload, 'read_at' => now()->toIso8601String()], now()->addHour());
         $profiles = isset($result['profile']) ? [$result['profile']] : array_map(fn ($p) => ['handle' => $p['author'], 'name' => $p['name'] ?? null], $result['items'] ?? []);
         foreach ($profiles as $profile) {
             if (! preg_match('/^[a-zA-Z0-9_]{1,15}$/', $profile['handle'] ?? '')) {
