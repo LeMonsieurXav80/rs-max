@@ -50,3 +50,10 @@ class XWatchTest(unittest.TestCase):
         a['cadence']['daily']['remaining']=5
         c.api.side_effect=[{'daytime':True,'accounts':[a]},{'items':[{'id':99,'content':'Merci','can_reply':True}]}]
         self.assertEqual(watch.snapshot(c,now)['accounts'][0]['batch_max'],2)
+
+    def test_un_stock_identique_reveille_le_cycle_suivant_et_la_file_exclut_les_ecartes(self):
+        c=Mock();c.api.side_effect=[{'daytime':True,'accounts':[self.account()]},{'items':[{'id':99,'content':'Merci','can_reply':True}]}, {'daytime':True,'accounts':[self.account()]},{'items':[{'id':99,'content':'Merci','can_reply':True}]}]
+        first=watch.snapshot(c,dt.datetime.fromisoformat('2026-11-07T12:30:00+00:00'))
+        second=watch.snapshot(c,dt.datetime.fromisoformat('2026-11-07T12:35:00+00:00'))
+        self.assertNotEqual(first['cycle_key'],second['cycle_key']);self.assertEqual(first['accounts'],second['accounts'])
+        self.assertIn('agent_queue=1',c.api.call_args.args[1])

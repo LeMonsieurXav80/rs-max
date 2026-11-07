@@ -35,11 +35,16 @@ class InboxItem extends Model
         'reply_scheduled_at',
         'reply_attempts',
         'reply_activity_window',
+        'agent_review_reason',
+        'agent_reviewed_at',
+        'agent_retry_at',
     ];
 
     protected function casts(): array
     {
         return [
+            'agent_reviewed_at' => 'datetime',
+            'agent_retry_at' => 'datetime',
             'posted_at' => 'datetime',
             'replied_at' => 'datetime',
             'liked_at' => 'datetime',

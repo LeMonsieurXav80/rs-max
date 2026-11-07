@@ -31,6 +31,9 @@ class InboxApiController extends Controller
             $query->where('status', $status);
         }
 
+        if ($request->attributes->get('cm_agent_queue')) {
+            $query->where(fn ($q) => $q->whereNull('agent_retry_at')->orWhere('agent_retry_at', '<=', now()));
+        }
         $items = $query->paginate($filters['limit'] ?? 20);
         $writable = $request->user()->connectedSocialAccounts()->pluck('social_accounts.id')->all();
 
@@ -337,6 +340,7 @@ class InboxApiController extends Controller
             'reply_external_id' => $item->reply_external_id,
             'replied_at' => $item->replied_at?->toIso8601String(),
             'reply_scheduled_at' => $item->reply_scheduled_at?->toIso8601String(),
+            'agent_review' => ['reason' => $item->agent_review_reason, 'retry_at' => $item->agent_retry_at?->toIso8601String()],
             'can_reply' => $writable && $this->isUnanswered($item)
                 && (! $item->author_external_id || $item->author_external_id !== $account->platform_account_id),
         ];

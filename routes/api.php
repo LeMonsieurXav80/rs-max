@@ -22,6 +22,7 @@ Route::middleware(['auth:sanctum', \App\Http\Middleware\CommunityManagerTokenSco
         Route::get('accounts/{id}/inbox', [\App\Http\Controllers\Api\CommunityManagerInboxController::class, 'index']);
         Route::get('inbox/{inboxItem}', [\App\Http\Controllers\Api\CommunityManagerInboxController::class, 'status']);
         Route::post('inbox/{inboxItem}/reconcile', [\App\Http\Controllers\Api\CommunityManagerInboxController::class, 'reconcile']);
+        Route::post('inbox/{inboxItem}/review', [\App\Http\Controllers\Api\CommunityManagerInboxController::class, 'review']);
         Route::get('inbox/{inboxItem}/context', [\App\Http\Controllers\Api\CommunityManagerInboxController::class, 'context']);
         Route::post('inbox/{inboxItem}/reply', [\App\Http\Controllers\Api\CommunityManagerInboxController::class, 'reply']);
         Route::post('accounts/{id}/x/read', [\App\Http\Controllers\Api\XAgentController::class, 'read']);

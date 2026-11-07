@@ -81,4 +81,31 @@ class CommunityManagerTest(unittest.TestCase):
                 self.assertEqual(cm.main(['--config',str(config),'logs','--account','11','--status','uncertain','--before','99']),0)
                 api.assert_called_once_with('GET','logs?account_id=11&status=uncertain&limit=20&before_id=99')
 
+    def test_reponse_directe_sans_fichier_et_commit_atomique(self):
+        import json,io,contextlib,sqlite3
+        with tempfile.TemporaryDirectory() as tmp:
+            config=Path(tmp)/'config.json';config.write_text(json.dumps({'state_path':tmp+'/state.sqlite'}))
+            with patch.object(cm,'daytime',return_value=True),patch.object(cm.Client,'api',return_value={'queued':True}) as api,contextlib.redirect_stdout(io.StringIO()):
+                self.assertEqual(cm.main(['--config',str(config),'reply','11','--context','ctx','--text','Merci 🖤','--commit']),0)
+                api.assert_called_once_with('POST','inbox/11/reply',{'context_id':'ctx','reply_text':'Merci 🖤','dry_run':False})
+            with sqlite3.connect(tmp+'/state.sqlite') as db:self.assertEqual(db.execute('SELECT state FROM attempts WHERE id=-11').fetchone()[0],'execution_requested')
+
+    def test_fil_deja_traite_est_un_resultat_de_selection_et_non_un_arret(self):
+        import json,io,contextlib
+        with tempfile.TemporaryDirectory() as tmp:
+            config=Path(tmp)/'config.json';config.write_text(json.dumps({'state_path':tmp+'/state.sqlite'}))
+            output=io.StringIO()
+            with patch.object(cm,'daytime',return_value=True),patch.object(cm.Client,'api',side_effect=cm.ApiError(409,{'skip_item':True,'review_reason':'already_handled'})),contextlib.redirect_stdout(output):
+                self.assertEqual(cm.main(['--config',str(config),'reply-context','11']),0)
+            self.assertTrue(json.loads(output.getvalue())['skip_item'])
+
+    def test_bilan_direct_conserve_sa_note_sans_commande_de_creation_de_fichier(self):
+        import json,io,contextlib
+        with tempfile.TemporaryDirectory() as tmp:
+            config=Path(tmp)/'config.json';config.write_text(json.dumps({'state_path':tmp+'/state.sqlite','base_url':'https://example.test'}))
+            with patch.dict(cm.os.environ,{'HERMES_HOME':tmp}),patch.object(cm.Client,'api',return_value={'delivery':{'sent':True}}) as api,contextlib.redirect_stdout(io.StringIO()):
+                self.assertEqual(cm.main(['--config',str(config),'report','--note','Deux gestes confirmés.','--commit']),0)
+                self.assertEqual(api.call_args.args[2]['note'],'Deux gestes confirmés.')
+            self.assertEqual((Path(tmp)/'workspace/last-x-cycle-note.txt').read_text(),'Deux gestes confirmés.')
+
 if __name__=='__main__': unittest.main()

@@ -21,9 +21,28 @@ class CommunityManagerInboxController extends Controller
     public function index(Request $r, int $id)
     {
         $a = $this->account($r, $id);
+        $r->validate(['agent_queue' => 'sometimes|boolean']);
+        $r->attributes->set('cm_agent_queue', $r->boolean('agent_queue'));
         $r->merge(['accounts' => [$a->id]]);
 
         return app(InboxApiController::class)->index($r);
+    }
+
+    public function review(Request $r, InboxItem $inboxItem)
+    {
+        $this->account($r, $inboxItem->social_account_id);
+        abort_if($inboxItem->replied_at || $inboxItem->reply_scheduled_at || $inboxItem->reply_attempts > 0, 409, 'Déjà traité ou en cours : vérifier le résultat.');
+        $v = $r->validate(['reason' => 'required|in:not_relevant,retry_later']);
+        app(\App\Services\Agent\InboxAgentReview::class)->defer($inboxItem, $v['reason']);
+
+        return response()->json(['id' => $inboxItem->id, 'review_reason' => $inboxItem->agent_review_reason, 'retry_at' => $inboxItem->agent_retry_at]);
+    }
+
+    private function deferContext(InboxItem $item, string $reason, string $message): never
+    {
+        app(\App\Services\Agent\InboxAgentReview::class)->defer($item, $reason);
+        throw new \Illuminate\Http\Exceptions\HttpResponseException(response()->json(['message' => $message, 'skip_item' => true,
+            'item_id' => $item->id, 'review_reason' => $reason, 'retry_at' => $item->agent_retry_at], 409));
     }
 
     public function context(Request $r, InboxItem $inboxItem)
@@ -45,12 +64,16 @@ class CommunityManagerInboxController extends Controller
             } catch (\App\Services\Browser\BrowserException $e) {
                 abort(502, $e->getMessage());
             }
-            abort_unless(($xThread['context_complete'] ?? false) && ($xThread['target']['id'] ?? null) === (string) $inboxItem->external_id
+            if (! (($xThread['context_complete'] ?? false) && ($xThread['target']['id'] ?? null) === (string) $inboxItem->external_id
                 && strtolower($xThread['target']['author'] ?? '') === strtolower(ltrim($inboxItem->author_username, '@'))
-                && ($xThread['target']['text'] ?? null) === $inboxItem->content, 409, 'Fil ou commentaire modifié : synchroniser et relire.');
+                && ($xThread['target']['text'] ?? null) === $inboxItem->content)) {
+                $this->deferContext($inboxItem, 'context_changed', 'Fil ou commentaire modifié : passer au commentaire suivant et relire plus tard.');
+            }
             $own = strtolower($a->browser_username);
-            abort_if(collect(array_merge(array_slice($xThread['conversation'] ?? [], 1), $xThread['visible_replies'] ?? []))
-                ->contains(fn ($p) => strtolower($p['author'] ?? '') === $own), 409, 'Le compte est déjà intervenu dans ce fil.');
+            if (collect(array_merge(array_slice($xThread['conversation'] ?? [], 1), $xThread['visible_replies'] ?? []))
+                ->contains(fn ($p) => strtolower($p['author'] ?? '') === $own)) {
+                $this->deferContext($inboxItem, 'already_handled', 'Le compte est déjà intervenu dans ce fil : passer au commentaire suivant, sans renvoi.');
+            }
         }
         $context = (string) \Illuminate\Support\Str::uuid();
         \Illuminate\Support\Facades\Cache::put('cm-inbox-context:'.$context, ['item_id' => $inboxItem->id, 'persona_hash' => \App\Models\TikTokEngagement::personaHash($a)], now()->addMinutes(15));

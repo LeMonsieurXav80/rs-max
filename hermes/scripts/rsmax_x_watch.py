@@ -36,12 +36,12 @@ def snapshot(client, now=None):
         next_allowed = cadence.get('next_allowed_at')
         if next_allowed and dt.datetime.fromisoformat(next_allowed).astimezone(dt.timezone.utc) > now.astimezone(dt.timezone.utc):
             continue
-        inbox = client.api('GET', f"accounts/{account['id']}/inbox?" + urlencode({'order':'newest','limit':5,'status':'unanswered'})) if can_reply else {}
+        inbox = client.api('GET', f"accounts/{account['id']}/inbox?" + urlencode({'order':'newest','limit':5,'status':'unanswered','agent_queue':1})) if can_reply else {}
         items = [{'id':i['id'], 'content':i['content'], 'post_url':i.get('post_url')} for i in inbox.get('items', []) if i.get('can_reply')]
         if items or can_feed:
             work.append({'account_id':account['id'], 'strategy':account.get('strategy', {}), 'items':items,
                          'persona':account.get('persona'), 'remaining':cadence.get('remaining'), 'daily_remaining':cadence.get('daily', {}).get('remaining'), 'batch_max':min(5, max(1, ((cadence.get('remaining') if cadence.get('remaining') is not None else 11) - (required - (2 if can_reply else 1)))//2), max(1, ((cadence.get('daily', {}).get('remaining') if cadence.get('daily', {}).get('remaining') is not None else 11) - (1 if upcoming else 0))//2)), 'next_publication_at':upcoming})
-    return {'state':'work','accounts':work} if work else {'state':'idle'}
+    return {'state':'work','cycle_key':int(now.timestamp())//300,'accounts':work} if work else {'state':'idle'}
 
 
 def main():

@@ -58,6 +58,7 @@ class CommunityManagerInboxTest extends TestCase
 
     public function test_le_contexte_x_contient_la_publication_origine_et_refuse_un_fil_deja_traite(): void
     {
+        \Illuminate\Support\Facades\Queue::fake([\App\Jobs\SendAutonomousInboxReply::class]);
         $this->travelTo(\Illuminate\Support\Carbon::parse('2026-11-07T12:00:00Z'));
         Http::preventStrayRequests();
         $u = User::factory()->create(['role' => 'manager']);

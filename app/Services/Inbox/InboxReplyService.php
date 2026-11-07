@@ -13,7 +13,22 @@ class InboxReplyService
     public function submit(InboxItem $item, string $text): array
     {
         if (($item->platform->slug === 'tiktok' || ($item->platform->slug === 'twitter' && $item->socialAccount->usesBrowser())) && ! ($item->replied_at || $item->reply_external_id || $item->status === 'replied')) {
-            return $this->schedule($item, $text, now());
+            $autonomous = request()->attributes->get('community_manager') && $item->platform->slug === 'twitter';
+            $at = now();
+            if ($autonomous) {
+                $next = app(\App\Services\Agent\AccountActionBudget::class)->usage($item->socialAccount)['next_allowed_at'];
+                if ($next) {
+                    $at = \Illuminate\Support\Carbon::parse($next);
+                }
+            }
+            $result = $this->schedule($item, $text, $at);
+            if ($autonomous && ($result['success'] ?? false) && ! ($result['already_scheduled'] ?? false)) {
+                \App\Jobs\SendAutonomousInboxReply::dispatch($item->id)->delay($at)->afterCommit();
+                $result['queued'] = true;
+                $result['validation_required'] = false;
+            }
+
+            return $result;
         }
 
         return $this->send($item, $text);

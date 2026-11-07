@@ -20,6 +20,12 @@ def daytime(now=None):
     return 6 <= local.hour < 22
 
 
+class ApiError(RuntimeError):
+    def __init__(self, status, payload):
+        self.status, self.payload = status, payload
+        super().__init__('HTTP '+str(status)+': '+str(payload.get('message','requête refusée'))[:240])
+
+
 class Client:
     def __init__(self, config):
         self.config = config
@@ -48,7 +54,7 @@ class Client:
         except ValueError:
             raise RuntimeError('HTTP ' + code + ': réponse non JSON. Consulter l’état enregistré, sans renvoyer une écriture.') from None
         if not 200 <= int(code) < 300:
-            raise RuntimeError('HTTP ' + code + ': ' + str(result.get('message', 'requête refusée'))[:240])
+            raise ApiError(int(code), result)
         return result
 
     def remember(self, ident, state):
@@ -137,11 +143,12 @@ def main(argv=None):
     subs.add_parser('accounts')
     p = subs.add_parser('logs'); p.add_argument('--account', type=int); p.add_argument('--platform'); p.add_argument('--status'); p.add_argument('--action'); p.add_argument('--limit',type=int,default=20); p.add_argument('--before',type=int)
     p = subs.add_parser('strategy'); p.add_argument('--account', type=int, required=True); p.add_argument('--update-file', type=Path)
-    p = subs.add_parser('inbox'); p.add_argument('--account', type=int, required=True); p.add_argument('--status', choices=['all','unanswered','replied','reply_failed'], default='unanswered')
+    p = subs.add_parser('inbox'); p.add_argument('--account', type=int, required=True); p.add_argument('--pending',action='store_true'); p.add_argument('--limit',type=int,default=10); p.add_argument('--status', choices=['all','unanswered','replied','reply_failed'], default='unanswered')
     p = subs.add_parser('reply-status'); p.add_argument('id',type=int)
     p = subs.add_parser('reconcile-reply'); p.add_argument('id',type=int); p.add_argument('--snapshot',required=True); p.add_argument('--commit',action='store_true')
+    p = subs.add_parser('review'); p.add_argument('id',type=int); p.add_argument('--reason',choices=['not_relevant','retry_later'],required=True)
     p = subs.add_parser('reply-context'); p.add_argument('id', type=int)
-    p = subs.add_parser('reply'); p.add_argument('id', type=int); p.add_argument('--context', required=True); p.add_argument('--text-file', type=Path, required=True); p.add_argument('--commit', action='store_true')
+    p = subs.add_parser('reply'); p.add_argument('id', type=int); p.add_argument('--context', required=True); text=p.add_mutually_exclusive_group(required=True); text.add_argument('--text-file', type=Path); text.add_argument('--text'); p.add_argument('--commit', action='store_true')
     scan = subs.add_parser('scan'); scan.add_argument('--account', type=int); scan.add_argument('--limit', type=int, choices=range(1, 6), default=3)
     for name in ['like', 'like-comment', 'comment']:
         p = subs.add_parser(name); p.add_argument('--account', type=int, required=True); p.add_argument('--snapshot', required=True); p.add_argument('--commit', action='store_true')
@@ -159,7 +166,7 @@ def main(argv=None):
     p.add_argument('--snapshot', required=True); p.add_argument('--target'); p.add_argument('--context'); p.add_argument('--text-file', type=Path); p.add_argument('--commit', action='store_true')
     p = subs.add_parser('x-status'); p.add_argument('id', type=int)
     p = subs.add_parser('x-contacts'); p.add_argument('--account', type=int, required=True); p.add_argument('--page', type=int, default=1)
-    p = subs.add_parser('report'); p.add_argument('--hours', type=int, default=24); p.add_argument('--note-file', type=Path); p.add_argument('--commit', action='store_true'); p.add_argument('--key')
+    p = subs.add_parser('report'); p.add_argument('--hours', type=int, default=24); p.add_argument('--note-file', type=Path); p.add_argument('--note'); p.add_argument('--commit', action='store_true'); p.add_argument('--key')
     args = parser.parse_args(argv)
     if args.command not in ('accounts', 'logs', 'status', 'x-status', 'x-contacts', 'report', 'reply-status') and not daytime():
         print(json.dumps({'state': 'sleep', 'window': '06:00-22:00 Europe/Lisbon'})); return 0
@@ -169,13 +176,18 @@ def main(argv=None):
         query={k:v for k,v in {'account_id':args.account,'platform':args.platform,'status':args.status,'action':args.action,'limit':args.limit,'before_id':args.before}.items() if v is not None}
         result=client.api('GET','logs?'+urlencode(query))
     elif args.command == 'report':
-        key = args.key or str(uuid.uuid5(uuid.NAMESPACE_URL, client.config['base_url'] + '/report/' + dt.datetime.now(ZoneInfo('Europe/Lisbon')).date().isoformat() + '/' + str(args.hours) + '/' + (args.note_file.read_text() if args.note_file else '')))
+        note = args.note if args.note is not None else (args.note_file.read_text() if args.note_file else None)
+        if args.commit and args.note is not None:
+            home = Path(os.environ.get('HERMES_HOME', '~/.hermes')).expanduser()
+            (home/'workspace').mkdir(parents=True, exist_ok=True)
+            (home/'workspace/last-x-cycle-note.txt').write_text(note[:600])
+        key = args.key or str(uuid.uuid5(uuid.NAMESPACE_URL, client.config['base_url'] + '/report/' + dt.datetime.now(ZoneInfo('Europe/Lisbon')).date().isoformat() + '/' + str(args.hours) + '/' + (note or '')))
         if args.commit and client.db.execute('SELECT 1 FROM reports WHERE id=?', (key,)).fetchone():
             result = {'status':'check_required', 'report_key':key, 'reason':'Rapport déjà demandé : aucun renvoi.'}
         else:
             if args.commit:
                 client.db.execute('INSERT INTO reports VALUES(?,?,?)', (key,'requested',dt.datetime.now(dt.timezone.utc).isoformat())); client.db.commit()
-            result = client.api('POST', 'report', {'hours':args.hours, 'note':args.note_file.read_text() if args.note_file else None, 'report_key':key, 'dry_run':not args.commit})
+            result = client.api('POST', 'report', {'hours':args.hours, 'note':note, 'report_key':key, 'dry_run':not args.commit})
     elif args.command == 'x-read':
         data = {k: getattr(args, k) for k in ('action','query','url','handle','feed','limit','screens') if getattr(args,k) is not None}
         result = client.api('POST', f'accounts/{args.account}/x/read', data)
@@ -185,17 +197,24 @@ def main(argv=None):
     elif args.command == 'x-status': result = client.api('GET', f'x/engagements/{args.id}')
     elif args.command == 'x-contacts': result = client.api('GET', f'accounts/{args.account}/x/contacts?' + urlencode({'page':args.page}))
     elif args.command == 'strategy': result = client.api('PATCH' if args.update_file else 'GET', f'accounts/{args.account}/strategy', json.loads(args.update_file.read_text()) if args.update_file else None)
-    elif args.command == 'inbox': result = client.api('GET', f'accounts/{args.account}/inbox?' + urlencode({'order':'newest','limit':10,'status':args.status}))
+    elif args.command == 'inbox': result = client.api('GET', f'accounts/{args.account}/inbox?' + urlencode({'order':'newest','limit':args.limit,'status':args.status,**({'agent_queue':1} if args.pending else {})}))
+    elif args.command == 'review': result = client.api('POST', f'inbox/{args.id}/review', {'reason':args.reason})
     elif args.command == 'reply-status': result = client.api('GET', f'inbox/{args.id}')
     elif args.command == 'reconcile-reply': result = client.api('POST', f'inbox/{args.id}/reconcile', {'snapshot_id':args.snapshot,'dry_run':not args.commit})
-    elif args.command == 'reply-context': result = client.api('GET', f'inbox/{args.id}/context')
+    elif args.command == 'reply-context':
+        try: result = client.api('GET', f'inbox/{args.id}/context')
+        except ApiError as exc:
+            if exc.payload.get('skip_item'): result = exc.payload
+            else: raise
     elif args.command == 'reply':
+        reply_text = args.text_file.read_text().strip() if args.text_file else args.text.strip()
+        if not reply_text: raise RuntimeError('Réponse vide : aucun envoi demandé.')
         key = -args.id  # espace distinct des engagements, intention avant HTTP
         if args.commit and client.db.execute('SELECT 1 FROM attempts WHERE id=?', (key,)).fetchone():
             result = {'status':'check_required','reason':'Réponse déjà demandée : consulter inbox, sans renvoi.'}
         else:
             if args.commit: client.remember(key, 'execution_requested')
-            result = client.api('POST', f'inbox/{args.id}/reply', {'context_id':args.context, 'reply_text':args.text_file.read_text().strip(), 'dry_run':not args.commit})
+            result = client.api('POST', f'inbox/{args.id}/reply', {'context_id':args.context, 'reply_text':reply_text, 'dry_run':not args.commit})
     elif args.command == 'scan': result = client.scan(args.account, args.limit)
     elif args.command in ('like', 'like-comment', 'comment'):
         action = {'like': 'video.like', 'like-comment': 'comment.like', 'comment': 'video.comment'}[args.command]

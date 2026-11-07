@@ -23,7 +23,7 @@ return [
     'platforms' => [
         'twitter' => ['name' => 'X', 'actions' => [
             'mentions.read' => ['label' => 'Lire les mentions', 'kind' => 'read', 'channel' => 'browser', 'status' => 'ready', 'limit' => 24],
-            'reply' => ['label' => 'Répondre, avec validation', 'kind' => 'write', 'channel' => 'browser', 'status' => 'ready', 'limit' => 10],
+            'reply' => ['label' => 'Répondre aux commentaires', 'kind' => 'write', 'channel' => 'browser', 'status' => 'ready', 'limit' => 10],
             'like' => ['label' => 'Aimer', 'kind' => 'write', 'channel' => 'browser', 'status' => 'ready', 'limit' => 30],
             'feed.read' => ['label' => 'Lire le flux', 'kind' => 'read', 'channel' => 'browser', 'status' => 'ready', 'limit' => 24],
             'search.read' => ['label' => 'Rechercher des posts', 'kind' => 'read', 'channel' => 'browser', 'status' => 'ready', 'limit' => 24],
@@ -44,28 +44,28 @@ return [
             'video.like' => ['label' => 'Aimer une vidéo', 'kind' => 'write', 'channel' => 'browser', 'status' => 'ready', 'limit' => 30],
             'video.comments' => ['label' => 'Lire la discussion d’une vidéo', 'kind' => 'read', 'channel' => 'browser', 'status' => 'ready', 'limit' => 24],
             'video.comment' => ['label' => 'Commenter une vidéo, avec validation', 'kind' => 'write', 'channel' => 'browser', 'status' => 'ready', 'limit' => 10],
-            'reply' => ['label' => 'Répondre, avec validation', 'kind' => 'write', 'channel' => 'browser', 'status' => 'ready', 'limit' => 10],
+            'reply' => ['label' => 'Répondre aux commentaires', 'kind' => 'write', 'channel' => 'browser', 'status' => 'ready', 'limit' => 10],
             'feed.read' => ['label' => 'Parcourir le fil', 'kind' => 'read', 'channel' => 'browser', 'status' => 'ready', 'limit' => 24],
         ]],
         'bluesky' => ['name' => 'Bluesky', 'route' => 'bot.bluesky.index', 'actions' => [
-            'reply' => ['label' => 'Répondre, avec validation', 'kind' => 'write', 'channel' => 'api', 'status' => 'ready', 'limit' => 10],
+            'reply' => ['label' => 'Répondre aux commentaires', 'kind' => 'write', 'channel' => 'api', 'status' => 'ready', 'limit' => 10],
             'likes' => ['label' => 'Likes', 'kind' => 'write', 'channel' => 'api', 'status' => 'engine'],
             'comments' => ['label' => 'Commentaires', 'kind' => 'write', 'channel' => 'api', 'status' => 'engine'],
             'follows' => ['label' => 'Abonnements', 'kind' => 'write', 'channel' => 'api', 'status' => 'engine'],
             'prospect' => ['label' => 'Prospection', 'kind' => 'write', 'channel' => 'api', 'status' => 'engine'],
         ]],
         'facebook' => ['name' => 'Facebook', 'route' => 'bot.facebook.index', 'actions' => [
-            'reply' => ['label' => 'Répondre, avec validation', 'kind' => 'write', 'channel' => 'api', 'status' => 'ready', 'limit' => 10],
+            'reply' => ['label' => 'Répondre aux commentaires', 'kind' => 'write', 'channel' => 'api', 'status' => 'ready', 'limit' => 10],
             'comment.like' => ['label' => 'Aimer les commentaires reçus', 'kind' => 'write', 'channel' => 'api', 'status' => 'engine'],
         ]],
         'instagram' => ['name' => 'Instagram', 'actions' => [
-            'reply' => ['label' => 'Répondre, avec validation', 'kind' => 'write', 'channel' => 'api', 'status' => 'ready', 'limit' => 10],
+            'reply' => ['label' => 'Répondre aux commentaires', 'kind' => 'write', 'channel' => 'api', 'status' => 'ready', 'limit' => 10],
         ]],
         'threads' => ['name' => 'Threads', 'actions' => [
-            'reply' => ['label' => 'Répondre, avec validation', 'kind' => 'write', 'channel' => 'api', 'status' => 'ready', 'limit' => 10],
+            'reply' => ['label' => 'Répondre aux commentaires', 'kind' => 'write', 'channel' => 'api', 'status' => 'ready', 'limit' => 10],
         ]],
         'youtube' => ['name' => 'YouTube', 'actions' => [
-            'reply' => ['label' => 'Répondre, avec validation', 'kind' => 'write', 'channel' => 'api', 'status' => 'ready', 'limit' => 10],
+            'reply' => ['label' => 'Répondre aux commentaires', 'kind' => 'write', 'channel' => 'api', 'status' => 'ready', 'limit' => 10],
         ]],
         'linkedin' => ['name' => 'LinkedIn', 'actions' => [
             'comment.reply' => ['label' => 'Répondre aux commentaires', 'kind' => 'write', 'channel' => 'api', 'status' => 'planned', 'limit' => 10],
