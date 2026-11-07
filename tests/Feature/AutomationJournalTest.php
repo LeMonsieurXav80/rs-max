@@ -42,6 +42,20 @@ class AutomationJournalTest extends TestCase
         $this->postJson('/api/extension/tasks/'.$t->id.'/progress', ['steps' => [$step]])->assertConflict();
     }
 
+    public function test_l_ordre_final_corrige_la_progression_recue_en_desordre(): void
+    {
+        $a = $this->account();
+        $task = BrowserTask::create(['social_account_id' => $a->id, 'profile' => 'test', 'kind' => 'x.like', 'payload' => [], 'status' => 'running']);
+        $journal = app(\App\Services\Agent\AutomationJournal::class);
+        $one = ['id' => 'one', 'stage' => 'task.received'];
+        $two = ['id' => 'two', 'stage' => 'identity.check'];
+        $journal->append($task, [$two]);
+        $journal->append($task, [$one]);
+        Sanctum::actingAs(User::factory()->create(['role' => 'admin']));
+        $this->postJson('/api/extension/tasks/'.$task->id.'/finish', ['status' => 'done', 'diagnostics' => [$one, $two]])->assertOk();
+        $this->assertSame(['task.received', 'identity.check'], array_column(BotActionLog::where('browser_task_id', $task->id)->first()->metadata['steps'], 'stage'));
+    }
+
     public function test_lecture_de_logs_scopee_filtres_curseur_et_absence_de_secrets(): void
     {
         $a = $this->account();

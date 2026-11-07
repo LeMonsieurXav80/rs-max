@@ -59,25 +59,33 @@ class AutomationJournal
         $log->save();
     }
 
-    public function append(BrowserTask $task, array $steps): void
+    public function append(BrowserTask $task, array $steps, bool $final = false): void
     {
         if ($task->created_at->lt(now()->subDays(7))) {
             return;
         }
-        DB::transaction(function () use ($task, $steps) {
+        DB::transaction(function () use ($task, $steps, $final) {
             $log = BotActionLog::where('browser_task_id', $task->id)->lockForUpdate()->first();
             if (! $log) {
                 $this->task($task);
                 $log = BotActionLog::where('browser_task_id', $task->id)->lockForUpdate()->firstOrFail();
             }
             $metadata = $log->metadata ?? [];
-            $all = collect([...($metadata['steps'] ?? []), ...$this->steps($steps)])->unique('id')->take(-100)->values()->all();
+            $incoming = $this->steps($steps);
+            $existing = $metadata['steps'] ?? [];
+            // Les messages de progression peuvent arriver dans un ordre différent.
+            // La liste finale de Companion conserve l’ordre réel d’exécution.
+            $all = collect($final ? [...$incoming, ...$existing] : [...$existing, ...$incoming])->unique('id')->take(-100)->values()->all();
             $log->update(['metadata' => array_replace($metadata, ['steps' => $all])]);
         });
     }
 
-    public function steps(array $steps): array
+    public function steps(mixed $steps): array
     {
+        if (! is_array($steps)) {
+            return [];
+        }
+
         return collect($steps)->take(100)->filter(fn ($step) => is_array($step) && is_string($step['stage'] ?? null))
             ->map(fn ($step) => array_filter(['id' => $this->text($step['id'] ?? hash('sha256', json_encode($step)), 80), 'stage' => $this->text($step['stage'], 100),
                 'elapsed_ms' => isset($step['elapsed_ms']) && is_numeric($step['elapsed_ms']) ? min(3600000, max(0, (int) $step['elapsed_ms'])) : null,
@@ -120,8 +128,11 @@ class AutomationJournal
         return $proof;
     }
 
-    public function url(string $value): string
+    public function url(mixed $value): string
     {
+        if (! is_string($value)) {
+            return '';
+        }
         $parts = parse_url($value);
         if (! is_array($parts) || ! in_array($parts['scheme'] ?? '', ['http', 'https'], true) || empty($parts['host']) || isset($parts['user']) || isset($parts['pass'])) {
             return '';
@@ -132,11 +143,12 @@ class AutomationJournal
         return mb_substr($parts['scheme'].'://'.$parts['host'].($parts['path'] ?? '').($query ? '?'.http_build_query($query) : ''), 0, 2000);
     }
 
-    public function text(?string $value, int $max): ?string
+    public function text(mixed $value, int $max): ?string
     {
-        if ($value === null) {
+        if ($value === null || ! is_scalar($value)) {
             return null;
         }
+        $value = (string) $value;
         $value = preg_replace('/"(authorization|cookie|auth_token|ct0|access_token|api[_-]?key|password|token)"\s*:\s*"[^"]*"/i', '$1="[masqué]"', $value);
         $value = preg_replace('/Bearer\s+[^\s,;]+/i', 'Bearer [masqué]', $value);
         $value = preg_replace('/\b(authorization|cookie|auth_token|ct0|access_token|api[_-]?key|password|token)\s*[:=]\s*[^\s,;]+/i', '$1=[masqué]', $value);
@@ -147,7 +159,7 @@ class AutomationJournal
 
     public function present(BotActionLog $log): array
     {
-        $m = $log->metadata ?? [];
+        $m = is_array($log->metadata) ? $log->metadata : [];
 
         return ['id' => $log->id, 'account_id' => $log->social_account_id, 'account' => $log->socialAccount?->name,
             'platform' => $log->socialAccount?->platform?->slug, 'action' => $log->action_type, 'source' => $log->source,
@@ -156,7 +168,7 @@ class AutomationJournal
             'run_id' => $this->text($m['run_id'] ?? null, 80), 'recipe' => $this->text($m['recipe'] ?? null, 100), 'version' => $this->text($m['version'] ?? null, 30),
             'task_id' => $log->browser_task_id, 'dry_run' => (bool) ($m['dry_run'] ?? false), 'target_url' => $this->url($log->target_uri ?? ''),
             'target_author' => $this->text($log->target_author, 255), 'text' => $this->text($log->target_text, 2000),
-            'error' => $this->text($log->error, 1000), 'duration_ms' => $m['duration_ms'] ?? null,
+            'error' => $this->text($log->error, 1000), 'duration_ms' => is_numeric($m['duration_ms'] ?? null) ? max(0, min(3600000, (int) $m['duration_ms'])) : null,
             'proof' => $this->proof(is_array($m['proof'] ?? null) ? $m['proof'] : []), 'steps' => $this->steps($m['steps'] ?? [])];
     }
 }

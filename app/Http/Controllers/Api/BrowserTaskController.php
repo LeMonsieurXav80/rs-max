@@ -60,7 +60,7 @@ class BrowserTaskController extends Controller
         ]);
         abort_unless($task->status === BrowserTask::RUNNING, 409, 'Tâche déjà terminée.');
 
-        app(\App\Services\Agent\AutomationJournal::class)->append($task, $v['diagnostics'] ?? []);
+        app(\App\Services\Agent\AutomationJournal::class)->append($task, $v['diagnostics'] ?? [], true);
         unset($v['diagnostics']);
         $task->update($v + ['finished_at' => now()]);
         app(\App\Services\Agent\XEngagementService::class)->finish($task);
