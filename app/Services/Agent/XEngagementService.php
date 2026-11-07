@@ -122,6 +122,10 @@ class XEngagementService
         }
         $status = $confirmed ? 'confirmed' : (in_array($task->status, [BrowserTask::CANCELLED, BrowserTask::FAILED], true) ? 'failed' : 'uncertain');
         $row->update(['status' => $status, 'result' => $task->result, 'error' => $confirmed ? null : ($task->error ?? 'Absence de preuve après rechargement.')]);
+        if ($confirmed && in_array($row->action, ['like', 'unlike'], true)) {
+            \App\Models\InboxItem::where('social_account_id', $row->social_account_id)->where('external_id', $expected['id'])
+                ->update(['liked_at' => $row->action === 'like' ? now() : null]);
+        }
         if ($confirmed && ! ($proof['unchanged'] ?? false) && in_array($row->action, ['follow', 'unfollow'], true)) {
             $contact = SocialContact::firstOrCreate(['social_account_id' => $row->social_account_id, 'handle' => $row->payload['handle']]);
             if ($row->action === 'follow') {

@@ -245,4 +245,15 @@ class XAgentTest extends TestCase
         $this->assertSame('provided_text', $row->payload['draft_source']);
         Http::assertNothingSent();
     }
+
+    public function test_un_like_du_flux_confirme_met_aussi_a_jour_la_messagerie_du_meme_compte(): void
+    {
+        $item = \App\Models\InboxItem::create(['social_account_id' => $this->a->id, 'platform_id' => $this->a->platform_id, 'external_id' => '987', 'type' => 'comment', 'status' => 'unread']);
+        $row = $this->prepare($this->snapshot());
+        $this->execute($row);
+        $task = $row->fresh()->browserTask;
+        app(BrowserTaskQueue::class)->claim('nas-test');
+        $this->finish($task->fresh(), ['confirmed' => true, 'proof' => 'after_reload', 'target' => $this->target()]);
+        $this->assertNotNull($item->fresh()->liked_at);
+    }
 }
