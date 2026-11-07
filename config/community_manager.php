@@ -2,6 +2,6 @@
 
 return [
     'timezone' => 'Europe/Lisbon',
-    'start_hour' => 9,
-    'end_hour' => 17,
+    'start_hour' => 6,
+    'end_hour' => 22,
 ];

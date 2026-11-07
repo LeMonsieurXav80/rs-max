@@ -81,11 +81,11 @@ class CommunityManagerTest extends TestCase
     public function test_fenetre_tient_compte_de_lheure_dete_et_du_jour_de_preparation(): void
     {
         $window = app(CommunityManagerWindow::class);
-        $this->travelTo(Carbon::parse('2026-07-07T15:59:00Z'));
+        $this->travelTo(Carbon::parse('2026-07-07T20:59:00Z'));
         $this->assertTrue($window->isOpen());
         $spec = $window->specification();
         $this->assertTrue($window->isOpen(array_reverse($spec, true)));
-        $this->travelTo(Carbon::parse('2026-07-07T16:00:00Z'));
+        $this->travelTo(Carbon::parse('2026-07-07T21:00:00Z'));
         $this->assertFalse($window->isOpen($spec));
         $this->travelTo(Carbon::parse('2026-07-08T10:00:00Z'));
         $this->assertFalse($window->isOpen($spec));
@@ -135,5 +135,51 @@ class CommunityManagerTest extends TestCase
         $other = SocialAccount::create(['name' => 'Autre', 'platform_id' => $this->account->platform_id]);
         $this->mock(BrowserTaskQueue::class)->shouldNotReceive('run');
         $this->postJson('/api/community-manager/read', ['account_id' => $other->id, 'action' => 'feed.read'])->assertForbidden();
+    }
+
+    public function test_hermes_recoit_le_persona_associe_et_redige_sans_second_appel_api(): void
+    {
+        $snapshot = $this->commentSnapshot();
+        $r = $this->getJson('/api/community-manager/accounts/'.$this->account->id.'/comment-context?snapshot_id='.$snapshot)
+            ->assertOk()->assertJsonPath('persona.instructions', 'Voix du compte associé')->assertJsonCount(2, 'comments')
+            ->assertJsonPath('observed', 2)->assertJsonPath('expected', 3);
+        $this->assertStringContainsString('no-store', $r->headers->get('Cache-Control'));
+        $body = ['account_id' => $this->account->id, 'action' => 'video.comment', 'snapshot_id' => $snapshot,
+            'context_id' => $r->json('context_id'), 'text' => 'Chaque petit pas compte ! 💪'];
+        $id = $this->postJson('/api/community-manager/prepare', $body)->assertCreated()->assertJsonPath('draft_source', 'hermes_subscription')->json('id');
+        $body['text'] = 'Reprendre à son rythme, c’est déjà avancer ! 💪';
+        $this->postJson('/api/community-manager/prepare', $body)->assertCreated()->assertJsonPath('id', $id)->assertJsonPath('text', $body['text']);
+        \App\Models\TikTokEngagement::findOrFail($id)->update(['status' => 'uncertain']);
+        $this->postJson('/api/community-manager/prepare', $body)->assertConflict();
+        \Illuminate\Support\Facades\Http::assertNothingSent();
+    }
+
+    public function test_pas_de_repli_api_quand_hermes_ne_fournit_pas_le_texte_ou_persona_change(): void
+    {
+        $snapshot = $this->commentSnapshot();
+        $body = ['account_id' => $this->account->id, 'action' => 'video.comment', 'snapshot_id' => $snapshot];
+        $this->postJson('/api/community-manager/prepare', $body)->assertUnprocessable();
+        $context = $this->getJson('/api/community-manager/accounts/'.$this->account->id.'/comment-context?snapshot_id='.$snapshot)->assertOk()->json('context_id');
+        $this->account->persona->update(['system_prompt' => 'Autre voix']);
+        $this->postJson('/api/community-manager/prepare', $body + ['context_id' => $context, 'text' => 'Un petit pas !'])->assertConflict();
+        \Illuminate\Support\Facades\Http::assertNothingSent();
+    }
+
+    private function commentSnapshot(): string
+    {
+        Sanctum::actingAs($this->user);
+        \Illuminate\Support\Facades\Http::preventStrayRequests();
+        \Illuminate\Support\Facades\Http::fake();
+        $persona = \App\Models\Persona::create(['name' => 'Persona associé', 'is_active' => true, 'system_prompt' => 'Voix du compte associé']);
+        $this->account->update(['persona_id' => $persona->id]);
+        $this->account->unsetRelation('persona');
+        $id = (string) \Illuminate\Support\Str::uuid();
+        \Illuminate\Support\Facades\Cache::put('tiktok-video:'.$id, ['account_id' => $this->account->id,
+            'video' => ['url' => 'https://www.tiktok.com/@creator/video/123', 'caption' => 'Reprendre le sport'],
+            'complete' => false, 'accessible_complete' => true, 'expected' => 3,
+            'comments' => [['key' => str_repeat('a', 64), 'author' => 'a', 'text' => 'À son rythme !'],
+                ['key' => str_repeat('b', 64), 'author' => 'b', 'text' => 'Chaque pas compte.']]], 3600);
+
+        return $id;
     }
 }

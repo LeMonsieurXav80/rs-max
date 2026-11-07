@@ -10,9 +10,13 @@ cm = importlib.util.module_from_spec(spec); spec.loader.exec_module(cm)
 
 class CommunityManagerTest(unittest.TestCase):
     def test_night_and_summer_boundary(self):
-        self.assertTrue(cm.daytime(dt.datetime.fromisoformat('2026-07-07T15:59:00+00:00')))
-        self.assertFalse(cm.daytime(dt.datetime.fromisoformat('2026-07-07T16:00:00+00:00')))
+        self.assertTrue(cm.daytime(dt.datetime.fromisoformat('2026-07-07T20:59:00+00:00')))
+        self.assertFalse(cm.daytime(dt.datetime.fromisoformat('2026-07-07T21:00:00+00:00')))
         self.assertFalse(cm.daytime(dt.datetime.fromisoformat('2026-11-07T23:00:00+00:00')))
+        self.assertFalse(cm.daytime(dt.datetime.fromisoformat('2026-11-07T05:59:00+00:00')))
+        self.assertTrue(cm.daytime(dt.datetime.fromisoformat('2026-11-07T06:00:00+00:00')))
+        self.assertTrue(cm.daytime(dt.datetime.fromisoformat('2026-11-07T21:59:00+00:00')))
+        self.assertFalse(cm.daytime(dt.datetime.fromisoformat('2026-11-07T22:00:00+00:00')))
 
     def test_timeout_after_intent_never_sends_again(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -35,5 +39,14 @@ class CommunityManagerTest(unittest.TestCase):
             with patch.object(cm,'daytime',return_value=False), patch.object(client,'api') as api:
                 self.assertEqual(client.scan()['state'],'sleep')
                 api.assert_not_called()
+
+    def test_comment_without_hermes_text_never_falls_back_to_api(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            client=cm.Client({'state_path':tmp+'/state.sqlite'})
+            try:
+                with patch.object(cm,'daytime',return_value=True),patch.object(client,'api') as api:
+                    with self.assertRaises(RuntimeError):client.action(63,'video.comment','snapshot')
+                    api.assert_not_called()
+            finally:client.db.close()
 
 if __name__=='__main__': unittest.main()

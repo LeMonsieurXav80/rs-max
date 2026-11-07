@@ -936,6 +936,12 @@ Tout passe par Companion sur le **NAS**, avec contrôle du profil connecté. Act
 
 Les routes `/api/agent/*` lisent et préparent ; elles n'envoient aucun brouillon. Une modification du persona invalide la validation du commentaire préparé. Les likes déjà présents sont conservés, sans bascule. Quotas contrôlés à la préparation et à l'exécution. La file database doit avoir `retry_after > 300` (360 s par défaut).
 
+### Community Manager : abonnement Hermès et horaires
+
+Le client `cli/community_manager.py` utilise uniquement `/api/community-manager/*`. Son jeton est limité à ces routes et aux comptes attribués. Plage **06–22 h, Europe/Lisbon**, vérifiée côté client, serveur et Companion.
+
+Pour rédiger : `GET /api/community-manager/accounts/{id}/comment-context?snapshot_id=…` renvoie le persona actif du compte et les commentaires accessibles. **Hermès rédige lui-même avec son abonnement connecté** ; ce parcours n’appelle jamais le modèle API configuré dans RS-Max et ne consomme donc pas son quota API. `POST /api/community-manager/prepare` reçoit `account_id`, `action:video.comment`, `snapshot_id`, `context_id`, `text`. Le contexte est lié au compte, au snapshot et à l’empreinte du persona ; il expire après 15 minutes. Texte absent ou persona changé : refus, aucun repli API. `draft_source:hermes_subscription` identifie ce chemin. La limite de 150 unités UTF-16 et la preuve après rechargement restent obligatoires. Aucun remplacement après une tentative.
+
 ## 16. Endpoints en session web (PAS accessibles par token)
 
 Quatre endpoints commencent par `/api/` alors qu'ils sont déclarés dans

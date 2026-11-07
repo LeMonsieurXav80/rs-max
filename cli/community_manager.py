@@ -9,13 +9,14 @@ import sqlite3
 import subprocess
 import sys
 import time
+from urllib.parse import urlencode
 from zoneinfo import ZoneInfo
 
 
 def daytime(now=None):
     now = now or dt.datetime.now(ZoneInfo('Europe/Lisbon'))
     local = now.astimezone(ZoneInfo('Europe/Lisbon'))
-    return 9 <= local.hour < 17
+    return 6 <= local.hour < 22
 
 
 class Client:
@@ -51,7 +52,7 @@ class Client:
 
     def scan(self, account=None, limit=3):
         if not daytime():
-            return {'state': 'sleep', 'window': '09:00-17:00 Europe/Lisbon'}
+            return {'state': 'sleep', 'window': '06:00-22:00 Europe/Lisbon'}
         catalog = self.api('GET', 'accounts')
         if not catalog.get('daytime'):
             return {'state': 'sleep'}
@@ -64,12 +65,16 @@ class Client:
         result = self.api('POST', 'read', {'account_id': a['id'], 'action': 'feed.read', 'limit': limit})
         return {'account_id': a['id'], 'persona': a['persona'], 'actions': a['actions'], **result}
 
-    def action(self, account, action, snapshot, commit=False, comment_key=None):
+    def action(self, account, action, snapshot, commit=False, comment_key=None, text=None, context=None):
         if not daytime():
             return {'state': 'sleep'}
         data = {'account_id': account, 'action': action, 'snapshot_id': snapshot}
         if comment_key:
             data['comment_key'] = comment_key
+        if action == 'video.comment':
+            if not text or not context:
+                raise RuntimeError('Rédiger dans Hermès après comment-context, puis fournir --context et --text-file. Aucun appel IA dans RS-Max.')
+            data.update(text=text, context_id=context)
         prepared = self.api('POST', 'prepare', data)
         ident = prepared['id']
         if not commit or prepared['status'] != 'prepared':
@@ -98,18 +103,23 @@ def main(argv=None):
     for name in ['like', 'like-comment', 'comment']:
         p = subs.add_parser(name); p.add_argument('--account', type=int, required=True); p.add_argument('--snapshot', required=True); p.add_argument('--commit', action='store_true')
         if name == 'like-comment': p.add_argument('--comment-key', required=True)
+        if name == 'comment':
+            p.add_argument('--context', required=True); p.add_argument('--text-file', type=Path, required=True)
+    p = subs.add_parser('comment-context'); p.add_argument('--account', type=int, required=True); p.add_argument('--snapshot', required=True)
     p = subs.add_parser('comments'); p.add_argument('--account', type=int, required=True); p.add_argument('--url', required=True)
     p = subs.add_parser('status'); p.add_argument('id', type=int)
     p = subs.add_parser('inspect-upload'); p.add_argument('--account', type=int, required=True)
     args = parser.parse_args(argv)
     if args.command not in ('accounts', 'status') and not daytime():
-        print(json.dumps({'state': 'sleep', 'window': '09:00-17:00 Europe/Lisbon'})); return 0
+        print(json.dumps({'state': 'sleep', 'window': '06:00-22:00 Europe/Lisbon'})); return 0
     client = Client(json.loads(args.config.read_text()))
     if args.command == 'accounts': result = client.api('GET', 'accounts')
     elif args.command == 'scan': result = client.scan(args.account, args.limit)
     elif args.command in ('like', 'like-comment', 'comment'):
         action = {'like': 'video.like', 'like-comment': 'comment.like', 'comment': 'video.comment'}[args.command]
-        result = client.action(args.account, action, args.snapshot, args.commit, getattr(args, 'comment_key', None))
+        text = args.text_file.read_text(encoding='utf-8').strip() if args.command == 'comment' else None
+        result = client.action(args.account, action, args.snapshot, args.commit, getattr(args, 'comment_key', None), text, getattr(args, 'context', None))
+    elif args.command == 'comment-context': result = client.api('GET', f'accounts/{args.account}/comment-context?' + urlencode({'snapshot_id': args.snapshot}))
     elif args.command == 'comments': result = client.api('POST', 'read', {'account_id': args.account, 'action': 'video.comments', 'url': args.url})
     elif args.command == 'status': result = client.api('GET', 'engagements/' + str(args.id))
     else: result = client.api('POST', 'upload/inspect', {'account_id': args.account})

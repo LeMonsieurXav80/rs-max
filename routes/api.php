@@ -16,6 +16,7 @@ use Illuminate\Support\Facades\Route;
 
 Route::middleware(['auth:sanctum', \App\Http\Middleware\CommunityManagerTokenScope::class])->group(function () {
     Route::prefix('community-manager')->controller(\App\Http\Controllers\Api\CommunityManagerController::class)->group(function () {
+        Route::get('/accounts/{id}/comment-context', 'commentContext');
         Route::get('accounts', 'accounts');
         Route::post('read', 'read')->middleware('throttle:20,1');
         Route::get('snapshots/{id}', 'snapshot')->whereUuid('id');
