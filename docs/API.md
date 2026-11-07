@@ -925,6 +925,17 @@ Les réponses préparées restent dans `inbox_items.reply_draft`, visibles dans 
 
 Une action est désactivée tant qu'elle n'a pas été activée sur le compte. Le catalogue est dans `config/agent.php`.
 
+### Flux TikTok et interactions sur les vidéos
+
+Tout passe par Companion sur le **NAS**, avec contrôle du profil connecté. Activer séparément `feed.read`, `video.comments`, `video.like`, `comment.like`, `video.comment` sur le compte.
+
+- `POST /api/agent/accounts/{id}/tiktok/read` : `{"action":"feed.read","feed":"following","limit":3}` (1 à 10 vidéos, `following` ou `foryou`). Renvoie `items` : URL canonique, auteur, légende et états visibles.
+- Même route avec `{"action":"video.comments","url":"https://www.tiktok.com/@…/video/…"}` : ouvre la discussion, développe les réponses et collecte les lignes même virtualisées. Renvoie `video`, `comments` (`key`, `author`, `text`, `parent`, `liked`, `media`, `ambiguous`), `observed`, `expected`, `complete`, `reason`, `snapshot_id`. Lecture bornée à 55 s et 5 000 lignes : `complete:false` signifie **partiel**, jamais « tous les commentaires ». Répéter la lecture sur le même onglet poursuit la collecte. L'instantané serveur expire en une heure. Le raccourci `GET /api/agent/accounts/{id}/read/video.comments?url=…` est aussi disponible.
+- `POST /api/agent/accounts/{id}/tiktok/prepare` : `{"action":"video.like|comment.like|video.comment","snapshot_id":"…"}`, plus `comment_key` pour un commentaire précis. Prépare une interaction unique par compte/action/cible. Aucun geste réseau ici. Pour `video.comment`, lecture complète et persona actif du **compte TikTok** obligatoires ; toute la discussion est envoyée à RS-Max IA. Commentaire original, bienveillant, sans copier ni inventer de vécu, 150 unités UTF-16 maximum.
+- La validation se fait dans `/agent/tiktok`. Pour une exécution explicitement autorisée : `POST /api/tiktok/engagements/{id}/send` avec `{"dry_run":false}`. `dry_run:true` par défaut. Réponse 202, exécution en file ; `GET /api/tiktok/engagements/{id}` donne le résultat. `confirmed` exige une relecture après rechargement (105 s avant rechargement pour un commentaire). `uncertain` ou `failed` : aucun nouvel envoi automatique, vérifier TikTok.
+
+Les routes `/api/agent/*` lisent et préparent ; elles n'envoient aucun brouillon. Une modification du persona invalide la validation du commentaire préparé. Les likes déjà présents sont conservés, sans bascule. Quotas contrôlés à la préparation et à l'exécution. La file database doit avoir `retry_after > 300` (360 s par défaut).
+
 ## 16. Endpoints en session web (PAS accessibles par token)
 
 Quatre endpoints commencent par `/api/` alors qu'ils sont déclarés dans

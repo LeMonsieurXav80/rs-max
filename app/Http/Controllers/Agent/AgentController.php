@@ -2,9 +2,11 @@
 
 namespace App\Http\Controllers\Agent;
 
+use App\Http\Controllers\Api\TikTokFeedController;
 use App\Http\Controllers\Controller;
 use App\Jobs\PrepareInboxDrafts;
 use App\Models\SocialAccount;
+use App\Models\TikTokEngagement;
 use App\Services\Agent\AgentCatalog;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -21,7 +23,18 @@ class AgentController extends Controller
             ->reject(fn (SocialAccount $a) => str_starts_with((string) $a->platform_account_id, 'bot_') || str_starts_with((string) $a->platform_account_id, 'app_'))
             ->map(fn (SocialAccount $a) => ['account' => $a, 'actions' => $this->catalog->forAccount($a)]);
 
-        return view('agent.platform', compact('platform', 'definition', 'accounts'));
+        $engagements = $platform === 'tiktok' ? TikTokEngagement::with('socialAccount')
+            ->whereIn('social_account_id', $accounts->pluck('account.id'))->latest()->limit(20)->get() : collect();
+
+        return view('agent.platform', compact('platform', 'definition', 'accounts', 'engagements'));
+    }
+
+    public function sendEngagement(Request $request, TikTokEngagement $engagement, TikTokFeedController $feed): RedirectResponse
+    {
+        $request->merge(['dry_run' => false]);
+        $feed->send($request, $engagement);
+
+        return back()->with('success', 'Action TikTok lancée sur le NAS. Son résultat sera confirmé après rechargement.');
     }
 
     public function prepare(SocialAccount $account): RedirectResponse

@@ -144,6 +144,10 @@ Route::middleware('auth:sanctum')->group(function () {
 
     // ── Agent : réponses compactes, voir docs/API.md ──
     Route::get('/agent/accounts', [\App\Http\Controllers\Api\AgentApiController::class, 'accounts']);
+    Route::post('/agent/accounts/{id}/tiktok/read', [\App\Http\Controllers\Api\TikTokFeedController::class, 'read'])->whereNumber('id')->middleware('throttle:20,1');
+    Route::post('/agent/accounts/{id}/tiktok/prepare', [\App\Http\Controllers\Api\TikTokFeedController::class, 'prepare'])->whereNumber('id')->middleware('throttle:20,1');
+    Route::get('/tiktok/engagements/{engagement}', [\App\Http\Controllers\Api\TikTokFeedController::class, 'show']);
+    Route::post('/tiktok/engagements/{engagement}/send', [\App\Http\Controllers\Api\TikTokFeedController::class, 'send'])->middleware('throttle:20,1');
     Route::get('/agent/log', [\App\Http\Controllers\Api\AgentApiController::class, 'log']);
     Route::get('/agent/drafts', [\App\Http\Controllers\Api\AgentApiController::class, 'drafts']);
     Route::post('/agent/accounts/{id}/drafts', [\App\Http\Controllers\Api\AgentApiController::class, 'prepare'])->whereNumber('id')->middleware('throttle:20,1');

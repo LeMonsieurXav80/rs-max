@@ -71,5 +71,34 @@
                 <p class="text-sm text-gray-400">Aucun compte {{ $definition['name'] }}.</p>
             </div>
         @endforelse
+        @if ($engagements->isNotEmpty())
+            <div class="bg-white rounded-2xl shadow-sm border border-gray-100 divide-y divide-gray-100">
+                <h2 class="px-6 py-4 text-sm font-semibold text-gray-900">Interactions TikTok à valider et résultats</h2>
+                @foreach ($engagements as $engagement)
+                    <div class="px-6 py-4 space-y-2 text-sm">
+                        <div class="flex justify-between gap-3">
+                            <span class="font-medium">{{ $engagement->socialAccount->name }} · {{ $definition['actions'][$engagement->action]['label'] }}</span>
+                            <span class="text-xs text-gray-500">{{ ['prepared' => 'À valider', 'queued' => 'En attente', 'running' => 'Vérification en cours', 'confirmed' => 'Confirmé après rechargement', 'failed' => 'Échec', 'uncertain' => 'À vérifier sur TikTok'][$engagement->status] ?? $engagement->status }}</span>
+                        </div>
+                        <a href="{{ $engagement->payload['url'] }}" target="_blank" rel="noopener noreferrer" class="text-indigo-600 underline">Voir la vidéo</a>
+                        @if ($engagement->payload['target'] ?? null)
+                            <p class="text-gray-500">{{ $engagement->payload['target']['author'] }} : {{ $engagement->payload['target']['text'] }}</p>
+                        @endif
+                        @if ($engagement->payload['text'] ?? null)
+                            <p class="text-gray-800">{{ $engagement->payload['text'] }}</p>
+                        @endif
+                        @if ($engagement->error)
+                            <p class="text-amber-700">{{ $engagement->error }}</p>
+                        @endif
+                        @if ($engagement->status === 'prepared')
+                            <form method="POST" action="{{ route('agent.tiktok.send', $engagement) }}">
+                                @csrf
+                                <button type="submit" class="px-3 py-1.5 text-xs font-medium text-white bg-indigo-600 rounded-lg">Valider cette action</button>
+                            </form>
+                        @endif
+                    </div>
+                @endforeach
+            </div>
+        @endif
     </div>
 @endsection

@@ -44,6 +44,11 @@ class AgentApiController extends Controller
 
     public function read(Request $request, int $id, string $action, AgentReader $reader): JsonResponse
     {
+        if (in_array($action, ['feed.read', 'video.comments'], true)) {
+            $request->merge(['action' => $action]);
+
+            return app(TikTokFeedController::class)->read($request, $id, app(\App\Services\Browser\BrowserTaskQueue::class));
+        }
         $account = $this->account($request, $id);
         $max = config('agent.read_limit');
         $limit = $request->validate(['limit' => "nullable|integer|min:1|max:{$max}"])['limit'] ?? 10;

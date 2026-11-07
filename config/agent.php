@@ -29,9 +29,12 @@ return [
         ]],
         'tiktok' => ['name' => 'TikTok', 'actions' => [
             'comments.read' => ['label' => 'Lire les commentaires', 'kind' => 'read', 'channel' => 'browser', 'status' => 'ready', 'limit' => 24],
-            'comment.like' => ['label' => 'Aimer un commentaire', 'kind' => 'write', 'channel' => 'browser', 'status' => 'planned', 'limit' => 30],
+            'comment.like' => ['label' => 'Aimer un commentaire de vidéo', 'kind' => 'write', 'channel' => 'browser', 'status' => 'ready', 'limit' => 30],
+            'video.like' => ['label' => 'Aimer une vidéo', 'kind' => 'write', 'channel' => 'browser', 'status' => 'ready', 'limit' => 30],
+            'video.comments' => ['label' => 'Lire la discussion d’une vidéo', 'kind' => 'read', 'channel' => 'browser', 'status' => 'ready', 'limit' => 24],
+            'video.comment' => ['label' => 'Commenter une vidéo, avec validation', 'kind' => 'write', 'channel' => 'browser', 'status' => 'ready', 'limit' => 10],
             'reply' => ['label' => 'Répondre, avec validation', 'kind' => 'write', 'channel' => 'browser', 'status' => 'ready', 'limit' => 10],
-            'feed.read' => ['label' => 'Parcourir le fil', 'kind' => 'read', 'channel' => 'browser', 'status' => 'planned', 'limit' => 24],
+            'feed.read' => ['label' => 'Parcourir le fil', 'kind' => 'read', 'channel' => 'browser', 'status' => 'ready', 'limit' => 24],
         ]],
         'bluesky' => ['name' => 'Bluesky', 'route' => 'bot.bluesky.index', 'actions' => [
             'reply' => ['label' => 'Répondre, avec validation', 'kind' => 'write', 'channel' => 'api', 'status' => 'ready', 'limit' => 10],

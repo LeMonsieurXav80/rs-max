@@ -108,7 +108,7 @@ class AgentActionsTest extends TestCase
     {
         Sanctum::actingAs($this->manager);
 
-        $this->putJson("/api/agent/accounts/{$this->account->id}/actions/feed.read", ['enabled' => true])->assertNotFound();
+        $this->putJson("/api/agent/accounts/{$this->account->id}/actions/follow", ['enabled' => true])->assertNotFound();
     }
 
     public function test_un_simple_utilisateur_na_pas_acces(): void
@@ -121,7 +121,7 @@ class AgentActionsTest extends TestCase
     public function test_la_page_du_reseau_regle_chaque_compte(): void
     {
         $this->actingAs($this->manager)->get(route('agent.platform', 'tiktok'))->assertOk()
-            ->assertSee('Lire les commentaires')->assertSee('À venir')->assertSee('Wildy');
+            ->assertSee('Lire les commentaires')->assertSee('Aimer une vidéo')->assertSee('Wildy');
 
         $this->actingAs($this->manager)->put(route('agent.update', ['account' => $this->account, 'action' => 'comments.read']), ['enabled' => 1, 'daily_limit' => 7])->assertRedirect();
 
