@@ -119,6 +119,22 @@ class TikTokFeedTest extends TestCase
         $this->actingAs(auth()->user())->get('/agent/tiktok')->assertOk()->assertSee('1 commentaires lus')->assertSee('78 annoncés par TikTok');
     }
 
+    public function test_un_brouillon_trop_long_est_reformule_une_seule_fois_sans_retransmettre_la_discussion(): void
+    {
+        Http::swap(new \Illuminate\Http\Client\Factory);
+        Http::preventStrayRequests();
+        Http::fake(['api.openai.com/*' => Http::sequence()
+            ->push(['choices' => [['message' => ['content' => str_repeat('Une idée bienveillante. ', 12)]]]])
+            ->push(['choices' => [['message' => ['content' => 'Une belle façon de reprendre à son rythme ! 💪']]]])]);
+        $id = $this->prepare();
+        Http::assertSentCount(2);
+        $requests = Http::recorded();
+        $this->assertStringContainsString('Voix du compte associé', $requests[1][0]['messages'][0]['content']);
+        $this->assertStringNotContainsString('Bravo !', $requests[1][0]['messages'][1]['content']);
+        $this->getJson('/api/tiktok/engagements/'.$id)->assertJsonPath('text', 'Une belle façon de reprendre à son rythme ! 💪');
+        Queue::assertNothingPushed();
+    }
+
     public function test_persona_et_snapshot_du_meme_compte_obligatoires(): void
     {
         $snapshot = $this->snapshot();

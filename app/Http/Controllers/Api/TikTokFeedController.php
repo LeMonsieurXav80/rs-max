@@ -85,7 +85,7 @@ class TikTokFeedController extends Controller
         }
         $key = hash('sha256', $url.'|'.($target['key'] ?? 'video'));
 
-        return Cache::lock('tiktok-prepare:'.$account->id.':'.$data['action'].':'.$key, 55)->block(2, function () use ($account, $data, $snapshot, $url, $target, $key, $generator) {
+        return Cache::lock('tiktok-prepare:'.$account->id.':'.$data['action'].':'.$key, 90)->block(2, function () use ($account, $data, $snapshot, $url, $target, $key, $generator) {
             $existing = TikTokEngagement::where('social_account_id', $account->id)->where('action', $data['action'])->where('target_key', $key)->first();
             if ($existing) {
                 return response()->json($this->format($existing));
