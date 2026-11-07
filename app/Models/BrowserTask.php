@@ -7,6 +7,13 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 class BrowserTask extends Model
 {
+    protected static function booted(): void
+    {
+        static::saved(function ($model) {
+            app(\App\Services\Agent\AutomationJournal::class)->task($model);
+        });
+    }
+
     public const PENDING = 'pending';
 
     public const RUNNING = 'running';

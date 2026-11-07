@@ -69,6 +69,8 @@ class InboxReplyService
             if (! $account->usesBrowser()) {
                 try {
                     $event = app(\App\Services\Agent\AccountActionBudget::class)->reserve($account, 'inbox.reply', 'api', (string) $item->id);
+                    $journal = app(\App\Services\Agent\AutomationJournal::class);
+                    \App\Models\BotActionLog::where('account_action_event_id', $event->id)->update(['target_text' => $journal->text($text, 2000), 'target_uri' => $journal->url($item->post_url ?? ''), 'target_author' => $journal->text($item->author_name, 255)]);
                 } catch (\App\Services\Browser\BrowserException $e) {
                     // Aucun appel réseau. Ne pas épuiser les essais du planificateur.
                     if ($scheduled) {

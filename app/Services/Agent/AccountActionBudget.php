@@ -63,6 +63,7 @@ class AccountActionBudget
 
     public function finish(BrowserTask $task): void
     {
+        app(AutomationJournal::class)->task($task);
         $status = $task->status === 'done' ? (($task->result['confirmed'] ?? null) === true ? (($task->result['unchanged'] ?? false) ? 'unchanged' : 'confirmed') : 'completed') : $task->status;
         AccountActionEvent::where('browser_task_id', $task->id)->where('status', '!=', $status)->update(['status' => $status, 'error' => $task->error, 'updated_at' => now()]);
         if ($adjustment = app(AdaptiveAccountLimits::class)->evaluate($task->socialAccount)) {

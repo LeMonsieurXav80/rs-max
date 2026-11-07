@@ -16,7 +16,7 @@ class AgentController extends Controller
 {
     public function __construct(private AgentCatalog $catalog) {}
 
-    public function show(string $platform): View
+    public function show(Request $request, string $platform): View
     {
         $definition = $this->catalog->platforms()[$platform] ?? abort(404);
         $accounts = SocialAccount::with('platform')->whereRelation('platform', 'slug', $platform)->orderBy('name')->get()
@@ -28,7 +28,21 @@ class AgentController extends Controller
 
         $xEngagements = $platform === 'twitter' ? \App\Models\XEngagement::with('socialAccount')->whereIn('social_account_id', $accounts->pluck('account.id'))->latest()->limit(30)->get() : collect();
 
-        return view('agent.platform', compact('platform', 'definition', 'accounts', 'engagements', 'xEngagements'));
+        $journal = app(\App\Services\Agent\AutomationJournal::class);
+        $logRows = app(\App\Http\Controllers\Api\AutomationLogController::class)->query($request, $platform)->limit(10)->get()->map(fn ($log) => $journal->present($log));
+
+        return view('agent.platform', compact('platform', 'definition', 'accounts', 'engagements', 'xEngagements', 'logRows'));
+    }
+
+    public function logs(Request $request, string $platform): View
+    {
+        $definition = $this->catalog->platforms()[$platform] ?? abort(404);
+        $journal = app(\App\Services\Agent\AutomationJournal::class);
+        $logs = app(\App\Http\Controllers\Api\AutomationLogController::class)->query($request, $platform)->paginate(50)->withQueryString();
+        $logRows = $logs->getCollection()->map(fn ($log) => $journal->present($log));
+        $accounts = $request->user()->visibleSocialAccounts()->whereHas('platform', fn ($q) => $q->where('slug', $platform))->orderBy('name')->get();
+
+        return view('agent.logs', compact('platform', 'definition', 'logs', 'logRows', 'accounts'));
     }
 
     public function sendEngagement(Request $request, TikTokEngagement $engagement, TikTokFeedController $feed): RedirectResponse

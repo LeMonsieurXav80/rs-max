@@ -38,6 +38,9 @@ class CommunityManagerController extends Controller
     {
         abort_unless($request->user()->isManager(), 403);
         $accounts = $request->user()->connectedSocialAccounts()->with(['platform', 'persona'])->get();
+        foreach ($accounts as $account) {
+            \App\Models\BotActionLog::create(['social_account_id' => $account->id, 'action_type' => 'agent.catalog.read', 'source' => 'agent', 'target_uri' => '', 'success' => true, 'metadata' => ['status' => 'completed', 'steps' => [['id' => (string) \Illuminate\Support\Str::uuid(), 'stage' => 'agent.account.check', 'details' => ['message' => 'Compte et possibilités consultés dans RS-Max ; aucun geste social.']]]], 'performed_at' => now()]);
+        }
 
         return response()->json(['daytime' => $this->window->isOpen(), 'window' => $this->window->specification(),
             'accounts' => $accounts->map(fn ($a) => ['id' => $a->id, 'name' => $a->name, 'platform' => $a->platform->slug,

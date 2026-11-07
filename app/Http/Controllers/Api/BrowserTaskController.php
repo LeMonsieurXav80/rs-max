@@ -3,13 +3,12 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
-use App\Models\BotActionLog;
 use App\Models\BrowserTask;
 use App\Services\Browser\BrowserTaskQueue;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 
-/** Tâches exécutées par Companion dans le Chromium du VPS. */
+/** Tâches exécutées par Companion dans le Chromium du NAS. */
 class BrowserTaskController extends Controller
 {
     public function next(Request $r, BrowserTaskQueue $queue): JsonResponse
@@ -40,33 +39,32 @@ class BrowserTaskController extends Controller
         return response()->json(['cookies' => $cookies]);
     }
 
+    public function progress(Request $r, BrowserTask $task): JsonResponse
+    {
+        abort_unless($r->user()->isAdmin(), 403);
+        abort_unless($task->status === BrowserTask::RUNNING, 409, 'Tâche déjà terminée.');
+        $v = $r->validate(['steps' => 'required|array|min:1|max:100', 'steps.*.stage' => 'required|string|max:100', 'steps.*.id' => 'sometimes|string|max:80', 'steps.*.elapsed_ms' => 'sometimes|integer|min:0|max:3600000', 'steps.*.details' => 'sometimes|array|max:30']);
+        app(\App\Services\Agent\AutomationJournal::class)->append($task, $v['steps']);
+
+        return response()->json(['ok' => true]);
+    }
+
     public function finish(Request $r, BrowserTask $task): JsonResponse
     {
         abort_unless($r->user()->isAdmin(), 403);
         $v = $r->validate([
             'status' => 'required|in:done,failed,uncertain',
             'result' => 'nullable|array',
+            'diagnostics' => 'sometimes|array|max:100',
             'error' => 'nullable|string|max:1000',
         ]);
         abort_unless($task->status === BrowserTask::RUNNING, 409, 'Tâche déjà terminée.');
 
+        app(\App\Services\Agent\AutomationJournal::class)->append($task, $v['diagnostics'] ?? []);
+        unset($v['diagnostics']);
         $task->update($v + ['finished_at' => now()]);
         app(\App\Services\Agent\XEngagementService::class)->finish($task);
         app(\App\Services\Agent\AccountActionBudget::class)->finish($task);
-
-        // Chaque geste est journalisé, sauf les contrôles de session, trop fréquents pour être utiles.
-        if (! in_array($task->kind, ['x.whoami', 'tiktok.whoami', 'session.apply'], true)) {
-            BotActionLog::create([
-                'social_account_id' => $task->social_account_id,
-                'action_type' => $task->kind,
-                'source' => 'browser',
-                'target_uri' => (string) ($task->payload['url'] ?? ''),
-                'target_text' => isset($task->payload['text']) ? mb_substr($task->payload['text'], 0, 2000) : null,
-                'success' => $task->status === BrowserTask::DONE,
-                'error' => $task->error,
-                'performed_at' => now(),
-            ]);
-        }
 
         return response()->json(['ok' => true]);
     }

@@ -9,6 +9,8 @@ class BotActionLog extends Model
 {
     protected $fillable = [
         'social_account_id',
+        'browser_task_id',
+        'account_action_event_id',
         'action_type',
         'source',
         'target_uri',

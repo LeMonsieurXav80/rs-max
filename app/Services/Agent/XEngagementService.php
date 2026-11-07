@@ -2,7 +2,6 @@
 
 namespace App\Services\Agent;
 
-use App\Models\BotActionLog;
 use App\Models\BrowserTask;
 use App\Models\SocialAccount;
 use App\Models\SocialContact;
@@ -134,9 +133,7 @@ class XEngagementService
                 $contact->update(['unfollowed_at' => now()]);
             }
         }
-        BotActionLog::create(['social_account_id' => $row->social_account_id, 'action_type' => 'agent.'.$row->action,
-            'source' => AgentCatalog::SOURCE, 'target_uri' => $row->payload['url'], 'success' => $confirmed, 'error' => $row->error,
-            'metadata' => ['x_engagement_id' => $row->id, 'unchanged' => $task->result['unchanged'] ?? false], 'performed_at' => now()]);
+
     }
 
     public function result(XEngagement $row): XEngagement

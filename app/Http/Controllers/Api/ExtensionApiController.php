@@ -52,17 +52,26 @@ class ExtensionApiController extends Controller
                 continue;
             }
 
+            $journal = app(\App\Services\Agent\AutomationJournal::class);
+            $incoming = $action['metadata'] ?? [];
+            $metadata = $journal->details($incoming);
+            if (isset($incoming['steps']) && is_array($incoming['steps'])) {
+                $metadata['steps'] = $journal->steps($incoming['steps']);
+            }
+            if (isset($incoming['proof']) && is_array($incoming['proof'])) {
+                $metadata['proof'] = $journal->proof($incoming['proof']);
+            }
             $rows[] = [
                 'social_account_id' => $action['social_account_id'],
                 'action_type' => $action['action_type'],
                 'source' => 'extension',
-                'target_uri' => $action['target_uri'],
+                'target_uri' => app(\App\Services\Agent\AutomationJournal::class)->url($action['target_uri']),
                 'target_author' => $action['target_author'] ?? null,
-                'target_text' => $action['target_text'] ?? null,
+                'target_text' => $journal->text($action['target_text'] ?? null, 2000),
                 'search_term' => null,
                 'success' => $action['success'] ?? true,
-                'error' => $action['error'] ?? null,
-                'metadata' => isset($action['metadata']) ? json_encode($action['metadata']) : null,
+                'error' => app(\App\Services\Agent\AutomationJournal::class)->text($action['error'] ?? null, 1000),
+                'metadata' => $metadata ? json_encode($metadata) : null,
                 'performed_at' => isset($action['performed_at']) ? \Carbon\Carbon::parse($action['performed_at']) : $now,
                 'created_at' => $now,
                 'updated_at' => $now,

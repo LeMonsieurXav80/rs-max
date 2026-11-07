@@ -2,8 +2,16 @@
 
 @section('title', 'Agent — '.$definition['name'])
 
+@section('actions')
+    <a href="{{ route('agent.logs', $platform) }}" class="px-4 py-2 text-sm font-medium rounded-xl bg-white border border-gray-200 text-indigo-700">Journal des actions</a>
+@endsection
+
 @section('content')
     <div class="max-w-3xl space-y-6">
+        <section id="journal" class="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
+            <div class="p-4 border-b flex flex-wrap justify-between gap-3"><div><h2 class="font-semibold">Journal récent</h2><p class="text-xs text-gray-500 mt-1">Lectures, gestes et diagnostics · conservation 7 jours · heures de Lisbonne.</p></div><a href="{{ route('agent.logs', $platform) }}" class="text-sm text-indigo-600">Voir tous les logs et filtrer</a></div>
+            @include('agent._logs')
+        </section>
 
         @if (session('success'))
             <div class="rounded-xl bg-green-50 border border-green-200 p-4 text-sm text-green-700 font-medium">{{ session('success') }}</div>

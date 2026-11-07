@@ -31,6 +31,7 @@ Route::middleware(['auth:sanctum', \App\Http\Middleware\CommunityManagerTokenSco
         Route::post('x/engagements/{engagement}/execute', [\App\Http\Controllers\Api\XAgentController::class, 'execute']);
         Route::get('x/engagements/{engagement}', [\App\Http\Controllers\Api\XAgentController::class, 'result']);
         Route::match(['get', 'post'], 'report', [\App\Http\Controllers\Api\CommunityManagerReportController::class, 'report']);
+        Route::get('logs', [\App\Http\Controllers\Api\AutomationLogController::class, 'index']);
         Route::get('accounts', 'accounts');
         Route::post('read', 'read')->middleware('throttle:20,1');
         Route::get('snapshots/{id}', 'snapshot')->whereUuid('id');
@@ -45,6 +46,7 @@ Route::middleware(['auth:sanctum', \App\Http\Middleware\CommunityManagerTokenSco
     Route::get('agent/accounts/{id}/x/contacts', [\App\Http\Controllers\Api\XAgentController::class, 'contacts']);
     Route::post('agent/x/engagements/{engagement}/execute', [\App\Http\Controllers\Api\XAgentController::class, 'execute']);
     Route::get('agent/x/engagements/{engagement}', [\App\Http\Controllers\Api\XAgentController::class, 'result']);
+    Route::get('agent/logs', [\App\Http\Controllers\Api\AutomationLogController::class, 'index']);
     // ── Auth ──
     Route::get('/me', [ApiController::class, 'me']);
     Route::get('/accounts', [ApiController::class, 'accounts']);
@@ -197,6 +199,7 @@ Route::middleware(['auth:sanctum', \App\Http\Middleware\CommunityManagerTokenSco
     Route::get('/extension/tasks/next', [\App\Http\Controllers\Api\BrowserTaskController::class, 'next']);
     Route::get('/extension/tasks/{task}/session', [\App\Http\Controllers\Api\BrowserTaskController::class, 'session']);
     Route::post('/extension/tasks/{task}/finish', [\App\Http\Controllers\Api\BrowserTaskController::class, 'finish']);
+    Route::post('/extension/tasks/{task}/progress', [\App\Http\Controllers\Api\BrowserTaskController::class, 'progress'])->middleware('throttle:240,1');
     Route::get('/extension/x/session', [\App\Http\Controllers\Api\XExtensionController::class, 'sessionStatus']);
     Route::post('/extension/x/session', [\App\Http\Controllers\Api\XExtensionController::class, 'session'])->middleware('throttle:10,1');
     Route::post('/extension/x/suggest', [\App\Http\Controllers\Api\XExtensionController::class, 'suggest'])->middleware('throttle:30,1');

@@ -73,4 +73,12 @@ class CommunityManagerTest(unittest.TestCase):
         self.assertIn('x-read', result.stdout)
         self.assertIn('report', result.stdout)
 
+    def test_logs_peut_lire_un_diagnostic_de_nuit_sans_ecriture(self):
+        import json,io,contextlib
+        with tempfile.TemporaryDirectory() as tmp:
+            config=Path(tmp)/'config.json';config.write_text(json.dumps({'state_path':tmp+'/state.sqlite'}))
+            with patch.object(cm,'daytime',return_value=False),patch.object(cm.Client,'api',return_value={'logs':[]}) as api,contextlib.redirect_stdout(io.StringIO()):
+                self.assertEqual(cm.main(['--config',str(config),'logs','--account','11','--status','uncertain','--before','99']),0)
+                api.assert_called_once_with('GET','logs?account_id=11&status=uncertain&limit=20&before_id=99')
+
 if __name__=='__main__': unittest.main()

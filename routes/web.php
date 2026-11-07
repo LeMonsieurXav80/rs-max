@@ -294,6 +294,7 @@ Route::middleware(['auth', 'verified', 'throttle:600,1'])->group(function () {
         Route::post('agent/twitter/engagements/{engagement}/send', [AgentController::class, 'sendXEngagement'])->name('agent.twitter.send');
         Route::post('agent/tiktok/engagements/{engagement}/send', [AgentController::class, 'sendEngagement'])->name('agent.tiktok.send');
         Route::post('agent/{account}/prepare', [AgentController::class, 'prepare'])->name('agent.prepare');
+        Route::get('agent/{platform}/logs', [AgentController::class, 'logs'])->name('agent.logs');
         Route::get('agent/{platform}', [AgentController::class, 'show'])->name('agent.platform');
         Route::put('agent/{account}/{action}', [AgentController::class, 'update'])->where('action', '[a-z.]+')->name('agent.update');
 

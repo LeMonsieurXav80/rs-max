@@ -142,6 +142,7 @@ class BrowserTaskQueue
             ->update(['status' => BrowserTask::CANCELLED, 'finished_at' => now()]);
 
         if ($cancelled) {
+            app(\App\Services\Agent\AutomationJournal::class)->task($task->fresh());
             throw new BrowserException('Navigateur du NAS injoignable : tâche annulée, rien n’a été fait.');
         }
 

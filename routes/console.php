@@ -110,3 +110,5 @@ if (rescue(fn () => (bool) Setting::get('external_auto_adopt_enabled', true), tr
 }
 
 Schedule::command('agent:adapt-limits')->everyFiveMinutes()->withoutOverlapping(5);
+
+Schedule::command('agent:purge-logs')->hourly()->withoutOverlapping(5);

@@ -135,6 +135,7 @@ def main(argv=None):
     parser.add_argument('--config', type=Path, default=Path(os.environ.get('COMMUNITY_MANAGER_CONFIG', str(Path(os.environ.get('HERMES_HOME', '~/.hermes')).expanduser() / 'community-manager.json'))))
     subs = parser.add_subparsers(dest='command', required=True)
     subs.add_parser('accounts')
+    p = subs.add_parser('logs'); p.add_argument('--account', type=int); p.add_argument('--platform'); p.add_argument('--status'); p.add_argument('--action'); p.add_argument('--limit',type=int,default=20); p.add_argument('--before',type=int)
     p = subs.add_parser('strategy'); p.add_argument('--account', type=int, required=True); p.add_argument('--update-file', type=Path)
     p = subs.add_parser('inbox'); p.add_argument('--account', type=int, required=True); p.add_argument('--status', choices=['all','unanswered','replied','reply_failed'], default='unanswered')
     p = subs.add_parser('reply-status'); p.add_argument('id',type=int)
@@ -160,10 +161,13 @@ def main(argv=None):
     p = subs.add_parser('x-contacts'); p.add_argument('--account', type=int, required=True); p.add_argument('--page', type=int, default=1)
     p = subs.add_parser('report'); p.add_argument('--hours', type=int, default=24); p.add_argument('--note-file', type=Path); p.add_argument('--commit', action='store_true'); p.add_argument('--key')
     args = parser.parse_args(argv)
-    if args.command not in ('accounts', 'status', 'x-status', 'x-contacts', 'report', 'reply-status') and not daytime():
+    if args.command not in ('accounts', 'logs', 'status', 'x-status', 'x-contacts', 'report', 'reply-status') and not daytime():
         print(json.dumps({'state': 'sleep', 'window': '06:00-22:00 Europe/Lisbon'})); return 0
     client = Client(json.loads(args.config.read_text()))
     if args.command == 'accounts': result = client.api('GET', 'accounts')
+    elif args.command == 'logs':
+        query={k:v for k,v in {'account_id':args.account,'platform':args.platform,'status':args.status,'action':args.action,'limit':args.limit,'before_id':args.before}.items() if v is not None}
+        result=client.api('GET','logs?'+urlencode(query))
     elif args.command == 'report':
         key = args.key or str(uuid.uuid5(uuid.NAMESPACE_URL, client.config['base_url'] + '/report/' + dt.datetime.now(ZoneInfo('Europe/Lisbon')).date().isoformat() + '/' + str(args.hours) + '/' + (args.note_file.read_text() if args.note_file else '')))
         if args.commit and client.db.execute('SELECT 1 FROM reports WHERE id=?', (key,)).fetchone():
