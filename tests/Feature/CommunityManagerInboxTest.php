@@ -87,4 +87,21 @@ class CommunityManagerInboxTest extends TestCase
         $this->getJson($url)->assertConflict();
         Http::assertNothingSent();
     }
+
+    public function test_x_accepte_uniquement_les_destinataires_de_reponse_avant_le_texte_exact(): void
+    {
+        $this->travelTo(\Illuminate\Support\Carbon::parse('2026-11-08T14:00:00Z'));
+        $u = User::factory()->create(['role' => 'manager']);
+        $p = Persona::create(['name' => 'Voix', 'system_prompt' => 'Sobre', 'is_active' => true]);
+        $a = SocialAccount::create(['name' => 'Compte attribué', 'platform_id' => Platform::firstOrCreate(['slug' => 'twitter'], ['name' => 'X'])->id, 'driver' => 'browser', 'browser_username' => 'owner', 'persona_id' => $p->id]);
+        $a->users()->attach($u, ['is_active' => true]);
+        Sanctum::actingAs($u);
+        $item = InboxItem::create(['social_account_id' => $a->id, 'platform_id' => $a->platform_id, 'type' => 'comment', 'external_id' => '987', 'author_username' => 'visitor', 'content' => '@owner @other Très jolie tenue 😊', 'status' => 'unread']);
+        $data = ['context_complete' => true, 'target' => ['id' => '987', 'author' => 'visitor', 'text' => 'Très jolie tenue 😊'], 'conversation' => [['author' => 'visitor', 'text' => 'Très jolie tenue 😊']], 'visible_replies' => []];
+        $this->mock(\App\Services\Browser\BrowserTaskQueue::class)->shouldReceive('run')->twice()->andReturn($data, array_replace($data, ['target' => ['id' => '987', 'author' => 'visitor', 'text' => 'Une autre tenue']]));
+        $this->getJson('/api/community-manager/inbox/'.$item->id.'/context')->assertOk();
+        $this->assertSame('Très jolie tenue 😊', $item->fresh()->content);
+        $this->getJson('/api/community-manager/inbox/'.$item->id.'/context')->assertConflict()->assertJsonPath('skip_item', true);
+        $this->assertSame('Très jolie tenue 😊', $item->fresh()->content);
+    }
 }

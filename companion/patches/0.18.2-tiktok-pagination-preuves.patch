@@ -1,0 +1,152 @@
+--- a/background.js
++++ b/background.js
+@@ -438,14 +438,16 @@
+     if (action.status === 'failed' || !task.payload.confirm_after_reload) return action;
+ 
+     const verify = { kind: 'tiktok.verify', payload: { ...task.payload, action: task.kind } };
++    let lastProof;
+     for (const delay of task.kind === 'tiktok.reply' ? [TIKTOK_REPLY_RELOAD_DELAY] : [5000, 5000]) {
+       await pause(delay);
+       await reloadStudio(tabId);
+       const proof = await askPage(tabId, verify);
++      lastProof = proof;
+       if (proof?.result?.confirmed === true) return finishTikTokRecipe(task, action, { ...proof, result: { ...action.result, ...proof.result, proof:'after_reload' } });
+       if (proof?.status === 'failed') return finishTikTokRecipe(task, action, {status:'uncertain',result:{...action.result,verification_error:proof.error},error:'Relecture TikTok impossible : '+proof.error});
+     }
+-    return finishTikTokRecipe(task, action, { status: 'uncertain', result: action.result, error: action.error || 'Action TikTok absente après rechargement : vérifier le fil avant toute relance.' });
++    return finishTikTokRecipe(task, action, { status: 'uncertain', result: {...action.result, ...lastProof?.result}, error: action.error || (lastProof?.result?.target_found === false ? 'Commentaire TikTok non retrouvé après parcours de la liste : vérifier sans renvoi.' : 'Réponse TikTok absente du fil retrouvé après rechargement : vérifier sans renvoi.') });
+   } catch (e) {
+     return finishTikTokRecipe(task, action, { status: 'uncertain', result: action?.result, error: 'Action TikTok non vérifiée après envoi : ' + e.message });
+   }
+--- a/manifest.json
++++ b/manifest.json
+@@ -1,7 +1,7 @@
+ {
+   "manifest_version": 3,
+   "name": "RS-Max Companion",
+-  "version": "0.18.1",
++  "version": "0.18.2",
+   "description": "Actions assistees sur les reseaux sociaux (engagement, publication) avec remontee vers l'API RS-Max.",
+   "permissions": [
+     "storage",
+--- a/tiktok/comments.js
++++ b/tiktok/comments.js
+@@ -94,7 +94,48 @@
+     option.click();
+     if (!await ctx.waitFor(correct)) throw Error('Filtre des commentaires non confirmé.');
+     await ctx.pause(1000);
++  }
++  /** Cherche aussi au-delà du premier lot chargé ; aucune écriture sociale. */
++  async function findTarget(ctx, target, timeout = 22000) {
++    const seen = new Set(), deadline = Date.now() + timeout;
++    let quiet = 0, screens = 0, resetTop = false;
++    const finish = (item, status) => {
++      ctx.targetSearch = {status, observed_count: seen.size, count: screens};
++      window.RSTaskTrace?.mark('tiktok.target_search', ctx.targetSearch);
++      return item;
++    };
++    await ctx.waitFor(() => rows().length, {timeout: Math.min(5000, timeout)});
++    while (Date.now() < deadline && screens <= 20 && seen.size <= 200) {
++      if (ctx.stopped) throw Error('Arrêt demandé.');
++      const current = rows().map(snapshot);
++      current.forEach(i => seen.add(i.key));
++      const matches = current.filter(i => i.author === target.author && i.content === target.content && i.caption === target.caption);
++      if (matches.length > 1) throw Error('Commentaire ciblé ambigu : aucune action.');
++      if (matches.length === 1) return finish(matches[0], 'found');
++      const last = current.at(-1)?.cell, list = document.querySelector('[data-tt="components_CommentList_FlexColumn"]');
++      const scroller = ctx.findScroller(last || list || document.body) || document.scrollingElement;
++      if (!resetTop) {
++        resetTop = true;
++        if (scroller.scrollTop > 0) {
++          scroller.scrollTo({top: 0, behavior: 'instant'});
++          await ctx.pause(400);
++          continue;
++        }
++      }
++      const before = {top: scroller.scrollTop, height: scroller.scrollHeight};
++      last?.scrollIntoView({block: 'end', behavior: 'instant'});
++      scroller.scrollBy({top: Math.max(300, scroller.clientHeight * .85), behavior: 'instant'});
++      screens++;
++      await ctx.pause(400);
++      await ctx.waitFor(() => rows().some(e => !seen.has(snapshot(e).key)), {timeout: Math.min(1000, Math.max(1, deadline - Date.now()))});
++      const advanced = scroller.scrollTop > before.top + 1 || scroller.scrollHeight > before.height + 1;
++      const fresh = rows().some(e => !seen.has(snapshot(e).key));
++      quiet = !advanced && !fresh && !loadingComments() ? quiet + 1 : 0;
++      if (quiet >= 3) break;
++    }
++    return finish(null, 'target_not_found');
+   }
++
+   async function sources(api) {
+     const R = window.RSMAX;
+     const username = await readIdentity({waitFor:R.waitFor});
+@@ -157,10 +198,7 @@
+     await setCommentFilter(ctx,action.reply);
+     const {limit} = sessionPlan;
+     const matchesTarget = item => item.author === inbox.target.author && item.content === inbox.target.content && item.caption === inbox.target.caption;
+-    const targeted = inbox && await ctx.waitFor(() => {
+-      const matches = rows().map(snapshot).filter(matchesTarget);
+-      return matches.length === 1 && matches[0];
+-    }, {timeout: 12000});
++    const targeted = inbox && await findTarget(ctx, inbox.target);
+     if (inbox && !targeted) throw Error('Commentaire de la tâche introuvable ou ambigu.');
+     ctx.log(`Objectif de ce lancement : ${limit} action(s) confirmée(s), toutes vidéos confondues.`);
+     const seen = new Set();
+@@ -247,5 +285,5 @@
+       return runLocked(ctx, inbox);
+     });
+   }
+-  window.RSTikTokComments = {S,handle,snapshot,digest,likeButton,isLiked,identity,readIdentity,replyControl,visible,text,sources,plan,pacedPause,waitForReply,setCommentFilter,assertCurrent,likeComment,loadMore,run};
++  window.RSTikTokComments = {S,handle,snapshot,digest,likeButton,isLiked,identity,readIdentity,replyControl,visible,text,sources,plan,pacedPause,waitForReply,setCommentFilter,findTarget,assertCurrent,likeComment,loadMore,run};
+ })();
+--- a/tiktok/session.js
++++ b/tiktok/session.js
+@@ -33,10 +33,10 @@
+     return matches.length === 1 ? matches[0] : null;
+   }
+ 
+-  async function findInComments(target, unanswered = false) {
++  async function findInComments(target, unanswered = false, ctx = recipeContext()) {
+     const R = window.RSMAX;
+     await window.RSTikTokComments.setCommentFilter({waitFor: R.waitFor, pause: ms => window.RSPacing.wait(ms)}, unanswered);
+-    return R.waitFor(() => findComment(target), {timeout: 12000});
++    return window.RSTikTokComments.findTarget(ctx, target);
+   }
+ 
+   function recipeContext() {
+@@ -70,11 +70,12 @@
+   async function verify({username, target, text, action}) {
+     const C = window.RSTikTokComments;
+     if (await identity() !== username) return {status: 'failed', error: 'Compte TikTok différent à la relecture.'};
+-    const item = await findInComments(target);
++    const ctx = recipeContext();
++    const item = await findInComments(target, false, ctx);
+     const confirmed = item && (action === 'tiktok.like'
+       ? C.isLiked(item.cell) === true
+       : item.root && await C.waitForReply(item, username, text, window.RSMAX.waitFor, 5000));
+-    return {status: 'done', result: {confirmed: Boolean(confirmed)}};
++    return {status: 'done', result: {confirmed: Boolean(confirmed), target_found: Boolean(item), verification: {...ctx.targetSearch, status: confirmed ? 'confirmed' : item ? action === 'tiktok.like' ? 'like_absent' : 'reply_absent' : 'target_not_found'}}};
+   }
+   chrome.runtime.onMessage.addListener((m,_s,reply)=>{
+     if(m?.type!=='x.task')return false;
+--- a/tests/e2e/tiktok-proof.cjs
++++ b/tests/e2e/tiktok-proof.cjs
+@@ -5,14 +5,15 @@
+ (async()=>{let context,server;try{
+ fs.mkdirSync(out,{recursive:true});server=http.createServer((req,res)=>{res.setHeader('Content-Type','application/json');res.setHeader('Access-Control-Allow-Origin','*');res.end(JSON.stringify({accounts:[],persona:{id:1,name:'Voix test'}}))});await new Promise(r=>server.listen(0,'127.0.0.1',r));
+ context=await chromium.launchPersistentContext(path.join(out,'profile'),{executablePath:'/Users/xavierfonseca/Library/Caches/ms-playwright/chromium-1243/chrome-mac-arm64/Google Chrome for Testing.app/Contents/MacOS/Google Chrome for Testing',headless:true,args:[`--disable-extensions-except=${root}`,`--load-extension=${root}`]});
+-const html=`<!doctype html><meta charset="utf-8"><button data-tt="Header_NewHeader_Clickable" aria-expanded="false"><img src="data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///ywAAAAAAQABAAACAUwAOw==" width="10" height="10"></button><div id="menu"></div><main></main><script>
++const html=`<!doctype html><meta charset="utf-8"><button data-tt="Header_NewHeader_Clickable" aria-expanded="false"><img src="data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///ywAAAAAAQABAAACAUwAOw==" width="10" height="10"></button><div id="menu"></div><main style="height:240px;overflow:auto"></main><script>
+ let writes=0;document.querySelector('button').onclick=e=>{const b=e.currentTarget,on=b.getAttribute('aria-expanded')==='true';b.setAttribute('aria-expanded',String(!on));document.querySelector('#menu').innerHTML=on?'':'<a data-tt="Header_NewHeader_TUXMenuItem" href="/@owner">Compte</a>'};
+-setTimeout(()=>{const f=document.createElement('span');f.dataset.tt='components_FilterButton_TUXText';f.textContent='Not replied';f.onclick=()=>{const option=document.createElement('span');option.textContent='All comments';option.onclick=()=>{f.textContent='All comments';option.remove();document.querySelector('main').innerHTML='<section data-tt="components_CommentCell_FlexColumn"><div><div data-tt="components_MessageCell_FlexRow_3"><a data-tt="components_MessageCell_a" href="/@visitor">visitor</a><span data-tt="components_TUXTextWithMention_TUXText">Très jolie !</span></div><div><div data-tt="VideoCover_index_VideoCoverContainer"></div><span data-tt="components_MessageCell_TruncateText">La tenue du jour</span></div></div><aside><div data-tt="components_MessageCell_FlexRow_3"><a data-tt="components_MessageCell_a" href="/@owner">owner</a><span data-tt="components_TUXTextWithMention_TUXText">Merci beaucoup 🌹</span></div></aside></section>'};document.body.append(option)};document.body.append(f)},2000);
++setTimeout(()=>{const f=document.createElement('span');f.dataset.tt='components_FilterButton_TUXText';f.textContent='Not replied';f.onclick=()=>{const option=document.createElement('span');option.textContent='All comments';option.onclick=()=>{f.textContent='All comments';option.remove();const main=document.querySelector('main');const proofHTML='<section data-tt="components_CommentCell_FlexColumn"><div><div data-tt="components_MessageCell_FlexRow_3"><a data-tt="components_MessageCell_a" href="/@visitor">visitor</a><span data-tt="components_TUXTextWithMention_TUXText">Très jolie !</span></div><div><div data-tt="VideoCover_index_VideoCoverContainer"></div><span data-tt="components_MessageCell_TruncateText">La tenue du jour</span></div></div><aside><div data-tt="components_MessageCell_FlexRow_3"><a data-tt="components_MessageCell_a" href="/@owner">owner</a><span data-tt="components_TUXTextWithMention_TUXText">Merci beaucoup 🌹</span></div></aside></section>';main.innerHTML=Array.from({length:12},(_,i)=>'<section data-tt="components_CommentCell_FlexColumn" style="height:90px"><div data-tt="components_MessageCell_FlexRow_3"><a data-tt="components_MessageCell_a" href="/@other'+i+'">other'+i+'</a><span data-tt="components_TUXTextWithMention_TUXText">Autre commentaire</span></div></section>').join('');main.onscroll=()=>{if(main.scrollTop>400&&!main.dataset.loaded){main.dataset.loaded='1';main.insertAdjacentHTML('beforeend',proofHTML)}}};document.body.append(option)};document.body.append(f)},2000);
+ </script>`;
+ await context.route('https://www.tiktok.com/**',route=>route.fulfill({contentType:'text/html',body:html}));
+ const sw=context.serviceWorkers()[0]||await context.waitForEvent('serviceworker');await sw.evaluate(port=>chrome.storage.local.set({rsmaxConfig:{baseUrl:'http://127.0.0.1:'+port,token:'fixture-only'}}),server.address().port);
+ const page=await context.newPage();await page.goto('https://www.tiktok.com/tiktokstudio/comment');await page.waitForTimeout(250);
+ const started=Date.now();const proof=await sw.evaluate(()=>executeTikTokStudioTask({id:123,kind:'tiktok.verify',payload:{url:'https://www.tiktok.com/tiktokstudio/comment',username:'owner',action:'tiktok.reply',target:{author:'visitor',content:'Très jolie !',caption:'La tenue du jour'},text:'Merci beaucoup 🌹'}}));
+-assert.equal(proof.status,'done');assert.equal(proof.result.confirmed,true);assert.equal(proof.result.proof,'after_reload');assert.equal(proof.result.verified_kind,'tiktok.reply');assert.ok(Date.now()-started>=2000);assert.equal(await page.evaluate(()=>writes),0);
++assert.equal(proof.status,'done');assert.equal(proof.result.confirmed,true);assert.equal(proof.result.proof,'after_reload');assert.equal(proof.result.verified_kind,'tiktok.reply');assert.equal(proof.result.target_found,true);assert.ok(proof.result.verification.observed_count>=14,JSON.stringify(proof));assert.ok(Date.now()-started>=2000);assert.equal(await page.evaluate(()=>writes),0);
++const missing=await sw.evaluate(()=>executeTikTokStudioTask({id:124,kind:'tiktok.verify',payload:{url:'https://www.tiktok.com/tiktokstudio/comment',username:'owner',action:'tiktok.reply',target:{author:'visitor',content:'Très jolie !',caption:'La tenue du jour'},text:'Un texte réellement absent'}}));assert.equal(missing.result.confirmed,false);assert.equal(missing.result.target_found,true);assert.equal(missing.result.verification.status,'reply_absent');assert.equal(await page.evaluate(()=>writes),0);
+ console.log('Relecture TikTok : réponse exacte et auteur prouvés après reload malgré le filtre retardé ; aucun envoi.');
+ }finally{await context?.close();await new Promise(r=>server?server.close(r):r())}})().catch(e=>{console.error(e);process.exitCode=1});

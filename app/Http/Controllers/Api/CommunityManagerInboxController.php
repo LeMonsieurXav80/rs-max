@@ -67,10 +67,18 @@ class CommunityManagerInboxController extends Controller
             } catch (\App\Services\Browser\BrowserException $e) {
                 abort(502, $e->getMessage());
             }
+            $liveText = $xThread['target']['text'] ?? null;
+            $storedText = (string) $inboxItem->content;
+            // Les anciennes mentions incluent les destinataires de réponse ; le fil natif les affiche hors du texte.
+            $sameText = is_string($liveText) && ($liveText === $storedText || ($liveText !== ''
+                && preg_replace('/^(?:@[a-zA-Z0-9_]{1,15}[ \t\r\n]+)+/', '', $storedText) === $liveText));
             if (! (($xThread['context_complete'] ?? false) && ($xThread['target']['id'] ?? null) === (string) $inboxItem->external_id
                 && strtolower($xThread['target']['author'] ?? '') === strtolower(ltrim($inboxItem->author_username, '@'))
-                && ($xThread['target']['text'] ?? null) === $inboxItem->content)) {
+                && $sameText)) {
                 $this->deferContext($inboxItem, 'context_changed', 'Fil ou commentaire modifié : passer au commentaire suivant et relire plus tard.');
+            }
+            if ($liveText !== $storedText) {
+                $inboxItem->update(['content' => $liveText]);
             }
             $own = strtolower($a->browser_username);
             if (collect(array_merge(array_slice($xThread['conversation'] ?? [], 1), $xThread['visible_replies'] ?? []))

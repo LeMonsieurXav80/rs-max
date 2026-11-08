@@ -19,9 +19,9 @@ class TikTokInboxService implements PlatformInboxInterface
 
     private const READ_TIMEOUT = 50;
 
-    private const ACTION_TIMEOUT = 90;
+    private const ACTION_TIMEOUT = 120;
 
-    private const REPLY_TIMEOUT = 195;
+    private const REPLY_TIMEOUT = 240;
 
     public function __construct(private TikTokSessionService $sessions, private BrowserTaskQueue $queue) {}
 
