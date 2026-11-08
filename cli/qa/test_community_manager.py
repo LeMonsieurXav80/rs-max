@@ -144,4 +144,17 @@ class CommunityManagerTest(unittest.TestCase):
                 self.assertEqual(cm.main(['--config',str(config),'note','--text','Deux gestes.']),0);api.assert_not_called()
             self.assertEqual((Path(tmp)/'workspace/last-x-cycle-note.txt').read_text(),'Deux gestes.')
 
+    def test_photo_post_apercu_repetition_et_cle_stable(self):
+        import json,io,contextlib
+        with tempfile.TemporaryDirectory() as tmp:
+            config=Path(tmp)/'config.json';config.write_text(json.dumps({'state_path':tmp+'/state.sqlite'}))
+            args=['--config',str(config),'photo-post','--account','11','--media','5','6','--caption','Des paysages.','--visibility','private']
+            with patch.object(cm,'daytime',return_value=True),patch.object(cm.Client,'api',return_value={}) as api,contextlib.redirect_stdout(io.StringIO()):
+                cm.main(args)
+                self.assertTrue(api.call_args.args[2]['dry_run']);self.assertEqual(api.call_args.args[2]['media_ids'],[5,6]);api.reset_mock()
+                with self.assertRaises(RuntimeError):cm.main(args+['--commit'])
+                api.assert_not_called()
+                cm.main(args+['--commit','--rehearse','--request-key','00000000-0000-4000-8000-000000000000'])
+                self.assertFalse(api.call_args.args[2]['dry_run']);self.assertTrue(api.call_args.args[2]['rehearse'])
+
 if __name__=='__main__': unittest.main()

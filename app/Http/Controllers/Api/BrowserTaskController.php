@@ -49,6 +49,24 @@ class BrowserTaskController extends Controller
         return response()->json(['ok' => true]);
     }
 
+    public function checkpoint(Request $r, BrowserTask $task): JsonResponse
+    {
+        abort_unless($r->user()->isAdmin(), 403);
+        $v = $r->validate(['result' => 'required|array']);
+        app(\App\Services\Agent\TikTokPhotoPublisher::class)->checkpoint($task, $v['result']);
+
+        return response()->json(['ok' => true]);
+    }
+
+    public function authorizePhoto(Request $r, BrowserTask $task): JsonResponse
+    {
+        abort_unless($r->user()->isAdmin(), 403);
+        abort_unless($task->status === 'running' && $task->kind === 'tiktok.photo.publish', 409);
+        app(\App\Services\Agent\TikTokPhotoPublisher::class)->claim($task);
+
+        return response()->json(['ok' => true]);
+    }
+
     public function finish(Request $r, BrowserTask $task): JsonResponse
     {
         abort_unless($r->user()->isAdmin(), 403);
@@ -62,7 +80,11 @@ class BrowserTaskController extends Controller
 
         app(\App\Services\Agent\AutomationJournal::class)->append($task, $v['diagnostics'] ?? [], true);
         unset($v['diagnostics']);
+        if ($task->kind === 'tiktok.photo.publish') {
+            $v['result'] = array_replace($task->result ?? [], $v['result'] ?? []);
+        }
         $task->update($v + ['finished_at' => now()]);
+        app(\App\Services\Agent\TikTokPhotoPublisher::class)->finish($task);
         app(\App\Services\Agent\XEngagementService::class)->finish($task);
         app(\App\Services\Agent\AccountActionBudget::class)->finish($task);
 

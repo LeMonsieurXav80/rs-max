@@ -1356,6 +1356,11 @@
         </div>
 
         {{-- Bulk action bar --}}
+        @if(auth()->user()->isManager())
+        <div x-show="selected && !selected.is_video && !multiSelect" x-cloak class="mb-3">
+            <a :href="'/tiktok/photos?media_ids=' + (selected ? selected.id : '')" class="inline-flex px-3 py-2 bg-gray-900 text-white rounded-lg text-sm">Publier cette photo sur TikTok</a>
+        </div>
+        @endif
         <div x-show="multiSelect" x-cloak
              class="mb-4 bg-amber-50 border border-amber-200 rounded-xl px-4 py-3 flex flex-wrap items-center gap-3">
             <button @click="selectAll()"
@@ -1366,6 +1371,9 @@
                 <span x-text="multiSelected.length"></span> fichier(s) selectionne(s)
             </span>
             <div class="flex items-center gap-2 flex-wrap ml-auto" x-show="multiSelected.length > 0">
+                @if(auth()->user()->isManager())
+                <a :href="'/tiktok/photos?media_ids=' + multiSelected.join(',')" class="px-3 py-1.5 text-xs font-medium bg-gray-900 text-white rounded-lg">Publier sur TikTok</a>
+                @endif
                 {{-- Action : marquer comme jamais publiable (override par photo) --}}
                 <div class="flex items-center gap-1.5 px-2 py-1 bg-white border border-amber-200 rounded-lg">
                     <span class="text-[11px] font-medium text-gray-500 uppercase tracking-wide">Visibilité</span>

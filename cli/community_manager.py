@@ -141,6 +141,11 @@ def main(argv=None):
     parser.add_argument('--config', type=Path, default=Path(os.environ.get('COMMUNITY_MANAGER_CONFIG', str(Path(os.environ.get('HERMES_HOME', '~/.hermes')).expanduser() / 'community-manager.json'))))
     subs = parser.add_subparsers(dest='command', required=True)
     subs.add_parser('accounts')
+    subs.add_parser('media-folders')
+    p=subs.add_parser('media-search');p.add_argument('--folder',required=True);p.add_argument('--limit',type=int,default=10)
+    p=subs.add_parser('photo-post');p.add_argument('--account',type=int,required=True);p.add_argument('--media',type=int,nargs='+',required=True);p.add_argument('--title',default='');p.add_argument('--caption',required=True);p.add_argument('--visibility',choices=['public','private'],required=True);p.add_argument('--request-key');p.add_argument('--rehearse',action='store_true');p.add_argument('--commit',action='store_true')
+    p=subs.add_parser('photo-check');p.add_argument('id',type=int);p.add_argument('--commit',action='store_true')
+    p=subs.add_parser('photo-status');p.add_argument('id',type=int)
     p = subs.add_parser('note'); p.add_argument('--text',required=True)
     p = subs.add_parser('logs'); p.add_argument('--account', type=int); p.add_argument('--platform'); p.add_argument('--status'); p.add_argument('--action'); p.add_argument('--limit',type=int,default=20); p.add_argument('--before',type=int)
     p = subs.add_parser('strategy'); p.add_argument('--account', type=int, required=True); p.add_argument('--update-file', type=Path)
@@ -170,10 +175,18 @@ def main(argv=None):
     p = subs.add_parser('x-contacts'); p.add_argument('--account', type=int, required=True); p.add_argument('--page', type=int, default=1)
     p = subs.add_parser('report'); p.add_argument('--hours', type=int, default=24); p.add_argument('--scheduled',action='store_true'); p.add_argument('--note-file', type=Path); p.add_argument('--note'); p.add_argument('--commit', action='store_true'); p.add_argument('--key')
     args = parser.parse_args(argv)
-    if args.command not in ('accounts', 'note', 'logs', 'status', 'x-status', 'x-contacts', 'report', 'reply-status') and not daytime():
+    if args.command not in ('accounts', 'note', 'logs', 'status', 'x-status', 'x-contacts', 'report', 'reply-status', 'photo-status') and not daytime():
         print(json.dumps({'state': 'sleep', 'window': '06:00-22:00 Europe/Lisbon'})); return 0
     client = Client(json.loads(args.config.read_text()))
     if args.command == 'accounts': result = client.api('GET', 'accounts')
+    elif args.command == 'media-folders': result=client.api('GET','media/folders')
+    elif args.command == 'media-search': result=client.api('GET','media/search?'+urlencode({'folder':args.folder,'limit':args.limit}))
+    elif args.command == 'photo-check': result=client.api('POST',f'tiktok/photo-posts/{args.id}/verify',{'dry_run':not args.commit})
+    elif args.command == 'photo-status': result=client.api('GET',f'tiktok/photo-posts/{args.id}')
+    elif args.command == 'photo-post':
+        if args.commit and not args.request_key: raise RuntimeError('Une request-key UUID stable est requise avant la demande ; la conserver après un timeout.')
+        data={'media_ids':args.media,'title':args.title,'caption':args.caption,'visibility':args.visibility,'request_key':args.request_key,'dry_run':not args.commit,'rehearse':args.rehearse}
+        result=client.api('POST',f'accounts/{args.account}/tiktok/photo-posts',data)
     elif args.command == 'note':
         home=Path(os.environ.get('HERMES_HOME','~/.hermes')).expanduser()
         (home/'workspace').mkdir(parents=True,exist_ok=True)

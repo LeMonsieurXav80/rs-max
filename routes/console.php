@@ -2,6 +2,7 @@
 
 use App\Models\BotTargetAccount;
 use App\Models\Setting;
+use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Schedule;
 
@@ -112,3 +113,10 @@ if (rescue(fn () => (bool) Setting::get('external_auto_adopt_enabled', true), tr
 Schedule::command('agent:adapt-limits')->everyFiveMinutes()->withoutOverlapping(5);
 
 Schedule::command('agent:purge-logs')->hourly()->withoutOverlapping(5);
+
+Artisan::command('tiktok:expire-photo-posts', function () {
+    \App\Models\BrowserTask::where('kind', 'tiktok.photo.publish')->whereIn('status', ['pending', 'running'])->where('created_at', '<', now()->subMinutes(20))->each(function ($task) {
+        app(\App\Services\Agent\TikTokPhotoPublisher::class)->state($task);
+    });
+})->purpose('Terminer les publications photo périmées sans jamais les relancer.');
+Schedule::command('tiktok:expire-photo-posts')->everyMinute()->withoutOverlapping(2);

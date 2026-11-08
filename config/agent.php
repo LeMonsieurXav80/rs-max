@@ -39,6 +39,7 @@ return [
             'unfollow' => ['label' => 'Désuivre après vérification du retour', 'kind' => 'write', 'channel' => 'browser', 'status' => 'ready', 'limit' => 5],
         ]],
         'tiktok' => ['name' => 'TikTok', 'actions' => [
+            'photo.publish' => ['label' => 'Publier une photo ou un carrousel depuis les médias', 'kind' => 'write', 'channel' => 'browser', 'status' => 'ready', 'limit' => 3],
             'comments.read' => ['label' => 'Lire les commentaires', 'kind' => 'read', 'channel' => 'browser', 'status' => 'ready', 'limit' => 24],
             'comment.like' => ['label' => 'Aimer un commentaire de vidéo', 'kind' => 'write', 'channel' => 'browser', 'status' => 'ready', 'limit' => 30],
             'video.like' => ['label' => 'Aimer une vidéo', 'kind' => 'write', 'channel' => 'browser', 'status' => 'ready', 'limit' => 30],

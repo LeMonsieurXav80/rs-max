@@ -16,6 +16,11 @@ use Illuminate\Support\Facades\Route;
 
 Route::middleware(['auth:sanctum', \App\Http\Middleware\CommunityManagerTokenScope::class])->group(function () {
     Route::prefix('community-manager')->controller(\App\Http\Controllers\Api\CommunityManagerController::class)->group(function () {
+        Route::post('accounts/{id}/tiktok/photo-posts', [\App\Http\Controllers\Api\TikTokPhotoController::class, 'store']);
+        Route::get('tiktok/photo-posts/{task}', [\App\Http\Controllers\Api\TikTokPhotoController::class, 'show']);
+        Route::post('tiktok/photo-posts/{task}/verify', [\App\Http\Controllers\Api\TikTokPhotoController::class, 'verify']);
+        Route::get('media/folders', [\App\Http\Controllers\Api\TikTokPhotoController::class, 'folders']);
+        Route::get('media/search', [\App\Http\Controllers\Api\TikTokPhotoController::class, 'mediaSearch']);
         Route::get('/accounts/{id}/comment-context', 'commentContext');
         Route::get('accounts/{id}/strategy', [\App\Http\Controllers\Api\AccountStrategyController::class, 'show']);
         Route::patch('accounts/{id}/strategy', [\App\Http\Controllers\Api\AccountStrategyController::class, 'update']);
@@ -201,6 +206,8 @@ Route::middleware(['auth:sanctum', \App\Http\Middleware\CommunityManagerTokenSco
     Route::get('/extension/tasks/next', [\App\Http\Controllers\Api\BrowserTaskController::class, 'next']);
     Route::get('/extension/tasks/{task}/session', [\App\Http\Controllers\Api\BrowserTaskController::class, 'session']);
     Route::post('/extension/tasks/{task}/finish', [\App\Http\Controllers\Api\BrowserTaskController::class, 'finish']);
+    Route::post('/extension/tasks/{task}/checkpoint', [\App\Http\Controllers\Api\BrowserTaskController::class, 'checkpoint']);
+    Route::post('/extension/tasks/{task}/authorize-photo', [\App\Http\Controllers\Api\BrowserTaskController::class, 'authorizePhoto']);
     Route::post('/extension/tasks/{task}/progress', [\App\Http\Controllers\Api\BrowserTaskController::class, 'progress'])->middleware('throttle:240,1');
     Route::get('/extension/x/session', [\App\Http\Controllers\Api\XExtensionController::class, 'sessionStatus']);
     Route::post('/extension/x/session', [\App\Http\Controllers\Api\XExtensionController::class, 'session'])->middleware('throttle:10,1');

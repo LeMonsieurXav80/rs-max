@@ -245,6 +245,9 @@ Route::middleware(['auth', 'verified', 'throttle:600,1'])->group(function () {
     // ─── Manager (gestionnaire) ─────────────────────────────────
 
     Route::middleware('role:manager')->group(function () {
+        Route::get('tiktok/photos', [\App\Http\Controllers\Api\TikTokPhotoController::class, 'form'])->name('tiktok.photos');
+        Route::post('tiktok/accounts/{id}/photo-posts', [\App\Http\Controllers\Api\TikTokPhotoController::class, 'store']);
+        Route::get('tiktok/photo-posts/{task}', [\App\Http\Controllers\Api\TikTokPhotoController::class, 'show']);
         // Inbox sync
         Route::post('inbox/sync', [InboxController::class, 'sync'])->name('inbox.sync');
 

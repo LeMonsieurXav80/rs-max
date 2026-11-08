@@ -29,10 +29,13 @@ class AutomationJournal
             'proof' => $this->proof($result), 'dry_run' => (bool) ($p['dry'] ?? false)]);
         $log->fill(['social_account_id' => $task->social_account_id, 'action_type' => $task->kind === 'x.agent.act' ? 'x.'.($p['action'] ?? 'act') : $task->kind,
             'source' => 'browser', 'target_uri' => $this->url($p['target']['url'] ?? $p['url'] ?? ''), 'target_author' => $this->text($p['target']['author'] ?? $p['handle'] ?? null, 255),
-            'target_text' => $this->text($p['text'] ?? $p['target']['text'] ?? null, 2000),
+            'target_text' => $this->text($p['text'] ?? $p['caption'] ?? $p['target']['text'] ?? null, 2000),
             'success' => $rawStatus === 'done', 'error' => $this->text($task->error, 1000),
             'metadata' => $metadata, 'performed_at' => $task->finished_at ?? $task->claimed_at ?? $task->created_at]);
         parse_str(parse_url($p['url'] ?? '', PHP_URL_QUERY) ?? '', $query);
+        if (str_starts_with($task->kind, 'tiktok.photo.') && isset($result['url'])) {
+            $log->target_uri = $this->url($result['url']);
+        }
         if (preg_match('/^[0-9]+$/', (string) ($query['in_reply_to'] ?? ''))) {
             $log->target_uri = 'https://x.com/i/status/'.$query['in_reply_to'];
         }
@@ -110,13 +113,16 @@ class AutomationJournal
 
     public function proof(array $result): array
     {
-        $proof = array_intersect_key($result, array_flip(['confirmed', 'unchanged', 'gesture', 'proof', 'id', 'post_id', 'reply_id', 'parent_id', 'quote_id']));
+        $proof = array_intersect_key($result, array_flip(['confirmed', 'unchanged', 'gesture', 'proof', 'id', 'post_id', 'reply_id', 'parent_id', 'quote_id', 'media_count', 'visibility', 'upload_order_verified']));
         $proof = array_filter($proof, fn ($value) => is_scalar($value));
         $proof = array_map(fn ($value) => is_string($value) ? $this->text($value, 120) : $value, $proof);
         foreach (['post_url', 'reply_url'] as $key) {
             if (isset($result[$key])) {
                 $proof[$key] = $this->url($result[$key]);
             }
+        }
+        if (isset($result['url']) && preg_match('~^https://www\.tiktok\.com/@[\w.]+/photo/[0-9]+$~', $result['url'])) {
+            $proof['post_url'] = $this->url($result['url']);
         }
         if (isset($result['verification']) && is_array($result['verification'])) {
             $proof['verification'] = $this->details($result['verification']);

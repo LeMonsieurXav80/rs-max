@@ -23,10 +23,10 @@ class AccountActionBudget
                     throw new BrowserException('Quota quotidien atteint : aucun geste effectué.');
                 }
             }
-            if ($account->platform->slug === 'tiktok' && $action === 'tiktok.reply') {
-                $setting = $account->agentActions()->where('action', 'reply')->first();
+            if ($account->platform->slug === 'tiktok' && in_array($action, ['tiktok.reply', 'tiktok.photo.publish'], true)) {
+                $setting = $account->agentActions()->where('action', substr($action, 7))->first();
                 if ($setting && (clone $events)->where('action', $action)->where('created_at', '>=', $this->dayStart())->count() >= $setting->daily_limit) {
-                    throw new BrowserException('Quota quotidien de réponses TikTok atteint : aucun geste effectué.');
+                    throw new BrowserException($action === 'tiktok.reply' ? 'Quota quotidien de réponses TikTok atteint : aucun geste effectué.' : 'Quota quotidien de photos TikTok atteint : aucun geste effectué.');
                 }
             }
             $usage = $this->usage($account);
@@ -60,7 +60,7 @@ class AccountActionBudget
 
             return;
         }
-        if (! preg_match('/^(tiktok\.(reply|like|video\.like|comment\.like|video\.comment|publish.*|upload\.(stage|draft))|x\.(post|repost|publish|reply|like|delete).*)$/', $task->kind)) {
+        if (! preg_match('/^(tiktok\.(reply|like|photo\.publish|video\.like|comment\.like|video\.comment|publish.*|upload\.(stage|draft))|x\.(post|repost|publish|reply|like|delete).*)$/', $task->kind)) {
             return;
         }
         $action = $task->kind === 'x.post' && str_contains($task->payload['url'] ?? '', 'in_reply_to=') ? 'x.reply' : $task->kind;

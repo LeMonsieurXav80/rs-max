@@ -1,0 +1,173 @@
+--- a/background.js
++++ b/background.js
+@@ -483,11 +483,45 @@
+   finally { taskMedia=null; }
+ }
+ 
++async function readTikTokPhotoProof(tabId,p) {
++  let photo_url=p.photo_url;
++  if(!photo_url){
++    await chrome.tabs.update(tabId,{url:'https://www.tiktok.com/tiktokstudio/content'});await waitTaskTab(tabId);
++    const found=await askPage(tabId,{kind:'tiktok.photo.locate',payload:p});photo_url=found?.result?.url;
++  }
++  if(!photo_url)return{status:'uncertain',error:'Photo envoyée, URL nouvelle non retrouvée : aucun renvoi.'};
++  const u=new URL(photo_url),match=u.pathname.match(/^\/@([\w.]+)\/photo\/[0-9]+$/);
++  if(u.origin!=='https://www.tiktok.com'||!match||match[1]!==p.username)throw Error('URL de preuve photo invalide.');
++  await chrome.tabs.update(tabId,{url:photo_url});await waitTaskTab(tabId);await reloadStudio(tabId);
++  const proof=await askPage(tabId,{kind:'tiktok.photo.verify',payload:{...p,photo_url}});
++  return proof?.result?.confirmed===true?{status:'done',result:proof.result}:{status:'uncertain',result:{...proof?.result,url:photo_url},error:proof?.error||'Publication photo non confirmée après reload : aucun renvoi.'};
++}
++async function executeTikTokPhotoTask(task) {
++  if(task.payload.url!=='https://www.tiktok.com/tiktokstudio/upload')throw Error('Import photo TikTok inattendu.');
++  const tabId=await taskTab(task.payload.url);let sent=false,requested=false,receipt={};
++  try {
++    await askPage(tabId,{kind:'tiktok.photo.ready'});
++    requested=true;const action=await chrome.tabs.sendMessage(tabId,{type:'x.task',task});sent=action?.result?.send_clicked===true;receipt=action?.result||{};
++    if(task.payload.dry||!sent||action?.status!=='done')return action||{status:'failed',error:'Préparation photo sans résultat.'};
++    await apiFetch({method:'POST',path:`/extension/tasks/${task.id}/checkpoint`,body:{result:receipt}});
++    await pause(8000);
++    const proof=await readTikTokPhotoProof(tabId,{...task.payload,started_at:action.result.started_at});
++    return {...proof,result:{...action.result,...proof.result}};
++  }catch(e){return{status:sent||(requested&&!task.payload.dry)?'uncertain':'failed',error:e.message,result:{...receipt,send_clicked:sent?true:(requested&&!task.payload.dry?null:false)}};}
++  finally{taskMedia=null;await chrome.tabs.remove(tabId).catch(()=>{});}
++}
++async function checkTikTokPhotoTask(task) {
++  const tabId=await taskTab('https://www.tiktok.com/tiktokstudio/content');
++  try{return await readTikTokPhotoProof(tabId,task.payload)}finally{await chrome.tabs.remove(tabId).catch(()=>{});}
++}
++
+ async function executeTask(task) {
+   if (task.payload?.activity_window) {
+     if (!self.RSActivityWindow) throw Error('Contrôle horaire indisponible.');
+     self.RSActivityWindow.assert(task.payload.activity_window);
+   }
++  if(task.kind==='tiktok.photo.check')return checkTikTokPhotoTask(task);
++  if(task.kind==='tiktok.photo.publish')return executeTikTokPhotoTask(task);
+   if(task.kind==='x.post')return executeXPostTask(task);
+   if (['x.agent.read','x.agent.act','x.like','x.repost'].includes(task.kind)) return executeXAgentTask(task);
+   if (TIKTOK_FEED_TASKS.has(task.kind)) return executeTikTokFeedTask(task);
+--- a/manifest.json
++++ b/manifest.json
+@@ -1,7 +1,7 @@
+ {
+   "manifest_version": 3,
+   "name": "RS-Max Companion",
+-  "version": "0.16.7",
++  "version": "0.17.0",
+   "description": "Actions assistees sur les reseaux sociaux (engagement, publication) avec remontee vers l'API RS-Max.",
+   "permissions": [
+     "storage",
+@@ -18,7 +18,7 @@
+     "open_in_tab": true
+   },
+   "action": {
+-    "default_title": "RS-Max Companion — Mes Shorts"
++    "default_title": "RS-Max Companion \u2014 Mes Shorts"
+   },
+   "background": {
+     "service_worker": "background.js"
+@@ -103,7 +103,8 @@
+         "tiktok/caption.js",
+         "tiktok/worker.js",
+         "tiktok/session.js",
+-        "tiktok/upload-agent.js"
++        "tiktok/upload-agent.js",
++        "tiktok/photos.js"
+       ],
+       "css": [
+         "content/ui.css"
+@@ -146,7 +147,8 @@
+         "shared/pacing.js",
+         "shared/activity-window.js",
+         "shared/task-trace.js",
+-        "tiktok/feed.js"
++        "tiktok/feed.js",
++        "tiktok/photos.js"
+       ],
+       "run_at": "document_idle"
+     }
+--- /dev/null
++++ b/tiktok/photos.js
+@@ -0,0 +1,37 @@
++/* Photos natives de Studio : fichiers ordonnés, texte fourni, un seul clic d'envoi. */
++(() => {
++ 'use strict';
++ if(window.RSTikTokPhotos)return;
++ const visible=e=>!!e?.isConnected&&e.getClientRects().length>0&&getComputedStyle(e).visibility!=='hidden';
++ const text=e=>(e?.innerText||e?.textContent||'').replace(/\r\n/g,'\n').trim();
++ function captionText(field){const blocks=[...(field?.querySelectorAll('[data-block=\"true\"]')||[])];return blocks.length?blocks.map(b=>(b.textContent||'')).join('\n').trim():text(field)}
++ const sleep=ms=>new Promise(r=>setTimeout(r,ms));
++ async function wait(fn,timeout=20000){const end=Date.now()+timeout;while(Date.now()<end){const v=fn();if(v)return v;await sleep(200)}return null}
++ const buttons=()=>[...document.querySelectorAll('button,[role="button"],[role="tab"]')].filter(visible);
++ const mark=(stage,details={})=>window.RSTaskTrace?.mark('tiktok.photo.'+stage,details);
++ function guard(p){window.RSActivityWindow.assert(p.activity_window);if(!p.deadline||Date.now()>Date.parse(p.deadline))throw Error('Demande photo périmée.');}
++ async function identity(p){guard(p);if(!location.pathname.startsWith('/tiktokstudio')||!window.RSTikTokComments)throw Error('Studio indisponible ou session déconnectée.');if(await window.RSTikTokComments.readIdentity({waitFor:(fn,o)=>wait(fn,o?.timeout)})!==p.username)throw Error('Compte TikTok différent : aucun envoi.');}
++ const sha=async bytes=>[...new Uint8Array(await crypto.subtle.digest('SHA-256',bytes))].map(b=>b.toString(16).padStart(2,'0')).join('');
++ async function files(media){if(!Array.isArray(media)||media.length<1||media.length>35||media.reduce((n,m)=>n+m.size,0)>250*1024*1024)throw Error('Lot photo invalide ou supérieur à 250 Mo.');const result=[];for(const m of media){const response=await chrome.runtime.sendMessage({type:'x.task.media',url:m.url});if(!response?.ok||response.data.size!==m.size||m.size>50*1024*1024)throw Error('Photo inaccessible ou taille différente.');const chunks=[];for(let offset=0;offset<m.size;offset+=512*1024){const r=await chrome.runtime.sendMessage({type:'x.task.chunk',offset,size:512*1024});if(!r?.ok)throw Error('Photo interrompue.');chunks.push(Uint8Array.from(atob(r.data),c=>c.charCodeAt(0)));}const file=new File(chunks,m.name,{type:m.mimetype});if(await sha(await file.arrayBuffer())!==m.sha256)throw Error('Octets de la photo modifiés.');result.push(file)}return result}
++ const titleInput=()=>document.querySelector('input[placeholder="Add a catchy title"],input[placeholder="Ajoute un titre accrocheur"],input[placeholder="Ajoutez un titre accrocheur"]');
++ const captionInput=()=>document.querySelector('[contenteditable][role="combobox"], [contenteditable="true"], [contenteditable="plaintext-only"], [role="combobox"][aria-autocomplete="list"]');
++ const thumbnails=()=>[...document.querySelectorAll('[aria-roledescription="draggable"][data-id]')].filter(visible);
++ function diagnostic(){return {url:location.href,ready:document.readyState,has_engine:!!window.RSMAX,has_comments:!!window.RSTikTokComments,text:document.body.innerText.slice(-3500),fields:[...document.querySelectorAll('input,textarea,[contenteditable],[role="combobox"]')].filter(visible).map(e=>({tag:e.tagName,editable:e.isContentEditable,contenteditable:e.getAttribute('contenteditable'),type:e.type,role:e.getAttribute('role'),value:e.value,text:text(e),placeholder:e.getAttribute('placeholder')})),thumbnails:thumbnails().map(e=>({id:e.getAttribute('data-id'),images:[...e.querySelectorAll('img')].map(i=>({src:i.src.startsWith('data:')?'data:omitted':i.src.split('?')[0],width:i.naturalWidth}))})),controls:buttons().map(e=>({text:text(e),role:e.getAttribute('role'),disabled:e.disabled||e.getAttribute('aria-disabled')==='true'}))}}
++ async function pixels(blob){const bitmap=await createImageBitmap(blob);try{const canvas=document.createElement('canvas');canvas.width=canvas.height=32;const ctx=canvas.getContext('2d',{willReadFrequently:true});ctx.fillStyle='#fff';ctx.fillRect(0,0,32,32);ctx.drawImage(bitmap,0,0,32,32);return ctx.getImageData(0,0,32,32).data}finally{bitmap.close()}}
++ function distance(a,b){let sum=0;for(let i=0;i<a.length;i+=4)for(let c=0;c<3;c++)sum+=(a[i+c]-b[i+c])**2;return Math.sqrt(sum/(a.length/4*3))/255}
++ async function checkOrder(p){const list=await wait(()=>{const items=thumbnails();return items.length===p.media.length&&items.every(e=>e.querySelector('img')?.complete&&e.querySelector('img')?.naturalWidth>0)&&items},120000);if(!list)throw Error('Nombre de photos non confirmé dans l’éditeur.');const blobs=[];for(const item of list){const img=item.querySelector('img');if(!img?.src.startsWith('blob:'))throw Error('Vignette photo non vérifiable.');blobs.push(await(await fetch(img.src)).blob())}const hashes=await Promise.all(blobs.map(async b=>sha(await b.arrayBuffer())));if(hashes.every((h,i)=>h===p.media[i].sha256))return true;
++ // Studio réencode les JPEG : vérifier le contenu décodé, et refuser toute attribution ambiguë.
++ const originals=await files(p.media),expected=await Promise.all(originals.map(pixels)),observed=await Promise.all(blobs.map(pixels));for(let i=0;i<observed.length;i++){const scores=expected.map((e,j)=>({j,d:distance(e,observed[i])})).sort((a,b)=>a.d-b.d);if(scores[0].j!==i||scores[0].d>0.06||(scores[1]&&scores[1].d-scores[0].d<0.02))throw Error('Ordre ou contenu visuel des vignettes différent ou ambigu.')}return true}
++
++ function privacyMatches(p){const pattern=p.visibility==='private'?/^(Only you|Moi uniquement|Toi uniquement)$/i:/^(Everyone|Tout le monde)$/i;return buttons().some(e=>e.getAttribute('role')==='combobox'&&pattern.test(text(e)))}
++ async function privacy(p){const wanted=p.visibility==='private'?/^(Only you|Moi uniquement|Toi uniquement)$/i:/^(Everyone|Tout le monde)$/i;let control=buttons().find(e=>e.getAttribute('role')==='combobox'&&/^(Everyone|Only you|Friends|Tout le monde|Moi uniquement|Toi uniquement|Amis)$/i.test(text(e)));if(!control)throw Error('Visibilité TikTok non vérifiable.');if(!wanted.test(text(control))){control.click();const option=await wait(()=>[...document.querySelectorAll('[role="option"],[role="menuitem"],span,div')].find(e=>visible(e)&&wanted.test(text(e))&&(e.getAttribute('role')==='option'||!e.children.length)));if(!option)throw Error('Option de visibilité introuvable.');option.click();if(!await wait(()=>privacyMatches(p)))throw Error('Visibilité modifiée non confirmée.');}return true}
++ async function prepare(p){await identity(p);if(location.pathname!=='/tiktokstudio/upload'||location.search)throw Error('Import photo vide attendu.');if(captionInput()||document.querySelector('textarea'))throw Error('Un éditeur existe déjà : aucun remplacement.');mark('prepare');const photo=await wait(()=>buttons().find(e=>e.getAttribute('aria-controls')==='panel-photo'||/^(Photos|Photo)$/.test(text(e))));if(!photo)throw Error('Photos indisponibles sur ce compte.');photo.click();const input=await wait(()=>document.querySelector('input[type="file"][accept*="image"]'));if(!input)throw Error('Import image introuvable.');const ordered=await files(p.media);await identity(p);const transfer=new DataTransfer();ordered.forEach(f=>transfer.items.add(f));input.files=transfer.files;input.dispatchEvent(new Event('input',{bubbles:true}));input.dispatchEvent(new Event('change',{bubbles:true}));const field=await wait(captionInput,120000);if(!field?.isContentEditable)throw Error('Description TikTok non éditable.');const title=titleInput();if(!title)throw Error('Champ titre photo introuvable.');Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value').set.call(title,p.title||'');title.dispatchEvent(new Event('input',{bubbles:true}));title.dispatchEvent(new Event('change',{bubbles:true}));const accepted=()=>captionText(captionInput())===p.caption.trim()&&titleInput()?.value===(p.title||'')&&[...document.querySelectorAll('span,div')].some(e=>visible(e)&&new RegExp('^'+p.caption.length+'\\s*\\/\\s*4000$').test(text(e)));const checkedWait=async(fn,label)=>{const result=await wait(fn);if(!result)throw Error(label+' non confirmé.');return result};if(!captionText(field)){field.focus();await sleep(100);guard(p);try{window.RSTikTokCaption.select(field)}catch(e){if(e.message!=='Sélection native impossible.'||captionText(field)||document.activeElement!==field)throw e;const range=document.createRange();range.selectNodeContents(field);range.collapse(false);const selection=getSelection();selection.removeAllRanges();selection.addRange(range);field.dispatchEvent(new KeyboardEvent('keyup',{key:'a',code:'KeyA',bubbles:true}));field.dispatchEvent(new MouseEvent('mouseup',{bubbles:true}));if(!field.contains(selection.anchorNode)||!field.contains(selection.focusNode))throw Error('Sélection photo sortie du champ.');}await sleep(300);guard(p);window.RSTikTokCaption.paste(field,p.caption);await checkedWait(accepted,'Description et compteur');field.blur();await sleep(700);await checkedWait(accepted,'Description conservée');}else{await window.RSTikTokCaption.replace(field,p.caption,{pause:sleep,check:()=>guard(p),wait:checkedWait,accepted,ready:accepted});}if(!accepted())throw Error('Titre ou description saisis différents.');await checkOrder(p);await privacy(p);const now=document.querySelector('input[type="radio"][value="post_now"]');if(!now?.checked)throw Error('Publication immédiate non sélectionnée.');const post=await wait(()=>buttons().find(e=>/^(Post|Publier)$/.test(text(e))&&!e.disabled&&e.getAttribute('aria-disabled')!=='true'),120000);if(!post)throw Error('Publication indisponible après import.');mark('prepared',{attached:p.media.length,text_matched:true});return {title,field,post};}
++ function canonical(value,username){try{const u=new URL(value,location.origin);const match=u.pathname.match(/^\/@([\w.]+)\/(photo|video)\/([0-9]+)$/);return u.origin==='https://www.tiktok.com'&&match&&match[1].toLowerCase()===username.toLowerCase()?{id:match[3],url:`https://www.tiktok.com/@${match[1]}/photo/${match[3]}`}:null}catch{return null}}
++ function recent(id,started){try{const at=Number(BigInt(id)>>32n)*1000;return at>=started-5000&&at<=Date.now()+5000}catch{return false}}
++ async function publish(task){const p=task.payload;const started_at=Date.now();let clicked=false;try{const {title,field,post}=await prepare(p);const result={username:p.username,title:p.title||'',caption:p.caption,visibility:p.visibility,media_count:p.media.length,upload_order_verified:true,source_hashes:p.media.map(m=>m.sha256)};if(p.dry)return{status:'done',result:{...result,rehearsed:true,confirmed:false}};await window.RSPacing.pause({});await identity(p);if(title.value!==(p.title||'')||captionText(field)!==p.caption.trim()||!visible(post)||post.disabled||post.getAttribute('aria-disabled')==='true')throw Error('Éditeur photo modifié avant envoi.');await checkOrder(p);if(!privacyMatches(p))throw Error('Visibilité modifiée avant envoi.');guard(p);await window.RSMAX.api.post('/extension/tasks/'+task.id+'/authorize-photo',{});await checkOrder(p);guard(p);if(title.value!==(p.title||'')||captionText(field)!==p.caption.trim()||!privacyMatches(p)||!visible(post)||post.disabled||post.getAttribute('aria-disabled')==='true')throw Error('Éditeur modifié après autorisation.');const key='rsmaxPhotoIntent:'+p.username+':'+task.id;if((await chrome.storage.local.get(key))[key])throw Error('Envoi déjà demandé : contrôler le résultat.');await chrome.storage.local.set({[key]:{at:Date.now(),state:'intent'}});clicked=true;post.click();mark('clicked',{gesture:true,count:p.media.length});return{status:'done',result:{...result,send_clicked:true,started_at}}}catch(e){mark('error',{error:e.message,gesture:clicked});return{status:clicked?'uncertain':'failed',error:e.message,result:{send_clicked:clicked,...(p.dry?{diagnostic:diagnostic()}: {})}}}}
++ async function locate(p){await identity(p);const found=await wait(()=>{const candidates=[...document.querySelectorAll('a[href]')].map(a=>canonical(a.href,p.username)).filter(v=>v&&recent(v.id,p.started_at));const unique=[...new Map(candidates.map(v=>[v.id,v])).values()];return unique.length===1?unique[0]:null},90000);return {status:'done',result:{url:found?.url||null}}}
++ function itemStruct(id){const script=document.querySelector('#__UNIVERSAL_DATA_FOR_REHYDRATION__');if(!script)return null;try{const state=JSON.parse(script.textContent).__DEFAULT_SCOPE__||{};for(const key of ['webapp.video-detail','webapp.photo-detail']){const item=state[key]?.itemInfo?.itemStruct;if(String(item?.id)===id)return item}return null}catch{return null}}
++ async function verify(p){const source=canonical(location.href,p.username);if(!source||source.url!==p.photo_url)return {status:'failed',error:'Page de photo différente.'};const item=await wait(()=>itemStruct(source.id),30000);if(!item)return{status:'done',result:{confirmed:false,reason:'Données publiques de la photo non chargées.'}};const actualTitle=item.imagePost?.title??item.title??'';const desc=item.desc??'';const count=item.imagePost?.images?.length;const author=item.author?.uniqueId;const titleCaption=actualTitle===p.title&&desc===p.caption;const combined=!actualTitle&&p.title&&desc===(p.title+'\n'+p.caption);const confirmed=author===p.username&&count===p.media.length&&Boolean(titleCaption||combined);mark('verified',{confirmed,observed_count:count||0});return{status:'done',result:{confirmed,proof:confirmed?'after_reload':undefined,url:source.url,username:author,title:confirmed?p.title:actualTitle,caption:confirmed?p.caption:desc,media_count:count,visibility:p.visibility,...(!confirmed?{reason:'Titre, description, auteur ou nombre de photos différents.'}:{})}}}
++ chrome.runtime.onMessage.addListener((m,_s,reply)=>{if(m?.type!=='x.task')return false;const task=m.task;if(task?.kind==='tiktok.photo.ready'){reply({status:'done'});return false}const fn=task?.kind==='tiktok.photo.publish'?()=>publish(task):task?.kind==='tiktok.photo.locate'?()=>locate(task.payload):task?.kind==='tiktok.photo.verify'?()=>verify(task.payload):null;if(!fn)return false;fn().then(reply,e=>reply({status:'failed',error:e.message}));return true});
++ window.RSTikTokPhotos={prepare,publish,locate,verify,wait,diagnostic,canonical,recent,files,checkOrder};
++})();
+--- /dev/null
++++ b/tests/e2e/tiktok-photos.cjs
+@@ -0,0 +1,32 @@
++/* Extension réelle dans Chromium jetable ; TikTok et RS-Max entièrement simulés. */
++const {chromium}=require('playwright'),http=require('node:http'),fs=require('node:fs'),path=require('node:path'),assert=require('node:assert/strict'),crypto=require('node:crypto');
++const root=path.resolve(__dirname,'../..'),out=process.env.RS_TEST_OUTPUT;
++if(!out||fs.existsSync(path.join(root,'config.local.js')))throw Error('Copie sans secrets et dossier de preuve requis.');
++(async()=>{let context,server;const files=new Map();let published=[],reverse=false,badProof=false;const boot=Date.now(),fixed=boot;const now=()=>fixed+Date.now()-boot;
++function avatar(){return `<button data-tt="Header_NewHeader_Clickable" aria-expanded="false"><img src="data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///ywAAAAAAQABAAACAUwAOw==" width="10" height="10"></button><div id="menu"></div><script>document.querySelector('button').onclick=e=>{const b=e.currentTarget,on=b.getAttribute('aria-expanded')==='true';b.setAttribute('aria-expanded',String(!on));document.querySelector('#menu').innerHTML=on?'':'<a data-tt="Header_NewHeader_TUXMenuItem" href="/@owner">Compte</a>'}</script>`}
++function upload(port){return `<!doctype html><meta charset="utf-8">${avatar()}<button aria-controls="panel-photo" id="photos">Photos</button><input type="file" accept="video/*" multiple><main></main><script>
++const reverse=${reverse},port=${port};let modelCaption='';document.querySelector('#photos').onclick=()=>document.querySelector('input[type=file]').accept='image/png,image/jpeg,image/webp';
++document.querySelector('input[type=file]').onchange=e=>{const list=[...e.target.files];if(reverse)list.reverse();document.querySelector('main').innerHTML='<input type="text" placeholder="Add a catchy title"><div contenteditable="plaintext-only" role="combobox" aria-autocomplete="list"></div><span id="counter">0/4000</span><section id="thumbs"></section><button role="combobox" id="privacy">Everyone</button><input type="radio" value="post_now" checked><button id="post">Post</button>';
++const field=document.querySelector('[contenteditable]');field.addEventListener('paste',e=>{e.preventDefault();modelCaption=e.clipboardData.getData('text/plain');field.replaceChildren(...modelCaption.split('\\n').map(line=>{const d=document.createElement('div');d.dataset.block='true';d.textContent=line;return d}));document.querySelector('#counter').textContent=modelCaption.length+'/4000'});
++for(const [i,f] of list.entries()){const d=document.createElement('div');d.setAttribute('role','button');d.setAttribute('aria-roledescription','draggable');d.dataset.id='file_'+i;const img=document.createElement('img');createImageBitmap(f).then(bitmap=>{const c=document.createElement('canvas');c.width=bitmap.width;c.height=bitmap.height;c.getContext('2d').drawImage(bitmap,0,0);bitmap.close();c.toBlob(blob=>img.src=URL.createObjectURL(blob),'image/jpeg',0.9)});d.append(img);document.querySelector('#thumbs').append(d)}
++document.querySelector('#privacy').onclick=()=>{const option=document.createElement('div');option.setAttribute('role','option');option.textContent='Only you';option.onclick=()=>{document.querySelector('#privacy').textContent='Only you';option.remove()};document.body.append(option)};
++document.querySelector('#post').onclick=()=>fetch('https://www.tiktok.com/__fixture_publish',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({title:document.querySelector('input[placeholder]').value,caption:modelCaption,visibility:document.querySelector('#privacy').textContent==='Only you'?'private':'public',names:list.map(f=>f.name)})});};</script>`}
++try{fs.mkdirSync(out,{recursive:true});server=http.createServer(async(req,res)=>{res.setHeader('Access-Control-Allow-Origin','*');res.setHeader('Access-Control-Allow-Headers','*');res.setHeader('Access-Control-Allow-Methods','*');if(req.method==='OPTIONS'){res.end();return}const key=new URL(req.url,'http://fixture').pathname;if(files.has(key)){res.end(files.get(key));return}res.setHeader('Content-Type','application/json');if(key==='/published'){let raw='';for await(const c of req)raw+=c;const p=JSON.parse(raw);p.id=String((BigInt(Math.floor(now()/1000))<<32n)+BigInt(published.length+1));published.push(p)}res.end(JSON.stringify({accounts:[],persona:{id:1,name:'Voix test'}}))});await new Promise(r=>server.listen(0,'127.0.0.1',r));const port=server.address().port;
++context=await chromium.launchPersistentContext(path.join(out,'profile'),{executablePath:'/Users/xavierfonseca/Library/Caches/ms-playwright/chromium-1243/chrome-mac-arm64/Google Chrome for Testing.app/Contents/MacOS/Google Chrome for Testing',headless:true,args:[`--disable-extensions-except=${root}`,`--load-extension=${root}`]});context.on('page',p=>p.on('pageerror',e=>console.log('PAGE ERROR',e.message)));await context.addInitScript(({fixed,boot})=>{const Real=Date;const offset=fixed-boot;window.Date=class extends Real{constructor(...args){super(...(args.length?args:[Real.now()+offset]))}static now(){return Real.now()+offset}}},{fixed,boot});
++await context.route('https://www.tiktok.com/**',route=>{const u=new URL(route.request().url());let body;if(u.pathname==='/__fixture_publish'){const p=route.request().postDataJSON();p.id=String((BigInt(Math.floor(now()/1000))<<32n)+BigInt(published.length+1));published.push(p);return route.fulfill({contentType:'application/json',body:'{}'})}if(u.pathname==='/tiktokstudio/upload')body=upload(port);else if(u.pathname==='/tiktokstudio/content')body='<!doctype html>'+avatar()+published.map(p=>`<a data-tt="components_PostInfoCell_a" href="https://www.tiktok.com/@owner/photo/${p.id}">${p.title}</a>`).join('');else{const id=u.pathname.split('/').pop(),p=published.find(p=>p.id===id);body='<!doctype html><script id="__UNIVERSAL_DATA_FOR_REHYDRATION__" type="application/json">'+JSON.stringify({__DEFAULT_SCOPE__:{'webapp.video-detail':{itemInfo:{itemStruct:p?{id,author:{uniqueId:'owner'},title:p.title,desc:badProof?'autre':p.caption,imagePost:{images:p.names.map(()=>({}))}}:null}}}})+'</script>'}return route.fulfill({contentType:'text/html; charset=utf-8',body})});
++const sw=context.serviceWorkers()[0]||await context.waitForEvent('serviceworker');await sw.evaluate(port=>chrome.storage.local.set({rsmaxConfig:{baseUrl:'http://127.0.0.1:'+port,token:'fixture-only'}}),port);
++await sw.evaluate(()=>{taskTab=async url=>{const tab=await chrome.tabs.create({url:'about:blank',active:true});await new Promise(r=>setTimeout(r,250));await chrome.tabs.update(tab.id,{url});await waitTaskTab(tab.id);return tab.id}});
++const page=await context.newPage();await page.goto('about:blank');const images=await page.evaluate(()=>['#f08c00','#1c7ed6'].map(color=>{const c=document.createElement('canvas');c.width=720;c.height=960;const ctx=c.getContext('2d');ctx.fillStyle=color;ctx.fillRect(0,0,720,960);ctx.fillStyle='#fff';ctx.font='32px sans-serif';ctx.fillText('RS-Max · test technique privé',65,430);return c.toDataURL('image/png').split(',')[1]}));
++const media=images.map((b,i)=>{const bytes=Buffer.from(b,'base64'),name='image-'+i+'.png';files.set('/'+name,bytes);fs.writeFileSync(path.join(out,name),bytes);return {id:i+1,name,mimetype:'image/png',size:bytes.length,sha256:crypto.createHash('sha256').update(bytes).digest('hex'),url:'http://127.0.0.1:'+port+'/'+name}});
++const spec={timezone:'Europe/Lisbon',start_hour:6,end_hour:22,date:new Date(now()).toISOString().slice(0,10)};
++const task=(id,dry,selected=media)=>({id,kind:'tiktok.photo.publish',payload:{url:'https://www.tiktok.com/tiktokstudio/upload',username:'owner',media:selected,title:'Essai photo',caption:'Deux paysages 🌿\n\nDernier paragraphe.',visibility:'private',dry,activity_window:spec,deadline:new Date(Date.now()+600000).toISOString()}});
++// Exécuter entre 06 h et 22 h Lisbonne : garde horaire réelle de l’extension.
++const execute=t=>sw.evaluate(t=>executeTikTokPhotoTask(t),t);
++let t=task(101,true,[media[0]]);t.payload.deadline=new Date(now()+600000).toISOString();let r=await execute(t);assert.equal(r.result?.rehearsed,true,JSON.stringify(r));assert.equal(r.result.media_count,1);assert.equal(published.length,0);
++t=task(102,true);t.payload.deadline=new Date(now()+600000).toISOString();r=await execute(t);assert.equal(r.result?.rehearsed,true,JSON.stringify(r));assert.equal(r.result.upload_order_verified,true);assert.equal(published.length,0);
++reverse=true;t=task(103,false);t.payload.deadline=new Date(now()+600000).toISOString();r=await execute(t);assert.equal(r.status,'failed');assert.match(r.error,/Ordre/);assert.equal(published.length,0);reverse=false;
++t=task(104,false);t.payload.deadline=new Date(now()+600000).toISOString();r=await execute(t);assert.equal(r.result?.confirmed,true,JSON.stringify(r));assert.equal(r.result.proof,'after_reload');assert.equal(r.result.visibility,'private');assert.deepEqual(published[0].names,media.map(m=>m.name));assert.equal(published.length,1);
++r=await execute(t);assert.equal(r.status,'failed');assert.match(r.error,/déjà demandé/);assert.equal(published.length,1);
++badProof=true;t=task(105,false);t.payload.deadline=new Date(now()+600000).toISOString();r=await execute(t);assert.equal(r.status,'uncertain',JSON.stringify(r));assert.equal(published.length,2);r=await execute(t);assert.equal(published.length,2);assert.equal(r.status,'failed');
++console.log('Photos Chromium : photo seule, carrousel, ordre, visibilité, preuve après reload, doublon et incertitude validés.');
++}finally{await context?.close();await new Promise(r=>server?server.close(r):r())}})().catch(e=>{console.error(e);process.exitCode=1});
+--- /dev/null
++++ b/tests/tiktok-photos-task.test.cjs
+@@ -0,0 +1,7 @@
++const {test}=require('node:test'),assert=require('node:assert/strict'),vm=require('node:vm'),fs=require('node:fs'),path=require('node:path');
++const code=fs.readFileSync(path.join(__dirname,'../background.js'),'utf8').split('async function executeTikTokPhotoTask(task) {')[1].split('async function checkTikTokPhotoTask')[0];
++async function run({dry=false,reply,sendError,checkpointError}={}){let removed=0;const ctx={taskTab:async()=>1,askPage:async()=>({status:'done'}),chrome:{tabs:{sendMessage:async()=>{if(sendError)throw Error(sendError);return reply},remove:async()=>{removed++}}},apiFetch:async()=>{if(checkpointError)throw Error(checkpointError)},taskMedia:null,pause:async()=>{},readTikTokPhotoProof:async()=>({status:'done',result:{confirmed:true}})};vm.createContext(ctx);vm.runInContext('async function executeTikTokPhotoTask(task) {'+code,ctx);const result=await ctx.executeTikTokPhotoTask({id:1,payload:{url:'https://www.tiktok.com/tiktokstudio/upload',dry}});return{result,removed}}
++test('résultat du geste perdu : incertain même sans reçu, jamais échec réessayable',async()=>{const {result,removed}=await run({sendError:'Port fermé'});assert.equal(result.status,'uncertain');assert.equal(result.result.send_clicked,null);assert.equal(removed,1)});
++test('échec de préparation confirmé avant clic reste distinct',async()=>{const {result}=await run({reply:{status:'failed',result:{send_clicked:false},error:'Ordre différent'}});assert.equal(result.status,'failed');assert.equal(result.result.send_clicked,false)});
++test('checkpoint perdu : conserver le reçu et interdire un renvoi',async()=>{const receipt={send_clicked:true,started_at:123,source_hashes:['preuve']};const {result}=await run({reply:{status:'done',result:receipt},checkpointError:'HTTP 502'});assert.equal(result.status,'uncertain');assert.equal(result.result.started_at,123);assert.deepEqual(result.result.source_hashes,['preuve'])});
++test('répétition interrompue ne prétend jamais qu’un envoi a eu lieu',async()=>{const {result}=await run({dry:true,sendError:'Port fermé'});assert.equal(result.status,'failed');assert.equal(result.result.send_clicked,false)});

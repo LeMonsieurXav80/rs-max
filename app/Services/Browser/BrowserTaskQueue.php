@@ -103,10 +103,16 @@ class BrowserTaskQueue
                 }
                 try {
                     app(\App\Services\Agent\XEngagementService::class)->claim($task);
+                    try {
+                        app(\App\Services\Agent\TikTokPhotoPublisher::class)->claim($task);
+                    } catch (\Throwable $e) {
+                        throw new BrowserException($e->getMessage());
+                    }
                     app(\App\Services\Agent\AccountActionBudget::class)->forTask($task);
                 } catch (BrowserException $e) {
                     $task->update(['status' => BrowserTask::CANCELLED, 'finished_at' => now(), 'error' => $e->getMessage()]);
                     app(\App\Services\Agent\XEngagementService::class)->finish($task);
+                    app(\App\Services\Agent\TikTokPhotoPublisher::class)->finish($task);
 
                     continue;
                 }
