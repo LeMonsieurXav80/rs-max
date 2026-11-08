@@ -17,11 +17,11 @@ class TikTokReplyReconciler
     private function original(InboxItem $item): BrowserTask
     {
         abort_unless($item->socialAccount->usesBrowser() && $item->platform->slug === 'tiktok' && filled($item->reply_content), 422);
-        $task = BrowserTask::where('social_account_id', $item->social_account_id)->where('kind', 'tiktok.reply')->where('status', BrowserTask::UNCERTAIN)
+        $task = BrowserTask::where('social_account_id', $item->social_account_id)->where('kind', 'tiktok.reply')->whereIn('status', [BrowserTask::UNCERTAIN, BrowserTask::DONE])
             ->where('payload->username', $item->socialAccount->browser_username)->where('payload->text', $item->reply_content)
             ->where('payload->target->author', $item->author_username)->where('payload->target->content', $item->content)
             ->where('payload->target->caption', $item->post_content)->latest('id')->first();
-        abort_unless($task && $task->claimed_at && $task->finished_at && ($task->result['send_clicked'] ?? false) === true, 409, 'Aucune tentative incertaine correspondant au commentaire exact.');
+        abort_unless($task && ($task->status === BrowserTask::UNCERTAIN || (($task->result['confirmed'] ?? false) === true && ($task->result['proof'] ?? null) === 'after_reload')) && $task->claimed_at && $task->finished_at && ($task->result['send_clicked'] ?? false) === true, 409, 'Aucune tentative vérifiable correspondant au commentaire exact.');
 
         return $task;
     }

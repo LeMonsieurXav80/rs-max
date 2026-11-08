@@ -62,6 +62,22 @@ class TikTokReplyReconcilerTest extends TestCase
         Bus::assertDispatchedTimes(LikeInboxItem::class, 1);
     }
 
+    public function test_recu_confirme_apres_arret_du_worker_est_rapproche_sans_renvoi(): void
+    {
+        $this->task->update(['status' => 'done', 'result' => ['send_clicked' => true, 'confirmed' => true, 'proof' => 'after_reload']]);
+        $this->postJson($this->url().'/reconcile', ['verification_task_id' => $this->verification->id, 'dry_run' => false])->assertOk();
+        $this->assertSame('replied', $this->item->fresh()->status);
+        $this->assertSame(2, BrowserTask::count());
+        Bus::assertDispatchedTimes(LikeInboxItem::class, 1);
+    }
+
+    public function test_tache_terminee_sans_preuve_ne_permet_pas_de_rapprochement(): void
+    {
+        $this->task->update(['status' => 'done', 'result' => ['send_clicked' => true]]);
+        $this->postJson($this->url().'/reconcile', ['verification_task_id' => $this->verification->id, 'dry_run' => false])->assertConflict();
+        Bus::assertNothingDispatched();
+    }
+
     public function test_relecture_ancienne_autre_cible_ou_preuve_manquante_refusees(): void
     {
         $payload = $this->verification->payload;

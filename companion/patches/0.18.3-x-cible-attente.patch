@@ -1,0 +1,44 @@
+--- a/manifest.json
++++ b/manifest.json
+@@ -1,7 +1,7 @@
+ {
+   "manifest_version": 3,
+   "name": "RS-Max Companion",
+-  "version": "0.18.2",
++  "version": "0.18.3",
+   "description": "Actions assistees sur les reseaux sociaux (engagement, publication) avec remontee vers l'API RS-Max.",
+   "permissions": [
+     "storage",
+--- a/x/agent.js
++++ b/x/agent.js
+@@ -128,7 +128,10 @@
+       if(dialogs.length!==1)throw Error('Réponse ou destinataire changé avant envoi.');
+       button=window.RSXDom?window.RSXDom.submit(dialogs[0]):dialogs[0].querySelector('[data-testid="tweetButton"]');
+     } else {
+-      const current=target(p),checks={like:['liked',true,'like','like'],unlike:['liked',false,'like','unlike'],bookmark:['bookmarked',true,'bookmark','bookmark'],unbookmark:['bookmarked',false,'bookmark','removeBookmark'],repost:['reposted',true,'repost','retweetConfirm'],unrepost:['reposted',false,'repost','unretweetConfirm']};
++      // React peut momentanément retirer la cible pendant la pause : relire, sans cliquer.
++      const current=await wait(()=>{try{return target(p)}catch{return null}},10000);
++      if(!current){target(p);throw Error('Cible X non chargée après attente : aucun geste.');}
++      const checks={like:['liked',true,'like','like'],unlike:['liked',false,'like','unlike'],bookmark:['bookmarked',true,'bookmark','bookmark'],unbookmark:['bookmarked',false,'bookmark','removeBookmark'],repost:['reposted',true,'repost','retweetConfirm'],unrepost:['reposted',false,'repost','unretweetConfirm']};
+       const [field,wanted,kind,testid]=checks[p.action]||[];
+       if(!field || current.s[field]===null)throw Error('État du geste inconnu avant clic.');
+       if(current.s[field]===wanted)return {unchanged:true};
+--- a/tests/x-agent-target.test.cjs
++++ b/tests/x-agent-target.test.cjs
+@@ -0,0 +1,16 @@
++const test=require('node:test'),assert=require('node:assert/strict'),{JSDOM}=require('jsdom'),fs=require('node:fs'),path=require('node:path');
++function fixture({liked=false,author='visitor'}={}){
++ const dom=new JSDOM('<main></main>',{url:'https://x.com/visitor/status/123',runScripts:'outside-only'}),w=dom.window;let clicks=0;
++ w.HTMLElement.prototype.getClientRects=()=>[{}];w.HTMLElement.prototype.scrollIntoView=()=>{};w.Math.random=()=>0;
++ const render=()=>{w.document.querySelector('main').innerHTML=`<article><a href="/${author}/status/123"><time>1 h</time></a><div data-testid="tweetText">Un joli détail 😊</div><button data-testid="${liked?'unlike':'like'}">Like</button></article>`;w.document.querySelector('button').onclick=e=>{clicks++;e.currentTarget.dataset.testid='unlike'}};render();
++ w.RSXMentions={identity:()=>({username:'owner'})};w.RSXLimits={assert(){}};w.RSPacing={ready:Promise.resolve()};w.RSMAX={};
++ for(const f of ['x/dom.js','x/agent.js'])w.eval(fs.readFileSync(path.join(__dirname,'..',f),'utf8'));
++ const payload={username:'owner',action:'like',target:{id:'123',author:'visitor',text:'Un joli détail 😊'}};
++ return{dom,w,render,payload,clicks:()=>clicks};
++}
++test('X : retrouver la même cible après un démontage React pendant la pause, un seul clic',async()=>{
++ const f=fixture();try{setTimeout(()=>f.w.document.querySelector('main').replaceChildren(),500);setTimeout(()=>f.render(),1600);const r=await f.w.RSXAgent.run('x.agent.act',f.payload);assert.equal(r.status,'done',JSON.stringify(r));assert.equal(r.result.clicked,true);assert.equal(f.clicks(),1)}finally{f.dom.window.close()}
++});
++test('X : auteur différent refusé et like déjà présent conservé',async()=>{
++ for(const options of [{author:'other'},{liked:true}]){const f=fixture(options);try{const r=await f.w.RSXAgent.run('x.agent.act',f.payload);assert.equal(f.clicks(),0);if(options.liked)assert.equal(r.result.unchanged,true);else assert.equal(r.status,'failed')}finally{f.dom.window.close()}}
++});
