@@ -1,0 +1,51 @@
+--- a/manifest.json
++++ b/manifest.json
+@@ -1,7 +1,7 @@
+ {
+   "manifest_version": 3,
+   "name": "RS-Max Companion",
+-  "version": "0.18.5",
++  "version": "0.18.6",
+   "description": "Actions assistees sur les reseaux sociaux (engagement, publication) avec remontee vers l'API RS-Max.",
+   "permissions": [
+     "storage",
+--- a/native/public.cjs
++++ b/native/public.cjs
+@@ -33,7 +33,7 @@
+     page.onEvent=v=>{
+       const p=v.params||{};
+       if(v.method==='Network.requestWillBeSent'){try{const u=new URL(p.request.url);if(u.origin==='https://www.tiktok.com'&&/^\/api\/comment\/list\/(?:reply\/)?$/.test(u.pathname)&&p.request.method==='GET')requests.add(p.requestId);}catch{}}
+-      if(v.method==='Network.loadingFinished'&&requests.delete(p.requestId))page.call('Network.getResponseBody',{requestId:p.requestId}).then(r=>{try{const b=JSON.parse(r.base64Encoded?Buffer.from(r.body,'base64').toString():r.body);const comments=b.status_code===0?(b.comments||[]):[];for(const c of comments){if(typeof c.cid==='string')seen.add(c.cid);if(c.cid===s.submission.parent_id&&c.aweme_id===s.submission.post_id)parentSeen=true;if(c.cid===s.submission.comment_id&&c.reply_id===s.submission.parent_id&&c.aweme_id===s.submission.post_id&&c.text===s.text&&c.user?.unique_id?.toLowerCase()===s.username&&c.no_show!==true&&c.no_show!==1){networkMatched=true;parentSeen=true;}}observed=seen.size;}catch{}}).catch(()=>{});
++      if(v.method==='Network.loadingFinished'&&requests.delete(p.requestId))page.call('Network.getResponseBody',{requestId:p.requestId}).then(r=>{try{const b=JSON.parse(r.base64Encoded?Buffer.from(r.body,'base64').toString():r.body);const comments=b.status_code===0?[...(b.comments||[])]:[];for(let i=0;i<comments.length&&i<500;i++){const c=comments[i];for(const child of c.reply_comment||[])comments.push({...child,aweme_id:child.aweme_id??c.aweme_id,reply_id:child.reply_id??c.cid});if(typeof c.cid==='string')seen.add(c.cid);if(c.cid===s.submission.parent_id&&c.aweme_id===s.submission.post_id)parentSeen=true;if(c.cid===s.submission.comment_id&&c.reply_id===s.submission.parent_id&&c.aweme_id===s.submission.post_id&&c.text===s.text&&c.user?.unique_id?.toLowerCase()===s.username&&c.no_show!==true&&c.no_show!==1){networkMatched=true;parentSeen=true;}}observed=seen.size;}catch{}}).catch(()=>{});
+     };
+     await page.call('Network.enable');await page.call('Page.navigate',{url});
+     const deadline=Date.now()+timeout;let quiet=0,lastCount=-1,matchedPage=false;
+--- a/native/server.cjs
++++ b/native/server.cjs
+@@ -15,7 +15,7 @@
+     if (req.method !== 'POST' || !['/tiktok/fill','/tiktok/send','/tiktok/verify','/tiktok/health'].includes(req.url)) {res.writeHead(404);return res.end('{}');}
+     if (busy) {res.writeHead(409);return res.end('{"error":"Opération native déjà en cours"}');}
+     busy=true;
+-    try { let body=''; for await (const part of req) {body+=part;if(body.length>16000){res.writeHead(413);return res.end('{}');}} const s=JSON.parse(body);const value=req.url.endsWith('/health')?{ready:true,version:'0.18.5'}:req.url.endsWith('/verify')?await handlers.verifyPublic(s):await handlers.perform(req.url.split('/').at(-1),s);res.end(JSON.stringify(value)); }
++    try { let body=''; for await (const part of req) {body+=part;if(body.length>16000){res.writeHead(413);return res.end('{}');}} const s=JSON.parse(body);const value=req.url.endsWith('/health')?{ready:true,version:'0.18.6'}:req.url.endsWith('/verify')?await handlers.verifyPublic(s):await handlers.perform(req.url.split('/').at(-1),s);res.end(JSON.stringify(value)); }
+     catch {res.writeHead(409);res.end('{"error":"Opération native refusée ou interrompue : vérifier sans renvoyer"}');}
+     finally {busy=false;}
+   });
+--- a/tests/e2e/tiktok-native.cjs
++++ b/tests/e2e/tiktok-native.cjs
+@@ -15,12 +15,12 @@
+ await sw.evaluate(({token,spec})=>{self.RSMAX_DEFAULTS={taskProfile:'test',nativeInputToken:token,nativeInputRequired:true};nativeTask={id:spec.task_id,kind:'tiktok.reply',payload:{username:spec.username,text:spec.text,target:spec.target}}},{token,spec});
+ const rpc=operation=>sw.evaluate(({operation,spec})=>handlers['tiktok.native']({task_id:spec.task_id,operation,nonce:spec.nonce,avatar:spec.avatar},{id:chrome.runtime.id,tab:{url:'https://www.tiktok.com/tiktokstudio/comment'}}),{operation,spec});
+ assert.equal((await rpc('fill')).filled,true,'Transport service worker vers loopback');assert.equal(lastOrigin,origin,'Origine Chrome réelle');assert.equal(await page.inputValue('textarea'),text);assert.equal((await rpc('send')).send_clicked,true);assert.equal(await page.evaluate(()=>sends),1);assert.deepEqual(await page.evaluate(()=>events),[{type:'input',trusted:true},{type:'send',trusted:true}]);await assert.rejects(rpc('send'));assert.equal(await page.evaluate(()=>sends),1);
+-let hidden=false,writes=0;
++let hidden=false,preloaded=false,writes=0;
+ const publicHtml=`<!doctype html><meta charset="utf-8"><button id="comments">Comments</button><main></main><script>
+ const parent={cid:'42',aweme_id:'99',text:'Jolie tenue',user:{unique_id:'visitor'}};document.querySelector('#comments').onclick=async()=>{if(document.querySelector('main').children.length)return;const r=await fetch('/api/comment/list/');await r.json();document.querySelector('main').innerHTML='<div class="DivCommentObjectWrapper"><div class="DivCommentItemWrapper"><a href="/@visitor">Visiteur</a><span data-e2e="comment-level-1">Jolie tenue</span></div><button data-key-interaction="comment_view_replies">View 1 reply</button></div>';document.querySelector('[data-key-interaction]').onclick=async e=>{const button=e.currentTarget;const r=await fetch('/api/comment/list/reply/');await r.json();button.textContent='Hide';document.querySelector('.DivCommentObjectWrapper').insertAdjacentHTML('beforeend','<div class="DivCommentItemWrapper"><a href="/@owner">Créateur</a><span data-e2e="comment-level-2">Merci pour ton avis 🌹</span></div>')}};</script>`;
+-const connector=async url=>{const base=await connect(url);let external;const wrapper={call:(...args)=>base.call(...args),close:()=>base.close(),get onEvent(){return external},set onEvent(v){external=v}};base.onEvent=v=>{if(v.method==='Fetch.requestPaused'){const p=v.params,u=new URL(p.request.url);if(p.request.method==='POST')writes++;let body,contentType;if(u.pathname.startsWith('/api/comment/list/')){contentType='application/json';body=JSON.stringify({status_code:0,comments:u.pathname.includes('/reply/')?[{cid:hidden?'999':'1234567890123456789',reply_id:'42',aweme_id:'99',text,user:{unique_id:'owner'},no_show:false}]:[{cid:'42',aweme_id:'99',text:'Jolie tenue',user:{unique_id:'visitor'}}]});}else{contentType='text/html';body=publicHtml}base.call('Fetch.fulfillRequest',{requestId:p.requestId,responseCode:200,responseHeaders:[{name:'Content-Type',value:contentType}],body:Buffer.from(body).toString('base64')}).catch(()=>{});}else external?.(v)};await base.call('Fetch.enable',{patterns:[{urlPattern:'https://www.tiktok.com/*'}]});return wrapper;};
++const connector=async url=>{const base=await connect(url);let external;const wrapper={call:(...args)=>base.call(...args),close:()=>base.close(),get onEvent(){return external},set onEvent(v){external=v}};base.onEvent=v=>{if(v.method==='Fetch.requestPaused'){const p=v.params,u=new URL(p.request.url);if(p.request.method==='POST')writes++;let body,contentType;if(u.pathname.startsWith('/api/comment/list/')){contentType='application/json';body=JSON.stringify({status_code:0,comments:u.pathname.includes('/reply/')?[{cid:hidden?'999':'1234567890123456789',reply_id:'42',aweme_id:'99',text,user:{unique_id:'owner'},no_show:false}]:[{cid:'42',aweme_id:'99',text:'Jolie tenue',user:{unique_id:'visitor'},reply_comment:preloaded?[{cid:'1234567890123456789',text,user:{unique_id:'owner'},no_show:false}]:[]}]});}else{contentType='text/html';body=publicHtml}base.call('Fetch.fulfillRequest',{requestId:p.requestId,responseCode:200,responseHeaders:[{name:'Content-Type',value:contentType}],body:Buffer.from(body).toString('base64')}).catch(()=>{});}else external?.(v)};await base.call('Fetch.enable',{patterns:[{urlPattern:'https://www.tiktok.com/*'}]});return wrapper;};
+ const receipt={username:'owner',text,submission:{post_id:'99',parent_id:'42',comment_id:'1234567890123456789'}};
+ let proof=await verifyPublic(receipt,{cdp,connector,timeout:10000});assert.equal(proof.confirmed,true,JSON.stringify(proof));assert.equal(proof.visibility,'public');assert.equal(proof.verification_source,'anonymous_browser');
+-hidden=true;proof=await verifyPublic(receipt,{cdp,connector,timeout:8000});assert.equal(proof.confirmed,false,'Un texte visible sans son CID public ne confirme rien');assert.equal(writes,0,'Aucune écriture dans la vérification publique');
++hidden=true;preloaded=true;proof=await verifyPublic(receipt,{cdp,connector,timeout:10000});assert.equal(proof.confirmed,true,'CID préchargé sous le parent, sans aweme/reply redondants');preloaded=false;proof=await verifyPublic(receipt,{cdp,connector,timeout:8000});assert.equal(proof.confirmed,false,'Un texte visible sans son CID public ne confirme rien');assert.equal(writes,0,'Aucune écriture dans la vérification publique');
+ console.log('Chromium : saisie Unicode et clic isTrusted, un seul envoi malgré doublon ; preuve anonyme positive et faux affichage refusé, zéro écriture de vérification.');
+ }finally{server?.closeAllConnections();if(server)await new Promise(r=>server.close(r));await context?.close();fs.rmSync(dir,{recursive:true,force:true})}})().catch(e=>{console.error(e);process.exitCode=1});
