@@ -75,7 +75,7 @@ class TikTokPhotoPublisher
                 app(PartnerTagService::class)->syncPost($post);
                 $payload['post_platform_id'] = $pp->id;
             }
-            $task = BrowserTask::create(['social_account_id' => $account->id, 'profile' => $account->browser_profile, 'kind' => 'tiktok.photo.publish', 'idempotency_key' => $key, 'payload' => $payload]);
+            $task = BrowserTask::create(['social_account_id' => $account->id, 'profile' => $account->browser_profile, 'kind' => 'tiktok.photo.publish', 'status' => BrowserTask::PENDING, 'idempotency_key' => $key, 'payload' => $payload]);
 
             return $this->state($task);
         });

@@ -80,7 +80,7 @@ class TikTokPhotoPublishingTest extends TestCase
     public function test_intention_idempotente_puis_preuve_native_alimente_posts_et_usage_une_seule_fois(): void
     {
         $data = $this->data() + ['dry_run' => false];
-        $id = $this->postJson($this->url(), $data)->assertAccepted()->json('id');
+        $id = $this->postJson($this->url(), $data)->assertAccepted()->assertJsonPath('status', 'pending')->json('id');
         $this->postJson($this->url(), $data)->assertAccepted()->assertJsonPath('id', $id);
         $this->assertSame(1, Post::count());
         $this->postJson($this->url(), array_replace($data, ['media_ids' => array_reverse($this->photos)]))->assertConflict();
