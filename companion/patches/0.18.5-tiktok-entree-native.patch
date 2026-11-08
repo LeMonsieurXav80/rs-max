@@ -1,0 +1,414 @@
+--- a/background.js
++++ b/background.js
+@@ -229,6 +229,15 @@
+     });
+   },
+ 
++  'tiktok.native': async (msg,sender) => {
++    if(sender.id!==chrome.runtime.id || sender.tab?.url!=='https://www.tiktok.com/tiktokstudio/comment' || nativeTask?.id!==msg.task_id || nativeTask.kind!=='tiktok.reply')throw Error('Entrée native hors tâche refusée.');
++    const config=await nativeConfig();
++    const enabled=Boolean(self.RSMAX_DEFAULTS?.taskProfile && config.nativeInputToken);
++    if(msg.operation==='available')return{enabled,required:Boolean(config.nativeInputRequired||self.RSMAX_DEFAULTS?.nativeInputRequired)};
++    if(!enabled || !['fill','send'].includes(msg.operation))throw Error('Entrée native NAS non configurée.');
++    return nativeRequest(msg.operation,{task_id:nativeTask.id,username:nativeTask.payload.username,text:nativeTask.payload.text,target:nativeTask.payload.target,nonce:msg.nonce,avatar:msg.avatar});
++  },
++
+   status: async () => {
+     const cfg = await getConfig();
+     return {
+@@ -246,6 +255,7 @@
+ const TASK_POLL_MS = 2000;
+ let taskMedia = null;
+ let taskLoop = false;
++let nativeTask = null;
+ 
+ const pause = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+ 
+@@ -396,6 +406,23 @@
+   }
+ }
+ 
++async function nativeConfig() {
++  const stored=await chrome.storage.local.get('rsmaxNativeConfig');
++  return stored.rsmaxNativeConfig||self.RSMAX_DEFAULTS||{};
++}
++async function nativeRequest(operation,body) {
++  const token=(await nativeConfig()).nativeInputToken;
++  if(!token)throw Error('Service natif NAS non configuré.');
++  const r=await fetch('http://127.0.0.1:9223/tiktok/'+operation,{method:'POST',headers:{'Content-Type':'application/json',Authorization:'Bearer '+token},body:JSON.stringify(body),signal:AbortSignal.timeout(operation==='verify'?80000:15000)});
++  if(!r.ok)throw Error('Service natif NAS : opération refusée ou interrompue, aucun renvoi.');return r.json();
++}
++async function publicTikTokProof(task,submission,studio) {
++  if(!(await nativeConfig()).nativeInputToken){if(self.RSMAX_DEFAULTS?.nativeInputRequired)throw Error('Preuve publique native indisponible.');return studio;}
++  if(!submission || !['post_id','parent_id','comment_id'].every(k=>/^[0-9]+$/.test(String(submission[k]||''))))return{status:'done',result:{confirmed:false,verification:{status:'public_receipt_missing'}}};
++  const result=await nativeRequest('verify',{username:task.payload.username,text:task.payload.text,submission});
++  return{status:'done',result:{...result,studio_verification:studio?.result?.verification}};
++}
++
+ async function finishTikTokRecipe(task, action, outcome) {
+   const result = action?.result;
+   if (task.kind === 'tiktok.reply' && result?.draft_id) {
+@@ -404,7 +431,7 @@
+       await apiFetch({ method: 'POST', path: `/extension/tiktok/${result.draft_id}/finish`, body: {
+         username: task.payload.username, liked: result.liked,
+         status: confirmed ? 'published' : 'uncertain',
+-        proof: confirmed ? 'Texte exact et auteur vérifiés après rechargement de Studio' : 'Réservation sans preuve après rechargement',
++        proof: confirmed ? outcome.result?.visibility === 'public' ? 'Réponse exacte accessible sans connexion au compte' : 'Texte exact et auteur vérifiés après rechargement de Studio' : 'Réservation sans preuve après rechargement',
+       } });
+     } catch (e) {
+       console.warn('Journal TikTok :', e.message);
+@@ -425,7 +452,8 @@
+   if (task.kind === 'tiktok.comments') return askPage(tabId, task);
+   if (task.kind === 'tiktok.verify') {
+     if (!['tiktok.reply','tiktok.like'].includes(task.payload.action)) throw Error('Action de relecture TikTok invalide.');
+-    const proof = await askPage(tabId, task);
++    const studio = await askPage(tabId, task);
++    const proof = task.payload.action==='tiktok.reply' ? await publicTikTokProof(task,task.payload.submission,studio) : studio;
+     return {...proof, result:{...proof?.result, verified_kind:task.payload.action, ...(proof?.result?.confirmed === true ? {proof:'after_reload'} : {})}};
+   }
+ 
+@@ -435,6 +463,9 @@
+   try {
+     action = await chrome.tabs.sendMessage(tabId, { type: 'x.task', task });
+     if (!action) throw new Error('Résultat du geste TikTok introuvable.');
++    if(task.kind==='tiktok.reply' && action.result?.send_clicked){
++      try{await apiFetch({method:'POST',path:`/extension/tasks/${task.id}/checkpoint`,body:{result:action.result}});}catch{console.warn('Reçu TikTok non sauvegardé : aucune répétition du geste.');}
++    }
+     if (action.status === 'failed' || !task.payload.confirm_after_reload) return action;
+ 
+     const verify = { kind: 'tiktok.verify', payload: { ...task.payload, action: task.kind } };
+@@ -442,7 +473,8 @@
+     for (const delay of task.kind === 'tiktok.reply' ? [TIKTOK_REPLY_RELOAD_DELAY] : [5000, 5000]) {
+       await pause(delay);
+       await reloadStudio(tabId);
+-      const proof = await askPage(tabId, verify);
++      const studio = await askPage(tabId, verify);
++      const proof = task.kind==='tiktok.reply' ? await publicTikTokProof(task,action.result?.submission,studio) : studio;
+       lastProof = proof;
+       if (proof?.result?.confirmed === true) return finishTikTokRecipe(task, action, { ...proof, result: { ...action.result, ...proof.result, proof:'after_reload' } });
+       if (proof?.status === 'failed') return finishTikTokRecipe(task, action, {status:'uncertain',result:{...action.result,verification_error:proof.error},error:'Relecture TikTok impossible : '+proof.error});
+@@ -597,7 +629,9 @@
+       if (!task?.id) { await pause(TASK_POLL_MS); continue; }
+       idle = -1;
+       globalThis.RSTaskJournal?.start(task);
+-      const outcome = await executeTask(task).catch((e) => ({ status: 'failed', error: e.message }));
++      nativeTask=task;
++      let outcome;
++      try { outcome=await executeTask(task).catch(e=>({status:'failed',error:e.message})); } finally { nativeTask=null; }
+       const diagnostics=globalThis.RSTaskJournal?.finish(outcome)||[];
+       try{await apiFetch({ method: 'POST', path: `/extension/tasks/${task.id}/finish`, body: {...outcome,diagnostics} });}
+       finally{globalThis.RSTaskJournal?.clear();}
+--- a/manifest.json
++++ b/manifest.json
+@@ -1,7 +1,7 @@
+ {
+   "manifest_version": 3,
+   "name": "RS-Max Companion",
+-  "version": "0.18.4",
++  "version": "0.18.5",
+   "description": "Actions assistees sur les reseaux sociaux (engagement, publication) avec remontee vers l'API RS-Max.",
+   "permissions": [
+     "storage",
+@@ -109,6 +109,7 @@
+         "content/engine.js",
+         "shared/comment-api.js",
+         "tiktok/submission-receipt.js",
++        "tiktok/native-input.js",
+         "tiktok/comments.js",
+         "modules/tiktok.js",
+         "tiktok/diagnostics.js",
+--- a/tiktok/comments.js
++++ b/tiktok/comments.js
+@@ -239,8 +239,11 @@
+         if (freshUser!==username) throw Error('Le compte TikTok a changé pendant la génération.');
+         assertCurrent(item,username,ctx);
+         if (input.value.trim() && input.value!==draft.reply_text) throw Error('Le brouillon a été modifié pendant la génération.');
+-        Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype,'value').set.call(input,draft.reply_text);
+-        input.dispatchEvent(new Event('input',{bubbles:true}));
++        const native = await window.RSTikTokNativeInput?.prepare(inbox,item);
++        if (!native) {
++          Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype,'value').set.call(input,draft.reply_text);
++          input.dispatchEvent(new Event('input',{bubbles:true}));
++        }
+         ctx.log(`@${item.author} : ${draft.reply_text}`);
+         const send = await ctx.waitFor(()=>{const b=item.root.querySelector(S.send);return b && b.getAttribute('aria-disabled')!=='true' && !b.disabled ? b:null;});
+         if (!send || input.value!==draft.reply_text) throw Error('Bouton Envoyer indisponible ou texte différent.');
+@@ -258,16 +261,22 @@
+           if (input.value!==draft.reply_text || !visible(send)) throw Error('Éditeur changé avant envoi.');
+           if (inbox && rows().map(snapshot).filter(matchesTarget).length !== 1) throw Error('Commentaire ambigu avant envoi.');
+           receipt = window.RSTikTokSubmission?.start(draft.reply_text);
+-          send.click();
+-          clicked = true;
++          if (native) {
++            // Dès la demande native, un timeout peut masquer un clic : jamais de repli .click().
++            clicked = true;
++            const outcome = await native.send();
++            if (outcome.send_clicked !== true) throw Error('Clic natif non confirmé : vérifier sans renvoi.');
++          } else { send.click(); clicked = true; }
+           published = !!await waitForReply(item, username, draft.reply_text, ctx.waitFor);
+           if (!published) throw Error('Publication non confirmée dans le fil : vérifier TikTok, aucun nouvel essai automatique.');
+         } finally {
+           submission = await receipt?.finish() || null;
++          if (submission) submission.post_type = /photomode/.test(item.image) ? 'photo' : 'video';
++          native?.release();
+           if (submission) window.RSTaskTrace?.mark('tiktok.submission', submission);
+           if (inbox) {
+             // Le worker termine la réservation après la relecture de Studio.
+-            inbox.result = {recipe: 'tiktok.comments', draft_id: draft.id, liked, send_clicked: clicked, pause_ms: pauseMs, initial_visible: published, submission};
++            inbox.result = {recipe: 'tiktok.comments', draft_id: draft.id, liked, send_clicked: clicked, pause_ms: pauseMs, initial_visible: published, submission, input_mode: native ? 'native' : 'dom'};
+           } else {
+             await window.RSCommentAPI.call(ctx,'post',`/extension/tiktok/${draft.id}/finish`,{username,status:published?'published':'uncertain',liked,proof:published?'Réponse exacte du compte visible sous le commentaire':'Envoi réservé, résultat non confirmé'});
+           }
+--- /dev/null
++++ b/tiktok/native-input.js
+@@ -0,0 +1,18 @@
++/* Sur le NAS seulement : saisie/clic natifs délégués au service loopback authentifié. */
++(() => {
++  'use strict';
++  async function request(task, operation, extra={}) {
++    const r=await chrome.runtime.sendMessage({type:'tiktok.native',task_id:task.id,operation,...extra});
++    if(!r?.ok)throw Error(r?.error||'Entrée native indisponible : aucun repli simulé.');return r.data;
++  }
++  window.RSTikTokNativeInput={async prepare(task,item) {
++    if(!task)return null;
++    const available=await request(task,'available');if(!available.enabled){if(available.required)throw Error('Transport natif requis mais indisponible.');return null;}
++    const nonce=crypto.randomUUID(),avatar=document.querySelector('[data-tt="Header_NewHeader_Clickable"] img')?.getAttribute('src')?.split('?')[0];
++    if(!avatar)throw Error('Profil natif non vérifiable.');
++    item.root.setAttribute('data-rs-native-nonce',nonce);
++    const fields={nonce,avatar};
++    const filled=await request(task,'fill',fields);window.RSTaskTrace?.mark('tiktok.input.native',{action:'fill',confirmed:filled.filled===true});if(!filled.filled)throw Error('Saisie native non confirmée.');
++    return {async send(){window.RSTaskTrace?.mark('tiktok.input.native',{action:'reply',status:'requested'});return request(task,'send',fields);},release(){if(item.root.getAttribute('data-rs-native-nonce')===nonce)item.root.removeAttribute('data-rs-native-nonce');}};
++  }};
++})();
+--- /dev/null
++++ b/native/cdp.cjs
+@@ -0,0 +1,9 @@
++'use strict';
++async function connect(url) {
++  const ws = new WebSocket(url), pending = new Map(); let seq = 0;
++  await new Promise((resolve, reject) => { ws.onopen = resolve; ws.onerror = () => reject(Error('Connexion Chromium indisponible')); });
++  ws.onmessage = event => { const v = JSON.parse(event.data); if (v.id && pending.has(v.id)) { const p = pending.get(v.id); pending.delete(v.id); clearTimeout(p.timer); v.error ? p.reject(Error(v.error.message)) : p.resolve(v.result); } else client.onEvent?.(v); };
++  const client = {onEvent: null, call(method, params = {}) { return new Promise((resolve, reject) => { const id = ++seq, timer = setTimeout(() => { pending.delete(id); reject(Error('Délai Chromium dépassé')); }, 8000); pending.set(id, {resolve, reject, timer}); ws.send(JSON.stringify({id, method, params})); }); }, close() { for (const p of pending.values()) { clearTimeout(p.timer); p.reject(Error('Connexion Chromium terminée')); } pending.clear(); ws.close(); }};
++  return client;
++}
++module.exports = {connect};
+--- /dev/null
++++ b/native/configure.cjs
+@@ -0,0 +1,10 @@
++/* À lancer dans le conteneur NAS, utilisateur du navigateur. Aucun secret affiché. */
++'use strict';
++const fs=require('node:fs'),crypto=require('node:crypto'),{connect}=require('./cdp.cjs');
++(async()=>{const tabs=await(await fetch('http://127.0.0.1:9222/json')).json();let worker;
++for(const t of tabs.filter(t=>t.type==='service_worker'&&t.url.endsWith('/background.js'))){const c=await connect(t.webSocketDebuggerUrl);try{const r=await c.call('Runtime.evaluate',{expression:'chrome.runtime.getManifest().name',returnByValue:true});if(r.result?.value==='RS-Max Companion'){worker=t;break;}}finally{c.close();}}
++if(!worker)throw Error('Companion indisponible');const origin='chrome-extension://'+new URL(worker.url).host,file='/data/native-input-config.json';let config;
++if(fs.existsSync(file)){config=JSON.parse(fs.readFileSync(file,'utf8'));if(config.nativeInputOrigin!==origin)throw Error('Origine de Companion différente');}
++else{config={nativeInputToken:crypto.randomBytes(32).toString('hex'),nativeInputOrigin:origin,nativeInputRequired:true};fs.writeFileSync(file,JSON.stringify(config),{flag:'wx',mode:0o600});}
++fs.chmodSync(file,0o600);const c=await connect(worker.webSocketDebuggerUrl);try{const r=await c.call('Runtime.evaluate',{expression:'chrome.storage.local.set({rsmaxNativeConfig:'+JSON.stringify(config)+'}).then(()=>true)',awaitPromise:true,returnByValue:true});if(r.result?.value!==true)throw Error('Configuration non enregistrée');console.log(JSON.stringify({configured:true,origin_checked:true,private_file:true}));}finally{c.close();}
++})().catch(()=>{console.error('Configuration native impossible ; aucun secret affiché');process.exitCode=1});
+--- /dev/null
++++ b/native/input.cjs
+@@ -0,0 +1,52 @@
++'use strict';
++const fs = require('node:fs'), path = require('node:path');
++const {connect} = require('./cdp.cjs');
++function valid(s) {
++  if (!Number.isSafeInteger(s.task_id) || s.task_id < 1 || !/^[a-f0-9-]{36}$/.test(s.nonce || '') || !/^[\w.]{1,32}$/.test(s.username || '') || !/^[\w.]{1,32}$/.test(s.target?.author || '') || typeof s.text !== 'string' || !s.text.trim() || s.text.length > 150 || typeof s.target.content !== 'string' || typeof s.target.caption !== 'string' || s.target.content.length > 3000 || s.target.caption.length > 5000 || typeof s.avatar !== 'string' || s.avatar.length > 3000) throw Error('Intention native invalide');
++}
++function inspect(s) {
++  if (location.origin !== 'https://www.tiktok.com' || location.pathname !== '/tiktokstudio/comment') return null;
++  const S = {cell:'[data-tt="components_MessageCell_FlexRow_3"]', author:'a[data-tt="components_MessageCell_a"]', text:'[data-tt="components_TUXTextWithMention_TUXText"]', video:'[data-tt="VideoCover_index_VideoCoverContainer"]', caption:'[data-tt="components_MessageCell_TruncateText"]'}, text = e => (e?.textContent || '').trim();
++  const matches = [...document.querySelectorAll(S.cell)].filter(cell => { const video = cell.parentElement?.querySelector(S.video); return cell.querySelector(S.author)?.getAttribute('href')?.split('/@')[1]?.toLowerCase() === s.target.author && text(cell.querySelector(S.text)) === s.target.content && text(video?.parentElement?.querySelector(S.caption)) === s.target.caption; });
++  if (matches.length !== 1) return null;
++  const root = matches[0].closest('[data-tt="components_CommentCell_FlexColumn"]');
++  if (root?.getAttribute('data-rs-native-nonce') !== s.nonce) return null;
++  const avatar = document.querySelector('[data-tt="Header_NewHeader_Clickable"] img')?.getAttribute('src')?.split('?')[0];
++  if (!avatar || avatar !== s.avatar) return null;
++  const input = root.querySelector('textarea#comment-input'), send = root.querySelector('button[data-tt="components_CommentInputEditor_TUXButton"]');
++  if (!input || !send || (input.value.trim() && input.value !== s.text)) return null;
++  input.scrollIntoView({block:'center'});
++  const rect = e => { const r = e.getBoundingClientRect(); return r.width > 0 && r.height > 0 && r.x >= 0 && r.y >= 0 && r.right <= innerWidth && r.bottom <= innerHeight ? {x:r.x+r.width/2,y:r.y+r.height/2} : null; };
++  return {input:rect(input), send:rect(send), value:input.value, focused:document.activeElement === input, enabled:!send.disabled && send.getAttribute('aria-disabled') !== 'true'};
++}
++async function evaluate(c, fn, s) { const v = await c.call('Runtime.evaluate', {expression:'('+fn.toString()+')('+JSON.stringify(s)+')', returnByValue:true}); if (v.exceptionDetails) throw Error('Lecture de la cible native impossible'); return v.result?.value; }
++async function click(c, p) { if (!p) throw Error('Contrôle natif hors écran'); await c.call('Input.dispatchMouseEvent', {type:'mousePressed',...p,button:'left',clickCount:1}); await c.call('Input.dispatchMouseEvent', {type:'mouseReleased',...p,button:'left',clickCount:1}); }
++function reserve(dir, id) { fs.mkdirSync(dir, {recursive:true, mode:0o700}); const file = path.join(dir, id+'.json'); fs.writeFileSync(file, JSON.stringify({state:'send_requested',at:new Date().toISOString()}), {flag:'wx',mode:0o600}); return file; }
++async function perform(operation, s, {cdp='http://127.0.0.1:9222', receipts='/data/rsmax-native-input', connector=connect, discover=async()=> (await fetch(cdp+'/json')).json()} = {}) {
++  valid(s); if (!['fill','send'].includes(operation)) throw Error('Opération native inconnue');
++  if (fs.existsSync(path.join(receipts, s.task_id+'.json'))) throw Error('Geste déjà réservé : aucun renvoi');
++  const tabs = (await discover()).filter(t => t.type === 'page' && t.url === 'https://www.tiktok.com/tiktokstudio/comment');
++  let client, state;
++  try {
++    for (const t of tabs) { const c = await connector(t.webSocketDebuggerUrl), v = await evaluate(c, inspect, s); if (v) { if (client) { c.close(); throw Error('Cible native ambiguë'); } client = c; state = v; } else c.close(); }
++    if (!client || !state?.input) throw Error('Cible native exacte introuvable');
++    await client.call('Page.bringToFront');
++    if (operation === 'fill') {
++      await click(client, state.input);
++      if (!(await evaluate(client, inspect, s))?.focused) throw Error('Champ natif non focalisé');
++      await client.call('Input.dispatchKeyEvent', {type:'keyDown',key:'a',code:'KeyA',windowsVirtualKeyCode:65,modifiers:2});
++      await client.call('Input.dispatchKeyEvent', {type:'keyUp',key:'a',code:'KeyA',windowsVirtualKeyCode:65,modifiers:2});
++      await client.call('Input.insertText', {text:s.text});
++      const after = await evaluate(client, inspect, s);
++      if (!after || after.value !== s.text) throw Error('Saisie native différente');
++      return {filled:true,input_mode:'native'};
++    }
++    state = await evaluate(client, inspect, s);
++    if (!state?.enabled || state.value !== s.text || !state.send) throw Error('Texte ou bouton changé avant le clic natif');
++    // L'intention durable précède le seul clic. Même un timeout interdit un second essai.
++    const file = reserve(receipts, s.task_id);
++    try { await click(client, state.send); fs.writeFileSync(file, JSON.stringify({state:'clicked_once',at:new Date().toISOString()})); return {send_clicked:true,input_mode:'native'}; }
++    catch { return {send_clicked:null,input_mode:'native',uncertain:true}; }
++  } finally { client?.close(); }
++}
++module.exports = {perform, inspect, valid, reserve};
+--- /dev/null
++++ b/native/public.cjs
+@@ -0,0 +1,52 @@
++'use strict';
++const {connect}=require('./cdp.cjs');
++const sleep=ms=>new Promise(r=>setTimeout(r,ms));
++function valid(s) {
++  if(!/^[\w.]{1,32}$/.test(s.username||'')||typeof s.text!=='string'||!s.text.trim()||s.text.length>150||!['post_id','parent_id','comment_id'].every(k=>typeof s.submission?.[k]==='string'&&/^\d{1,30}$/.test(s.submission[k])))throw Error('Reçu public incomplet');
++}
++function step(s) {
++  if(location.origin!=='https://www.tiktok.com')return{page_matched:false};
++  const match=location.pathname.match(/^\/@([\w.]+)\/(?:video|photo)\/(\d+)$/);
++  if(!match||match[1].toLowerCase()!==s.username||match[2]!==s.submission.post_id)return {page_matched:false};
++  const skip=[...document.querySelectorAll('button')].find(b=>b.getClientRects().length&&/^(Skip|Pas maintenant|Ignorer)$/.test(b.innerText.trim()));skip?.click();
++  const visible=e=>!!e?.getClientRects().length&&getComputedStyle(e).visibility!=='hidden';
++  const norm=v=>String(v||'').trim();
++  const tab=[...document.querySelectorAll('button')].find(b=>visible(b)&&/^(Comments|Commentaires)$/.test(norm(b.innerText)));
++  const parents=[...document.querySelectorAll('[data-e2e="comment-level-1"]')];
++  if(!parents.length&&tab){tab.click();return {page_matched:true,waiting:true};}
++  const reply=[...document.querySelectorAll('[data-e2e="comment-level-2"]')].find(e=>{const row=e.closest('[class*="DivCommentItemWrapper"]');return norm(e.innerText||e.textContent)===s.text&&row?.querySelector('a[href^="/@"]')?.getAttribute('href')?.split('/@')[1]?.split(/[/?]/)[0]?.toLowerCase()===s.username;});
++  if(reply)return {page_matched:true,dom_matched:true};
++  const more=[...document.querySelectorAll('[data-key-interaction="comment_view_replies"]')].find(e=>visible(e)&&!/^(Hide|Masquer)/i.test(norm(e.innerText)));
++  if(more){more.scrollIntoView({block:'center'});(more.querySelector('button')||more).click();return {page_matched:true,expanded:true,count:parents.length};}
++  const last=parents.at(-1);if(last){last.scrollIntoView({block:'end'});let sc=last.parentElement;while(sc&&!(sc.scrollHeight>sc.clientHeight+2&&/auto|scroll/.test(getComputedStyle(sc).overflowY)))sc=sc.parentElement;(sc||document.scrollingElement).scrollBy({top:600,behavior:'instant'});}
++  return {page_matched:true,count:parents.length,waiting:!parents.length};
++}
++async function verifyPublic(s,{cdp='http://127.0.0.1:9222',timeout=65000,connector=connect}={}) {
++  valid(s);const version=await(await fetch(cdp+'/json/version')).json(),browser=await connector(version.webSocketDebuggerUrl);let context,page;
++  let networkMatched=false,domMatched=false,parentSeen=false,observed=0;const requests=new Set(),seen=new Set();
++  try {
++    context=(await browser.call('Target.createBrowserContext',{disposeOnDetach:true})).browserContextId;
++    const type=s.submission.post_type==='photo'?'photo':'video',url='https://www.tiktok.com/@'+s.username+'/'+type+'/'+s.submission.post_id;
++    const id=(await browser.call('Target.createTarget',{url:'about:blank',browserContextId:context})).targetId;
++    let target;for(let i=0;i<20&&!target;i++){target=(await(await fetch(cdp+'/json')).json()).find(t=>t.id===id);if(!target)await sleep(100);}
++    if(!target)throw Error('Lecture publique indisponible');page=await connector(target.webSocketDebuggerUrl);
++    page.onEvent=v=>{
++      const p=v.params||{};
++      if(v.method==='Network.requestWillBeSent'){try{const u=new URL(p.request.url);if(u.origin==='https://www.tiktok.com'&&/^\/api\/comment\/list\/(?:reply\/)?$/.test(u.pathname)&&p.request.method==='GET')requests.add(p.requestId);}catch{}}
++      if(v.method==='Network.loadingFinished'&&requests.delete(p.requestId))page.call('Network.getResponseBody',{requestId:p.requestId}).then(r=>{try{const b=JSON.parse(r.base64Encoded?Buffer.from(r.body,'base64').toString():r.body);const comments=b.status_code===0?(b.comments||[]):[];for(const c of comments){if(typeof c.cid==='string')seen.add(c.cid);if(c.cid===s.submission.parent_id&&c.aweme_id===s.submission.post_id)parentSeen=true;if(c.cid===s.submission.comment_id&&c.reply_id===s.submission.parent_id&&c.aweme_id===s.submission.post_id&&c.text===s.text&&c.user?.unique_id?.toLowerCase()===s.username&&c.no_show!==true&&c.no_show!==1){networkMatched=true;parentSeen=true;}}observed=seen.size;}catch{}}).catch(()=>{});
++    };
++    await page.call('Network.enable');await page.call('Page.navigate',{url});
++    const deadline=Date.now()+timeout;let quiet=0,lastCount=-1,matchedPage=false;
++    while(Date.now()<deadline&&seen.size<400){
++      const r=await page.call('Runtime.evaluate',{expression:'('+step.toString()+')('+JSON.stringify(s)+')',returnByValue:true});const state=r.result?.value;
++      if(state?.page_matched)matchedPage=true;
++      domMatched=Boolean(state?.dom_matched);
++      if(networkMatched&&domMatched)return {confirmed:true,target_found:true,proof:'after_reload',visibility:'public',verification_source:'anonymous_browser',comment_id:s.submission.comment_id,verification:{status:'public_confirmed',observed_count:observed}};
++      const count=state?.count??-1;quiet=!state?.expanded&&!state?.waiting&&count===lastCount?quiet+1:0;lastCount=count;
++      if(quiet>=5&&matchedPage)break;
++      await sleep(state?.expanded?1200:900);
++    }
++    return {confirmed:false,target_found:parentSeen,visibility:'unconfirmed',verification_source:'anonymous_browser',verification:{status:matchedPage&&observed?(parentSeen?'public_reply_absent':'public_target_not_found'):'public_unavailable',observed_count:observed}};
++  } finally { page?.close();if(context)await browser.call('Target.disposeBrowserContext',{browserContextId:context}).catch(()=>{});browser.close(); }
++}
++module.exports={verifyPublic,valid,step};
+--- /dev/null
++++ b/native/server.cjs
+@@ -0,0 +1,24 @@
++'use strict';
++const http = require('node:http'), fs = require('node:fs'), crypto = require('node:crypto');
++const {perform} = require('./input.cjs');
++const {verifyPublic} = require('./public.cjs');
++function createServer(config, handlers = {perform, verifyPublic}) {
++  if (!/^[a-f0-9]{64}$/.test(config.nativeInputToken || '') || !/^chrome-extension:\/\/[a-p]{32}$/.test(config.nativeInputOrigin || '')) throw Error('Configuration native NAS absente');
++  let busy = false;
++  return http.createServer(async (req, res) => {
++    const auth = Buffer.from(req.headers.authorization || ''), expected = Buffer.from('Bearer '+config.nativeInputToken), allowed = req.headers.origin === config.nativeInputOrigin;
++    res.setHeader('Content-Type','application/json'); res.setHeader('Cache-Control','no-store');
++    if (!allowed) { res.writeHead(403); return res.end('{"error":"Origine refusée"}'); }
++    res.setHeader('Access-Control-Allow-Origin', config.nativeInputOrigin);
++    if (req.method === 'OPTIONS') { res.setHeader('Access-Control-Allow-Methods','POST');res.setHeader('Access-Control-Allow-Headers','Authorization, Content-Type');res.writeHead(204);return res.end(); }
++    if (auth.length !== expected.length || !crypto.timingSafeEqual(auth,expected)) {res.writeHead(403);return res.end('{"error":"Accès refusé"}');}
++    if (req.method !== 'POST' || !['/tiktok/fill','/tiktok/send','/tiktok/verify','/tiktok/health'].includes(req.url)) {res.writeHead(404);return res.end('{}');}
++    if (busy) {res.writeHead(409);return res.end('{"error":"Opération native déjà en cours"}');}
++    busy=true;
++    try { let body=''; for await (const part of req) {body+=part;if(body.length>16000){res.writeHead(413);return res.end('{}');}} const s=JSON.parse(body);const value=req.url.endsWith('/health')?{ready:true,version:'0.18.5'}:req.url.endsWith('/verify')?await handlers.verifyPublic(s):await handlers.perform(req.url.split('/').at(-1),s);res.end(JSON.stringify(value)); }
++    catch {res.writeHead(409);res.end('{"error":"Opération native refusée ou interrompue : vérifier sans renvoyer"}');}
++    finally {busy=false;}
++  });
++}
++if (require.main === module) { try {const config=JSON.parse(fs.readFileSync('/data/native-input-config.json','utf8'));createServer(config).listen(9223,'127.0.0.1',()=>console.log('Entrée native Companion : loopback, authentification obligatoire'));}catch{console.error('Configuration du service natif indisponible');process.exitCode=1;} }
++module.exports={createServer};
+--- /dev/null
++++ b/native/README.md
+@@ -0,0 +1,13 @@
++# Entrée native sur le NAS
++
++Le service Node utilise le CDP loopback du Chromium existant. Aucun navigateur VPS, profil neuf, cookie exporté, camouflage de navigateur ou permission Chrome supplémentaire.
++
++- Installer `nodejs` dans l’image et lancer `node --experimental-websocket /ext/native/server.cjs` avec le même utilisateur que Chromium ; le relancer en cas de sortie.
++- Garder 9222 et 9223 sur `127.0.0.1` **dans le conteneur**, sans port Docker publié. Les seuls chemins sont `/tiktok/{health,fill,send,verify}` ; POST JSON, clé et origine d’extension exigées.
++- Sur le NAS seulement, ajouter `nativeInputRequired:true` à `RSMAX_DEFAULTS`, puis lancer `node --experimental-websocket /ext/native/configure.cjs`. Il crée une clé dans `/data/native-input-config.json` (0600) et la transmet au stockage privé de cette extension, sans l’afficher. Garder clé et profil hors du contexte Docker et du versionnement ; ne pas les copier au poste.
++- `fill` puis `send` ne visent que le commentaire exact, nonce, avatar et texte du `tiktok.reply` en cours. Réservation durable dans `/data/rsmax-native-input` avant le clic ; timeout ou réservation existante = aucun second essai ni repli vers `.click()`.
++- `verify` ouvre un contexte anonyme jetable : aucun cookie importé, aucun envoi. CID, parent, vidéo, auteur et texte doivent être servis par la page publique et affichés dans le DOM. L’apparition au seul auteur ne confirme rien.
++
++Mise à jour : suspendre les cycles futurs, attendre leur fin et la file navigateur vide ; préserver configuration et profil ; installer, reconstruire l’image et redémarrer deux fois. Vérifier le refus sans session, `/tiktok/health`, puis une relecture publique ; reprendre les cycles. API Hermès inchangée : inbox → contexte/persona → reply ; une tentative passée ne passe que par verify/reconcile.
++
++Tests isolés : `node --test tests/native-{input,server}.test.cjs`, puis `RS_TEST_OUTPUT=… node tests/e2e/tiktok-native.cjs` avec Playwright disponible. Aucune action sur TikTok réel.
+--- /dev/null
++++ b/tests/native-input.test.cjs
+@@ -0,0 +1,8 @@
++const{test}=require('node:test'),assert=require('node:assert/strict'),fs=require('node:fs'),os=require('node:os'),path=require('node:path');
++const{JSDOM}=require('jsdom');const{perform,valid}=require('../native/input.cjs');
++function fixture(){const dir=fs.mkdtempSync(path.join(os.tmpdir(),'rs-native-')),s={task_id:1,nonce:'12345678-1234-4234-8234-123456789012',username:'owner',avatar:'fixture-avatar',text:'Merci 🌹',target:{author:'visitor',content:'Jolie tenue',caption:'Tenue du jour'}};const d=new JSDOM(`<button data-tt="Header_NewHeader_Clickable"><img src="fixture-avatar"></button><section data-tt="components_CommentCell_FlexColumn" data-rs-native-nonce="${s.nonce}"><div><div data-tt="components_MessageCell_FlexRow_3"><a data-tt="components_MessageCell_a" href="/@visitor">Visiteur</a><span data-tt="components_TUXTextWithMention_TUXText">Jolie tenue</span></div><aside><div data-tt="VideoCover_index_VideoCoverContainer"></div><span data-tt="components_MessageCell_TruncateText">Tenue du jour</span></aside></div><textarea id="comment-input"></textarea><button data-tt="components_CommentInputEditor_TUXButton">Envoyer</button></section>`,{url:'https://www.tiktok.com/tiktokstudio/comment',runScripts:'outside-only'});const w=d.window;w.HTMLElement.prototype.scrollIntoView=function(){};w.HTMLElement.prototype.getBoundingClientRect=function(){return{x:this.tagName==='TEXTAREA'?10:80,y:10,width:20,height:20,right:100,bottom:30}};let sends=0,fail=false;const input=w.document.querySelector('textarea'),calls=[];const connector=async()=>({close(){},async call(method,p){calls.push(method);if(method==='Runtime.evaluate')return{result:{value:w.eval(p.expression)}};if(method==='Input.insertText')input.value=p.text;if(method==='Input.dispatchMouseEvent'){if(p.type==='mouseReleased'&&p.x===20)input.focus();if(p.type==='mousePressed'&&p.x===90){sends++;if(fail)throw Error('Connexion perdue après le clic');}}return{}}});return{s,w,input,calls,options:{receipts:dir,connector,discover:async()=>[{type:'page',url:w.location.href,webSocketDebuggerUrl:'fixture'}]},sends:()=>sends,fail:()=>fail=true,close(){d.window.close();fs.rmSync(dir,{recursive:true,force:true})}}}
++test('saisie native Unicode et un seul clic durable malgré une seconde demande',async()=>{const f=fixture();try{assert.equal((await perform('fill',f.s,f.options)).filled,true);assert.equal(f.input.value,f.s.text);assert.equal((await perform('send',f.s,f.options)).send_clicked,true);await assert.rejects(perform('send',f.s,f.options),/déjà réservé/);assert.equal(f.sends(),1)}finally{f.close()}});
++test('un timeout après le clic ne permet jamais une nouvelle tentative',async()=>{const f=fixture();try{await perform('fill',f.s,f.options);f.fail();assert.equal((await perform('send',f.s,f.options)).send_clicked,null);await assert.rejects(perform('send',f.s,f.options),/déjà réservé/);assert.equal(f.sends(),1)}finally{f.close()}});
++test('un brouillon humain modifié est conservé, sans saisie ni clic',async()=>{const f=fixture();try{f.input.value='Mon brouillon personnel';await assert.rejects(perform('fill',f.s,f.options),/introuvable/);assert.equal(f.input.value,'Mon brouillon personnel');assert.equal(f.sends(),0)}finally{f.close()}});
++test('mauvais nonce ou avatar interdit le clic et toute réservation',async()=>{for(const change of[{nonce:'87654321-1234-4234-8234-123456789012'},{avatar:'autre-profil'}]){const f=fixture();try{await assert.rejects(perform('send',{...f.s,...change},f.options),/introuvable/);assert.equal(f.sends(),0);assert.equal(fs.existsSync(path.join(f.options.receipts,'1.json')),false)}finally{f.close()}}});
++test('une intention native ne peut contenir ni URL arbitraire ni texte hors plafond',()=>{assert.throws(()=>valid({}),/invalide/);const f=fixture();try{assert.throws(()=>valid({...f.s,text:'x'.repeat(151)}),/invalide/)}finally{f.close()}});
+--- /dev/null
++++ b/tests/native-server.test.cjs
+@@ -0,0 +1,2 @@
++const{test}=require('node:test'),assert=require('node:assert/strict');const{createServer}=require('../native/server.cjs');
++test('le loopback refuse origine ou clé incorrectes, limite la taille et sérialise les gestes',async()=>{let actions=0,release;const origin='chrome-extension://'+'a'.repeat(32),token='b'.repeat(64);const server=createServer({nativeInputToken:token,nativeInputOrigin:origin},{perform:async()=>{actions++;return{filled:true}},verifyPublic:async()=>new Promise(r=>release=r)});await new Promise(r=>server.listen(0,'127.0.0.1',r));const url='http://127.0.0.1:'+server.address().port;const headers={Origin:origin,Authorization:'Bearer '+token};const post=(body='{}',h=headers,p='/tiktok/fill')=>fetch(url+p,{method:'POST',headers:h,body});try{assert.equal((await post('{}',{...headers,Origin:'https://www.tiktok.com'})).status,403);assert.equal((await post('{}',{...headers,Authorization:'Bearer wrong'})).status,403);assert.equal(actions,0);assert.equal((await post('x'.repeat(16001))).status,413);assert.equal((await post()).status,200);assert.equal(actions,1);const pending=post('{}',headers,'/tiktok/verify');for(let n=0;n<20&&!release;n++)await new Promise(r=>setTimeout(r,10));assert.equal((await post()).status,409);assert.equal(actions,1);release({confirmed:false});await pending;}finally{server.closeAllConnections();await new Promise(r=>server.close(r))}});
+--- a/tests/tiktok-comments.test.cjs
++++ b/tests/tiktok-comments.test.cjs
+@@ -61,3 +61,6 @@
+ test('TikTok : liker seulement ne retire pas un cœur rouge existant',async()=>{const f=fixture({mode:'like',liked:true});await f.w.RSTikTokComments.run(f.ctx);assert.deepEqual(f.counts(),{likedClicks:0,sends:0});assert.equal(f.calls.length,0);f.dom.window.close()});
+ test('TikTok : mode réponse sans bouton de like fonctionne',async()=>{const f=fixture({mode:'reply'});f.original.querySelector('.heart').remove();await f.w.RSTikTokComments.run(f.ctx);assert.deepEqual(f.counts(),{likedClicks:0,sends:1});assert.equal(f.calls.at(-1).b.liked,false);f.dom.window.close()});
+ test('TikTok : ancien aperçu refusé sans action',async()=>{const f=fixture({mode:'preview'});await assert.rejects(f.w.RSTikTokComments.run(f.ctx),/Choisis Liker/);assert.equal(f.calls.length,0);assert.deepEqual(f.counts(),{likedClicks:0,sends:0});f.dom.window.close()});
++
++test('NAS : service natif indisponible, aucun repli vers une saisie ou un clic simulés',async()=>{const f=fixture({mode:'reply'});f.w.RSTikTokNativeInput={prepare:async()=>{throw Error('Service natif indisponible')}};const inbox={id:42,username:'xav',target:{author:'visitor',content:'Quel beau paysage !',caption:'Randonnée au Portugal'},text:'Merci, content que ça te plaise !'};await assert.rejects(f.w.RSTikTokComments.run(f.ctx,inbox),/Service natif indisponible/);assert.equal(f.d.querySelector('textarea').value,'');assert.equal(f.counts().sends,0);assert.ok(!f.calls.some(c=>c.p.endsWith('/begin')));f.dom.window.close()});
++test('NAS : clic natif incertain, aucun clic DOM supplémentaire et tentative marquée',async()=>{const f=fixture({mode:'reply'});let requests=0;f.w.RSTikTokNativeInput={prepare:async()=>{f.d.querySelector('textarea').value='Merci, content que ça te plaise !';return{send:async()=>{requests++;return{send_clicked:null}},release(){}}}};const inbox={id:42,username:'xav',target:{author:'visitor',content:'Quel beau paysage !',caption:'Randonnée au Portugal'},text:'Merci, content que ça te plaise !'};await assert.rejects(f.w.RSTikTokComments.run(f.ctx,inbox),/Clic natif non confirmé/);assert.equal(requests,1);assert.equal(f.counts().sends,0);assert.equal(inbox.result.send_clicked,true);assert.equal(inbox.result.input_mode,'native');f.dom.window.close()});
+--- /dev/null
++++ b/tests/e2e/tiktok-native.cjs
+@@ -0,0 +1,26 @@
++/* Chromium jetable : gestes natifs et preuve anonyme, toutes réponses TikTok simulées. */
++const{chromium}=require('playwright'),assert=require('node:assert/strict'),fs=require('node:fs'),path=require('node:path'),os=require('node:os'),net=require('node:net');
++const{perform}=require('../../native/input.cjs'),{verifyPublic}=require('../../native/public.cjs'),{connect}=require('../../native/cdp.cjs'),{createServer}=require('../../native/server.cjs');
++const root=path.resolve(__dirname,'../..'),out=process.env.RS_TEST_OUTPUT;if(!out||fs.existsSync(path.join(root,'config.local.js')))throw Error('Copie sans secrets requise');
++const executablePath='/Users/xavierfonseca/Library/Caches/ms-playwright/chromium-1243/chrome-mac-arm64/Google Chrome for Testing.app/Contents/MacOS/Google Chrome for Testing';
++(async()=>{let context,server;const dir=fs.mkdtempSync(path.join(os.tmpdir(),'native-browser-receipts-'));try{
++const probe=net.createServer();await new Promise(r=>probe.listen(0,'127.0.0.1',r));const port=probe.address().port;await new Promise(r=>probe.close(r));const cdp='http://127.0.0.1:'+port;
++fs.mkdirSync(out,{recursive:true});context=await chromium.launchPersistentContext(path.join(out,'profile'),{executablePath,headless:true,args:[`--disable-extensions-except=${root}`,`--load-extension=${root}`,`--remote-debugging-port=${port}`]});
++const nonce='12345678-1234-4234-8234-123456789012',avatar='data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///ywAAAAAAQABAAACAUwAOw==',text='Merci pour ton avis 🌹';
++const spec={task_id:1,nonce,avatar,username:'owner',text,target:{author:'visitor',content:'Jolie tenue',caption:'Tenue du jour'}};
++const html=`<!doctype html><meta charset="utf-8"><style>body{margin:20px}textarea{display:block;width:300px;height:80px}</style><button data-tt="Header_NewHeader_Clickable"><img width="10" height="10" src="${avatar}"></button><section data-tt="components_CommentCell_FlexColumn" data-rs-native-nonce="${nonce}"><div><div data-tt="components_MessageCell_FlexRow_3"><a data-tt="components_MessageCell_a" href="/@visitor">Visiteur</a><span data-tt="components_TUXTextWithMention_TUXText">Jolie tenue</span></div><aside><div data-tt="VideoCover_index_VideoCoverContainer"></div><span data-tt="components_MessageCell_TruncateText">Tenue du jour</span></aside></div><textarea id="comment-input"></textarea><button data-tt="components_CommentInputEditor_TUXButton">Envoyer</button></section><script>window.sends=0;window.events=[];document.addEventListener('input',e=>{if(e.target.matches('textarea'))events.push({type:'input',trusted:e.isTrusted})});document.querySelector('[data-tt="components_CommentInputEditor_TUXButton"]').onclick=e=>{sends++;events.push({type:'send',trusted:e.isTrusted})};</script>`;
++await context.route('https://www.tiktok.com/**',r=>r.fulfill({contentType:'text/html',body:html}));const page=await context.newPage();await page.goto('https://www.tiktok.com/tiktokstudio/comment');
++const sw=context.serviceWorkers()[0]||await context.waitForEvent('serviceworker');const origin=new URL(sw.url()).origin==='null'?'chrome-extension://'+new URL(sw.url()).host:new URL(sw.url()).origin;const token='b'.repeat(64);
++let lastOrigin;server=createServer({nativeInputToken:token,nativeInputOrigin:origin},{perform:(operation,s)=>perform(operation,s,{cdp,receipts:dir}),verifyPublic});server.prependListener('request',r=>lastOrigin=r.headers.origin);await new Promise(r=>server.listen(9223,'127.0.0.1',r));
++await sw.evaluate(({token,spec})=>{self.RSMAX_DEFAULTS={taskProfile:'test',nativeInputToken:token,nativeInputRequired:true};nativeTask={id:spec.task_id,kind:'tiktok.reply',payload:{username:spec.username,text:spec.text,target:spec.target}}},{token,spec});
++const rpc=operation=>sw.evaluate(({operation,spec})=>handlers['tiktok.native']({task_id:spec.task_id,operation,nonce:spec.nonce,avatar:spec.avatar},{id:chrome.runtime.id,tab:{url:'https://www.tiktok.com/tiktokstudio/comment'}}),{operation,spec});
++assert.equal((await rpc('fill')).filled,true,'Transport service worker vers loopback');assert.equal(lastOrigin,origin,'Origine Chrome réelle');assert.equal(await page.inputValue('textarea'),text);assert.equal((await rpc('send')).send_clicked,true);assert.equal(await page.evaluate(()=>sends),1);assert.deepEqual(await page.evaluate(()=>events),[{type:'input',trusted:true},{type:'send',trusted:true}]);await assert.rejects(rpc('send'));assert.equal(await page.evaluate(()=>sends),1);
++let hidden=false,writes=0;
++const publicHtml=`<!doctype html><meta charset="utf-8"><button id="comments">Comments</button><main></main><script>
++const parent={cid:'42',aweme_id:'99',text:'Jolie tenue',user:{unique_id:'visitor'}};document.querySelector('#comments').onclick=async()=>{if(document.querySelector('main').children.length)return;const r=await fetch('/api/comment/list/');await r.json();document.querySelector('main').innerHTML='<div class="DivCommentObjectWrapper"><div class="DivCommentItemWrapper"><a href="/@visitor">Visiteur</a><span data-e2e="comment-level-1">Jolie tenue</span></div><button data-key-interaction="comment_view_replies">View 1 reply</button></div>';document.querySelector('[data-key-interaction]').onclick=async e=>{const button=e.currentTarget;const r=await fetch('/api/comment/list/reply/');await r.json();button.textContent='Hide';document.querySelector('.DivCommentObjectWrapper').insertAdjacentHTML('beforeend','<div class="DivCommentItemWrapper"><a href="/@owner">Créateur</a><span data-e2e="comment-level-2">Merci pour ton avis 🌹</span></div>')}};</script>`;
++const connector=async url=>{const base=await connect(url);let external;const wrapper={call:(...args)=>base.call(...args),close:()=>base.close(),get onEvent(){return external},set onEvent(v){external=v}};base.onEvent=v=>{if(v.method==='Fetch.requestPaused'){const p=v.params,u=new URL(p.request.url);if(p.request.method==='POST')writes++;let body,contentType;if(u.pathname.startsWith('/api/comment/list/')){contentType='application/json';body=JSON.stringify({status_code:0,comments:u.pathname.includes('/reply/')?[{cid:hidden?'999':'1234567890123456789',reply_id:'42',aweme_id:'99',text,user:{unique_id:'owner'},no_show:false}]:[{cid:'42',aweme_id:'99',text:'Jolie tenue',user:{unique_id:'visitor'}}]});}else{contentType='text/html';body=publicHtml}base.call('Fetch.fulfillRequest',{requestId:p.requestId,responseCode:200,responseHeaders:[{name:'Content-Type',value:contentType}],body:Buffer.from(body).toString('base64')}).catch(()=>{});}else external?.(v)};await base.call('Fetch.enable',{patterns:[{urlPattern:'https://www.tiktok.com/*'}]});return wrapper;};
++const receipt={username:'owner',text,submission:{post_id:'99',parent_id:'42',comment_id:'1234567890123456789'}};
++let proof=await verifyPublic(receipt,{cdp,connector,timeout:10000});assert.equal(proof.confirmed,true,JSON.stringify(proof));assert.equal(proof.visibility,'public');assert.equal(proof.verification_source,'anonymous_browser');
++hidden=true;proof=await verifyPublic(receipt,{cdp,connector,timeout:8000});assert.equal(proof.confirmed,false,'Un texte visible sans son CID public ne confirme rien');assert.equal(writes,0,'Aucune écriture dans la vérification publique');
++console.log('Chromium : saisie Unicode et clic isTrusted, un seul envoi malgré doublon ; preuve anonyme positive et faux affichage refusé, zéro écriture de vérification.');
++}finally{server?.closeAllConnections();if(server)await new Promise(r=>server.close(r));await context?.close();fs.rmSync(dir,{recursive:true,force:true})}})().catch(e=>{console.error(e);process.exitCode=1});

@@ -21,7 +21,7 @@ class TikTokInboxService implements PlatformInboxInterface
 
     private const ACTION_TIMEOUT = 120;
 
-    private const REPLY_TIMEOUT = 240;
+    private const REPLY_TIMEOUT = 330;
 
     public function __construct(private TikTokSessionService $sessions, private BrowserTaskQueue $queue) {}
 
@@ -95,7 +95,7 @@ class TikTokInboxService implements PlatformInboxInterface
         }
 
         return ($result['confirmed'] ?? false) === true
-            ? ['success' => true, 'external_id' => null, 'error' => null]
+            ? ['success' => true, 'external_id' => ($result['verification_source'] ?? null) === 'anonymous_browser' ? ($result['comment_id'] ?? null) : null, 'error' => null]
             : ['success' => false, 'external_id' => null, 'error' => 'Action TikTok non confirmée après rechargement. Vérifiez le fil avant toute relance.', 'uncertain' => true];
     }
 

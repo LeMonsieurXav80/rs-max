@@ -187,7 +187,7 @@ class InboxReplyService
 
     private function locked(InboxItem $item, callable $callback): array
     {
-        $lock = Cache::lock('inbox-reply:'.$item->id, $item->platform->slug === 'tiktok' ? 240 : 120);
+        $lock = Cache::lock('inbox-reply:'.$item->id, $item->platform->slug === 'tiktok' ? 390 : 120);
         if (! $lock->get()) {
             return $this->conflict('Une réponse à ce message est déjà en cours.');
         }

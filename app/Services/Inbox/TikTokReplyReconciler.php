@@ -30,8 +30,8 @@ class TikTokReplyReconciler
     {
         $task = $this->original($item);
         $nonce = (string) Str::uuid();
-        $payload = array_merge($task->payload, ['action' => 'tiktok.reply', 'source_task_id' => $task->id, 'verification_nonce' => $nonce]);
-        $result = app(BrowserTaskQueue::class)->run($item->socialAccount, 'tiktok.verify', $payload, 90);
+        $payload = array_merge($task->payload, ['action' => 'tiktok.reply', 'source_task_id' => $task->id, 'verification_nonce' => $nonce, 'submission' => $task->result['submission'] ?? null]);
+        $result = app(BrowserTaskQueue::class)->run($item->socialAccount, 'tiktok.verify', $payload, 180);
         $verification = BrowserTask::where('social_account_id', $item->social_account_id)->where('kind', 'tiktok.verify')->where('payload->verification_nonce', $nonce)->firstOrFail();
 
         return ['verification_task_id' => $verification->id, 'result' => $result, 'sent' => false];
@@ -49,22 +49,34 @@ class TikTokReplyReconciler
             abort_unless($verification && $verification->claimed_at && $verification->claimed_at->greaterThan($task->finished_at)
                 && ($verification->result['confirmed'] ?? false) === true && ($verification->result['proof'] ?? null) === 'after_reload'
                 && ($verification->result['verified_kind'] ?? null) === 'tiktok.reply', 409, 'Une relecture confirmée après la tentative est requise.');
+            if (($verification->result['verification_source'] ?? null) === 'anonymous_browser') {
+                abort_unless(($verification->result['visibility'] ?? null) === 'public'
+                    && filled($task->result['submission']['comment_id'] ?? null)
+                    && ($verification->result['comment_id'] ?? null) === $task->result['submission']['comment_id']
+                    && ($verification->payload['submission'] ?? null) === $task->result['submission'], 409, 'Le reçu public ne correspond pas à la tentative.');
+            }
             foreach (['url', 'username', 'text', 'target'] as $key) {
                 abort_unless(($verification->payload[$key] ?? null) === ($task->payload[$key] ?? null), 409, 'La preuve concerne un autre commentaire, texte ou compte.');
             }
             $proof = ['confirmed' => true, 'proof' => 'after_reload', 'verification_task_id' => $verification->id,
                 'original_status' => $task->status, 'original_error' => $task->error, 'observed_at' => $verification->finished_at?->toIso8601String()];
+            foreach (['visibility', 'verification_source', 'comment_id'] as $key) {
+                if (isset($verification->result[$key])) {
+                    $proof[$key] = $verification->result[$key];
+                }
+            }
             if ($dry) {
                 return ['dry_run' => true, 'success' => true, 'proof' => $proof];
             }
             $task->update(['status' => BrowserTask::DONE, 'result' => array_merge($task->result, $proof), 'error' => null]);
             app(AccountActionBudget::class)->finish($task);
-            $item->update(['status' => 'replied', 'replied_at' => now(), 'reply_draft' => null, 'reply_scheduled_at' => null]);
+            $item->update(['status' => 'replied', 'replied_at' => now(), 'reply_draft' => null, 'reply_scheduled_at' => null,
+                'reply_external_id' => ($proof['verification_source'] ?? null) === 'anonymous_browser' ? ($proof['comment_id'] ?? null) : $item->reply_external_id]);
             if ($draftId = $task->result['draft_id'] ?? null) {
                 DB::table('extension_tiktok_comments')->where('id', $draftId)
                     ->whereIn('profile_id', DB::table('extension_tiktok_profiles')->where('social_account_id', $item->social_account_id)->select('id'))
                     ->where('reply_text', $item->reply_content)->where('author', $item->author_username)->where('content', $item->content)->where('video_context', $item->post_content)
-                    ->whereIn('status', ['uncertain', 'publishing'])->update(['status' => 'published', 'proof' => 'Texte exact et auteur vérifiés après rechargement de Studio', 'updated_at' => now()]);
+                    ->whereIn('status', ['uncertain', 'publishing'])->update(['status' => 'published', 'proof' => ($proof['visibility'] ?? null) === 'public' ? 'Réponse exacte vérifiée sans connexion au compte' : 'Texte exact et auteur vérifiés après rechargement de Studio', 'updated_at' => now()]);
             }
             $next = app(AccountActionBudget::class)->usage($item->socialAccount)['next_allowed_at'];
             LikeInboxItem::dispatch($item->id)->delay($next ? Carbon::parse($next)->addSeconds(2) : now())->afterCommit();

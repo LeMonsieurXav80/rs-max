@@ -53,7 +53,9 @@ class BrowserTaskController extends Controller
     {
         abort_unless($r->user()->isAdmin(), 403);
         $v = $r->validate(['result' => 'required|array']);
-        if ($task->kind === 'threads.agent.act') {
+        if ($task->kind === 'tiktok.reply') {
+            app(\App\Services\Browser\TikTokReplyReceipt::class)->checkpoint($task, $v['result']);
+        } elseif ($task->kind === 'threads.agent.act') {
             app(\App\Services\Threads\ThreadsAgent::class)->checkpoint($task, $v['result']);
         } else {
             app(\App\Services\Agent\TikTokPhotoPublisher::class)->checkpoint($task, $v['result']);
@@ -92,7 +94,14 @@ class BrowserTaskController extends Controller
 
         app(\App\Services\Agent\AutomationJournal::class)->append($task, $v['diagnostics'] ?? [], true);
         unset($v['diagnostics']);
-        if (in_array($task->kind, ['tiktok.photo.publish', 'threads.agent.act'], true)) {
+        if ($task->kind === 'tiktok.reply') {
+            app(\App\Services\Browser\TikTokReplyReceipt::class)->checkpoint($task, $v['result'] ?? []);
+            $task->refresh();
+            if (isset($task->result['submission'])) {
+                $v['result']['submission'] = $task->result['submission'];
+            }
+        }
+        if (in_array($task->kind, ['tiktok.photo.publish', 'threads.agent.act', 'tiktok.reply'], true)) {
             $v['result'] = array_replace($task->result ?? [], $v['result'] ?? []);
         }
         $task->update($v + ['finished_at' => now()]);

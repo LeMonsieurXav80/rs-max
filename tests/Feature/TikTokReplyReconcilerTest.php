@@ -71,6 +71,28 @@ class TikTokReplyReconcilerTest extends TestCase
         Bus::assertDispatchedTimes(LikeInboxItem::class, 1);
     }
 
+    public function test_preuve_publique_anonyme_transmet_le_cid_et_ne_declenche_que_le_like(): void
+    {
+        $submission = ['comment_id' => '1234567890123456789', 'parent_id' => '42', 'post_id' => '99'];
+        $this->task->update(['result' => ['send_clicked' => true, 'submission' => $submission]]);
+        $this->verification->update(['payload' => $this->verification->payload + ['submission' => $submission], 'result' => $this->verification->result + ['verification_source' => 'anonymous_browser', 'visibility' => 'public', 'comment_id' => $submission['comment_id']]]);
+        $this->postJson($this->url().'/reconcile', ['verification_task_id' => $this->verification->id, 'dry_run' => false])->assertOk();
+        $this->assertSame('1234567890123456789', $this->item->fresh()->reply_external_id);
+        $this->assertSame(3, $this->item->fresh()->reply_attempts);
+        $this->assertSame(2, BrowserTask::count());
+        Bus::assertDispatchedTimes(LikeInboxItem::class, 1);
+    }
+
+    public function test_un_recu_public_different_de_lenvoi_est_refuse(): void
+    {
+        $submission = ['comment_id' => '1234567890123456789', 'parent_id' => '42', 'post_id' => '99'];
+        $this->task->update(['result' => ['send_clicked' => true, 'submission' => $submission]]);
+        $this->verification->update(['payload' => $this->verification->payload + ['submission' => $submission], 'result' => $this->verification->result + ['verification_source' => 'anonymous_browser', 'visibility' => 'public', 'comment_id' => 'other']]);
+        $this->postJson($this->url().'/reconcile', ['verification_task_id' => $this->verification->id, 'dry_run' => false])->assertConflict();
+        $this->assertNull($this->item->fresh()->replied_at);
+        Bus::assertNothingDispatched();
+    }
+
     public function test_tache_terminee_sans_preuve_ne_permet_pas_de_rapprochement(): void
     {
         $this->task->update(['status' => 'done', 'result' => ['send_clicked' => true]]);

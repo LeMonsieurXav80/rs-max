@@ -16,13 +16,13 @@ class VerifyTikTokInboxReply implements ShouldQueue
 
     public int $tries = 1;
 
-    public int $timeout = 120;
+    public int $timeout = 210;
 
     public function __construct(public int $itemId, public int $pass = 1) {}
 
     public function handle(TikTokReplyReconciler $reconciler): void
     {
-        $lock = Cache::lock('tiktok-reply-proof:'.$this->itemId, 150);
+        $lock = Cache::lock('tiktok-reply-proof:'.$this->itemId, 240);
         if (! $lock->get()) {
             return;
         }
