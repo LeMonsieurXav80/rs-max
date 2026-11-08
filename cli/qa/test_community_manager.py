@@ -90,6 +90,20 @@ class CommunityManagerTest(unittest.TestCase):
                 api.assert_called_once_with('POST','inbox/11/reply',{'context_id':'ctx','reply_text':'Merci 🖤','dry_run':False})
             with sqlite3.connect(tmp+'/state.sqlite') as db:self.assertEqual(db.execute('SELECT state FROM attempts WHERE id=-11').fetchone()[0],'execution_requested')
 
+    def test_tiktok_relecture_puis_rapprochement_sans_renvoi_de_reponse(self):
+        import json,io,contextlib
+        with tempfile.TemporaryDirectory() as tmp:
+            config=Path(tmp)/'config.json';config.write_text(json.dumps({'state_path':tmp+'/state.sqlite'}))
+            with patch.object(cm,'daytime',return_value=True),patch.object(cm.Client,'api',return_value={'success':True}) as api,contextlib.redirect_stdout(io.StringIO()):
+                cm.main(['--config',str(config),'verify-reply','11'])
+                api.assert_called_once_with('POST','inbox/11/verify-reply',{})
+                api.reset_mock()
+                cm.main(['--config',str(config),'reconcile-reply','11','--verification-task','22'])
+                api.assert_called_once_with('POST','inbox/11/reconcile',{'verification_task_id':22,'dry_run':True})
+                api.reset_mock()
+                cm.main(['--config',str(config),'reconcile-reply','11','--verification-task','22','--commit'])
+                api.assert_called_once_with('POST','inbox/11/reconcile',{'verification_task_id':22,'dry_run':False})
+
     def test_fil_deja_traite_est_un_resultat_de_selection_et_non_un_arret(self):
         import json,io,contextlib
         with tempfile.TemporaryDirectory() as tmp:

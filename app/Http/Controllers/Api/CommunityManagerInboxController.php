@@ -96,10 +96,25 @@ class CommunityManagerInboxController extends Controller
 
     public function reconcile(Request $r, InboxItem $inboxItem, \App\Services\Inbox\XReplyReconciler $service)
     {
-        $this->account($r, $inboxItem->social_account_id);
+        $account = $this->account($r, $inboxItem->social_account_id);
+        if ($account->platform->slug === 'tiktok') {
+            $v = $r->validate(['verification_task_id' => 'required|integer|min:1', 'dry_run' => 'sometimes|boolean']);
+            abort_unless(app(CommunityManagerWindow::class)->isOpen(), 423);
+
+            return response()->json(app(\App\Services\Inbox\TikTokReplyReconciler::class)->reconcile($inboxItem, $v['verification_task_id'], $r->boolean('dry_run', true)));
+        }
         $v = $r->validate(['snapshot_id' => 'required|uuid', 'dry_run' => 'sometimes|boolean']);
 
         return response()->json($service->reconcile($inboxItem, $v['snapshot_id'], $r->boolean('dry_run', true)));
+    }
+
+    public function verifyReply(Request $r, InboxItem $inboxItem, \App\Services\Inbox\TikTokReplyReconciler $service)
+    {
+        $this->account($r, $inboxItem->social_account_id);
+        abort_unless(app(CommunityManagerWindow::class)->isOpen(), 423);
+        $r->attributes->set('community_manager', true);
+
+        return response()->json($service->verify($inboxItem));
     }
 
     public function reply(Request $r, InboxItem $inboxItem, InboxReplyService $service)

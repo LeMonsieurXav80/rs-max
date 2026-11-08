@@ -146,7 +146,8 @@ def main(argv=None):
     p = subs.add_parser('strategy'); p.add_argument('--account', type=int, required=True); p.add_argument('--update-file', type=Path)
     p = subs.add_parser('inbox'); p.add_argument('--account', type=int, required=True); p.add_argument('--pending',action='store_true'); p.add_argument('--limit',type=int,default=10); p.add_argument('--status', choices=['all','unanswered','replied','reply_failed'], default='unanswered')
     p = subs.add_parser('reply-status'); p.add_argument('id',type=int)
-    p = subs.add_parser('reconcile-reply'); p.add_argument('id',type=int); p.add_argument('--snapshot',required=True); p.add_argument('--commit',action='store_true')
+    p = subs.add_parser('verify-reply'); p.add_argument('id',type=int)
+    p = subs.add_parser('reconcile-reply'); p.add_argument('id',type=int); proof=p.add_mutually_exclusive_group(required=True); proof.add_argument('--snapshot'); proof.add_argument('--verification-task',type=int); p.add_argument('--commit',action='store_true')
     p = subs.add_parser('review'); p.add_argument('id',type=int); p.add_argument('--reason',choices=['not_relevant','retry_later'],required=True)
     p = subs.add_parser('reply-context'); p.add_argument('id', type=int)
     p = subs.add_parser('reply'); p.add_argument('id', type=int); p.add_argument('--context', required=True); text=p.add_mutually_exclusive_group(required=True); text.add_argument('--text-file', type=Path); text.add_argument('--text'); p.add_argument('--commit', action='store_true')
@@ -210,7 +211,8 @@ def main(argv=None):
     elif args.command == 'inbox': result = client.api('GET', f'accounts/{args.account}/inbox?' + urlencode({'order':'newest','limit':args.limit,'status':args.status,**({'agent_queue':1} if args.pending else {})}))
     elif args.command == 'review': result = client.api('POST', f'inbox/{args.id}/review', {'reason':args.reason})
     elif args.command == 'reply-status': result = client.api('GET', f'inbox/{args.id}')
-    elif args.command == 'reconcile-reply': result = client.api('POST', f'inbox/{args.id}/reconcile', {'snapshot_id':args.snapshot,'dry_run':not args.commit})
+    elif args.command == 'verify-reply': result = client.api('POST', f'inbox/{args.id}/verify-reply', {})
+    elif args.command == 'reconcile-reply': result = client.api('POST', f'inbox/{args.id}/reconcile', {**({'snapshot_id':args.snapshot} if args.snapshot else {'verification_task_id':args.verification_task}),'dry_run':not args.commit})
     elif args.command == 'reply-context':
         try: result = client.api('GET', f'inbox/{args.id}/context')
         except ApiError as exc:

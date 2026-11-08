@@ -1,0 +1,75 @@
+<?php
+
+namespace App\Services\Inbox;
+
+use App\Jobs\LikeInboxItem;
+use App\Models\BrowserTask;
+use App\Models\InboxItem;
+use App\Services\Agent\AccountActionBudget;
+use App\Services\Browser\BrowserTaskQueue;
+use Illuminate\Support\Carbon;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Str;
+
+/** Relecture d'une réponse incertaine : aucun second clic d'envoi. */
+class TikTokReplyReconciler
+{
+    private function original(InboxItem $item): BrowserTask
+    {
+        abort_unless($item->socialAccount->usesBrowser() && $item->platform->slug === 'tiktok' && filled($item->reply_content), 422);
+        $task = BrowserTask::where('social_account_id', $item->social_account_id)->where('kind', 'tiktok.reply')->where('status', BrowserTask::UNCERTAIN)
+            ->where('payload->username', $item->socialAccount->browser_username)->where('payload->text', $item->reply_content)
+            ->where('payload->target->author', $item->author_username)->where('payload->target->content', $item->content)
+            ->where('payload->target->caption', $item->post_content)->latest('id')->first();
+        abort_unless($task && $task->claimed_at && $task->finished_at && ($task->result['send_clicked'] ?? false) === true, 409, 'Aucune tentative incertaine correspondant au commentaire exact.');
+
+        return $task;
+    }
+
+    public function verify(InboxItem $item): array
+    {
+        $task = $this->original($item);
+        $nonce = (string) Str::uuid();
+        $payload = array_merge($task->payload, ['action' => 'tiktok.reply', 'source_task_id' => $task->id, 'verification_nonce' => $nonce]);
+        $result = app(BrowserTaskQueue::class)->run($item->socialAccount, 'tiktok.verify', $payload, 90);
+        $verification = BrowserTask::where('social_account_id', $item->social_account_id)->where('kind', 'tiktok.verify')->where('payload->verification_nonce', $nonce)->firstOrFail();
+
+        return ['verification_task_id' => $verification->id, 'result' => $result, 'sent' => false];
+    }
+
+    public function reconcile(InboxItem $item, int $verificationId, bool $dry = true): array
+    {
+        return DB::transaction(function () use ($item, $verificationId, $dry) {
+            $item = InboxItem::whereKey($item->id)->lockForUpdate()->firstOrFail();
+            if ($item->replied_at) {
+                return ['success' => true, 'already_replied' => true];
+            }
+            $task = $this->original($item);
+            $verification = BrowserTask::where('social_account_id', $item->social_account_id)->where('kind', 'tiktok.verify')->where('status', BrowserTask::DONE)->find($verificationId);
+            abort_unless($verification && $verification->claimed_at && $verification->claimed_at->greaterThan($task->finished_at)
+                && ($verification->result['confirmed'] ?? false) === true && ($verification->result['proof'] ?? null) === 'after_reload'
+                && ($verification->result['verified_kind'] ?? null) === 'tiktok.reply', 409, 'Une relecture confirmée après la tentative est requise.');
+            foreach (['url', 'username', 'text', 'target'] as $key) {
+                abort_unless(($verification->payload[$key] ?? null) === ($task->payload[$key] ?? null), 409, 'La preuve concerne un autre commentaire, texte ou compte.');
+            }
+            $proof = ['confirmed' => true, 'proof' => 'after_reload', 'verification_task_id' => $verification->id,
+                'original_status' => $task->status, 'original_error' => $task->error, 'observed_at' => $verification->finished_at?->toIso8601String()];
+            if ($dry) {
+                return ['dry_run' => true, 'success' => true, 'proof' => $proof];
+            }
+            $task->update(['status' => BrowserTask::DONE, 'result' => array_merge($task->result, $proof), 'error' => null]);
+            app(AccountActionBudget::class)->finish($task);
+            $item->update(['status' => 'replied', 'replied_at' => now(), 'reply_draft' => null, 'reply_scheduled_at' => null]);
+            if ($draftId = $task->result['draft_id'] ?? null) {
+                DB::table('extension_tiktok_comments')->where('id', $draftId)
+                    ->whereIn('profile_id', DB::table('extension_tiktok_profiles')->where('social_account_id', $item->social_account_id)->select('id'))
+                    ->where('reply_text', $item->reply_content)->where('author', $item->author_username)->where('content', $item->content)->where('video_context', $item->post_content)
+                    ->whereIn('status', ['uncertain', 'publishing'])->update(['status' => 'published', 'proof' => 'Texte exact et auteur vérifiés après rechargement de Studio', 'updated_at' => now()]);
+            }
+            $next = app(AccountActionBudget::class)->usage($item->socialAccount)['next_allowed_at'];
+            LikeInboxItem::dispatch($item->id)->delay($next ? Carbon::parse($next)->addSeconds(2) : now())->afterCommit();
+
+            return ['dry_run' => false, 'success' => true, 'proof' => $proof];
+        });
+    }
+}
