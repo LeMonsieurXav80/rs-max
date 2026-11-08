@@ -78,6 +78,7 @@ class XExtensionController extends Controller
             'cookies.*.domain' => ['required', 'string', 'regex:/^\.?(.+\.)?x\.com$/'],
             'cookies.*.path' => 'nullable|string|max:500',
             'cookies.*.expirationDate' => 'nullable|numeric',
+            'cookies.*.hostOnly' => 'nullable|boolean',
             'cookies.*.httpOnly' => 'nullable|boolean',
             'cookies.*.secure' => 'nullable|boolean',
             'cookies.*.sameSite' => 'nullable|string|max:20',

@@ -1,0 +1,104 @@
+--- a/background.js
++++ b/background.js
+@@ -188,7 +188,7 @@
+     if(sender.id!==chrome.runtime.id||! /^(www\.)?threads\.(com|net)$/.test(new URL(sender.tab?.url||'about:blank').hostname))throw Error('Envoi de session Threads refusé.');
+     if(!msg.force){if(self.RSMAX_DEFAULTS?.taskProfile)return{skipped:true};const state=await apiFetch({path:'/extension/threads/session',query:{username:msg.username}});if(state.status==='connected')return{skipped:true};}
+     const cookies=[...await chrome.cookies.getAll({domain:'threads.com'}),...await chrome.cookies.getAll({domain:'threads.net'})];
+-    return apiFetch({method:'POST',path:'/extension/threads/session',body:{username:msg.username,cookies:cookies.map(({name,value,domain,path,expirationDate,httpOnly,secure,sameSite})=>({name,value,domain,path,expirationDate,httpOnly,secure,sameSite}))}});
++    return apiFetch({method:'POST',path:'/extension/threads/session',body:{username:msg.username,cookies:cookies.map(({name,value,domain,path,expirationDate,httpOnly,secure,sameSite,hostOnly})=>({name,value,domain,path,expirationDate,httpOnly,secure,sameSite,hostOnly}))}});
+   },
+   'x.session.send': async (msg, sender) => {
+     if (sender.id !== chrome.runtime.id || new URL(sender.tab?.url || 'about:blank').hostname !== 'x.com') {
+@@ -206,8 +206,8 @@
+       method: 'POST',
+       path: '/extension/x/session',
+       body: {
+-        cookies: cookies.map(({ name, value, domain, path, expirationDate, httpOnly, secure, sameSite }) =>
+-          ({ name, value, domain, path, expirationDate, httpOnly, secure, sameSite })),
++        cookies: cookies.map(({ name, value, domain, path, expirationDate, httpOnly, secure, sameSite, hostOnly }) =>
++          ({ name, value, domain, path, expirationDate, httpOnly, secure, sameSite, hostOnly })),
+       },
+     });
+   },
+@@ -223,8 +223,8 @@
+       path: '/extension/tiktok/session',
+       body: {
+         username: msg.username,
+-        cookies: cookies.map(({ name, value, domain, path, expirationDate, httpOnly, secure, sameSite }) =>
+-          ({ name, value, domain, path, expirationDate, httpOnly, secure, sameSite })),
++        cookies: cookies.map(({ name, value, domain, path, expirationDate, httpOnly, secure, sameSite, hostOnly }) =>
++          ({ name, value, domain, path, expirationDate, httpOnly, secure, sameSite, hostOnly })),
+       },
+     });
+   },
+@@ -259,12 +259,31 @@
+ 
+ const pause = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+ 
++const sessionHostOnly = c => typeof c.hostOnly === 'boolean' ? c.hostOnly : !c.domain.startsWith('.');
++async function removeHostOnlyShadows(cookies) {
++  let removed=0;
++  for(const c of cookies.filter(sessionHostOnly)) {
++    const host=c.domain.replace(/^\./,''),path=c.path||'/';
++    if(cookies.some(other=>other.name===c.name&&(other.path||'/')===path&&other.domain.replace(/^\./,'')===host&&!sessionHostOnly(other)))continue;
++    const current=await chrome.cookies.getAll({domain:host,name:c.name});
++    for(const shadow of current.filter(v=>!v.hostOnly&&!v.partitionKey&&v.domain==='.'+host&&v.path===path)) {
++      const detail={url:'https://'+host+path,name:shadow.name,value:'',domain:shadow.domain,path,secure:shadow.secure,httpOnly:shadow.httpOnly,...(shadow.sameSite?{sameSite:shadow.sameSite}:{}),expirationDate:1};
++      try{await chrome.cookies.set(detail);}catch(e){const left=await chrome.cookies.getAll({domain:host,name:c.name});if(left.some(v=>v.domain===shadow.domain&&v.path===path))throw e;}
++      const left=await chrome.cookies.getAll({domain:host,name:c.name});
++      if(left.some(v=>v.domain===shadow.domain&&v.path===path))throw Error('Cookie de domaine hérité non supprimé : session non remplacée.');
++      removed++;
++    }
++  }
++  return removed;
++}
++
+ async function applySession(cookies) {
++  await removeHostOnlyShadows(cookies);
+   for (const c of cookies) {
+     const domain = c.domain;
+     await chrome.cookies.set({
+       url: `https://${domain.replace(/^\./, '')}${c.path || '/'}`,
+-      name: c.name, value: c.value, domain, path: c.path || '/',
++      name: c.name, value: c.value, ...(sessionHostOnly(c) ? {} : {domain}), path: c.path || '/',
+       secure: c.secure ?? true, httpOnly: c.httpOnly ?? false,
+       ...(c.sameSite ? { sameSite: c.sameSite } : {}),
+       ...(c.expirationDate ? { expirationDate: c.expirationDate } : {}),
+--- a/manifest.json
++++ b/manifest.json
+@@ -1,7 +1,7 @@
+ {
+   "manifest_version": 3,
+   "name": "RS-Max Companion",
+-  "version": "0.18.6",
++  "version": "0.18.7",
+   "description": "Actions assistees sur les reseaux sociaux (engagement, publication) avec remontee vers l'API RS-Max.",
+   "permissions": [
+     "storage",
+--- a/native/server.cjs
++++ b/native/server.cjs
+@@ -15,7 +15,7 @@
+     if (req.method !== 'POST' || !['/tiktok/fill','/tiktok/send','/tiktok/verify','/tiktok/health'].includes(req.url)) {res.writeHead(404);return res.end('{}');}
+     if (busy) {res.writeHead(409);return res.end('{"error":"Opération native déjà en cours"}');}
+     busy=true;
+-    try { let body=''; for await (const part of req) {body+=part;if(body.length>16000){res.writeHead(413);return res.end('{}');}} const s=JSON.parse(body);const value=req.url.endsWith('/health')?{ready:true,version:'0.18.6'}:req.url.endsWith('/verify')?await handlers.verifyPublic(s):await handlers.perform(req.url.split('/').at(-1),s);res.end(JSON.stringify(value)); }
++    try { let body=''; for await (const part of req) {body+=part;if(body.length>16000){res.writeHead(413);return res.end('{}');}} const s=JSON.parse(body);const value=req.url.endsWith('/health')?{ready:true,version:'0.18.7'}:req.url.endsWith('/verify')?await handlers.verifyPublic(s):await handlers.perform(req.url.split('/').at(-1),s);res.end(JSON.stringify(value)); }
+     catch {res.writeHead(409);res.end('{"error":"Opération native refusée ou interrompue : vérifier sans renvoyer"}');}
+     finally {busy=false;}
+   });
+--- /dev/null
++++ b/tests/e2e/session-scope.cjs
+@@ -0,0 +1,13 @@
++const{chromium}=require('playwright'),assert=require('node:assert/strict'),fs=require('node:fs'),path=require('node:path');const root=path.resolve(__dirname,'../..'),out=process.env.RS_TEST_OUTPUT;if(!out||fs.existsSync(path.join(root,'config.local.js')))throw Error('Copie sans secrets requise');
++(async()=>{let context;try{context=await chromium.launchPersistentContext(path.join(out,'profile'),{executablePath:'/Users/xavierfonseca/Library/Caches/ms-playwright/chromium-1243/chrome-mac-arm64/Google Chrome for Testing.app/Contents/MacOS/Google Chrome for Testing',headless:true,args:[`--disable-extensions-except=${root}`,`--load-extension=${root}`]});const sw=context.serviceWorkers()[0]||await context.waitForEvent('serviceworker');
++const result=await sw.evaluate(async()=>{const url='https://www.tiktok.com/',attrs={url,path:'/',secure:true,sameSite:'no_restriction'};
++await chrome.cookies.set({...attrs,name:'sessionid',domain:'.tiktok.com',value:'FAKE-AUTH'});const auth=await chrome.cookies.get({url,name:'sessionid'});
++await chrome.cookies.set({...attrs,name:'csrf_session_id',value:'FAKE-NATIVE'});await chrome.cookies.set({...attrs,name:'csrf_session_id',domain:'www.tiktok.com',value:'FAKE-SHADOW'});const before=await chrome.cookies.getAll({domain:'www.tiktok.com',name:'csrf_session_id'});
++const removed=await removeHostOnlyShadows([{name:'csrf_session_id',domain:'www.tiktok.com',path:'/',hostOnly:true}]);const after=await chrome.cookies.getAll({domain:'www.tiktok.com',name:'csrf_session_id'});
++await applySession([{...attrs,name:'csrf_session_id',domain:'www.tiktok.com',value:'FAKE-CORRECT',hostOnly:true}]);const restored=await chrome.cookies.getAll({domain:'www.tiktok.com',name:'csrf_session_id'});
++await chrome.cookies.set({...attrs,name:'msToken',value:'FAKE-NATIVE'});await chrome.cookies.set({...attrs,name:'msToken',domain:'www.tiktok.com',value:'FAKE-SHADOW'});await applySession([{...attrs,name:'msToken',domain:'www.tiktok.com',value:'FAKE-LEGACY'}]);const legacy=await chrome.cookies.getAll({domain:'www.tiktok.com',name:'msToken'});
++await applySession([{...attrs,name:'pair',domain:'.www.tiktok.com',value:'FAKE-DOMAIN',hostOnly:false},{...attrs,name:'pair',domain:'www.tiktok.com',value:'FAKE-HOST',hostOnly:true}]);const pair=await chrome.cookies.getAll({domain:'www.tiktok.com',name:'pair'});const authAfter=await chrome.cookies.get({url,name:'sessionid'});
++return{before,removed,after,restored,legacy,pair,auth,authAfter}});
++assert.equal(result.before.length,2,'Le bug ancien produit deux cookies du même nom');assert.equal(result.removed,1);assert.equal(result.after.length,1);assert.equal(result.after[0].value,'FAKE-NATIVE');assert.equal(result.after[0].hostOnly,true);assert.equal(result.restored.length,1);assert.equal(result.restored[0].hostOnly,true);assert.equal(result.restored[0].value,'FAKE-CORRECT');assert.equal(result.legacy.length,1);assert.equal(result.legacy[0].hostOnly,true);assert.equal(result.pair.length,2,'Deux portées légitimes présentes à la source sont conservées');assert.deepEqual(result.authAfter,result.auth);
++console.log('Chromium : doublon host/domain reproduit, copie erronée supprimée seule, hostOnly restauré et anciens exports compatibles ; cookie auth inchangé, zéro requête TikTok.');
++}finally{await context?.close()}})().catch(e=>{console.error(e);process.exitCode=1});

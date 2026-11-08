@@ -69,6 +69,24 @@ class TikTokPlatformTest extends TestCase
         $this->actingAs($this->user)->get(route('accounts.edit', $account))->assertOk()->assertSee('Session enregistrée (@wildycaro)');
     }
 
+    public function test_la_portee_des_cookies_est_conservee_dans_la_session_chiffree(): void
+    {
+        $account = $this->account();
+        $this->fakeBrowser('wildycaro');
+        Sanctum::actingAs($this->user);
+        $cookies = [
+            ['name' => 'sessionid', 'value' => 'secret', 'domain' => '.tiktok.com', 'hostOnly' => false],
+            ['name' => 'csrf_session_id', 'value' => 'test-only', 'domain' => 'www.tiktok.com', 'hostOnly' => true],
+        ];
+
+        $this->postJson('/api/extension/tiktok/session', ['username' => 'wildycaro', 'cookies' => $cookies])->assertOk();
+
+        $this->assertSame($cookies, $account->fresh()->browser_session);
+        $cookies[1]['hostOnly'] = 'invalid';
+        $this->postJson('/api/extension/tiktok/session', ['username' => 'wildycaro', 'cookies' => $cookies])
+            ->assertUnprocessable()->assertJsonValidationErrors('cookies.1.hostOnly');
+    }
+
     public function test_un_autre_compte_vu_dans_studio_nest_pas_une_session_valide(): void
     {
         $account = $this->account();

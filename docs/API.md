@@ -1476,6 +1476,9 @@ Le reçu est sauvegardé par `POST /api/extension/tasks/{id}/checkpoint` avant l
 
 Companion 0.18.6 inclut aussi les réponses préchargées dans `comments[].reply_comment` de la page anonyme ; leur CID et leur rattachement au parent restent contrôlés. Un texte visible sans son CID public ne confirme rien. Patch incrémental après 0.18.5 : `companion/patches/0.18.6-tiktok-reponses-prechargees.patch`.
 
+
+Companion 0.18.7 conserve `hostOnly` à l’export et à l’import des sessions. Les anciens exports déduisent cette portée du point initial du domaine. Une copie de domaine créée par l’ancien import est expirée seule avant de restaurer le cookie limité à l’hôte ; deux portées présentes dans la source restent conservées. Ne pas vider les cookies du profil pour corriger cette duplication. Test Chromium isolé : doublon reproduit puis supprimé sans modifier le cookie d’authentification. Cette correction de session ne constitue pas, à elle seule, une preuve de publication. Patch : `companion/patches/0.18.7-portee-cookies.patch`.
+
 ### Photos et carrousels TikTok depuis les médias
 Publication native par Companion NAS : `POST /api/community-manager/accounts/{id}/tiktok/photo-posts`, IDs de médias ordonnés, titre, description et visibilité ; aperçu par défaut, clé UUID stable obligatoire pour exécuter, répétition sans publication disponible. `GET /api/community-manager/tiktok/photo-posts/{id}` donne l’état et la preuve ; `POST .../{id}/verify` relit et rapproche sans renvoi. Action `photo.publish` par compte ; dossiers privés et photos interdites refusés. Voir [le parcours complet et les commandes Hermès](tiktok-photos.md).
 

@@ -28,7 +28,7 @@ class ThreadsExtensionController extends Controller
 
     public function store(Request $r, ThreadsSessionService $service)
     {
-        $d = $r->validate(['username' => ['required', 'string', 'regex:/^[a-zA-Z0-9_.]{1,50}$/'], 'cookies' => 'required|array|min:2|max:100', 'cookies.*.name' => 'required|string|max:200', 'cookies.*.value' => 'required|string|max:8000', 'cookies.*.domain' => ['required', 'string', 'regex:/^\.?([a-z0-9-]+\.)*threads\.(com|net)$/'], 'cookies.*.path' => 'nullable|string|max:500', 'cookies.*.expirationDate' => 'nullable|numeric', 'cookies.*.httpOnly' => 'nullable|boolean', 'cookies.*.secure' => 'nullable|boolean', 'cookies.*.sameSite' => 'nullable|string|max:20']);
+        $d = $r->validate(['username' => ['required', 'string', 'regex:/^[a-zA-Z0-9_.]{1,50}$/'], 'cookies' => 'required|array|min:2|max:100', 'cookies.*.name' => 'required|string|max:200', 'cookies.*.value' => 'required|string|max:8000', 'cookies.*.domain' => ['required', 'string', 'regex:/^\.?([a-z0-9-]+\.)*threads\.(com|net)$/'], 'cookies.*.path' => 'nullable|string|max:500', 'cookies.*.expirationDate' => 'nullable|numeric', 'cookies.*.hostOnly' => 'nullable|boolean', 'cookies.*.httpOnly' => 'nullable|boolean', 'cookies.*.secure' => 'nullable|boolean', 'cookies.*.sameSite' => 'nullable|string|max:20']);
         abort_unless(collect($d['cookies'])->contains(fn ($c) => $c['name'] === 'sessionid' && filled($c['value'])), 422, 'Session Threads absente.');
         $a = $this->account($r, $d['username']);
         $ok = $service->store($a, $d['username'], $d['cookies']);
