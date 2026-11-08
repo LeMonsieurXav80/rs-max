@@ -1,0 +1,159 @@
+--- a/manifest.json
++++ b/manifest.json
+@@ -1,7 +1,7 @@
+ {
+   "manifest_version": 3,
+   "name": "RS-Max Companion",
+-  "version": "0.18.3",
++  "version": "0.18.4",
+   "description": "Actions assistees sur les reseaux sociaux (engagement, publication) avec remontee vers l'API RS-Max.",
+   "permissions": [
+     "storage",
+@@ -24,6 +24,17 @@
+     "service_worker": "background.js"
+   },
+   "content_scripts": [
++    {
++      "matches": [
++        "https://www.tiktok.com/tiktokstudio",
++        "https://www.tiktok.com/tiktokstudio/*"
++      ],
++      "js": [
++        "tiktok/submission-observer.js"
++      ],
++      "world": "MAIN",
++      "run_at": "document_start"
++    },
+     {
+       "matches": [
+         "*://*.facebook.com/*",
+@@ -97,6 +108,7 @@
+         "shared/list-progress.js",
+         "content/engine.js",
+         "shared/comment-api.js",
++        "tiktok/submission-receipt.js",
+         "tiktok/comments.js",
+         "modules/tiktok.js",
+         "tiktok/diagnostics.js",
+--- a/tiktok/comments.js
++++ b/tiktok/comments.js
+@@ -251,20 +251,23 @@
+         if (action.like&&!liked) throw Error('Like revenu à un état non confirmé avant la réponse.');
+         assertCurrent(item,username,ctx);
+         await window.RSCommentAPI.call(ctx,'post',`/extension/tiktok/${draft.id}/begin`,{username,reply_text:draft.reply_text});
+-        let published = false, clicked = false;
++        let published = false, clicked = false, submission = null, receipt = null;
+         try {
+           if (await readIdentity(ctx)!==username) throw Error('Compte changé avant envoi.');
+           assertCurrent(item,username,ctx);
+           if (input.value!==draft.reply_text || !visible(send)) throw Error('Éditeur changé avant envoi.');
+           if (inbox && rows().map(snapshot).filter(matchesTarget).length !== 1) throw Error('Commentaire ambigu avant envoi.');
++          receipt = window.RSTikTokSubmission?.start(draft.reply_text);
+           send.click();
+           clicked = true;
+           published = !!await waitForReply(item, username, draft.reply_text, ctx.waitFor);
+           if (!published) throw Error('Publication non confirmée dans le fil : vérifier TikTok, aucun nouvel essai automatique.');
+         } finally {
++          submission = await receipt?.finish() || null;
++          if (submission) window.RSTaskTrace?.mark('tiktok.submission', submission);
+           if (inbox) {
+             // Le worker termine la réservation après la relecture de Studio.
+-            inbox.result = {recipe: 'tiktok.comments', draft_id: draft.id, liked, send_clicked: clicked, pause_ms: pauseMs, initial_visible: published};
++            inbox.result = {recipe: 'tiktok.comments', draft_id: draft.id, liked, send_clicked: clicked, pause_ms: pauseMs, initial_visible: published, submission};
+           } else {
+             await window.RSCommentAPI.call(ctx,'post',`/extension/tiktok/${draft.id}/finish`,{username,status:published?'published':'uncertain',liked,proof:published?'Réponse exacte du compte visible sous le commentaire':'Envoi réservé, résultat non confirmé'});
+           }
+--- /dev/null
++++ b/tiktok/submission-observer.js
+@@ -0,0 +1,34 @@
++/* Monde principal : observation passive de l'accusé natif Studio, jamais un appel API. */
++(() => {
++  'use strict';
++  const event = 'rsmax:tiktok:submission';
++  const relevant = (url, method) => {
++    try { const u = new URL(url, location.href); return String(method).toUpperCase() === 'POST' && u.origin === location.origin && u.pathname === '/api/comment/publish/'; } catch { return false; }
++  };
++  const id = value => typeof value === 'string' && /^\d{1,30}$/.test(value) ? value : null;
++  const emit = (http, body) => {
++    try {
++      const c = body?.comment;
++      window.dispatchEvent(new CustomEvent(event, {detail: JSON.stringify({
++        http_status: http, status_code: Number.isInteger(body?.status_code) ? body.status_code : null,
++        comment_status: Number.isInteger(c?.status) ? c.status : null,
++        comment_id: id(c?.cid), parent_id: id(c?.reply_id), post_id: id(c?.aweme_id),
++        // Sert uniquement à rattacher le reçu à la saisie en cours, jamais journalisé.
++        text: typeof c?.text === 'string' ? c.text.slice(0, 500) : null,
++      })}));
++    } catch { /* L'observation ne doit jamais modifier le fonctionnement de Studio. */ }
++  };
++  const originalFetch = window.fetch;
++  if (originalFetch) window.fetch = function (...args) {
++    const input = args[0], wanted = relevant(typeof input === 'string' || input instanceof URL ? String(input) : input?.url, args[1]?.method || input?.method || 'GET');
++    const result = Reflect.apply(originalFetch, this, args);
++    if (wanted) result.then(response => { response.clone().json().then(body => emit(response.status, body)).catch(() => {}); }, () => {});
++    return result;
++  };
++  const open = XMLHttpRequest.prototype.open, send = XMLHttpRequest.prototype.send, requests = new WeakMap();
++  XMLHttpRequest.prototype.open = function (method, url, ...rest) { requests.set(this, relevant(url, method)); return Reflect.apply(open, this, [method, url, ...rest]); };
++  XMLHttpRequest.prototype.send = function (...args) {
++    if (requests.get(this)) this.addEventListener('load', () => { try { emit(this.status, this.responseType === 'json' ? this.response : JSON.parse(this.responseText)); } catch {} }, {once: true});
++    return Reflect.apply(send, this, args);
++  };
++})();
+--- /dev/null
++++ b/tiktok/submission-receipt.js
+@@ -0,0 +1,24 @@
++/* Le reçu est un diagnostic ; seule la relecture après reload fait preuve. */
++(() => {
++  'use strict';
++  let active = null;
++  const number = v => Number.isInteger(v) ? v : null;
++  const id = v => typeof v === 'string' && /^\d{1,30}$/.test(v) ? v : null;
++  window.addEventListener('rsmax:tiktok:submission', e => {
++    if (!active) return;
++    try {
++      const b = JSON.parse(e.detail);
++      if (b.text !== active.text) return;
++      active.receipt = {http_status: number(b.http_status), status_code: number(b.status_code), comment_status: number(b.comment_status), comment_id: id(b.comment_id), parent_id: id(b.parent_id), post_id: id(b.post_id), text_matched: true};
++      active.resolve?.(active.receipt);
++    } catch {}
++  });
++  window.RSTikTokSubmission = {start(text) {
++    const state = active = {text, receipt: null};
++    return {async finish() {
++      try {
++        return state.receipt || await new Promise(resolve => { const timer = setTimeout(() => resolve(null), 3000); state.resolve = value => { clearTimeout(timer); resolve(value); }; });
++      } finally { if (active === state) active = null; }
++    }};
++  }};
++})();
+--- /dev/null
++++ b/tests/tiktok-submission.test.cjs
+@@ -0,0 +1,7 @@
++const {test}=require('node:test'),assert=require('node:assert/strict'),fs=require('node:fs'),path=require('node:path'),vm=require('node:vm');
++const {JSDOM}=require('jsdom');
++const observer=fs.readFileSync(path.join(__dirname,'../tiktok/submission-observer.js'),'utf8');
++function setup(){const events=[];class XHR{open(...a){this.args=a}send(...a){this.sent=a;return 'native-send'}addEventListener(_type,fn){this.loaded=fn}}const response={status:200,clone:()=>({json:async()=>({status_code:0,comment:{status:2,cid:'7705842946607711009',reply_id:'7705518885638275873',aweme_id:'7702779706243910934',text:'Merci 😊',user:{token:'NEVER'}},extra:{token:'NEVER'}})})};let calls=[];const promise=Promise.resolve(response),window={fetch(...args){calls.push({receiver:this,args});return promise},dispatchEvent:e=>events.push(JSON.parse(e.detail))};const ctx={window,location:{href:'https://www.tiktok.com/tiktokstudio/comment',origin:'https://www.tiktok.com'},URL,XMLHttpRequest:XHR,CustomEvent:class{constructor(type,{detail}){this.type=type;this.detail=detail}}};vm.runInNewContext(observer,ctx);return {window,XHR,events,calls,promise,response}}
++test('HTTP 200 avec statut commentaire 2 reste un reçu, sans preuve ni secret ni nouvel appel',async()=>{const f=setup(),options={method:'POST',body:'opaque-cookie-must-not-be-read'};const result=f.window.fetch('/api/comment/publish/?signature=NEVER',options);assert.equal(result,f.promise);await result;await new Promise(setImmediate);assert.equal(f.calls.length,1);assert.equal(f.calls[0].args[1],options);assert.equal(f.events.length,1);assert.equal(f.events[0].comment_status,2);assert.equal(f.events[0].comment_id,'7705842946607711009');assert.equal(f.events[0].confirmed,undefined);assert.ok(!JSON.stringify(f.events).includes('NEVER'))});
++test('observer XHR conserve arguments et résultat natifs, et ignore les autres requêtes',()=>{const f=setup();const x=new f.XHR();x.open('POST','/api/comment/publish/',true,'native-user');assert.equal(x.send('native-body'),'native-send');x.status=200;x.responseType='json';x.response={status_code:0,comment:{status:7,text:'Bonjour',cid:'123',reply_id:'456'}};x.loaded();assert.equal(f.events[0].comment_status,7);assert.deepEqual(x.args,['POST','/api/comment/publish/',true,'native-user']);assert.deepEqual(x.sent,['native-body']);const other=new f.XHR();other.open('GET','/api/comment/publish/');other.send();assert.equal(other.loaded,undefined);const foreign=new f.XHR();foreign.open('POST','https://elsewhere.test/api/comment/publish/');foreign.send();assert.equal(foreign.loaded,undefined)});
++test('le reçu est rattaché uniquement à la saisie active et son texte est supprimé',async()=>{const d=new JSDOM('',{runScripts:'outside-only'}),w=d.window;w.eval(fs.readFileSync(path.join(__dirname,'../tiktok/submission-receipt.js'),'utf8'));const receipt=w.RSTikTokSubmission.start('Merci 😊');const emit=b=>w.dispatchEvent(new w.CustomEvent('rsmax:tiktok:submission',{detail:JSON.stringify(b)}));emit({text:'Autre message',comment_id:'999'});emit({text:'Merci 😊',http_status:200,status_code:0,comment_status:2,comment_id:'7705842946607711009',parent_id:'123',post_id:'456',cookie:'NEVER'});const value=await receipt.finish();assert.equal(value.comment_status,2);assert.equal(value.comment_id,'7705842946607711009');assert.equal(value.text_matched,true);assert.equal(value.confirmed,undefined);assert.ok(!JSON.stringify(value).includes('NEVER'));assert.equal(value.text,undefined);d.window.close()});
+--- a/tests/e2e/tiktok-proof.cjs
++++ b/tests/e2e/tiktok-proof.cjs
+@@ -9,9 +9,15 @@
+ let writes=0;document.querySelector('button').onclick=e=>{const b=e.currentTarget,on=b.getAttribute('aria-expanded')==='true';b.setAttribute('aria-expanded',String(!on));document.querySelector('#menu').innerHTML=on?'':'<a data-tt="Header_NewHeader_TUXMenuItem" href="/@owner">Compte</a>'};
+ setTimeout(()=>{const f=document.createElement('span');f.dataset.tt='components_FilterButton_TUXText';f.textContent='Not replied';f.onclick=()=>{const option=document.createElement('span');option.textContent='All comments';option.onclick=()=>{f.textContent='All comments';option.remove();const main=document.querySelector('main');const proofHTML='<section data-tt="components_CommentCell_FlexColumn"><div><div data-tt="components_MessageCell_FlexRow_3"><a data-tt="components_MessageCell_a" href="/@visitor">visitor</a><span data-tt="components_TUXTextWithMention_TUXText">Très jolie !</span></div><div><div data-tt="VideoCover_index_VideoCoverContainer"></div><span data-tt="components_MessageCell_TruncateText">La tenue du jour</span></div></div><aside><div data-tt="components_MessageCell_FlexRow_3"><a data-tt="components_MessageCell_a" href="/@owner">owner</a><span data-tt="components_TUXTextWithMention_TUXText">Merci beaucoup 🌹</span></div></aside></section>';main.innerHTML=Array.from({length:12},(_,i)=>'<section data-tt="components_CommentCell_FlexColumn" style="height:90px"><div data-tt="components_MessageCell_FlexRow_3"><a data-tt="components_MessageCell_a" href="/@other'+i+'">other'+i+'</a><span data-tt="components_TUXTextWithMention_TUXText">Autre commentaire</span></div></section>').join('');main.onscroll=()=>{if(main.scrollTop>400&&!main.dataset.loaded){main.dataset.loaded='1';main.insertAdjacentHTML('beforeend',proofHTML)}}};document.body.append(option)};document.body.append(f)},2000);
+ </script>`;
+-await context.route('https://www.tiktok.com/**',route=>route.fulfill({contentType:'text/html',body:html}));
++await context.route('https://www.tiktok.com/**',route=>route.fulfill(new URL(route.request().url()).pathname==='/api/comment/publish/'?{contentType:'application/json',body:JSON.stringify({status_code:0,comment:{status:2,cid:'1234567890123456789',reply_id:'42',aweme_id:'99',text:'Merci beaucoup 🌹'}})}:{contentType:'text/html',body:html}));
+ const sw=context.serviceWorkers()[0]||await context.waitForEvent('serviceworker');await sw.evaluate(port=>chrome.storage.local.set({rsmaxConfig:{baseUrl:'http://127.0.0.1:'+port,token:'fixture-only'}}),server.address().port);
+-const page=await context.newPage();await page.goto('https://www.tiktok.com/tiktokstudio/comment');await page.waitForTimeout(250);
++const page=await context.newPage(),cdp=await context.newCDPSession(page),worlds=[];cdp.on('Runtime.executionContextCreated',e=>worlds.push(e.context));await cdp.send('Runtime.enable');await page.goto('https://www.tiktok.com/tiktokstudio/comment');await page.waitForTimeout(250);
++let isolated;
++for(const world of worlds){const r=await cdp.send('Runtime.evaluate',{contextId:world.id,expression:'typeof window.RSTikTokSubmission'}).catch(()=>null);if(r?.result?.value==='object')isolated=world.id;}
++assert.ok(isolated,'Lecteur de reçu chargé en monde isolé');
++await cdp.send('Runtime.evaluate',{contextId:isolated,expression:'window.fixtureReceipt=window.RSTikTokSubmission.start("Merci beaucoup 🌹")'});
++await page.evaluate(()=>fetch('/api/comment/publish/',{method:'POST',body:'fixture only'}));
++const receipt=await cdp.send('Runtime.evaluate',{contextId:isolated,expression:'window.fixtureReceipt.finish()',awaitPromise:true,returnByValue:true});assert.equal(receipt.result.value.comment_status,2);assert.equal(receipt.result.value.comment_id,'1234567890123456789');assert.equal(receipt.result.value.text_matched,true);assert.equal(receipt.result.value.confirmed,undefined);
+ const started=Date.now();const proof=await sw.evaluate(()=>executeTikTokStudioTask({id:123,kind:'tiktok.verify',payload:{url:'https://www.tiktok.com/tiktokstudio/comment',username:'owner',action:'tiktok.reply',target:{author:'visitor',content:'Très jolie !',caption:'La tenue du jour'},text:'Merci beaucoup 🌹'}}));
+ assert.equal(proof.status,'done');assert.equal(proof.result.confirmed,true);assert.equal(proof.result.proof,'after_reload');assert.equal(proof.result.verified_kind,'tiktok.reply');assert.equal(proof.result.target_found,true);assert.ok(proof.result.verification.observed_count>=14,JSON.stringify(proof));assert.ok(Date.now()-started>=2000);assert.equal(await page.evaluate(()=>writes),0);
+ const missing=await sw.evaluate(()=>executeTikTokStudioTask({id:124,kind:'tiktok.verify',payload:{url:'https://www.tiktok.com/tiktokstudio/comment',username:'owner',action:'tiktok.reply',target:{author:'visitor',content:'Très jolie !',caption:'La tenue du jour'},text:'Un texte réellement absent'}}));assert.equal(missing.result.confirmed,false);assert.equal(missing.result.target_found,true);assert.equal(missing.result.verification.status,'reply_absent');assert.equal(await page.evaluate(()=>writes),0);

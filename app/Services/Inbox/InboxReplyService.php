@@ -141,6 +141,9 @@ class InboxReplyService
                 if (($result['uncertain'] ?? false) || ($scheduled && ($tiktok || $apiAutonomous))) {
                     // La réponse a pu partir : ni l'humain ni la planification ne la renvoient.
                     $item->update(['status' => 'reply_failed', 'reply_content' => $text, 'reply_scheduled_at' => null, 'reply_attempts' => 3]);
+                    if ($tiktok && ($result['uncertain'] ?? false)) {
+                        \App\Jobs\VerifyTikTokInboxReply::dispatch($item->id)->delay(now()->addMinutes(5))->afterCommit();
+                    }
                 } elseif ($scheduled && $item->reply_attempts >= 3) {
                     $item->update(['status' => 'reply_failed', 'reply_scheduled_at' => null]);
                 }

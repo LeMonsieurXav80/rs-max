@@ -100,7 +100,7 @@ class AutomationJournal
         if (! is_array($details)) {
             return [];
         }
-        $allowed = ['kind', 'action', 'status', 'run_id', 'recipe', 'version', 'control', 'control_count', 'target_id', 'attached', 'confirmed', 'unchanged', 'gesture', 'attempt', 'text_matched', 'post_matched', 'parent_visible', 'observed_count', 'streak', 'items', 'count', 'total', 'failed', 'ok', 'error', 'message', 'url'];
+        $allowed = ['kind', 'action', 'status', 'run_id', 'recipe', 'version', 'control', 'control_count', 'target_id', 'attached', 'confirmed', 'unchanged', 'gesture', 'attempt', 'text_matched', 'post_matched', 'parent_visible', 'observed_count', 'streak', 'items', 'count', 'total', 'failed', 'ok', 'error', 'message', 'url', 'http_status', 'status_code', 'comment_status', 'comment_id', 'parent_id', 'post_id'];
         $out = [];
         foreach (array_intersect_key($details, array_flip($allowed)) as $key => $value) {
             if (is_scalar($value) || $value === null) {
@@ -123,6 +123,9 @@ class AutomationJournal
         }
         if (isset($result['url']) && preg_match('~^https://www\.tiktok\.com/@[\w.]+/photo/[0-9]+$~', $result['url'])) {
             $proof['post_url'] = $this->url($result['url']);
+        }
+        if (isset($result['submission']) && is_array($result['submission'])) {
+            $proof['submission'] = $this->details(array_intersect_key($result['submission'], array_flip(['http_status', 'status_code', 'comment_status', 'comment_id', 'parent_id', 'post_id', 'text_matched'])));
         }
         if (isset($result['verification']) && is_array($result['verification'])) {
             $proof['verification'] = $this->details($result['verification']);

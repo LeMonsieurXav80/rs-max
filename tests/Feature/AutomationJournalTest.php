@@ -42,6 +42,18 @@ class AutomationJournalTest extends TestCase
         $this->postJson('/api/extension/tasks/'.$t->id.'/progress', ['steps' => [$step]])->assertConflict();
     }
 
+    public function test_recu_tiktok_ne_devient_pas_preuve_et_reste_expurge(): void
+    {
+        $a = $this->account('tiktok');
+        $t = BrowserTask::create(['social_account_id' => $a->id, 'profile' => 'test', 'kind' => 'tiktok.reply', 'payload' => [], 'status' => 'uncertain', 'result' => ['initial_visible' => true, 'confirmed' => false, 'submission' => ['http_status' => 200, 'status_code' => 0, 'comment_status' => 2, 'comment_id' => '7705842946607711009', 'text_matched' => true, 'cookie' => 'NEVER']]]);
+        $metadata = BotActionLog::where('browser_task_id', $t->id)->first()->metadata;
+        $this->assertSame('uncertain', $metadata['status']);
+        $this->assertFalse($metadata['proof']['confirmed']);
+        $this->assertSame(2, $metadata['proof']['submission']['comment_status']);
+        $this->assertSame('7705842946607711009', $metadata['proof']['submission']['comment_id']);
+        $this->assertStringNotContainsString('NEVER', json_encode($metadata));
+    }
+
     public function test_l_ordre_final_corrige_la_progression_recue_en_desordre(): void
     {
         $a = $this->account();

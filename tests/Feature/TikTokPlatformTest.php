@@ -78,7 +78,10 @@ class TikTokPlatformTest extends TestCase
         $this->postJson('/api/extension/tiktok/session', ['username' => 'wildycaro'] + $this->cookies())
             ->assertStatus(409)->assertJson(['status' => 'expired']);
 
-        $this->assertNull($account->fresh()->browser_username);
+        // L'identité attendue reste mémorisée pour refuser un autre compte.
+        $this->assertSame('wildycaro', $account->fresh()->browser_username);
+        $this->assertSame('expired', $account->fresh()->browser_session_status);
+        $this->assertFalse(app(\App\Services\Browser\TikTokSessionService::class)->verify($account->fresh(), 'wildycaro'));
     }
 
     public function test_une_session_perdue_est_restauree_depuis_la_copie(): void
