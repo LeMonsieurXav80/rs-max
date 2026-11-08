@@ -16,6 +16,7 @@ def snapshot(client, now=None):
     if not catalog.get('daytime'):
         return {'state': 'sleep'}
     work = []
+    explorations = []
     for account in catalog.get('accounts', []):
         platform = account.get('platform')
         api = platform in ('facebook','instagram','threads','youtube')
@@ -47,17 +48,43 @@ def snapshot(client, now=None):
         next_allowed = cadence.get('next_allowed_at')
         if next_allowed and dt.datetime.fromisoformat(next_allowed).astimezone(dt.timezone.utc) > now.astimezone(dt.timezone.utc):
             continue
+        discovery_plan = None
+        if threads_discovery:
+            writes = [k for k in ('like', 'comment') if actions.get(k, {}).get('enabled', True) and actions.get(k, {}).get('left', 0) > 0]
+            reserve = (1 if can_reply else 0) + (1 if upcoming else 0)
+            needed = len(writes) + reserve
+            enough = bool(writes) and all(value is None or value >= needed for value in (cadence.get('remaining'), cadence.get('daily', {}).get('remaining')))
+            if enough:
+                history = client.api('GET', 'logs?' + urlencode({'account_id': account['id'], 'action': 'agent.search.read', 'limit': 1}))
+                last = next(iter(history.get('logs', [])), {}).get('at')
+                due = not last or dt.datetime.fromisoformat(last).astimezone(dt.timezone.utc) <= now - dt.timedelta(hours=1)
+                queries = [q.strip() for q in account['strategy']['search_queries'] if isinstance(q, str) and 0 < len(q.strip()) <= 150]
+                if due and queries:
+                    recent_targets = []
+                    for action in ('threads.like', 'threads.comment'):
+                        recent = client.api('GET', 'logs?' + urlencode({'account_id': account['id'], 'action': action, 'limit': 10}))
+                        recent_targets.extend(log['target_url'] for log in recent.get('logs', []) if log.get('target_url'))
+                    discovery_plan = {'account_id': account['id'], 'query': queries[(int(now.timestamp()) // 3600) % len(queries)],
+                                      'recent_targets': sorted(set(recent_targets)), 'write_actions': writes, 'persona': account['persona'], 'reserve_for_inbox': can_reply,
+                                      'reason': 'Exploration horaire due, indépendante du stock inbox.'}
+            threads_discovery = discovery_plan is not None
+            can_feed = threads_discovery
+            if not can_reply and not can_feed:
+                continue
         inbox = client.api('GET', f"accounts/{account['id']}/inbox?" + urlencode({'order':'newest','limit':5,'status':'unanswered','agent_queue':1})) if can_reply else {}
         items = [{'id':i['id'], 'content':i['content'], 'post_url':i.get('post_url'), 'post_content':i.get('post_content')} for i in inbox.get('items', []) if i.get('can_reply')]
         if items or can_feed:
             work.append({'platform':account['platform'], 'account_id':account['id'], 'strategy':account.get('strategy', {}), 'items':items,
-                         'persona':account.get('persona'),'auto_like':auto_like,'executor':'api' if api else 'browser', 'threads_discovery':threads_discovery, 'remaining':cadence.get('remaining'), 'daily_remaining':cadence.get('daily', {}).get('remaining'), 'batch_max':min(1 if tiktok or api else 5, max(1, ((cadence.get('remaining') if cadence.get('remaining') is not None else 11) - (required - (steps if can_reply else 1)))//steps), max(1, ((cadence.get('daily', {}).get('remaining') if cadence.get('daily', {}).get('remaining') is not None else 11) - (1 if upcoming else 0))//steps)), 'next_publication_at':upcoming})
+                         'persona':account.get('persona'),'auto_like':auto_like,'executor':'api' if api else 'browser', 'threads_discovery':threads_discovery, 'discovery_plan':discovery_plan, 'remaining':cadence.get('remaining'), 'daily_remaining':cadence.get('daily', {}).get('remaining'), 'batch_max':min(1 if tiktok or api else 5, max(1, ((cadence.get('remaining') if cadence.get('remaining') is not None else 11) - (required - (steps if can_reply else 1)))//steps), max(1, ((cadence.get('daily', {}).get('remaining') if cadence.get('daily', {}).get('remaining') is not None else 11) - (1 if upcoming else 0))//steps)), 'next_publication_at':upcoming})
+            if discovery_plan:
+                explorations.append(discovery_plan)
+    discovery_first=[a for a in work if a['threads_discovery']]
     browser_first=[a for a in work if a['platform']=='tiktok']
-    other=[a for a in work if a['platform']!='tiktok']
+    other=[a for a in work if a['platform']!='tiktok' and not a['threads_discovery']]
     if any(a.get('executor')=='api' for a in other) and other:
         offset=(int(now.timestamp())//300)%len(other);other=other[offset:]+other[:offset]
-    work=browser_first+other
-    return {'state':'work','cycle_key':int(now.timestamp())//300,'accounts':work} if work else {'state':'idle'}
+    work=discovery_first+browser_first+other
+    return {'state':'work','cycle_key':int(now.timestamp())//300,'accounts':work,'priority_threads':explorations} if work else {'state':'idle'}
 
 
 def main():
