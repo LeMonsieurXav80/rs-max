@@ -32,7 +32,7 @@ def snapshot(client, now=None):
         if platform == 'facebook' and 'comment.like' in actions and actions['comment.like'].get('left', 0) < 1:
             can_reply = False  # conserver une place au like demandé après la réponse
         can_feed = platform == 'twitter' and actions.get('feed.read', {}).get('left', 0) > 0 and any(actions.get(k, {}).get('enabled', True) and actions.get(k, {}).get('left', 0) > 0 for k in ('like', 'bookmark'))
-        threads_discovery = platform == 'threads' and account.get('session') == 'connected' and bool(account.get('strategy', {}).get('search_queries')) and all(actions.get(k, {}).get('left', 0) > 0 for k in ('search.read', 'thread.read')) and any(actions.get(k, {}).get('left', 0) > 0 for k in ('like', 'comment'))
+        threads_discovery = platform == 'threads' and account.get('session') == 'connected' and bool(account.get('strategy', {}).get('search_queries')) and actions.get('thread.read', {}).get('left', 0) > 0 and any(actions.get(k, {}).get('left', 0) > 0 for k in ('like', 'comment'))
         can_feed = can_feed or threads_discovery
         if (not can_reply and not can_feed) or cadence.get('blocked'):
             continue
@@ -54,19 +54,27 @@ def snapshot(client, now=None):
             reserve = (1 if can_reply else 0) + (1 if upcoming else 0)
             needed = len(writes) + reserve
             enough = bool(writes) and all(value is None or value >= needed for value in (cadence.get('remaining'), cadence.get('daily', {}).get('remaining')))
-            if enough:
-                history = client.api('GET', 'logs?' + urlencode({'account_id': account['id'], 'action': 'agent.search.read', 'limit': 1}))
-                last = next(iter(history.get('logs', [])), {}).get('at')
-                due = not last or dt.datetime.fromisoformat(last).astimezone(dt.timezone.utc) <= now - dt.timedelta(hours=1)
-                queries = [q.strip() for q in account['strategy']['search_queries'] if isinstance(q, str) and 0 < len(q.strip()) <= 150]
-                if due and queries:
-                    recent_targets = []
-                    for action in ('threads.like', 'threads.comment'):
-                        recent = client.api('GET', 'logs?' + urlencode({'account_id': account['id'], 'action': action, 'limit': 10}))
-                        recent_targets.extend(log['target_url'] for log in recent.get('logs', []) if log.get('target_url'))
-                    discovery_plan = {'account_id': account['id'], 'query': queries[(int(now.timestamp()) // 3600) % len(queries)],
-                                      'recent_targets': sorted(set(recent_targets)), 'write_actions': writes, 'persona': account['persona'], 'reserve_for_inbox': can_reply,
-                                      'reason': 'Exploration horaire due, indépendante du stock inbox.'}
+            history = client.api('GET', 'logs?' + urlencode({'account_id': account['id'], 'action': 'agent.search.read', 'limit': 1}))
+            last = next(iter(history.get('logs', [])), {}).get('at')
+            due = not last or dt.datetime.fromisoformat(last).astimezone(dt.timezone.utc) <= now - dt.timedelta(hours=1)
+            recent = {}
+            for action in ('like', 'comment'):
+                recent[action] = client.api('GET', 'logs?' + urlencode({'account_id': account['id'], 'action': 'threads.' + action, 'limit': 10})).get('logs', [])
+            recent_targets = sorted({log['target_url'] for logs in recent.values() for log in logs if log.get('target_url')})
+            liked_targets = {log['target_url'] for log in recent['like'] if log.get('target_url')}
+            unfinished = [log for log in recent['comment'] if log.get('status') == 'confirmed' and isinstance(log.get('proof'), dict) and log['proof'].get('confirmed') is True
+                          and log.get('target_url') and log['target_url'] not in liked_targets and log.get('at')
+                          and dt.datetime.fromisoformat(log['at']).astimezone(dt.timezone.utc) >= now - dt.timedelta(hours=1)]
+            can_finish = 'like' in writes and all(value is None or value >= 1 + reserve for value in (cadence.get('remaining'), cadence.get('daily', {}).get('remaining')))
+            if unfinished and can_finish:
+                discovery_plan = {'account_id': account['id'], 'mode': 'finish_like', 'target_url': unfinished[0]['target_url'],
+                                  'write_actions': ['like'], 'persona': account['persona'], 'reserve_for_inbox': can_reply,
+                                  'reason': 'Commentaire NAS confirmé sans tentative de like ; relire la cible, aucun nouveau commentaire.'}
+            queries = [q.strip() for q in account['strategy']['search_queries'] if isinstance(q, str) and 0 < len(q.strip()) <= 150]
+            if not discovery_plan and enough and due and queries and actions.get('search.read', {}).get('left', 0) > 0:
+                discovery_plan = {'account_id': account['id'], 'mode': 'explore', 'query': queries[(int(now.timestamp()) // 3600) % len(queries)],
+                                  'recent_targets': recent_targets, 'write_actions': writes, 'persona': account['persona'], 'reserve_for_inbox': can_reply,
+                                  'reason': 'Exploration horaire due, indépendante du stock inbox.'}
             threads_discovery = discovery_plan is not None
             can_feed = threads_discovery
             if not can_reply and not can_feed:

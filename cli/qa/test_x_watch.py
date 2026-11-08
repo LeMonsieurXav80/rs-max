@@ -118,16 +118,27 @@ class XWatchTest(unittest.TestCase):
     def test_threads_ne_recherche_pas_a_nouveau_avant_une_heure_et_garde_inbox(self):
         a=self.account();a.update(platform='threads',driver='api',api_ready=True,persona=5,strategy={'search_queries':['style']})
         a['actions'].update({'search.read':{'left':2},'thread.read':{'left':2},'comment':{'left':2}})
-        c=Mock();c.api.side_effect=[{'daytime':True,'accounts':[a]},{'logs':[{'at':'2026-11-08T11:40:00+00:00'}]},{'items':[{'id':99,'content':'Merci','can_reply':True}]}]
+        c=Mock();c.api.side_effect=[{'daytime':True,'accounts':[a]},{'logs':[{'at':'2026-11-08T11:40:00+00:00'}]},{'logs':[]},{'logs':[]},{'items':[{'id':99,'content':'Merci','can_reply':True}]}]
         r=watch.snapshot(c,dt.datetime.fromisoformat('2026-11-08T12:00:00+00:00'))
         self.assertEqual(r['priority_threads'],[]);self.assertFalse(r['accounts'][0]['threads_discovery']);self.assertTrue(r['accounts'][0]['items'])
 
     def test_threads_garde_une_place_a_la_reponse_api(self):
         a=self.account(2);a.update(platform='threads',driver='api',api_ready=True,persona=5,strategy={'search_queries':['style']})
         a['actions'].update({'search.read':{'left':2},'thread.read':{'left':2},'comment':{'left':2}})
-        c=Mock();c.api.side_effect=[{'daytime':True,'accounts':[a]},{'items':[{'id':99,'content':'Merci','can_reply':True}]}]
+        c=Mock();c.api.side_effect=[{'daytime':True,'accounts':[a]},{'logs':[]},{'logs':[]},{'logs':[]},{'items':[{'id':99,'content':'Merci','can_reply':True}]}]
         r=watch.snapshot(c,dt.datetime.fromisoformat('2026-11-08T12:00:00+00:00'))
-        self.assertEqual(r['priority_threads'],[]);self.assertEqual(c.api.call_count,2)
+        self.assertEqual(r['priority_threads'],[]);self.assertEqual(c.api.call_count,5)
+
+    def test_threads_termine_le_like_sans_refaire_recherche_ni_commentaire(self):
+        for previous_like,wanted in [(False,True),(True,False)]:
+            a=self.account();a.update(platform='threads',driver='api',api_ready=True,persona=5,strategy={'search_queries':['style']})
+            a['actions'].update({'search.read':{'left':2},'thread.read':{'left':2},'comment':{'left':2}})
+            url='https://www.threads.com/@visitor/post/ABC123'
+            c=Mock();c.api.side_effect=[{'daytime':True,'accounts':[a]},{'logs':[{'at':'2026-11-08T11:40:00+00:00'}]},{'logs':[{'target_url':url,'status':'uncertain'}] if previous_like else []},{'logs':[{'target_url':url,'status':'confirmed','proof':{'confirmed':True},'at':'2026-11-08T11:45:00+00:00'}]},{'items':[{'id':99,'content':'Merci','can_reply':True}]}]
+            r=watch.snapshot(c,dt.datetime.fromisoformat('2026-11-08T12:00:00+00:00'))
+            self.assertEqual(bool(r['priority_threads']),wanted)
+            if wanted:
+                self.assertEqual(r['priority_threads'][0]['mode'],'finish_like');self.assertEqual(r['priority_threads'][0]['write_actions'],['like']);self.assertNotIn('query',r['priority_threads'][0])
 
     def test_api_sans_jeton_ou_sans_persona_n_est_pas_active(self):
         for ready,persona in [(False,5),(True,None)]:
