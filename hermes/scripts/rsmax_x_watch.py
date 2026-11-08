@@ -28,6 +28,8 @@ def snapshot(client, now=None):
         auto_like = tiktok or platform == 'twitter' or (platform == 'facebook' and actions.get('comment.like', {}).get('left',0)>0)
         steps = 2 if auto_like else 1
         can_reply = actions.get('reply', {}).get('enabled', True) and actions.get('reply', {}).get('left', 0) > 0 and (api or tiktok or (actions.get('like', {}).get('enabled', True) and actions.get('like', {}).get('left', 0) > 0))
+        if platform == 'facebook' and 'comment.like' in actions and actions['comment.like'].get('left', 0) < 1:
+            can_reply = False  # conserver une place au like demandé après la réponse
         can_feed = platform == 'twitter' and actions.get('feed.read', {}).get('left', 0) > 0 and any(actions.get(k, {}).get('enabled', True) and actions.get(k, {}).get('left', 0) > 0 for k in ('like', 'bookmark'))
         if (not can_reply and not can_feed) or cadence.get('blocked'):
             continue

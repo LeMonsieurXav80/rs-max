@@ -29,6 +29,12 @@ class LikeInboxItem implements ShouldQueue
 
         $account = $item->socialAccount;
         if ($account->platform->slug === 'facebook') {
+            $next = app(\App\Services\Agent\AccountActionBudget::class)->usage($account)['next_allowed_at'];
+            if ($next && \Illuminate\Support\Carbon::parse($next)->isFuture()) {
+                self::dispatch($item->id)->delay(\Illuminate\Support\Carbon::parse($next)->addSecond());
+
+                return;
+            }
             app(\App\Services\Agent\ApiInboxActions::class)->likeFacebook($item, false);
 
             return;

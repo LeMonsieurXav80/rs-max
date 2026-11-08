@@ -110,6 +110,18 @@ class ApiAutonomousInboxTest extends TestCase
         $this->assertSame(1, AccountActionEvent::where('action', 'facebook.comment.like')->count());
     }
 
+    public function test_like_facebook_attend_la_cadence_sans_reserver_une_tentative(): void
+    {
+        [$a, $i] = $this->fixture();
+        $a->update(['agent_min_interval_seconds' => 60]);
+        AccountActionEvent::create(['social_account_id' => $a->id, 'action' => 'facebook.reply', 'executor' => 'api', 'status' => 'confirmed']);
+        Http::fake();
+        (new LikeInboxItem($i->id))->handle(app(\App\Services\Inbox\TikTokInboxService::class));
+        Queue::assertPushed(LikeInboxItem::class, fn ($job) => $job->itemId === $i->id && $job->delay->isFuture());
+        Http::assertNothingSent();
+        $this->assertSame(0, AccountActionEvent::where('action', 'facebook.comment.like')->count());
+    }
+
     public function test_like_facebook_incertain_ne_se_relance_pas(): void
     {
         [$a,$i] = $this->fixture();
