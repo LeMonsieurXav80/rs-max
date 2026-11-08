@@ -18,6 +18,7 @@ class CommunityManagerInboxTest extends TestCase
 
     public function test_contexte_persona_scope_aperçu_puis_planification_sans_appel_ia(): void
     {
+        \Illuminate\Support\Facades\Queue::fake([\App\Jobs\SendAutonomousInboxReply::class]);
         $this->travelTo(\Illuminate\Support\Carbon::parse('2026-11-07T12:00:00Z'));
         Http::preventStrayRequests();
         $u = User::factory()->create(['role' => 'manager']);
@@ -35,8 +36,11 @@ class CommunityManagerInboxTest extends TestCase
         $p->update(['system_prompt' => 'Nouveau ton']);
         $this->postJson($url, $data + ['dry_run' => false])->assertConflict();
         $data['context_id'] = $this->getJson('/api/community-manager/inbox/'.$i->id.'/context')->json('context_id');
-        $this->postJson($url, $data + ['dry_run' => false])->assertAccepted();
+        $this->postJson($url, $data + ['dry_run' => false])->assertAccepted()->assertJsonPath('validation_required', false)->assertJsonPath('queued', true);
         $this->assertNotNull($i->fresh()->reply_activity_window);
+        \Illuminate\Support\Facades\Queue::assertPushed(\App\Jobs\SendAutonomousInboxReply::class);
+        $this->assertSame('Merci beaucoup 🖤', $i->fresh()->reply_content);
+        $this->assertNull($i->fresh()->reply_draft);
         Http::assertNothingSent();
         $a->users()->detach($u);
         $this->getJson('/api/community-manager/inbox/'.$i->id.'/context')->assertNotFound();

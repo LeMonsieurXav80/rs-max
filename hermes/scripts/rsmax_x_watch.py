@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Prélecture compacte pour le cycle X : aucune écriture ni génération IA."""
+"""Prélecture compacte de l’inbox X et TikTok : aucune écriture ni génération IA."""
 import datetime as dt
 import json
 import os
@@ -17,11 +17,12 @@ def snapshot(client, now=None):
         return {'state': 'sleep'}
     work = []
     for account in catalog.get('accounts', []):
-        if account.get('platform') != 'twitter' or account.get('driver') != 'browser' or account.get('session') != 'connected':
+        if account.get('platform') not in ('twitter','tiktok') or account.get('driver') != 'browser' or account.get('session') != 'connected':
             continue
+        tiktok = account['platform'] == 'tiktok'
         actions, cadence = account.get('actions', {}), account.get('cadence', {})
-        can_reply = actions.get('reply', {}).get('enabled', True) and actions.get('reply', {}).get('left', 0) > 0 and actions.get('like', {}).get('enabled', True) and actions.get('like', {}).get('left', 0) > 0
-        can_feed = actions.get('feed.read', {}).get('left', 0) > 0 and any(actions.get(k, {}).get('enabled', True) and actions.get(k, {}).get('left', 0) > 0 for k in ('like', 'bookmark'))
+        can_reply = actions.get('reply', {}).get('enabled', True) and actions.get('reply', {}).get('left', 0) > 0 and (tiktok or (actions.get('like', {}).get('enabled', True) and actions.get('like', {}).get('left', 0) > 0))
+        can_feed = not tiktok and actions.get('feed.read', {}).get('left', 0) > 0 and any(actions.get(k, {}).get('enabled', True) and actions.get(k, {}).get('left', 0) > 0 for k in ('like', 'bookmark'))
         if (not can_reply and not can_feed) or cadence.get('blocked'):
             continue
         required = 2 if can_reply else 1  # réponse et like, ou geste de flux
@@ -37,10 +38,11 @@ def snapshot(client, now=None):
         if next_allowed and dt.datetime.fromisoformat(next_allowed).astimezone(dt.timezone.utc) > now.astimezone(dt.timezone.utc):
             continue
         inbox = client.api('GET', f"accounts/{account['id']}/inbox?" + urlencode({'order':'newest','limit':5,'status':'unanswered','agent_queue':1})) if can_reply else {}
-        items = [{'id':i['id'], 'content':i['content'], 'post_url':i.get('post_url')} for i in inbox.get('items', []) if i.get('can_reply')]
+        items = [{'id':i['id'], 'content':i['content'], 'post_url':i.get('post_url'), 'post_content':i.get('post_content')} for i in inbox.get('items', []) if i.get('can_reply')]
         if items or can_feed:
-            work.append({'account_id':account['id'], 'strategy':account.get('strategy', {}), 'items':items,
-                         'persona':account.get('persona'), 'remaining':cadence.get('remaining'), 'daily_remaining':cadence.get('daily', {}).get('remaining'), 'batch_max':min(5, max(1, ((cadence.get('remaining') if cadence.get('remaining') is not None else 11) - (required - (2 if can_reply else 1)))//2), max(1, ((cadence.get('daily', {}).get('remaining') if cadence.get('daily', {}).get('remaining') is not None else 11) - (1 if upcoming else 0))//2)), 'next_publication_at':upcoming})
+            work.append({'platform':account['platform'], 'account_id':account['id'], 'strategy':account.get('strategy', {}), 'items':items,
+                         'persona':account.get('persona'), 'remaining':cadence.get('remaining'), 'daily_remaining':cadence.get('daily', {}).get('remaining'), 'batch_max':min(1 if tiktok else 5, max(1, ((cadence.get('remaining') if cadence.get('remaining') is not None else 11) - (required - (2 if can_reply else 1)))//2), max(1, ((cadence.get('daily', {}).get('remaining') if cadence.get('daily', {}).get('remaining') is not None else 11) - (1 if upcoming else 0))//2)), 'next_publication_at':upcoming})
+    work.sort(key=lambda a: 0 if a['platform']=='tiktok' else 1)
     return {'state':'work','cycle_key':int(now.timestamp())//300,'accounts':work} if work else {'state':'idle'}
 
 

@@ -13,7 +13,7 @@ class InboxReplyService
     public function submit(InboxItem $item, string $text): array
     {
         if (($item->platform->slug === 'tiktok' || ($item->platform->slug === 'twitter' && $item->socialAccount->usesBrowser())) && ! ($item->replied_at || $item->reply_external_id || $item->status === 'replied')) {
-            $autonomous = request()->attributes->get('community_manager') && $item->platform->slug === 'twitter';
+            $autonomous = request()->attributes->get('community_manager') && in_array($item->platform->slug, ['twitter', 'tiktok'], true);
             $at = now();
             if ($autonomous) {
                 $next = app(\App\Services\Agent\AccountActionBudget::class)->usage($item->socialAccount)['next_allowed_at'];

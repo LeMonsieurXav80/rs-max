@@ -28,6 +28,26 @@ class XWatchTest(unittest.TestCase):
         self.assertEqual(r['accounts'][0]['account_id'],11);self.assertEqual(r['accounts'][0]['items'][0]['id'],99)
         self.assertIn('accounts/11/inbox?',c.api.call_args.args[1])
 
+    def test_tiktok_reserve_le_duo_sans_action_like_de_flux_et_garde_la_legende(self):
+        c=Mock();a=self.account(2);a['platform']='tiktok';a['actions']={'reply':{'enabled':True,'left':10}}
+        c.api.side_effect=[{'daytime':True,'accounts':[a]},{'items':[{'id':99,'content':'Merci','post_content':'La tenue du jour','can_reply':True}]}]
+        r=watch.snapshot(c,dt.datetime.fromisoformat('2026-11-07T12:30:00+00:00'))
+        self.assertEqual(r['state'],'work');self.assertEqual(r['accounts'][0]['platform'],'tiktok')
+        self.assertEqual(r['accounts'][0]['batch_max'],1);self.assertEqual(r['accounts'][0]['items'][0]['post_content'],'La tenue du jour')
+
+    def test_tiktok_ne_demarre_pas_avec_un_seul_geste_ni_un_quota_de_flux_seul(self):
+        for remaining,reply_left in [(1,10),(2,0)]:
+            c=Mock();a=self.account(remaining);a['platform']='tiktok';a['actions']['reply']['left']=reply_left;a['actions']['feed.read']={'left':5}
+            c.api.return_value={'daytime':True,'accounts':[a]}
+            self.assertEqual(watch.snapshot(c,dt.datetime.fromisoformat('2026-11-07T12:30:00+00:00'))['state'],'idle');self.assertEqual(c.api.call_count,1)
+
+    def test_tiktok_passe_avant_x_sans_ecarter_x(self):
+        c=Mock();x=self.account();t=self.account(2);t.update(id=12,platform='tiktok')
+        items={'items':[{'id':99,'content':'Merci','can_reply':True}]}
+        c.api.side_effect=[{'daytime':True,'accounts':[x,t]},items,items]
+        r=watch.snapshot(c,dt.datetime.fromisoformat('2026-11-07T12:30:00+00:00'))
+        self.assertEqual([a['platform'] for a in r['accounts']],['tiktok','twitter'])
+
     def test_le_plafond_quotidien_et_la_pause_bloquent_avant_lecture(self):
         for extra in [{'daily':{'remaining':1}}, {'blocked':True}]:
             c=Mock();a=self.account();a['cadence'].update(extra);c.api.return_value={'daytime':True,'accounts':[a]}

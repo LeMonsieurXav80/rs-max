@@ -23,6 +23,12 @@ class AccountActionBudget
                     throw new BrowserException('Quota quotidien atteint : aucun geste effectué.');
                 }
             }
+            if ($account->platform->slug === 'tiktok' && $action === 'tiktok.reply') {
+                $setting = $account->agentActions()->where('action', 'reply')->first();
+                if ($setting && (clone $events)->where('action', $action)->where('created_at', '>=', $this->dayStart())->count() >= $setting->daily_limit) {
+                    throw new BrowserException('Quota quotidien de réponses TikTok atteint : aucun geste effectué.');
+                }
+            }
             $usage = $this->usage($account);
             if (($usage['adaptation']['state']['cooldown_until'] ?? null) && \Illuminate\Support\Carbon::parse($usage['adaptation']['state']['cooldown_until'])->isFuture()) {
                 throw new BrowserException('Pause adaptative RS-Max : aucun geste effectué.');

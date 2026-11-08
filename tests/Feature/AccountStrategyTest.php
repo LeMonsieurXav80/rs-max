@@ -82,6 +82,25 @@ class AccountStrategyTest extends TestCase
         $this->assertSame(0, app(AccountActionBudget::class)->usage($a)['attempted']);
     }
 
+    public function test_reponses_tiktok_comptent_les_tentatives_du_jour_et_bloquent_au_plafond(): void
+    {
+        $this->travelTo(\Illuminate\Support\Carbon::parse('2026-11-08T12:00:00Z'));
+        $a = $this->account();
+        $a->agentActions()->create(['action' => 'reply', 'enabled' => true, 'daily_limit' => 1]);
+        $budget = app(AccountActionBudget::class);
+        $old = $budget->reserve($a, 'tiktok.reply', 'browser', 'ancien');
+        $old->update(['created_at' => now()->subDay()]);
+        $this->assertSame(0, app(\App\Services\Agent\AgentCatalog::class)->usedToday($a, 'reply'));
+        $budget->reserve($a, 'tiktok.reply', 'browser', 'nouveau')->update(['status' => 'uncertain']);
+        $this->assertSame(1, app(\App\Services\Agent\AgentCatalog::class)->usedToday($a, 'reply'));
+        $this->assertSame(0, app(\App\Services\Agent\AgentCatalog::class)->usedToday($this->account(), 'reply'));
+        // Le like automatique reste possible quand le quota de réponses est consommé.
+        $budget->reserve($a, 'tiktok.like', 'browser', 'nouveau');
+        $this->expectException(\App\Services\Browser\BrowserException::class);
+        $this->expectExceptionMessage('Quota quotidien de réponses TikTok atteint');
+        $budget->reserve($a, 'tiktok.reply', 'browser', 'autre');
+    }
+
     public function test_formulaire_tous_reseaux_normalise_listes(): void
     {
         $u = User::factory()->create(['role' => 'manager']);
