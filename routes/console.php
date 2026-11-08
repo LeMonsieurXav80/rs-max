@@ -120,3 +120,14 @@ Artisan::command('tiktok:expire-photo-posts', function () {
     });
 })->purpose('Terminer les publications photo périmées sans jamais les relancer.');
 Schedule::command('tiktok:expire-photo-posts')->everyMinute()->withoutOverlapping(2);
+
+Artisan::command('threads:session-check', function () {
+    foreach (\App\Models\SocialAccount::whereHas('platform', fn ($q) => $q->where('slug', 'threads'))->whereNotNull('browser_profile')->whereNotNull('browser_session')->get() as $account) {
+        try {
+            app(\App\Services\Threads\ThreadsSessionService::class)->verify($account);
+        } catch (\Throwable $e) {
+            $this->warn('Session Threads NAS non vérifiable pour le compte '.$account->id);
+        }
+    }
+})->purpose('Contrôler la session Threads NAS et signaler son expiration');
+Schedule::command('threads:session-check')->hourly()->between('06:00', '21:59')->timezone('Europe/Lisbon')->withoutOverlapping();

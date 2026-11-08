@@ -102,6 +102,11 @@ class BrowserTaskQueue
                     continue;
                 }
                 try {
+                    try {
+                        app(\App\Services\Threads\ThreadsAgent::class)->claim($task);
+                    } catch (\Throwable $e) {
+                        throw new BrowserException($e->getMessage());
+                    }
                     app(\App\Services\Agent\XEngagementService::class)->claim($task);
                     try {
                         app(\App\Services\Agent\TikTokPhotoPublisher::class)->claim($task);

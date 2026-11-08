@@ -78,6 +78,21 @@ class XWatchTest(unittest.TestCase):
         self.assertNotEqual(first['cycle_key'],second['cycle_key']);self.assertEqual(first['accounts'],second['accounts'])
         self.assertIn('agent_queue=1',c.api.call_args.args[1])
 
+    def test_api_instagram_un_geste_et_facebook_deux_si_like_active(self):
+        now=dt.datetime.fromisoformat('2026-11-08T12:00:00+00:00')
+        for platform,remaining,wanted in [('instagram',1,'work'),('facebook',1,'idle'),('facebook',2,'work')]:
+            a=self.account(remaining);a.update(platform=platform,driver='api',api_ready=True,persona=5)
+            a['actions']={'reply':{'left':5},'comment.like':{'left':5}} if platform=='facebook' else {'reply':{'left':5}}
+            c=Mock();c.api.side_effect=[{'daytime':True,'accounts':[a]},{'items':[{'id':99,'content':'Merci','can_reply':True}]}]
+            r=watch.snapshot(c,now);self.assertEqual(r['state'],wanted)
+            if wanted=='work':self.assertEqual(r['accounts'][0]['auto_like'],platform=='facebook');self.assertEqual(r['accounts'][0]['executor'],'api')
+
+    def test_api_sans_jeton_ou_sans_persona_n_est_pas_active(self):
+        for ready,persona in [(False,5),(True,None)]:
+            a=self.account();a.update(platform='youtube',driver='api',api_ready=ready,persona=persona)
+            c=Mock();c.api.return_value={'daytime':True,'accounts':[a]}
+            self.assertEqual(watch.snapshot(c,dt.datetime.fromisoformat('2026-11-08T12:00:00+00:00'))['state'],'idle');self.assertEqual(c.api.call_count,1)
+
 
 class ReportScheduleTest(unittest.TestCase):
     def test_les_creneaux_du_matin_et_du_soir_ont_des_cles_distinctes(self):

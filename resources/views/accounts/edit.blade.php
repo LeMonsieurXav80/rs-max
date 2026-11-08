@@ -132,6 +132,15 @@
                     </div>
                 @endif
 
+                @if($account->platform->slug === 'threads')
+                <div class="mt-5">
+                    <label for="browser_profile" class="block text-sm font-medium text-gray-700">Profil NAS pour les interactions Threads</label>
+                    <input name="browser_profile" id="browser_profile" value="{{ old('browser_profile', $account->browser_profile) }}" placeholder="profil-nas" class="w-full rounded-xl border-gray-300 mt-1">
+                    <p class="text-xs text-gray-500 mt-2">Les réponses aux commentaires reçus et les publications restent sur l’API. Recherches, flux, likes et commentaires de publications passent par Companion sur le NAS.</p>
+                    <p class="text-xs mt-1">Session NAS : {{ $account->browser_session_status === 'connected' ? 'connectée' : 'à transmettre depuis Companion dans Chrome' }}.</p>
+                </div>
+                @endif
+
                 {{-- Persona IA --}}
                 <div class="mt-5">
                     <label for="persona_id" class="block text-sm font-medium text-gray-700 mb-1.5">Persona des réponses</label>

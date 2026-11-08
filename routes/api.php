@@ -16,6 +16,11 @@ use Illuminate\Support\Facades\Route;
 
 Route::middleware(['auth:sanctum', \App\Http\Middleware\CommunityManagerTokenScope::class])->group(function () {
     Route::prefix('community-manager')->controller(\App\Http\Controllers\Api\CommunityManagerController::class)->group(function () {
+        Route::post('accounts/{id}/threads/read', [\App\Http\Controllers\Api\ThreadsAgentController::class, 'read']);
+        Route::get('accounts/{id}/threads/context', [\App\Http\Controllers\Api\ThreadsAgentController::class, 'context']);
+        Route::post('accounts/{id}/threads/actions', [\App\Http\Controllers\Api\ThreadsAgentController::class, 'submit']);
+        Route::post('threads/actions/{task}/verify', [\App\Http\Controllers\Api\ThreadsAgentController::class, 'verify']);
+        Route::get('threads/actions/{task}', [\App\Http\Controllers\Api\ThreadsAgentController::class, 'status']);
         Route::post('accounts/{id}/tiktok/photo-posts', [\App\Http\Controllers\Api\TikTokPhotoController::class, 'store']);
         Route::get('tiktok/photo-posts/{task}', [\App\Http\Controllers\Api\TikTokPhotoController::class, 'show']);
         Route::post('tiktok/photo-posts/{task}/verify', [\App\Http\Controllers\Api\TikTokPhotoController::class, 'verify']);
@@ -28,6 +33,7 @@ Route::middleware(['auth:sanctum', \App\Http\Middleware\CommunityManagerTokenSco
         Route::get('inbox/{inboxItem}', [\App\Http\Controllers\Api\CommunityManagerInboxController::class, 'status']);
         Route::post('inbox/{inboxItem}/reconcile', [\App\Http\Controllers\Api\CommunityManagerInboxController::class, 'reconcile']);
         Route::post('inbox/{inboxItem}/verify-reply', [\App\Http\Controllers\Api\CommunityManagerInboxController::class, 'verifyReply']);
+        Route::post('inbox/{inboxItem}/like', [\App\Http\Controllers\Api\CommunityManagerInboxController::class, 'like']);
         Route::post('inbox/{inboxItem}/review', [\App\Http\Controllers\Api\CommunityManagerInboxController::class, 'review']);
         Route::get('inbox/{inboxItem}/context', [\App\Http\Controllers\Api\CommunityManagerInboxController::class, 'context']);
         Route::post('inbox/{inboxItem}/reply', [\App\Http\Controllers\Api\CommunityManagerInboxController::class, 'reply']);
@@ -207,9 +213,12 @@ Route::middleware(['auth:sanctum', \App\Http\Middleware\CommunityManagerTokenSco
     Route::get('/extension/tasks/{task}/session', [\App\Http\Controllers\Api\BrowserTaskController::class, 'session']);
     Route::post('/extension/tasks/{task}/finish', [\App\Http\Controllers\Api\BrowserTaskController::class, 'finish']);
     Route::post('/extension/tasks/{task}/checkpoint', [\App\Http\Controllers\Api\BrowserTaskController::class, 'checkpoint']);
+    Route::post('/extension/tasks/{task}/authorize-threads', [\App\Http\Controllers\Api\BrowserTaskController::class, 'authorizeThreads']);
     Route::post('/extension/tasks/{task}/authorize-photo', [\App\Http\Controllers\Api\BrowserTaskController::class, 'authorizePhoto']);
     Route::post('/extension/tasks/{task}/progress', [\App\Http\Controllers\Api\BrowserTaskController::class, 'progress'])->middleware('throttle:240,1');
     Route::get('/extension/x/session', [\App\Http\Controllers\Api\XExtensionController::class, 'sessionStatus']);
+    Route::get('/extension/threads/session', [\App\Http\Controllers\Api\ThreadsExtensionController::class, 'status']);
+    Route::post('/extension/threads/session', [\App\Http\Controllers\Api\ThreadsExtensionController::class, 'store']);
     Route::post('/extension/x/session', [\App\Http\Controllers\Api\XExtensionController::class, 'session'])->middleware('throttle:10,1');
     Route::post('/extension/x/suggest', [\App\Http\Controllers\Api\XExtensionController::class, 'suggest'])->middleware('throttle:30,1');
     Route::post('/extension/x/{id}/begin', [\App\Http\Controllers\Api\XExtensionController::class, 'begin']);

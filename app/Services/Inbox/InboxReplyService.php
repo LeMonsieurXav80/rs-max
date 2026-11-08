@@ -12,8 +12,8 @@ class InboxReplyService
 {
     public function submit(InboxItem $item, string $text): array
     {
-        if (($item->platform->slug === 'tiktok' || ($item->platform->slug === 'twitter' && $item->socialAccount->usesBrowser())) && ! ($item->replied_at || $item->reply_external_id || $item->status === 'replied')) {
-            $autonomous = request()->attributes->get('community_manager') && in_array($item->platform->slug, ['twitter', 'tiktok'], true);
+        if (((request()->attributes->get('community_manager') && in_array($item->platform->slug, \App\Services\Agent\ApiInboxActions::PLATFORMS, true)) || $item->platform->slug === 'tiktok' || ($item->platform->slug === 'twitter' && $item->socialAccount->usesBrowser())) && ! ($item->replied_at || $item->reply_external_id || $item->status === 'replied')) {
+            $autonomous = (bool) request()->attributes->get('community_manager');
             $at = now();
             if ($autonomous) {
                 $next = app(\App\Services\Agent\AccountActionBudget::class)->usage($item->socialAccount)['next_allowed_at'];
@@ -46,6 +46,21 @@ class InboxReplyService
 
             $account = $item->socialAccount()->with('platform')->first();
             $tiktok = $account->platform->slug === 'tiktok';
+            $apiAutonomous = filled($item->reply_activity_window) && in_array($account->platform->slug, \App\Services\Agent\ApiInboxActions::PLATFORMS, true);
+            if ($apiAutonomous) {
+                if (! app(\App\Services\Agent\CommunityManagerWindow::class)->isOpen($item->reply_activity_window)) {
+                    $item->update(['reply_scheduled_at' => null, 'reply_content' => null, 'reply_activity_window' => null]);
+
+                    return $this->conflict('Plage autonome terminée, aucun envoi.');
+                }
+                try {
+                    app(\App\Services\Agent\ApiInboxActions::class)->assertEnabled($account, 'reply');
+                } catch (\Throwable $e) {
+                    $item->update(['reply_scheduled_at' => null]);
+
+                    return $this->conflict($e->getMessage());
+                }
+            }
 
             if ($scheduled) {
                 if (! $item->reply_scheduled_at || $item->reply_scheduled_at->isFuture() || $item->reply_attempts >= 3) {
@@ -53,7 +68,7 @@ class InboxReplyService
                 }
                 // Reload the persisted text: the scheduler may have selected it before an edit.
                 $text = $item->reply_content;
-                if ($tiktok && $item->reply_attempts > 0) {
+                if (($tiktok || $apiAutonomous) && $item->reply_attempts > 0) {
                     $item->update(['status' => 'reply_failed', 'reply_scheduled_at' => null, 'reply_attempts' => 3]);
 
                     return $this->conflict('Tentative TikTok interrompue. Vérifiez le fil avant toute relance.');
@@ -83,7 +98,7 @@ class InboxReplyService
             $event = null;
             if (! $account->usesBrowser()) {
                 try {
-                    $event = app(\App\Services\Agent\AccountActionBudget::class)->reserve($account, 'inbox.reply', 'api', (string) $item->id);
+                    $event = app(\App\Services\Agent\AccountActionBudget::class)->reserve($account, $apiAutonomous ? $account->platform->slug.'.reply' : 'inbox.reply', 'api', (string) $item->id);
                     $journal = app(\App\Services\Agent\AutomationJournal::class);
                     \App\Models\BotActionLog::where('account_action_event_id', $event->id)->update(['target_text' => $journal->text($text, 2000), 'target_uri' => $journal->url($item->post_url ?? ''), 'target_author' => $journal->text($item->author_name, 255)]);
                 } catch (\App\Services\Browser\BrowserException $e) {
@@ -101,10 +116,10 @@ class InboxReplyService
                     : ['success' => false, 'error' => 'Service non disponible'];
             } catch (\Throwable $e) {
                 Log::error('InboxReplyService: send failed', ['item_id' => $item->id, 'error' => $e->getMessage()]);
-                $result = ['success' => false, 'error' => 'Envoi non confirmé. Vérifiez le réseau avant de réessayer.'];
+                $result = ['success' => false, 'uncertain' => $apiAutonomous, 'error' => 'Envoi non confirmé. Vérifiez le réseau avant de réessayer.'];
             }
 
-            $event?->update(['status' => $result['success'] ? 'completed' : (($result['uncertain'] ?? false) ? 'uncertain' : 'failed'),
+            $event?->update(['status' => $result['success'] ? ($apiAutonomous && filled($result['external_id'] ?? null) ? 'confirmed' : 'completed') : (($result['uncertain'] ?? false) ? 'uncertain' : 'failed'),
                 'error' => isset($result['error']) ? mb_substr($result['error'], 0, 1000) : null]);
             if ($result['success']) {
                 $item->update([
@@ -117,13 +132,13 @@ class InboxReplyService
                 ]);
 
                 // Après une réponse confirmée, le like suit avec la cadence du compte.
-                if ($tiktok || ($account->platform->slug === 'twitter' && $account->usesBrowser())) {
+                if ($tiktok || ($account->platform->slug === 'twitter' && $account->usesBrowser()) || ($apiAutonomous && $account->platform->slug === 'facebook' && app(\App\Services\Agent\AgentCatalog::class)->forAccount($account)->get('comment.like')['enabled'])) {
                     $next = app(\App\Services\Agent\AccountActionBudget::class)->usage($account)['next_allowed_at'];
                     LikeInboxItem::dispatch($item->id)->delay($next ? \Illuminate\Support\Carbon::parse($next)->addSeconds(2) : now());
                 }
             } else {
                 Log::warning('InboxReplyService: reply failed', ['item_id' => $item->id, 'error' => $result['error'] ?? 'unknown']);
-                if (($result['uncertain'] ?? false) || ($scheduled && $tiktok)) {
+                if (($result['uncertain'] ?? false) || ($scheduled && ($tiktok || $apiAutonomous))) {
                     // La réponse a pu partir : ni l'humain ni la planification ne la renvoient.
                     $item->update(['status' => 'reply_failed', 'reply_content' => $text, 'reply_scheduled_at' => null, 'reply_attempts' => 3]);
                 } elseif ($scheduled && $item->reply_attempts >= 3) {

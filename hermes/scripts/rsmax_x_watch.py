@@ -17,21 +17,27 @@ def snapshot(client, now=None):
         return {'state': 'sleep'}
     work = []
     for account in catalog.get('accounts', []):
-        if account.get('platform') not in ('twitter','tiktok') or account.get('driver') != 'browser' or account.get('session') != 'connected':
+        platform = account.get('platform')
+        api = platform in ('facebook','instagram','threads','youtube')
+        if api:
+            if account.get('driver') != 'api' or not account.get('api_ready') or not account.get('persona'): continue
+        elif platform not in ('twitter','tiktok') or account.get('driver') != 'browser' or account.get('session') != 'connected':
             continue
         tiktok = account['platform'] == 'tiktok'
         actions, cadence = account.get('actions', {}), account.get('cadence', {})
-        can_reply = actions.get('reply', {}).get('enabled', True) and actions.get('reply', {}).get('left', 0) > 0 and (tiktok or (actions.get('like', {}).get('enabled', True) and actions.get('like', {}).get('left', 0) > 0))
-        can_feed = not tiktok and actions.get('feed.read', {}).get('left', 0) > 0 and any(actions.get(k, {}).get('enabled', True) and actions.get(k, {}).get('left', 0) > 0 for k in ('like', 'bookmark'))
+        auto_like = tiktok or platform == 'twitter' or (platform == 'facebook' and actions.get('comment.like', {}).get('left',0)>0)
+        steps = 2 if auto_like else 1
+        can_reply = actions.get('reply', {}).get('enabled', True) and actions.get('reply', {}).get('left', 0) > 0 and (api or tiktok or (actions.get('like', {}).get('enabled', True) and actions.get('like', {}).get('left', 0) > 0))
+        can_feed = platform == 'twitter' and actions.get('feed.read', {}).get('left', 0) > 0 and any(actions.get(k, {}).get('enabled', True) and actions.get(k, {}).get('left', 0) > 0 for k in ('like', 'bookmark'))
         if (not can_reply and not can_feed) or cadence.get('blocked'):
             continue
-        required = 2 if can_reply else 1  # réponse et like, ou geste de flux
+        required = steps if can_reply else 1  # réponse et like, ou geste de flux
         upcoming = account.get('next_publication_at')
-        if upcoming and now - dt.timedelta(minutes=5) <= dt.datetime.fromisoformat(upcoming).astimezone(dt.timezone.utc) <= now + dt.timedelta(minutes=5):
+        if not api and upcoming and now - dt.timedelta(minutes=5) <= dt.datetime.fromisoformat(upcoming).astimezone(dt.timezone.utc) <= now + dt.timedelta(minutes=5):
             continue  # laisser le navigateur libre autour de la publication
         if upcoming and dt.datetime.fromisoformat(upcoming).astimezone(dt.timezone.utc) <= now.astimezone(dt.timezone.utc) + dt.timedelta(hours=1):
             required += 1  # laisser une place à la publication planifiée
-        daily_required = (2 if can_reply else 1) + (1 if upcoming else 0)
+        daily_required = (steps if can_reply else 1) + (1 if upcoming else 0)
         if (cadence.get('remaining') is not None and cadence['remaining'] < required) or (cadence.get('daily', {}).get('remaining') is not None and cadence['daily']['remaining'] < daily_required):
             continue
         next_allowed = cadence.get('next_allowed_at')
@@ -41,8 +47,12 @@ def snapshot(client, now=None):
         items = [{'id':i['id'], 'content':i['content'], 'post_url':i.get('post_url'), 'post_content':i.get('post_content')} for i in inbox.get('items', []) if i.get('can_reply')]
         if items or can_feed:
             work.append({'platform':account['platform'], 'account_id':account['id'], 'strategy':account.get('strategy', {}), 'items':items,
-                         'persona':account.get('persona'), 'remaining':cadence.get('remaining'), 'daily_remaining':cadence.get('daily', {}).get('remaining'), 'batch_max':min(1 if tiktok else 5, max(1, ((cadence.get('remaining') if cadence.get('remaining') is not None else 11) - (required - (2 if can_reply else 1)))//2), max(1, ((cadence.get('daily', {}).get('remaining') if cadence.get('daily', {}).get('remaining') is not None else 11) - (1 if upcoming else 0))//2)), 'next_publication_at':upcoming})
-    work.sort(key=lambda a: 0 if a['platform']=='tiktok' else 1)
+                         'persona':account.get('persona'),'auto_like':auto_like,'executor':'api' if api else 'browser', 'remaining':cadence.get('remaining'), 'daily_remaining':cadence.get('daily', {}).get('remaining'), 'batch_max':min(1 if tiktok or api else 5, max(1, ((cadence.get('remaining') if cadence.get('remaining') is not None else 11) - (required - (steps if can_reply else 1)))//steps), max(1, ((cadence.get('daily', {}).get('remaining') if cadence.get('daily', {}).get('remaining') is not None else 11) - (1 if upcoming else 0))//steps)), 'next_publication_at':upcoming})
+    browser_first=[a for a in work if a['platform']=='tiktok']
+    other=[a for a in work if a['platform']!='tiktok']
+    if any(a.get('executor')=='api' for a in other) and other:
+        offset=(int(now.timestamp())//300)%len(other);other=other[offset:]+other[:offset]
+    work=browser_first+other
     return {'state':'work','cycle_key':int(now.timestamp())//300,'accounts':work} if work else {'state':'idle'}
 
 

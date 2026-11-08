@@ -1468,3 +1468,6 @@ Companion 0.16.7 attend le filtre de Studio après rechargement (20 s) ; une rel
 
 ### Photos et carrousels TikTok depuis les médias
 Publication native par Companion NAS : `POST /api/community-manager/accounts/{id}/tiktok/photo-posts`, IDs de médias ordonnés, titre, description et visibilité ; aperçu par défaut, clé UUID stable obligatoire pour exécuter, répétition sans publication disponible. `GET /api/community-manager/tiktok/photo-posts/{id}` donne l’état et la preuve ; `POST .../{id}/verify` relit et rapproche sans renvoi. Action `photo.publish` par compte ; dossiers privés et photos interdites refusés. Voir [le parcours complet et les commandes Hermès](tiktok-photos.md).
+
+### Inbox autonome API et découverte Threads
+Facebook, Instagram, Threads et YouTube utilisent le même parcours Community Manager de réponses immédiates sans validation. Facebook ajoute `POST /api/community-manager/inbox/{id}/like` (aperçu par défaut) et le like automatique après réponse. Découverte/interactions Threads sur le NAS : `accounts/{id}/threads/read`, `/context`, `/actions`, `GET threads/actions/{task}`. Le compte Threads conserve son driver API ; la technique dépend de l’action. Voir `docs/community-manager-api-threads.md`.

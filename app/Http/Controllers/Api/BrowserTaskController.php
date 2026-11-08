@@ -53,7 +53,19 @@ class BrowserTaskController extends Controller
     {
         abort_unless($r->user()->isAdmin(), 403);
         $v = $r->validate(['result' => 'required|array']);
-        app(\App\Services\Agent\TikTokPhotoPublisher::class)->checkpoint($task, $v['result']);
+        if ($task->kind === 'threads.agent.act') {
+            app(\App\Services\Threads\ThreadsAgent::class)->checkpoint($task, $v['result']);
+        } else {
+            app(\App\Services\Agent\TikTokPhotoPublisher::class)->checkpoint($task, $v['result']);
+        }
+
+        return response()->json(['ok' => true]);
+    }
+
+    public function authorizeThreads(Request $r, BrowserTask $task): JsonResponse
+    {
+        abort_unless($r->user()->isAdmin(), 403);
+        app(\App\Services\Threads\ThreadsAgent::class)->authorize($task);
 
         return response()->json(['ok' => true]);
     }
@@ -80,10 +92,11 @@ class BrowserTaskController extends Controller
 
         app(\App\Services\Agent\AutomationJournal::class)->append($task, $v['diagnostics'] ?? [], true);
         unset($v['diagnostics']);
-        if ($task->kind === 'tiktok.photo.publish') {
+        if (in_array($task->kind, ['tiktok.photo.publish', 'threads.agent.act'], true)) {
             $v['result'] = array_replace($task->result ?? [], $v['result'] ?? []);
         }
         $task->update($v + ['finished_at' => now()]);
+        app(\App\Services\Threads\ThreadsAgent::class)->finish($task);
         app(\App\Services\Agent\TikTokPhotoPublisher::class)->finish($task);
         app(\App\Services\Agent\XEngagementService::class)->finish($task);
         app(\App\Services\Agent\AccountActionBudget::class)->finish($task);

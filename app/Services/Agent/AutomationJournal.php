@@ -27,7 +27,7 @@ class AutomationJournal
             'claimed_at' => $task->claimed_at?->toIso8601String(), 'finished_at' => $task->finished_at?->toIso8601String(),
             'duration_ms' => $task->claimed_at && $task->finished_at ? (int) abs($task->finished_at->diffInMilliseconds($task->claimed_at)) : null,
             'proof' => $this->proof($result), 'dry_run' => (bool) ($p['dry'] ?? false)]);
-        $log->fill(['social_account_id' => $task->social_account_id, 'action_type' => $task->kind === 'x.agent.act' ? 'x.'.($p['action'] ?? 'act') : $task->kind,
+        $log->fill(['social_account_id' => $task->social_account_id, 'action_type' => in_array($task->kind, ['x.agent.act', 'threads.agent.act']) ? ($task->kind === 'x.agent.act' ? 'x.' : 'threads.').($p['action'] ?? 'act') : $task->kind,
             'source' => 'browser', 'target_uri' => $this->url($p['target']['url'] ?? $p['url'] ?? ''), 'target_author' => $this->text($p['target']['author'] ?? $p['handle'] ?? null, 255),
             'target_text' => $this->text($p['text'] ?? $p['caption'] ?? $p['target']['text'] ?? null, 2000),
             'success' => $rawStatus === 'done', 'error' => $this->text($task->error, 1000),

@@ -44,6 +44,12 @@ class AgentApiController extends Controller
 
     public function read(Request $request, int $id, string $action, AgentReader $reader): JsonResponse
     {
+        $a = $this->account($request, $id);
+        if ($a->platform->slug === 'threads') {
+            $request->merge(['action' => $action]);
+
+            return app(ThreadsAgentController::class)->read($request, $id, app(\App\Services\Threads\ThreadsAgent::class));
+        }
         if (in_array($action, ['feed.read', 'video.comments'], true)) {
             $request->merge(['action' => $action]);
 

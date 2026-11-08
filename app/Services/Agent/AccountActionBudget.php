@@ -29,6 +29,14 @@ class AccountActionBudget
                     throw new BrowserException($action === 'tiktok.reply' ? 'Quota quotidien de réponses TikTok atteint : aucun geste effectué.' : 'Quota quotidien de photos TikTok atteint : aucun geste effectué.');
                 }
             }
+            if (in_array($account->platform->slug, ApiInboxActions::PLATFORMS, true) && str_starts_with($action, $account->platform->slug.'.')) {
+                $key = substr($action, strlen($account->platform->slug) + 1);
+                try {
+                    app(ApiInboxActions::class)->assertEnabled($account, $key);
+                } catch (\Throwable $e) {
+                    throw new BrowserException($e->getMessage());
+                }
+            }
             $usage = $this->usage($account);
             if (($usage['adaptation']['state']['cooldown_until'] ?? null) && \Illuminate\Support\Carbon::parse($usage['adaptation']['state']['cooldown_until'])->isFuture()) {
                 throw new BrowserException('Pause adaptative RS-Max : aucun geste effectué.');
@@ -53,6 +61,11 @@ class AccountActionBudget
     public function forTask(BrowserTask $task): void
     {
         if (($task->payload['dry'] ?? false) === true) {
+            return;
+        }
+        if ($task->kind === 'threads.agent.act') {
+            $this->reserve($task->socialAccount, 'threads.'.$task->payload['action'], 'browser', $task->payload['url'], $task->id);
+
             return;
         }
         if ($task->kind === 'x.agent.act') {

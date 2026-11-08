@@ -46,6 +46,7 @@ class CommunityManagerController extends Controller
             'accounts' => $accounts->map(fn ($a) => ['id' => $a->id, 'name' => $a->name, 'platform' => $a->platform->slug,
                 'strategy' => $a->agent_strategy ?? (object) [], 'cadence' => app(\App\Services\Agent\AccountActionBudget::class)->usage($a),
                 'next_publication_at' => $this->nextPublicationAt($a),
+                'api_ready' => filled($a->credentials['access_token'] ?? null) || filled($a->credentials['refresh_token'] ?? null),
                 'session' => $a->browser_session_status, 'driver' => $a->driver,
                 'followers_observation' => $a->browser_followers_observation, 'persona' => $a->persona?->is_active ? $a->persona->id : null,
                 'actions' => $this->catalog->forAccount($a)->where('enabled', true)->where('status', 'ready')

@@ -57,12 +57,18 @@ return [
         ]],
         'facebook' => ['name' => 'Facebook', 'route' => 'bot.facebook.index', 'actions' => [
             'reply' => ['label' => 'Répondre aux commentaires', 'kind' => 'write', 'channel' => 'api', 'status' => 'ready', 'limit' => 10],
-            'comment.like' => ['label' => 'Aimer les commentaires reçus', 'kind' => 'write', 'channel' => 'api', 'status' => 'engine'],
+            'comment.like' => ['label' => 'Aimer les commentaires reçus', 'kind' => 'write', 'channel' => 'api', 'status' => 'ready', 'limit' => 30],
         ]],
         'instagram' => ['name' => 'Instagram', 'actions' => [
             'reply' => ['label' => 'Répondre aux commentaires', 'kind' => 'write', 'channel' => 'api', 'status' => 'ready', 'limit' => 10],
         ]],
         'threads' => ['name' => 'Threads', 'actions' => [
+            'feed.read' => ['label' => 'Lire le flux', 'kind' => 'read', 'channel' => 'browser', 'status' => 'ready', 'limit' => 12],
+            'search.read' => ['label' => 'Rechercher des publications', 'kind' => 'read', 'channel' => 'browser', 'status' => 'ready', 'limit' => 12],
+            'thread.read' => ['label' => 'Lire une discussion', 'kind' => 'read', 'channel' => 'browser', 'status' => 'ready', 'limit' => 24],
+            'profile.read' => ['label' => 'Lire un profil', 'kind' => 'read', 'channel' => 'browser', 'status' => 'ready', 'limit' => 12],
+            'like' => ['label' => 'Aimer une publication', 'kind' => 'write', 'channel' => 'browser', 'status' => 'ready', 'limit' => 20],
+            'comment' => ['label' => 'Commenter une publication', 'kind' => 'write', 'channel' => 'browser', 'status' => 'ready', 'limit' => 5],
             'reply' => ['label' => 'Répondre aux commentaires', 'kind' => 'write', 'channel' => 'api', 'status' => 'ready', 'limit' => 10],
         ]],
         'youtube' => ['name' => 'YouTube', 'actions' => [

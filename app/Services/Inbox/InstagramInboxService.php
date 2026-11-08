@@ -126,7 +126,7 @@ class InstagramInboxService implements PlatformInboxInterface
                 'error' => $e->getMessage(),
             ]);
 
-            return ['success' => false, 'external_id' => null, 'error' => $e->getMessage()];
+            return ['success' => false, 'uncertain' => true, 'external_id' => null, 'error' => $e->getMessage()];
         }
     }
 }
