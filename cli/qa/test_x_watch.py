@@ -87,6 +87,21 @@ class XWatchTest(unittest.TestCase):
             r=watch.snapshot(c,now);self.assertEqual(r['state'],wanted)
             if wanted=='work':self.assertEqual(r['accounts'][0]['auto_like'],platform=='facebook');self.assertEqual(r['accounts'][0]['executor'],'api')
 
+    def test_facebook_garde_le_like_obligatoire_quand_son_quota_est_epuise(self):
+        a=self.account();a.update(platform='facebook',driver='api',api_ready=True,persona=5)
+        a['actions']={'reply':{'left':5},'comment.like':{'left':0}}
+        c=Mock();c.api.return_value={'daytime':True,'accounts':[a]}
+        self.assertEqual(watch.snapshot(c,dt.datetime.fromisoformat('2026-11-08T12:00:00+00:00'))['state'],'idle');self.assertEqual(c.api.call_count,1)
+
+    def test_threads_recherche_sans_inbox_exige_session_et_strategie(self):
+        for session,queries,wanted in [('connected',['style'],'work'),(None,['style'],'idle'),('connected',[],'idle')]:
+            a=self.account();a.update(platform='threads',driver='api',api_ready=True,persona=5,session=session,strategy={'search_queries':queries})
+            a['actions']={'search.read':{'left':2},'thread.read':{'left':2},'comment':{'left':2}}
+            c=Mock();c.api.return_value={'daytime':True,'accounts':[a]}
+            r=watch.snapshot(c,dt.datetime.fromisoformat('2026-11-08T12:00:00+00:00'))
+            self.assertEqual(r['state'],wanted);self.assertEqual(c.api.call_count,1)
+            if wanted=='work':self.assertTrue(r['accounts'][0]['threads_discovery'])
+
     def test_api_sans_jeton_ou_sans_persona_n_est_pas_active(self):
         for ready,persona in [(False,5),(True,None)]:
             a=self.account();a.update(platform='youtube',driver='api',api_ready=ready,persona=persona)

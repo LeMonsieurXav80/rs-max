@@ -22,3 +22,8 @@ Routes `/api/community-manager` :
 Client : `threads-read`, `threads-context`, `threads-action` (`--commit --request-key UUID`), `threads-status`, `threads-check [--commit]`. Relecture du compte et de la cible avant le geste, un seul clic, vérification après rechargement. Aucun repli automatique navigateur/API après une incertitude. Les commentaires utilisent le persona actif ; ne jamais prétendre avoir lu toute une discussion partielle.
 
 Companion 0.18.0 : patch sans configuration privée dans `companion/patches/0.18.0-threads.patch`, à appliquer après 0.17.1. Suspendre les cycles, attendre la fin du cycle et la file vide, préserver la configuration locale, mettre à jour et redémarrer deux fois. Vérifier le refus sans session, puis reprendre les cycles.
+
+## Validation et mise en service — 08/11/2026
+Les quatre réseaux API ont reçu une réponse de test via le jeton Hermès. Relecture API HTTP 200, texte et auteur exacts ; like Facebook confirmé. Rattacher le compte technique aux comptes sociaux activés et arrêter le moteur historique de likes Facebook sur ceux-ci. Cadence initiale API : 20 gestes/h, 100/jour, intervalle 60 s, limites propres à chaque compte. Les consignes de base Hermès sont versionnées dans `hermes/community-manager-soul.md`.
+
+Companion 0.18.0 installé sur le NAS, double redémarrage et refus sans session vérifiés. Tests Chromium simulés réussis ; validation réelle Threads navigateur en attente du rechargement local de Companion et de la transmission de session. La recherche autonome exige aussi une stratégie explicite ; ne pas confondre ce contrôle restant avec les réponses Threads API déjà relues.
