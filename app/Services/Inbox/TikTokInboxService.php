@@ -15,7 +15,7 @@ use Illuminate\Support\Facades\Log;
 /** Commentaires TikTok lus et traités depuis le navigateur Companion. */
 class TikTokInboxService implements PlatformInboxInterface
 {
-    private const COMMENTS_URL = 'https://www.tiktok.com/tiktokstudio/comment';
+    public const COMMENTS_URL = 'https://www.tiktok.com/tiktokstudio/comment';
 
     private const READ_TIMEOUT = 50;
 
@@ -44,7 +44,7 @@ class TikTokInboxService implements PlatformInboxInterface
             ->filter(fn (array $c) => ! $c['replied'] && filled($c['content']) && filled($c['caption']) && $c['author'] !== $account->browser_username)
             ->map(function (array $c) use ($account) {
                 // TikTok Studio n'expose aucun identifiant : le commentaire se reconnaît à son contenu.
-                $id = sha1($account->id.'|'.$c['author'].'|'.$c['content'].'|'.$c['caption']);
+                $id = self::commentId($account, $c['author'], $c['content'], $c['caption']);
 
                 return [
                     'type' => 'comment',
@@ -63,6 +63,11 @@ class TikTokInboxService implements PlatformInboxInterface
                 ];
             })
             ->values();
+    }
+
+    public static function commentId(SocialAccount $account, string $author, string $content, string $caption): string
+    {
+        return sha1($account->id.'|'.$author.'|'.$content.'|'.$caption);
     }
 
     public function sendReply(SocialAccount $account, InboxItem $item, string $replyText): array

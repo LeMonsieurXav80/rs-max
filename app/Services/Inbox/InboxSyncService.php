@@ -177,13 +177,13 @@ class InboxSyncService
                 continue;
             }
 
-            InboxItem::create(array_merge($itemData, [
-                'social_account_id' => $account->id,
+            $item = InboxItem::firstOrCreate([
                 'platform_id' => $account->platform_id,
-            ]));
+                'external_id' => $externalId,
+            ], ['social_account_id' => $account->id, 'platform_id' => $account->platform_id] + $itemData);
 
             $existing[$externalId] = true;
-            $stored++;
+            $stored += (int) $item->wasRecentlyCreated;
         }
 
         return $stored;

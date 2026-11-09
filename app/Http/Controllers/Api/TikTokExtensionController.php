@@ -9,7 +9,9 @@ use App\Models\InboxItem;
 use App\Models\SocialAccount;
 use App\Services\Browser\BrowserException;
 use App\Services\Browser\TikTokSessionService;
+use App\Services\Inbox\CompanionInboxReply;
 use App\Services\Inbox\InboxReplyGenerator;
+use App\Services\Inbox\TikTokInboxService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Cache;
@@ -201,15 +203,46 @@ class TikTokExtensionController extends Controller
         return $reply;
     }
 
+    private function inboxAccount(Request $request, string $username): ?SocialAccount
+    {
+        // Le profil de rédaction peut être associé à un persona d’un autre réseau.
+        $accounts = $request->user()->connectedSocialAccounts()->whereRelation('platform', 'slug', 'tiktok')
+            ->where('browser_username', $username)->limit(2)->get();
+
+        return $accounts->count() === 1 ? $accounts->first() : null;
+    }
+
     public function begin(Request $request, int $id): JsonResponse
     {
         $profile = $this->profile($request);
         $data = $request->validate(['reply_text' => 'required|string|max:150']);
-        $updated = DB::table('extension_tiktok_comments')->where('id', $id)->where('profile_id', $profile->id)
-            ->where('status', 'prepared')->where('reply_text', $data['reply_text'])
-            ->where('persona_hash', $this->personaHash($this->account($request, $profile->social_account_id)))
-            ->update(['status' => 'publishing', 'updated_at' => now()]);
-        abort_unless($updated, 409, 'Envoi déjà réservé ou texte différent : aucun nouvel envoi.');
+        $personaHash = $this->personaHash($this->account($request, $profile->social_account_id));
+        DB::transaction(function () use ($request, $profile, $id, $data, $personaHash) {
+            $account = $this->inboxAccount($request, $profile->username);
+            if ($account) {
+                SocialAccount::whereKey($account->id)->lockForUpdate()->firstOrFail();
+            }
+            $draft = DB::table('extension_tiktok_comments')->where('id', $id)
+                ->where('profile_id', $profile->id)->lockForUpdate()->first();
+            abort_unless($draft?->status === 'prepared' && $draft->reply_text === $data['reply_text']
+                && $draft->persona_hash === $personaHash, 409, 'Envoi déjà réservé ou texte différent : aucun nouvel envoi.');
+
+            if ($account) {
+                $externalId = TikTokInboxService::commentId($account, $draft->author, $draft->content, $draft->video_context);
+                $answered = InboxItem::where('social_account_id', $account->id)->where('external_id', $externalId)
+                    ->where(fn ($query) => $query->whereNotNull('replied_at')->orWhereNotNull('reply_external_id')->orWhere('status', 'replied'))
+                    ->lockForUpdate()->first(['id']);
+                abort_if($answered, 409, 'Ce commentaire a déjà reçu une réponse.');
+
+                $inFlight = DB::table('extension_tiktok_comments')->where('profile_id', $profile->id)->where('status', 'publishing')
+                    ->where('author', $draft->author)->where('content', $draft->content)->where('video_context', $draft->video_context)
+                    ->lockForUpdate()->get(['author', 'content', 'video_context'])
+                    ->contains(fn ($row) => $row->author === $draft->author && $row->content === $draft->content && $row->video_context === $draft->video_context);
+                abort_if($inFlight, 409, 'Une réponse à ce commentaire est déjà en cours.');
+            }
+
+            DB::table('extension_tiktok_comments')->where('id', $id)->update(['status' => 'publishing', 'updated_at' => now()]);
+        });
 
         return response()->json(['status' => 'publishing']);
     }
@@ -218,9 +251,29 @@ class TikTokExtensionController extends Controller
     {
         $profile = $this->profile($request);
         $data = $request->validate(['status' => 'required|in:published,uncertain', 'liked' => 'required|boolean', 'proof' => 'required|string|max:255']);
-        $updated = DB::table('extension_tiktok_comments')->where('id', $id)->where('profile_id', $profile->id)
-            ->where('status', 'publishing')->update($data + ['updated_at' => now()]);
-        abort_unless($updated, 409, 'Tentative absente ou déjà terminée.');
+        DB::transaction(function () use ($request, $profile, $id, $data) {
+            $account = $data['status'] === 'published' ? $this->inboxAccount($request, $profile->username) : null;
+            if ($account) {
+                SocialAccount::whereKey($account->id)->lockForUpdate()->firstOrFail();
+            }
+            $draft = DB::table('extension_tiktok_comments')->where('id', $id)
+                ->where('profile_id', $profile->id)->lockForUpdate()->first();
+            abort_unless($draft?->status === 'publishing', 409, 'Tentative absente ou déjà terminée.');
+            DB::table('extension_tiktok_comments')->where('id', $id)->update($data + ['updated_at' => now()]);
+
+            if ($account) {
+                $externalId = TikTokInboxService::commentId($account, $draft->author, $draft->content, $draft->video_context);
+                app(CompanionInboxReply::class)->record($account, $externalId, [
+                    'author_name' => $draft->author,
+                    'author_username' => $draft->author,
+                    'content' => $draft->content,
+                    'post_content' => $draft->video_context,
+                    'external_post_id' => sha1($draft->video_context),
+                    'conversation_key' => $externalId,
+                    'post_url' => TikTokInboxService::COMMENTS_URL,
+                ], $draft->reply_text, $data['liked']);
+            }
+        });
 
         return response()->json(['status' => $data['status']]);
     }

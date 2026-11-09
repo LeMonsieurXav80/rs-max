@@ -8,6 +8,7 @@ use App\Models\InboxItem;
 use App\Models\SocialAccount;
 use App\Services\Browser\BrowserException;
 use App\Services\Browser\XSessionService;
+use App\Services\Inbox\CompanionInboxReply;
 use App\Services\Inbox\InboxReplyGenerator;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -206,9 +207,25 @@ class XExtensionController extends Controller
     {
         $a = $this->profileAccount($r);
         $v = $r->validate(['status' => 'required|in:published,uncertain', 'liked' => 'required|boolean', 'proof' => 'required|string|max:255']);
-        $ok = DB::table('extension_x_replies')->where('id', $id)->where('social_account_id', $a->id)->where('status', 'publishing')
-            ->update($v + ['updated_at' => now()]);
-        abort_unless($ok, 409, 'Tentative absente ou déjà terminée.');
+        DB::transaction(function () use ($a, $id, $v) {
+            $draft = DB::table('extension_x_replies')->where('id', $id)->where('social_account_id', $a->id)->lockForUpdate()->first();
+            abort_unless($draft?->status === 'publishing', 409, 'Tentative absente ou déjà terminée.');
+            DB::table('extension_x_replies')->where('id', $id)->update($v + ['updated_at' => now()]);
+
+            if ($v['status'] === 'published') {
+                $conversation = json_decode($draft->context_json, true) ?: [];
+                $mention = end($conversation);
+                app(CompanionInboxReply::class)->record($a, $draft->tweet_id, [
+                    'author_name' => $draft->author,
+                    'author_username' => $draft->author,
+                    'content' => $mention['text'] ?? null,
+                    'post_content' => $conversation[0]['text'] ?? null,
+                    'external_post_id' => $draft->tweet_id,
+                    'conversation_key' => $draft->tweet_id,
+                    'post_url' => "https://x.com/{$draft->author}/status/{$draft->tweet_id}",
+                ], $draft->reply_text, $v['liked']);
+            }
+        });
 
         return response()->json(['status' => $v['status']]);
     }

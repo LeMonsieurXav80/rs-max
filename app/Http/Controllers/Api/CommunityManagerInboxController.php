@@ -54,6 +54,9 @@ class CommunityManagerInboxController extends Controller
     public function context(Request $r, InboxItem $inboxItem, InboxFollowup $policy)
     {
         $a = $this->account($r, $inboxItem->social_account_id);
+        if ($inboxItem->replied_at || $inboxItem->reply_external_id || $inboxItem->status === 'replied') {
+            $this->skipContext($inboxItem, 'already_handled', 'Ce commentaire a déjà reçu une réponse.');
+        }
         abort_unless($a->persona?->is_active && filled($a->persona->system_prompt), 422, 'Persona actif requis.');
 
         if ($policy->isOwn($inboxItem, $a)) {

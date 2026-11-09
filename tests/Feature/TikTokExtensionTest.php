@@ -88,6 +88,7 @@ class TikTokExtensionTest extends TestCase
         $this->postJson('/api/extension/tiktok/'.$r['id'].'/finish', ['username' => 'test.xav', 'status' => 'uncertain', 'liked' => true, 'proof' => 'Délai dépassé'])->assertOk();
         $this->postJson('/api/extension/tiktok/suggest', $this->payload())->assertConflict();
         $this->assertDatabaseHas('extension_tiktok_comments', ['id' => $r['id'], 'status' => 'uncertain', 'liked' => true]);
+        $this->assertDatabaseCount('inbox_items', 0);
     }
 
     public function test_inbox_task_uses_the_same_reservation_with_the_approved_text(): void
@@ -111,6 +112,35 @@ class TikTokExtensionTest extends TestCase
         $this->postJson('/api/extension/tiktok/'.$reply['id'].'/begin', $begin)->assertConflict();
         $this->postJson('/api/extension/tiktok/'.$reply['id'].'/finish', $begin + ['status' => 'published', 'liked' => false, 'proof' => 'Texte et auteur vérifiés après rechargement'])->assertOk();
         $this->assertDatabaseHas('extension_tiktok_comments', ['id' => $reply['id'], 'status' => 'published']);
+    }
+
+    public function test_a_local_reply_is_recorded_in_the_tiktok_inbox_even_before_import(): void
+    {
+        $this->user->update(['role' => 'admin']);
+        $this->bind();
+        $platform = Platform::firstOrCreate(['slug' => 'tiktok'], ['name' => 'TikTok']);
+        $account = SocialAccount::create(['platform_id' => $platform->id, 'name' => 'TikTok', 'browser_username' => 'test.xav']);
+        $account->users()->attach($this->user, ['is_active' => true]);
+
+        $data = $this->payload();
+        $draft = $this->postJson('/api/extension/tiktok/suggest', $data)->assertOk()->json();
+        $begin = ['username' => 'test.xav', 'reply_text' => $draft['reply_text']];
+        $this->postJson('/api/extension/tiktok/'.$draft['id'].'/begin', $begin)->assertOk();
+
+        $other = $this->postJson('/api/extension/tiktok/suggest', array_replace($data, ['fingerprint' => hash('sha256', 'different-image')]))->assertOk()->json();
+        $this->postJson('/api/extension/tiktok/'.$other['id'].'/begin', $begin)->assertConflict();
+        $this->postJson('/api/extension/tiktok/'.$draft['id'].'/finish', $begin + [
+            'status' => 'published', 'liked' => false, 'proof' => 'Réponse exacte visible',
+        ])->assertOk();
+        $this->postJson('/api/extension/tiktok/'.$other['id'].'/begin', $begin)->assertConflict();
+
+        $item = \App\Models\InboxItem::sole();
+        $this->assertSame($account->id, $item->social_account_id);
+        $this->assertSame('replied', $item->status);
+        $this->assertSame($draft['reply_text'], $item->reply_content);
+        $this->assertNotNull($item->replied_at);
+        $this->assertNull($item->liked_at);
+        $this->getJson('/api/community-manager/accounts/'.$account->id.'/inbox?agent_queue=1')->assertOk()->assertJsonPath('pagination.total', 0);
     }
 
     public function test_changed_persona_or_wrong_text_cannot_send_old_draft(): void

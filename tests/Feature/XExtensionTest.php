@@ -107,6 +107,30 @@ class XExtensionTest extends TestCase
         $this->postJson('/api/extension/x/suggest', $this->data())->assertConflict();
     }
 
+    public function test_a_confirmed_companion_reply_leaves_the_hermes_queue(): void
+    {
+        $this->user->update(['role' => 'admin']);
+        $this->bind();
+        $draft = $this->postJson('/api/extension/x/suggest', $this->data())->assertOk()->json();
+        $this->postJson('/api/extension/x/'.$draft['id'].'/begin', ['username' => 'test_xav', 'reply_text' => $draft['reply_text']])->assertOk();
+        $item = \App\Models\InboxItem::create([
+            'social_account_id' => $this->account->id, 'platform_id' => $this->account->platform_id,
+            'external_id' => '300', 'type' => 'comment', 'status' => 'unread',
+            'reply_scheduled_at' => now()->addMinute(), 'reply_content' => 'Ancien texte programmé',
+        ]);
+        $this->postJson('/api/extension/x/'.$draft['id'].'/finish', [
+            'username' => 'test_xav', 'status' => 'published', 'liked' => true, 'proof' => 'Réponse visible',
+        ])->assertOk();
+
+        $item->refresh();
+        $this->assertSame('replied', $item->status);
+        $this->assertSame($draft['reply_text'], $item->reply_content);
+        $this->assertNotNull($item->liked_at);
+        $this->assertNull($item->reply_scheduled_at);
+        $this->getJson('/api/community-manager/accounts/'.$this->account->id.'/inbox?agent_queue=1')->assertOk()->assertJsonPath('pagination.total', 0);
+        $this->getJson('/api/community-manager/inbox/'.$item->id.'/context')->assertConflict()->assertJsonPath('skip_item', true);
+    }
+
     public function test_changed_context_or_persona_cannot_send_stale_reply(): void
     {
         $this->bind();

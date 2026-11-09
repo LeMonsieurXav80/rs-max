@@ -6,6 +6,7 @@ use App\Jobs\LikeInboxItem;
 use App\Models\InboxItem;
 use Carbon\CarbonInterface;
 use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 
 class InboxReplyService
@@ -80,7 +81,8 @@ class InboxReplyService
                 // Reload the persisted text: the scheduler may have selected it before an edit.
                 $text = $item->reply_content;
                 if (($tiktok || $apiAutonomous) && $item->reply_attempts > 0) {
-                    $item->update(['status' => 'reply_failed', 'reply_scheduled_at' => null, 'reply_attempts' => 3]);
+                    InboxItem::whereKey($item->id)->whereNull('replied_at')
+                        ->update(['status' => 'reply_failed', 'reply_scheduled_at' => null, 'reply_attempts' => 3]);
 
                     return $this->conflict('Tentative TikTok interrompue. Vérifiez le fil avant toute relance.');
                 }
@@ -151,12 +153,14 @@ class InboxReplyService
                 Log::warning('InboxReplyService: reply failed', ['item_id' => $item->id, 'error' => $result['error'] ?? 'unknown']);
                 if (($result['uncertain'] ?? false) || ($scheduled && ($tiktok || $apiAutonomous))) {
                     // La réponse a pu partir : ni l'humain ni la planification ne la renvoient.
-                    $item->update(['status' => 'reply_failed', 'reply_content' => $text, 'reply_scheduled_at' => null, 'reply_attempts' => 3]);
-                    if ($tiktok && ($result['uncertain'] ?? false)) {
+                    $failed = InboxItem::whereKey($item->id)->whereNull('replied_at')
+                        ->update(['status' => 'reply_failed', 'reply_content' => $text, 'reply_scheduled_at' => null, 'reply_attempts' => 3]);
+                    if ($failed && $tiktok && ($result['uncertain'] ?? false)) {
                         \App\Jobs\VerifyTikTokInboxReply::dispatch($item->id)->delay(now()->addMinutes(5))->afterCommit();
                     }
                 } elseif ($scheduled && $item->reply_attempts >= 3) {
-                    $item->update(['status' => 'reply_failed', 'reply_scheduled_at' => null]);
+                    InboxItem::whereKey($item->id)->whereNull('replied_at')
+                        ->update(['status' => 'reply_failed', 'reply_scheduled_at' => null]);
                 }
             }
 
@@ -170,7 +174,8 @@ class InboxReplyService
 
     public function schedule(InboxItem $item, string $text, CarbonInterface $at): array
     {
-        return $this->locked($item, function () use ($item, $text, $at) {
+        return $this->locked($item, fn () => DB::transaction(function () use ($item, $text, $at) {
+            $item = InboxItem::whereKey($item->id)->lockForUpdate()->firstOrFail();
             if ($item->replied_at || $item->reply_external_id || $item->status === 'replied') {
                 return $this->conflict('Ce message a déjà reçu une réponse.');
             }
@@ -193,7 +198,7 @@ class InboxReplyService
             ]);
 
             return ['success' => true, 'scheduled_at' => $at->toIso8601String()];
-        });
+        }));
     }
 
     private function locked(InboxItem $item, callable $callback): array
