@@ -43,7 +43,10 @@ class InboxAgentReview
     public function defer(InboxItem $item, string $reason): void
     {
         $minutes = match ($reason) {
-            'already_handled', 'not_relevant' => 10080, 'context_changed' => 30, default => 15
+            'already_handled', 'not_relevant' => 10080,
+            'tiktok_target_not_found' => 360,
+            'context_changed' => 30,
+            default => 15,
         };
         $item->update(['agent_review_reason' => $reason, 'agent_reviewed_at' => now(), 'agent_retry_at' => now()->addMinutes($minutes)]);
         BotActionLog::create(['social_account_id' => $item->social_account_id, 'action_type' => 'agent.inbox.deferred', 'source' => 'agent',

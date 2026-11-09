@@ -35,7 +35,11 @@ class CommunityManagerInboxTest extends TestCase
             ->andReturn(['target_found' => false]);
 
         $this->getJson('/api/community-manager/inbox/'.$item->id.'/context')
-            ->assertConflict()->assertJsonPath('skip_item', true);
+            ->assertConflict()->assertJsonPath('skip_item', true)->assertJsonPath('review_reason', 'tiktok_target_not_found');
+        $item->refresh();
+        $this->assertSame(360, (int) $item->agent_reviewed_at->diffInMinutes($item->agent_retry_at));
+        $this->getJson('/api/community-manager/accounts/'.$account->id.'/inbox?agent_queue=1')
+            ->assertOk()->assertJsonPath('pagination.total', 0);
         $this->assertSame(0, (int) $item->fresh()->reply_attempts);
         $this->assertNull($item->fresh()->reply_scheduled_at);
     }

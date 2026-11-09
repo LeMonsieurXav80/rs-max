@@ -77,7 +77,7 @@ class CommunityManagerInboxController extends Controller
                 abort(502, $e->getMessage());
             }
             if (($target['target_found'] ?? false) !== true) {
-                $this->deferContext($inboxItem, 'context_changed', 'Ancien commentaire introuvable dans Studio. Passer au suivant.');
+                $this->deferContext($inboxItem, 'tiktok_target_not_found', 'Ancien commentaire introuvable dans Studio. Passer au suivant.');
             }
         }
 
