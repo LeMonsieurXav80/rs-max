@@ -148,6 +148,23 @@ class XExtensionTest extends TestCase
         $this->getJson('/api/community-manager/inbox/'.$item->id.'/context')->assertConflict()->assertJsonPath('skip_item', true);
     }
 
+    public function test_local_like_is_journaled_once_without_persona_or_reply(): void
+    {
+        $this->account->update(['browser_username' => 'test_xav', 'persona_id' => null]);
+        $payload = ['username' => 'test_xav', 'tweet_id' => '300', 'author' => 'Visiteur'];
+        $this->postJson('/api/extension/x/like', $payload + ['platform_account_id' => '99'])->assertConflict();
+        $this->postJson('/api/extension/x/like', $payload)->assertOk()->assertJsonPath('status', 'confirmed');
+        $this->postJson('/api/extension/x/like', $payload)->assertOk();
+
+        $log = BotActionLog::sole();
+        $this->assertSame('x.like', $log->action_type);
+        $this->assertSame('extension', $log->source);
+        $this->assertSame('https://x.com/visiteur/status/300', $log->target_uri);
+        $this->assertSame('confirmed', $log->metadata['status']);
+        $this->assertDatabaseCount('extension_x_replies', 0);
+        Http::assertNothingSent();
+    }
+
     public function test_changed_context_or_persona_cannot_send_stale_reply(): void
     {
         $this->bind();

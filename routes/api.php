@@ -224,6 +224,7 @@ Route::middleware(['auth:sanctum', \App\Http\Middleware\CommunityManagerTokenSco
     Route::get('/extension/threads/session', [\App\Http\Controllers\Api\ThreadsExtensionController::class, 'status']);
     Route::post('/extension/threads/session', [\App\Http\Controllers\Api\ThreadsExtensionController::class, 'store']);
     Route::post('/extension/x/session', [\App\Http\Controllers\Api\XExtensionController::class, 'session'])->middleware('throttle:10,1');
+    Route::post('/extension/x/like', [\App\Http\Controllers\Api\XExtensionController::class, 'like']);
     Route::post('/extension/x/suggest', [\App\Http\Controllers\Api\XExtensionController::class, 'suggest'])->middleware('throttle:30,1');
     Route::post('/extension/x/{id}/begin', [\App\Http\Controllers\Api\XExtensionController::class, 'begin']);
     Route::post('/extension/x/{id}/finish', [\App\Http\Controllers\Api\XExtensionController::class, 'finish']);

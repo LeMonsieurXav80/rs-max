@@ -66,18 +66,64 @@ class AutomationJournal
     /** Le reçu doit être verrouillé par l'appelant pour sérialiser les rattrapages. */
     public function xCompanionReply(object $receipt): void
     {
+        $this->writeCompanionReply(BotActionLog::firstOrNew([
+            'social_account_id' => $receipt->social_account_id,
+            'action_type' => 'x.reply',
+            'source' => 'extension',
+            'target_uri' => "https://x.com/{$receipt->author}/status/{$receipt->tweet_id}",
+        ]), $receipt);
+    }
+
+    /** L'appelant verrouille le compte pour éviter un doublon de remise du même like. */
+    public function xCompanionLike(int $accountId, string $author, string $tweetId, Carbon $at, bool $observed = false): void
+    {
+        if ($at->lt(now()->subDays(7))) {
+            return;
+        }
+
+        $log = BotActionLog::where('created_at', '>=', now()->subDays(7))->firstOrNew([
+            'social_account_id' => $accountId,
+            'action_type' => 'x.like',
+            'source' => 'extension',
+            'target_uri' => "https://x.com/{$author}/status/{$tweetId}",
+        ]);
+        if ($log->exists) {
+            return;
+        }
+
+        $log->fill([
+            'target_author' => $author,
+            'success' => true,
+            'metadata' => [
+                'status' => 'confirmed',
+                'proof' => ['confirmed' => true, 'liked' => true, 'proof' => $observed
+                    ? 'Like constaté dans le reçu de réponse'
+                    : 'Like ajouté puis confirmé dans X'],
+            ],
+            'performed_at' => $at,
+        ]);
+        $log->created_at = $at;
+        $log->save();
+    }
+
+    public function tiktokCompanionReply(int $accountId, string $target, object $receipt): void
+    {
+        $this->writeCompanionReply(new BotActionLog([
+            'social_account_id' => $accountId,
+            'action_type' => 'tiktok.reply',
+            'source' => 'extension',
+            'target_uri' => $this->url($target),
+        ]), $receipt);
+    }
+
+    private function writeCompanionReply(BotActionLog $log, object $receipt): void
+    {
         $at = Carbon::parse($receipt->updated_at);
         if (! in_array($receipt->status, ['published', 'uncertain'], true) || $at->lt(now()->subDays(7))) {
             return;
         }
 
         $confirmed = $receipt->status === 'published';
-        $log = BotActionLog::firstOrNew([
-            'social_account_id' => $receipt->social_account_id,
-            'action_type' => 'x.reply',
-            'source' => 'extension',
-            'target_uri' => "https://x.com/{$receipt->author}/status/{$receipt->tweet_id}",
-        ]);
         $log->fill([
             'target_author' => $this->text($receipt->author, 255),
             'target_text' => $this->text($receipt->reply_text, 2000),

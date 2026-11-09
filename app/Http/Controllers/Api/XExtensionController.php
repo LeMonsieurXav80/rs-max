@@ -25,12 +25,12 @@ class XExtensionController extends Controller
         return strtolower($v['username']);
     }
 
-    private function account(Request $r, int $id): SocialAccount
+    private function account(Request $r, int $id, bool $requiresPersona = true): SocialAccount
     {
         $a = $r->user()->activeSocialAccounts()->with(['platform', 'persona'])
             ->whereHas('platform', fn ($q) => $q->where('slug', 'twitter'))->find($id);
         abort_unless($a, 403, 'Compte X non autorisé.');
-        abort_unless($a->persona?->is_active && filled($a->persona->system_prompt), 422, 'Persona actif et renseigné obligatoire pour ce compte X.');
+        abort_if($requiresPersona && (! $a->persona?->is_active || blank($a->persona->system_prompt)), 422, 'Persona actif et renseigné obligatoire pour ce compte X.');
 
         return $a;
     }
@@ -147,6 +147,34 @@ class XExtensionController extends Controller
             'created_at' => $p?->created_at ?? now(), 'updated_at' => now()]);
 
         return $this->context($r);
+    }
+
+    public function like(Request $r, AutomationJournal $journal): JsonResponse
+    {
+        $username = $this->username($r);
+        $data = $r->validate([
+            'tweet_id' => 'required|string|regex:/^[0-9]{1,25}$/',
+            'author' => 'required|string|regex:/^[a-zA-Z0-9_]{1,15}$/',
+        ]);
+        $profile = DB::table('extension_x_profiles')->where('username', $username)->first();
+        $accountId = $profile?->social_account_id;
+        if (! $accountId) {
+            $accounts = $r->user()->activeSocialAccounts()->whereRelation('platform', 'slug', 'twitter')
+                ->where('browser_username', $username)->limit(2)->pluck('social_accounts.id');
+            abort_unless($accounts->count() === 1, 422, 'Associe ce profil X à son compte RS-Max.');
+            $accountId = $accounts->first();
+        }
+        $account = $this->account($r, $accountId, requiresPersona: false);
+        if ($r->filled('platform_account_id')) {
+            abort_unless((string) $account->platform_account_id === (string) $r->input('platform_account_id'), 409, 'Identité X différente de l’association enregistrée.');
+        }
+
+        DB::transaction(function () use ($account, $data, $journal) {
+            SocialAccount::whereKey($account->id)->lockForUpdate()->firstOrFail();
+            $journal->xCompanionLike($account->id, strtolower($data['author']), $data['tweet_id'], now());
+        });
+
+        return response()->json(['status' => 'confirmed']);
     }
 
     public function suggest(Request $r, InboxReplyGenerator $generator): JsonResponse

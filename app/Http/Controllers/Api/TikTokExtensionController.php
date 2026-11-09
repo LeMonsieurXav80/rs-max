@@ -7,6 +7,7 @@ use App\Models\BotActionLog;
 use App\Models\BrowserTask;
 use App\Models\InboxItem;
 use App\Models\SocialAccount;
+use App\Services\Agent\AutomationJournal;
 use App\Services\Browser\BrowserException;
 use App\Services\Browser\TikTokSessionService;
 use App\Services\Inbox\CompanionInboxReply;
@@ -247,21 +248,30 @@ class TikTokExtensionController extends Controller
         return response()->json(['status' => 'publishing']);
     }
 
-    public function finish(Request $request, int $id): JsonResponse
+    public function finish(Request $request, int $id, AutomationJournal $journal): JsonResponse
     {
         $profile = $this->profile($request);
-        $data = $request->validate(['status' => 'required|in:published,uncertain', 'liked' => 'required|boolean', 'proof' => 'required|string|max:255']);
-        DB::transaction(function () use ($request, $profile, $id, $data) {
-            $account = $data['status'] === 'published' ? $this->inboxAccount($request, $profile->username) : null;
+        $data = $request->validate(['status' => 'required|in:published,uncertain', 'liked' => 'required|boolean', 'proof' => 'required|string|max:255',
+            'channel' => 'sometimes|in:local']);
+        $local = ($data['channel'] ?? null) === 'local';
+        unset($data['channel']);
+        DB::transaction(function () use ($request, $profile, $id, $data, $local, $journal) {
+            $account = $local || $data['status'] === 'published' ? $this->inboxAccount($request, $profile->username) : null;
             if ($account) {
                 SocialAccount::whereKey($account->id)->lockForUpdate()->firstOrFail();
             }
             $draft = DB::table('extension_tiktok_comments')->where('id', $id)
                 ->where('profile_id', $profile->id)->lockForUpdate()->first();
             abort_unless($draft?->status === 'publishing', 409, 'Tentative absente ou déjà terminée.');
-            DB::table('extension_tiktok_comments')->where('id', $id)->update($data + ['updated_at' => now()]);
+            $result = $data + ['updated_at' => now()];
+            DB::table('extension_tiktok_comments')->where('id', $id)->update($result);
 
-            if ($account) {
+            if ($account && $local) {
+                $journal->tiktokCompanionReply($account->id, TikTokInboxService::COMMENTS_URL,
+                    (object) array_replace((array) $draft, $result));
+            }
+
+            if ($account && $data['status'] === 'published') {
                 $externalId = TikTokInboxService::commentId($account, $draft->author, $draft->content, $draft->video_context);
                 app(CompanionInboxReply::class)->record($account, $externalId, [
                     'author_name' => $draft->author,

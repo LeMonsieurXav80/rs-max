@@ -2,6 +2,7 @@
 
 namespace Tests\Feature;
 
+use App\Models\BotActionLog;
 use App\Models\BrowserTask;
 use App\Models\Persona;
 use App\Models\Platform;
@@ -112,6 +113,7 @@ class TikTokExtensionTest extends TestCase
         $this->postJson('/api/extension/tiktok/'.$reply['id'].'/begin', $begin)->assertConflict();
         $this->postJson('/api/extension/tiktok/'.$reply['id'].'/finish', $begin + ['status' => 'published', 'liked' => false, 'proof' => 'Texte et auteur vérifiés après rechargement'])->assertOk();
         $this->assertDatabaseHas('extension_tiktok_comments', ['id' => $reply['id'], 'status' => 'published']);
+        $this->assertDatabaseMissing('bot_action_logs', ['source' => 'extension', 'action_type' => 'tiktok.reply']);
     }
 
     public function test_a_local_reply_is_recorded_in_the_tiktok_inbox_even_before_import(): void
@@ -130,7 +132,7 @@ class TikTokExtensionTest extends TestCase
         $other = $this->postJson('/api/extension/tiktok/suggest', array_replace($data, ['fingerprint' => hash('sha256', 'different-image')]))->assertOk()->json();
         $this->postJson('/api/extension/tiktok/'.$other['id'].'/begin', $begin)->assertConflict();
         $this->postJson('/api/extension/tiktok/'.$draft['id'].'/finish', $begin + [
-            'status' => 'published', 'liked' => false, 'proof' => 'Réponse exacte visible',
+            'channel' => 'local', 'status' => 'published', 'liked' => true, 'proof' => 'Réponse exacte visible',
         ])->assertOk();
         $this->postJson('/api/extension/tiktok/'.$other['id'].'/begin', $begin)->assertConflict();
 
@@ -139,7 +141,14 @@ class TikTokExtensionTest extends TestCase
         $this->assertSame('replied', $item->status);
         $this->assertSame($draft['reply_text'], $item->reply_content);
         $this->assertNotNull($item->replied_at);
-        $this->assertNull($item->liked_at);
+        $this->assertNotNull($item->liked_at);
+        $log = BotActionLog::where('action_type', 'tiktok.reply')->sole();
+        $this->assertSame($account->id, $log->social_account_id);
+        $this->assertSame('extension', $log->source);
+        $this->assertSame('confirmed', $log->metadata['status']);
+        $this->assertTrue($log->metadata['proof']['liked']);
+        $this->actingAs($this->user)->get('/agent/tiktok?source=extension')->assertOk()
+            ->assertSee('Companion · local')->assertSee($draft['reply_text']);
         $this->getJson('/api/community-manager/accounts/'.$account->id.'/inbox?agent_queue=1')->assertOk()->assertJsonPath('pagination.total', 0);
     }
 
