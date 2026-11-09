@@ -59,12 +59,13 @@ class InboxConversationBuilder
         $previous = InboxItem::where('social_account_id', $account->id)->where('id', '!=', $item->id)
             ->where(fn ($q) => $item->type === 'dm' && $item->external_post_id
                 ? $q->where('external_post_id', $item->external_post_id)
-                : $q->where('external_id', $root)->orWhere('parent_id', $root))
+                : $q->where('external_id', $root)->orWhere('parent_id', $root)->orWhere('reply_external_id', $root))
             ->where(fn ($q) => $q->whereNull('posted_at')->orWhere('posted_at', '<=', $item->posted_at))
             ->orderBy('posted_at')->limit(config('agent.thread_messages'))->get();
 
+        $policy = app(InboxFollowup::class);
         foreach ($previous as $earlier) {
-            $thread[] = $this->message($earlier->author_username ?? $earlier->author_name ?? 'inconnu', false, (string) $earlier->content);
+            $thread[] = $this->message($earlier->author_username ?? $earlier->author_name ?? 'inconnu', $policy->isOwn($earlier, $account), (string) $earlier->content);
             if ($earlier->reply_content) {
                 $thread[] = $this->message($account->name, true, $earlier->reply_content);
             }

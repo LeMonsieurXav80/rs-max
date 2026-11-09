@@ -8,6 +8,7 @@ use App\Models\Setting;
 use App\Models\SocialAccount;
 use App\Models\User;
 use App\Services\Inbox\InboxDraftService;
+use App\Services\Inbox\InboxFollowup;
 use App\Services\Inbox\InboxReplyService;
 use Carbon\Carbon;
 use Illuminate\Database\Eloquent\Builder;
@@ -312,7 +313,7 @@ class InboxApiController extends Controller
         $slug = $item->socialAccount->platform->slug;
         abort_unless(in_array($slug, self::PLATFORMS) && Setting::get("inbox_platform_{$slug}_enabled", true), 422,
             'Réseau non disponible dans la messagerie.');
-        abort_if($item->author_external_id && $item->author_external_id === $item->socialAccount->platform_account_id, 409,
+        abort_if(app(InboxFollowup::class)->isOwn($item, $item->socialAccount), 409,
             'Ce message a été écrit par le compte lui-même.');
     }
 
@@ -342,7 +343,7 @@ class InboxApiController extends Controller
             'reply_scheduled_at' => $item->reply_scheduled_at?->toIso8601String(),
             'agent_review' => ['reason' => $item->agent_review_reason, 'retry_at' => $item->agent_retry_at?->toIso8601String()],
             'can_reply' => $writable && $this->isUnanswered($item)
-                && (! $item->author_external_id || $item->author_external_id !== $account->platform_account_id),
+                && ! app(InboxFollowup::class)->isOwn($item, $account),
         ];
     }
 }

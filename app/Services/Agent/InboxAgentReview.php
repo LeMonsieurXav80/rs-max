@@ -7,6 +7,39 @@ use App\Models\InboxItem;
 
 class InboxAgentReview
 {
+    public function dismissUnavailableXTarget(InboxItem $item, string $reason): void
+    {
+        \Illuminate\Support\Facades\Cache::lock('inbox-reply:'.$item->id, 120)->get(function () use ($item, $reason) {
+            \Illuminate\Support\Facades\DB::transaction(function () use ($item, $reason) {
+                $updated = InboxItem::whereKey($item->id)->whereIn('status', ['unread', 'read'])
+                    ->whereNull('replied_at')->whereNull('reply_external_id')->whereNull('reply_scheduled_at')
+                    ->where('reply_attempts', 0)->update([
+                        'status' => 'ignored',
+                        'agent_review_reason' => $reason,
+                        'agent_reviewed_at' => now(),
+                        'agent_retry_at' => null,
+                    ]);
+
+                if ($updated) {
+                    BotActionLog::create([
+                        'social_account_id' => $item->social_account_id,
+                        'action_type' => 'agent.inbox.dismissed',
+                        'source' => 'agent',
+                        'target_uri' => app(AutomationJournal::class)->url($item->post_url ?? ''),
+                        'success' => true,
+                        'metadata' => ['status' => 'completed', 'steps' => [[
+                            'id' => (string) \Illuminate\Support\Str::uuid(),
+                            'stage' => 'agent.item.dismissed',
+                            'details' => ['message' => $reason],
+                        ]]],
+                        'performed_at' => now(),
+                    ]);
+                }
+            });
+        });
+        $item->refresh();
+    }
+
     public function defer(InboxItem $item, string $reason): void
     {
         $minutes = match ($reason) {

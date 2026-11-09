@@ -45,6 +45,17 @@ class InboxReplyService
             }
 
             $account = $item->socialAccount()->with('platform')->first();
+            $policy = app(InboxFollowup::class);
+            if ($policy->isOwn($item, $account)
+                || ($item->status === 'ignored' && in_array($item->agent_review_reason, ['x_account_suspended', 'x_post_deleted'], true))
+                || (filled($item->reply_activity_window) && $policy->isNestedReply($item) && ! $policy->isQuestion($item->content))) {
+                if ($scheduled) {
+                    $item->update(['reply_scheduled_at' => null, 'reply_content' => null, 'reply_activity_window' => null]);
+                }
+
+                return $this->conflict('Ce commentaire ne nécessite pas de réponse autonome.');
+            }
+
             $tiktok = $account->platform->slug === 'tiktok';
             $apiAutonomous = filled($item->reply_activity_window) && in_array($account->platform->slug, \App\Services\Agent\ApiInboxActions::PLATFORMS, true);
             if ($apiAutonomous) {

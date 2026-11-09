@@ -46,7 +46,7 @@ class InstagramInboxService implements PlatformInboxInterface
 
                 // Fetch comments for this media
                 $commentsResponse = Http::get(self::API_BASE."/{$mediaId}/comments", [
-                    'fields' => 'id,text,username,timestamp,replies{id,text,username,timestamp}',
+                    'fields' => 'id,text,username,from{id,username},timestamp,replies{id,text,username,from{id,username},timestamp}',
                     'access_token' => $accessToken,
                     'limit' => 50,
                 ]);
@@ -65,7 +65,8 @@ class InstagramInboxService implements PlatformInboxInterface
                         'external_id' => $commentId,
                         'external_post_id' => $mediaId,
                         'conversation_key' => $commentId,
-                        'author_username' => $comment['username'] ?? null,
+                        'author_username' => $comment['username'] ?? $comment['from']['username'] ?? null,
+                        'author_external_id' => $comment['from']['id'] ?? null,
                         'author_name' => $comment['username'] ?? null,
                         'content' => $comment['text'] ?? null,
                         'post_url' => $permalink,
@@ -81,7 +82,8 @@ class InstagramInboxService implements PlatformInboxInterface
                             'external_post_id' => $mediaId,
                             'parent_id' => $commentId,
                             'conversation_key' => $commentId,
-                            'author_username' => $reply['username'] ?? null,
+                            'author_username' => $reply['username'] ?? $reply['from']['username'] ?? null,
+                            'author_external_id' => $reply['from']['id'] ?? null,
                             'author_name' => $reply['username'] ?? null,
                             'content' => $reply['text'] ?? null,
                             'post_url' => $permalink,

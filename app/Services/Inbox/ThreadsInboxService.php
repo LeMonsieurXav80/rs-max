@@ -46,8 +46,8 @@ class ThreadsInboxService implements PlatformInboxInterface
                 $permalink = $thread['permalink'] ?? null;
 
                 // Fetch replies for this thread
-                $repliesResponse = Http::get(self::API_BASE."/{$threadId}/replies", [
-                    'fields' => 'id,text,username,timestamp',
+                $repliesResponse = Http::get(self::API_BASE."/{$threadId}/conversation", [
+                    'fields' => 'id,text,username,timestamp,replied_to,is_reply_owned_by_me',
                     'access_token' => $accessToken,
                     'limit' => 50,
                 ]);
@@ -60,14 +60,16 @@ class ThreadsInboxService implements PlatformInboxInterface
 
                 foreach ($replies as $reply) {
                     // Skip our own replies
-                    if (($reply['username'] ?? '') === ($account->name ?? '')) {
+                    if (($reply['is_reply_owned_by_me'] ?? false) || ($reply['username'] ?? '') === ($account->name ?? '')) {
                         continue;
                     }
 
+                    $parent = $reply['replied_to']['id'] ?? null;
                     $items->push([
                         'type' => 'reply',
                         'external_id' => $reply['id'],
                         'external_post_id' => $threadId,
+                        'parent_id' => $parent && (string) $parent !== (string) $threadId ? (string) $parent : null,
                         'conversation_key' => "post:{$threadId}",
                         'author_username' => $reply['username'] ?? null,
                         'author_name' => $reply['username'] ?? null,

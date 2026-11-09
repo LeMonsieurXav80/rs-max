@@ -112,6 +112,57 @@ class CommunityManagerInboxTest extends TestCase
         Http::assertNothingSent();
     }
 
+    public function test_x_retire_un_compte_suspendu_et_ne_relit_pas_la_cible(): void
+    {
+        $this->travelTo(\Illuminate\Support\Carbon::parse('2026-11-09T12:00:00Z'));
+        $user = User::factory()->create(['role' => 'manager']);
+        $persona = Persona::create(['name' => 'Persona', 'system_prompt' => 'Sobre', 'is_active' => true]);
+        $account = SocialAccount::create([
+            'name' => 'Compte X', 'platform_id' => Platform::firstOrCreate(['slug' => 'twitter'], ['name' => 'X'])->id,
+            'driver' => 'browser', 'browser_profile' => 'nas-test', 'browser_username' => 'owner', 'persona_id' => $persona->id,
+        ]);
+        $account->users()->attach($user, ['is_active' => true]);
+        Sanctum::actingAs($user);
+        $item = InboxItem::create(['social_account_id' => $account->id, 'platform_id' => $account->platform_id,
+            'type' => 'comment', 'external_id' => '987', 'author_username' => 'visitor', 'content' => 'Bonjour', 'status' => 'unread']);
+        $this->mock(\App\Services\Browser\BrowserTaskQueue::class)->shouldReceive('run')->once()
+            ->andReturn(['unavailable' => ['target_id' => '987', 'author' => 'visitor', 'reason' => 'account_suspended']]);
+
+        $url = '/api/community-manager/inbox/'.$item->id.'/context';
+        $this->getJson($url)->assertConflict()->assertJsonPath('review_reason', 'x_account_suspended')->assertJsonPath('retry_at', null);
+        $this->getJson($url)->assertConflict()->assertJsonPath('skip_item', true);
+        $this->getJson('/api/community-manager/accounts/'.$account->id.'/inbox?agent_queue=1')->assertOk()->assertJsonCount(0, 'items');
+        $this->assertSame('ignored', $item->fresh()->status);
+        $this->assertSame(0, (int) $item->fresh()->reply_attempts);
+    }
+
+    public function test_api_filtre_une_reaction_a_notre_reponse_mais_garde_la_question(): void
+    {
+        $user = User::factory()->create(['role' => 'manager']);
+        $persona = Persona::create(['name' => 'Persona', 'system_prompt' => 'Sobre', 'is_active' => true]);
+        $account = SocialAccount::create([
+            'name' => 'Compte Instagram', 'platform_id' => Platform::firstOrCreate(['slug' => 'instagram'], ['name' => 'Instagram'])->id,
+            'platform_account_id' => '123', 'persona_id' => $persona->id,
+        ]);
+        $account->users()->attach($user, ['is_active' => true]);
+        Sanctum::actingAs($user);
+        $base = ['social_account_id' => $account->id, 'platform_id' => $account->platform_id, 'author_external_id' => '456'];
+        InboxItem::create($base + ['type' => 'comment', 'external_id' => 'root', 'content' => 'Jolie tenue',
+            'reply_content' => 'Merci', 'reply_external_id' => 'ours', 'replied_at' => now()->subHour(), 'status' => 'replied']);
+        $question = InboxItem::create($base + ['type' => 'reply', 'external_id' => 'q', 'parent_id' => 'root',
+            'posted_at' => now(), 'content' => 'Où trouver cette veste', 'status' => 'unread']);
+        $reaction = InboxItem::create($base + ['type' => 'reply', 'external_id' => 'r', 'parent_id' => 'ours',
+            'content' => 'Super, merci !', 'status' => 'unread']);
+        $own = InboxItem::create(array_replace($base, ['type' => 'reply', 'external_id' => 'ours', 'parent_id' => 'root',
+            'author_external_id' => '123', 'content' => 'Merci', 'status' => 'unread']));
+
+        $context = '/api/community-manager/inbox/';
+        $this->getJson($context.$question->id.'/context')->assertOk()->assertJsonPath('followup', true)->assertJsonPath('conversation.1.mine', true);
+        $this->getJson($context.$reaction->id.'/context')->assertConflict()->assertJsonPath('review_reason', 'not_relevant');
+        $this->getJson($context.$own->id.'/context')->assertConflict()->assertJsonPath('review_reason', 'already_handled');
+        $this->postJson('/api/inbox/'.$own->id.'/reply', ['reply_text' => 'Bonjour !'])->assertConflict();
+    }
+
     public function test_x_accepte_uniquement_les_destinataires_de_reponse_avant_le_texte_exact(): void
     {
         $this->travelTo(\Illuminate\Support\Carbon::parse('2026-11-08T14:00:00Z'));

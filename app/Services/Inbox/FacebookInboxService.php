@@ -21,8 +21,9 @@ class FacebookInboxService implements PlatformInboxInterface
         $accessToken = $credentials['access_token'];
 
         try {
+            $fields = 'id,message,from,created_time,attachment{type,media{image{src}}}';
             $params = [
-                'fields' => 'id,message,created_time,comments{id,message,from,created_time,attachment{type,media{image{src}}}}',
+                'fields' => "id,message,created_time,comments{{$fields},comments{{$fields}}}",
                 'access_token' => $accessToken,
                 'limit' => 20,
             ];
@@ -43,36 +44,39 @@ class FacebookInboxService implements PlatformInboxInterface
                 $postId = $post['id'];
                 $comments = $post['comments']['data'] ?? [];
 
-                foreach ($comments as $comment) {
-                    // Skip comments from the page itself
-                    $fromId = $comment['from']['id'] ?? null;
-                    if ($fromId === $pageId) {
-                        continue;
+                foreach ($comments as $rootComment) {
+                    foreach ([$rootComment, ...($rootComment['comments']['data'] ?? [])] as $comment) {
+                        $fromId = $comment['from']['id'] ?? null;
+                        if ((string) $fromId === (string) $pageId) {
+                            continue;
+                        }
+
+                        $attachment = $comment['attachment'] ?? null;
+                        $mediaUrl = $attachment['media']['image']['src'] ?? null;
+                        $mediaType = match ($attachment['type'] ?? null) {
+                            'animated_image_autoplay' => 'gif',
+                            'sticker' => 'sticker',
+                            'photo' => 'image',
+                            'video_inline' => 'video',
+                            default => $mediaUrl ? 'image' : null,
+                        };
+                        $nested = $comment['id'] !== $rootComment['id'];
+
+                        $items->push([
+                            'type' => $nested ? 'reply' : 'comment',
+                            'external_id' => $comment['id'],
+                            'external_post_id' => $postId,
+                            'parent_id' => $nested ? $rootComment['id'] : null,
+                            'conversation_key' => $rootComment['id'],
+                            'author_name' => $comment['from']['name'] ?? null,
+                            'author_external_id' => $fromId,
+                            'content' => $comment['message'] ?? null,
+                            'media_url' => $mediaUrl,
+                            'media_type' => $mediaType,
+                            'post_url' => "https://facebook.com/{$comment['id']}",
+                            'posted_at' => isset($comment['created_time']) ? Carbon::parse($comment['created_time']) : null,
+                        ]);
                     }
-
-                    $attachment = $comment['attachment'] ?? null;
-                    $mediaUrl = $attachment['media']['image']['src'] ?? null;
-                    $mediaType = match ($attachment['type'] ?? null) {
-                        'animated_image_autoplay' => 'gif',
-                        'sticker' => 'sticker',
-                        'photo' => 'image',
-                        'video_inline' => 'video',
-                        default => $mediaUrl ? 'image' : null,
-                    };
-
-                    $items->push([
-                        'type' => 'comment',
-                        'external_id' => $comment['id'],
-                        'external_post_id' => $postId,
-                        'conversation_key' => $comment['id'],
-                        'author_name' => $comment['from']['name'] ?? null,
-                        'author_external_id' => $fromId,
-                        'content' => $comment['message'] ?? null,
-                        'media_url' => $mediaUrl,
-                        'media_type' => $mediaType,
-                        'post_url' => "https://facebook.com/{$comment['id']}",
-                        'posted_at' => isset($comment['created_time']) ? Carbon::parse($comment['created_time']) : null,
-                    ]);
                 }
             }
         } catch (\Throwable $e) {

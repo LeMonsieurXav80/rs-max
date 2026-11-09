@@ -159,11 +159,12 @@ class InboxSyncService
             }
 
             if ($existing->has($externalId)) {
-                // Update conversation_key and parent_id if they changed
+                // Actualiser le fil et compléter l’identité fournie par le réseau.
                 $updates = array_filter([
                     'conversation_key' => $itemData['conversation_key'] ?? null,
                     'parent_id' => $itemData['parent_id'] ?? null,
                     'type' => $itemData['type'] ?? null,
+                    'author_external_id' => $itemData['author_external_id'] ?? null,
                 ], fn ($v) => $v !== null);
 
                 if (! empty($updates)) {

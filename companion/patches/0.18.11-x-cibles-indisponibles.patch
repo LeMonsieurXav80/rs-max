@@ -1,0 +1,65 @@
+--- a/manifest.json
++++ b/manifest.json
+@@ -1,7 +1,7 @@
+ {
+   "manifest_version": 3,
+   "name": "RS-Max Companion",
+-  "version": "0.18.10",
++  "version": "0.18.11",
+   "description": "Actions assistees sur les reseaux sociaux (engagement, publication) avec remontee vers l'API RS-Max.",
+   "permissions": [
+     "storage",
+--- a/x/agent.js
++++ b/x/agent.js
+@@ -76,6 +76,21 @@
+     return {handle:handle(p.handle),name:text(title),bio:text(root.querySelector('[data-testid="UserDescription"]')),
+       following,follow_back:followsYou?'yes':'unknown',protected:Boolean(root.querySelector('[data-testid="icon-lock"]'))};
+   }
++  function unavailableThread(payload, id) {
++    const expected = new URL(payload.url);
++    const route = expected.pathname.match(/^\/([a-zA-Z0-9_]{1,15})\/status\/([0-9]+)$/);
++    if (expected.origin !== 'https://x.com' || location.origin !== expected.origin
++      || location.pathname.toLowerCase() !== expected.pathname.toLowerCase() || route?.[2] !== id) return null;
++
++    const root = document.querySelector('[data-testid="primaryColumn"]') || document.querySelector('main');
++    if (!root || root.querySelector('article[data-testid="tweet"]')) return null;
++    const notice = String(root.innerText || '').replace(/[’‘]/g, "'").trim();
++    const reason = /(?:^|\n)(?:Ce post provient d'un compte suspendu|This (?:Post|Tweet) is from a suspended account)[.!]?(?:$|\n)/i.test(notice)
++      ? 'account_suspended'
++      : /(?:^|\n)(?:Ce (?:post|tweet) a été supprimé(?: par son auteur)?|This (?:Post|Tweet) (?:was|has been) deleted(?: by (?:its|the (?:Post|Tweet)) author)?)[.!]?(?:$|\n)/i.test(notice)
++        ? 'post_deleted' : null;
++    return reason ? {target_id:id, author:route[1].toLowerCase(), reason} : null;
++  }
+   async function read(p) {
+     await wait(()=>M()?.identity(),20000);guard(p);window.RSXLimits?.assert();
+     if(p.action==='profile.read') { await wait(()=>{try{return window.RSXDom ? window.RSXDom.profile(p.handle) : document.querySelector('[data-testid="UserName"]');}catch{return null;}});return result({profile:profile(p)}); }
+@@ -84,10 +99,19 @@
+       if(!tab) throw Error('Onglet Abonnements introuvable.');
+       if(tab.getAttribute('aria-selected')!=='true') {tab.click();await sleep(1500);}
+     }
+-    await wait(()=>articles().length,20000);guard(p);
+     if(p.action==='thread.read') {
+       const id=String(p.target_id);
+-      await wait(()=>articles().some(a=>primaryId(a)?.id===id));
++      const ready = await wait(() => {
++        if (articles().some(a => primaryId(a)?.id === id)) return {found: true};
++        const unavailable = unavailableThread(p, id);
++        return unavailable ? {unavailable} : null;
++      }, 20000);
++      guard(p);
++      if (ready?.unavailable) {
++        window.RSTaskTrace?.mark('x.target.unavailable', {status:ready.unavailable.reason, target_id:id, gesture:false});
++        return result({context_complete:false, unavailable:ready.unavailable});
++      }
++      if (!ready?.found) throw Error('Mention absente du fil.');
+       window.scrollTo({top:0,behavior:'instant'});
+       for(let i=0;i<5;i++){const more=M().ancestorButtons()[0];if(!more)break;more.click();await sleep(1200);window.scrollTo({top:0,behavior:'instant'});}
+       for(const a of articles()){const more=a.querySelector('[data-testid="tweet-text-show-more-link"]');if(more){more.click();await sleep(300);}}
+@@ -98,6 +122,7 @@
+       return result({target:item,conversation:context.conversation,visible_replies:all.slice(index+1),
+         context_complete:true,replies_complete:false,observed:all.length});
+     }
++    await wait(()=>articles().length,20000);guard(p);
+     const found=new Map(),limit=Math.min(30,Math.max(1,Number(p.limit)||10));
+     for(let screen=0;screen<Math.min(5,Number(p.screens)||2);screen++){
+       for(const a of articles()){const s=snapshot(a);if(s)found.set(s.id,s);}
