@@ -11,6 +11,7 @@ use App\Http\Controllers\CarouselStudioController;
 use App\Http\Controllers\CarouselTemplateController;
 use App\Http\Controllers\CrossPostController;
 use App\Http\Controllers\DashboardController;
+use App\Http\Controllers\EditorialCalendarController;
 use App\Http\Controllers\ExternalFeedController;
 use App\Http\Controllers\FacebookOAuthController;
 use App\Http\Controllers\HashtagController;
@@ -55,6 +56,8 @@ Route::middleware(['auth', 'verified', 'throttle:600,1'])->group(function () {
 
     // Dashboard
     Route::get('/dashboard', [DashboardController::class, 'index'])->name('dashboard');
+
+    Route::get('/editorial-calendar', [EditorialCalendarController::class, 'index'])->name('editorial-calendar.index');
 
     // Help
     Route::get('/help', [HelpController::class, 'index'])->name('help.index');

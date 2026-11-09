@@ -5,6 +5,7 @@ namespace App\Services\Agent;
 use App\Models\SocialAccount;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Validation\Rule;
 
 class AccountStrategy
 {
@@ -15,6 +16,10 @@ class AccountStrategy
         // Les formulaires emploient une ligne par entrée ; l’API accepte des tableaux.
         $strategy = $request->input('agent_strategy', []);
         if (is_array($strategy)) {
+            if (array_key_exists('editorial_topics', $strategy) && $strategy['editorial_topics'] === null) {
+                $strategy['editorial_topics'] = [];
+            }
+
             foreach (array_keys(self::LISTS) as $key) {
                 if (array_key_exists($key, $strategy) && ($strategy[$key] === null || is_string($strategy[$key]))) {
                     $strategy[$key] = array_values(array_filter(array_map('trim', preg_split('/\r?\n/', (string) $strategy[$key]))));
@@ -36,7 +41,9 @@ class AccountStrategy
             'agent_adaptation.max_hourly' => 'sometimes|integer|min:1|max:1000',
             'agent_adaptation.max_daily' => 'sometimes|integer|min:2|max:100000',
             'agent_min_interval_seconds' => 'sometimes|integer|min:0|max:86400',
-            'agent_strategy' => 'sometimes|array:audience,objective,hashtags,target_accounts,search_queries,exclusions,unfollow_after_days',
+            'agent_strategy' => 'sometimes|array:audience,objective,hashtags,target_accounts,search_queries,exclusions,unfollow_after_days,editorial_topics',
+            'agent_strategy.editorial_topics' => 'sometimes|array',
+            'agent_strategy.editorial_topics.*' => ['string', 'distinct', Rule::in(array_keys(config('editorial_calendar.topics')))],
             'agent_strategy.unfollow_after_days' => 'sometimes|integer|min:1|max:365',
             'agent_strategy.audience' => 'sometimes|nullable|string|max:4000', 'agent_strategy.objective' => 'sometimes|nullable|string|max:2000'];
         foreach (array_keys(self::LISTS) as $key) {
@@ -50,9 +57,6 @@ class AccountStrategy
     public function save(Request $request, SocialAccount $account): void
     {
         $data = $this->validate($request);
-        if (isset($data['agent_strategy'])) {
-            $data['agent_strategy'] = array_replace($account->agent_strategy ?? [], $data['agent_strategy']);
-        }
         $token = $request->user()?->currentAccessToken();
         $scoped = $token instanceof \Laravel\Sanctum\PersonalAccessToken && in_array('community-manager', (array) $token->abilities, true);
         if ($scoped && (array_key_exists('agent_adaptation', $data) || (($account->agent_adaptation['enabled'] ?? false)
@@ -62,6 +66,9 @@ class AccountStrategy
         $adaptive = app(AdaptiveAccountLimits::class);
         DB::transaction(function () use ($data, $account, $adaptive, $scoped) {
             $account = SocialAccount::whereKey($account->id)->lockForUpdate()->firstOrFail();
+            if (isset($data['agent_strategy'])) {
+                $data['agent_strategy'] = array_replace($account->agent_strategy ?? [], $data['agent_strategy']);
+            }
             if ($scoped && (($account->agent_adaptation['enabled'] ?? false) && array_intersect(array_keys($data), ['agent_hourly_limit', 'agent_daily_limit', 'agent_min_interval_seconds']))) {
                 abort(403, 'La politique adaptative se règle avec un accès gestionnaire complet.');
             }

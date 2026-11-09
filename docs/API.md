@@ -1484,3 +1484,16 @@ Publication native par Companion NAS : `POST /api/community-manager/accounts/{id
 
 ### Inbox autonome API et découverte Threads
 Facebook, Instagram, Threads et YouTube utilisent le même parcours Community Manager de réponses immédiates sans validation. Facebook ajoute `POST /api/community-manager/inbox/{id}/like` (aperçu par défaut) et le like automatique après réponse. Découverte/interactions Threads sur le NAS : `accounts/{id}/threads/read`, `/context`, `/actions`, `GET threads/actions/{task}`. Le compte Threads conserve son driver API ; la technique dépend de l’action. Voir `docs/community-manager-api-threads.md`.
+
+## Calendrier éditorial
+
+`GET /api/editorial-calendar` liste les événements Swello 2026 et 2027 en lecture seule. Il utilise le même catalogue que **Contenu → Calendrier éditorial**.
+
+- `month=2027-05` sélectionne un mois. Sans filtre de date, l’API renvoie le mois en cours.
+- `from=2027-05-01&to=2027-06-15` définit une période inclusive. Fournir les deux bornes. Les événements déjà en cours sont inclus.
+- `topic=sport` filtre une thématique. `q=roland` recherche dans les titres sans tenir compte de la casse ni des accents.
+- `account_id` applique les thèmes du compte visible, réglables dans sa fiche ou via l’API stratégie (`agent_strategy.editorial_topics`). Sans thème enregistré, tous les événements sont proposés. Une valeur explicite de `topic` prime sur les thèmes du compte. Utiliser `topic=all` pour tous les afficher.
+
+Hermès peut utiliser le jeton Community Manager sur `GET /api/community-manager/accounts/{id}/editorial-calendar`, avec un compte attribué découvert via `GET /api/community-manager/accounts`. Mêmes filtres de période, thème et recherche.
+
+La réponse contient `from`, `to`, `account_id`, le dictionnaire `topics` et `events`. Chaque événement donne `title`, `starts_on`, `ends_on` (date de fin incluse, ou `null` pour un jour), `topics` et `source_url`. Les thèmes sont attribués par RS-Max. La date de publication se choisit séparément dans le planning RS-Max, en réservant le créneau à une seule marque.

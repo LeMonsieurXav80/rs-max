@@ -216,6 +216,21 @@
                         </div>
                     @endforeach
                 </div>
+                <fieldset class="mt-5">
+                    <legend class="text-sm font-semibold">Thèmes du calendrier éditorial</legend>
+                    <p class="text-xs text-gray-500 mb-2">Le calendrier affiche tous les événements si aucun thème n’est sélectionné.</p>
+                    <input type="hidden" name="agent_strategy[editorial_topics]" value="">
+                    <div class="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+                        @foreach(config('editorial_calendar.topics') as $key => $label)
+                            <label class="flex items-center gap-2 text-sm">
+                                <input type="checkbox" name="agent_strategy[editorial_topics][]" value="{{ $key }}"
+                                    @checked(in_array($key, (array) old('agent_strategy.editorial_topics', $account->agent_strategy['editorial_topics'] ?? []), true))
+                                    class="rounded border-gray-300 text-indigo-600">
+                                {{ $label }}
+                            </label>
+                        @endforeach
+                    </div>
+                </fieldset>
                 @foreach($errors->getMessages() as $field => $messages)
                     @if(str_starts_with($field, 'agent_'))<p class="text-sm text-red-600 mt-2">{{ implode(' ', $messages) }}</p>@endif
                 @endforeach

@@ -12,6 +12,7 @@ use App\Http\Controllers\Api\PostApiController;
 use App\Http\Controllers\Api\ReshareApiController;
 use App\Http\Controllers\Api\StatsApiController;
 use App\Http\Controllers\Api\ThreadApiController;
+use App\Http\Controllers\EditorialCalendarController;
 use Illuminate\Support\Facades\Route;
 
 Route::middleware(['auth:sanctum', \App\Http\Middleware\CommunityManagerTokenScope::class])->group(function () {
@@ -27,6 +28,7 @@ Route::middleware(['auth:sanctum', \App\Http\Middleware\CommunityManagerTokenSco
         Route::get('media/folders', [\App\Http\Controllers\Api\TikTokPhotoController::class, 'folders']);
         Route::get('media/search', [\App\Http\Controllers\Api\TikTokPhotoController::class, 'mediaSearch']);
         Route::get('/accounts/{id}/comment-context', 'commentContext');
+        Route::get('accounts/{id}/editorial-calendar', [EditorialCalendarController::class, 'accountEvents'])->whereNumber('id');
         Route::get('accounts/{id}/strategy', [\App\Http\Controllers\Api\AccountStrategyController::class, 'show']);
         Route::patch('accounts/{id}/strategy', [\App\Http\Controllers\Api\AccountStrategyController::class, 'update']);
         Route::get('accounts/{id}/inbox', [\App\Http\Controllers\Api\CommunityManagerInboxController::class, 'index']);
@@ -147,6 +149,7 @@ Route::middleware(['auth:sanctum', \App\Http\Middleware\CommunityManagerTokenSco
     Route::get('/stats/audience', [StatsApiController::class, 'audience']);
     Route::get('/stats/top-posts', [StatsApiController::class, 'topPosts']);
     Route::get('/stats/platforms', [StatsApiController::class, 'platforms']);
+    Route::get('/editorial-calendar', [EditorialCalendarController::class, 'events']);
     Route::get('/calendar', [StatsApiController::class, 'calendar']);
 
     // ── Catalogue média (pipeline Mac + recherche sémantique) ──

@@ -114,6 +114,15 @@
                     {{-- ═══ CONTENU ═══ --}}
                     <p class="px-3 pt-4 pb-1 text-[10px] font-semibold uppercase tracking-widest text-gray-400">Contenu</p>
 
+                    <a href="{{ route('editorial-calendar.index') }}"
+                       @if(request()->routeIs('editorial-calendar.index')) aria-current="page" @endif
+                       class="flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-colors {{ request()->routeIs('editorial-calendar.index') ? 'bg-indigo-50 text-indigo-600' : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900' }}">
+                        <svg aria-hidden="true" class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1.5">
+                            <path stroke-linecap="round" stroke-linejoin="round" d="M6.75 3v3m10.5-3v3M3 9h18M5.25 4.5h13.5A2.25 2.25 0 0 1 21 6.75v12A2.25 2.25 0 0 1 18.75 21H5.25A2.25 2.25 0 0 1 3 18.75v-12A2.25 2.25 0 0 1 5.25 4.5Z" />
+                        </svg>
+                        Calendrier éditorial
+                    </a>
+
                     {{-- Medias --}}
                     <a href="{{ url('/media') }}"
                        class="flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-colors {{ $currentRoute === 'media' ? 'bg-indigo-50 text-indigo-600' : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900' }}">
