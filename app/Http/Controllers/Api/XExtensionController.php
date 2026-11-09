@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Models\BotActionLog;
 use App\Models\InboxItem;
 use App\Models\SocialAccount;
+use App\Services\Agent\AutomationJournal;
 use App\Services\Browser\BrowserException;
 use App\Services\Browser\XSessionService;
 use App\Services\Inbox\CompanionInboxReply;
@@ -203,14 +204,16 @@ class XExtensionController extends Controller
         });
     }
 
-    public function finish(Request $r, int $id): JsonResponse
+    public function finish(Request $r, int $id, AutomationJournal $journal): JsonResponse
     {
         $a = $this->profileAccount($r);
         $v = $r->validate(['status' => 'required|in:published,uncertain', 'liked' => 'required|boolean', 'proof' => 'required|string|max:255']);
-        DB::transaction(function () use ($a, $id, $v) {
+        DB::transaction(function () use ($a, $id, $v, $journal) {
             $draft = DB::table('extension_x_replies')->where('id', $id)->where('social_account_id', $a->id)->lockForUpdate()->first();
             abort_unless($draft?->status === 'publishing', 409, 'Tentative absente ou déjà terminée.');
-            DB::table('extension_x_replies')->where('id', $id)->update($v + ['updated_at' => now()]);
+            $result = $v + ['updated_at' => now()];
+            DB::table('extension_x_replies')->where('id', $id)->update($result);
+            $journal->xCompanionReply((object) array_replace((array) $draft, $result));
 
             if ($v['status'] === 'published') {
                 $conversation = json_decode($draft->context_json, true) ?: [];

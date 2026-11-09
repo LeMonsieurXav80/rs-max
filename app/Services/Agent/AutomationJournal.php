@@ -5,6 +5,7 @@ namespace App\Services\Agent;
 use App\Models\AccountActionEvent;
 use App\Models\BotActionLog;
 use App\Models\BrowserTask;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
 
 /** Journal court et expurgé ; les identités anti-doublons restent dans leurs tables métier. */
@@ -62,6 +63,37 @@ class AutomationJournal
         $log->save();
     }
 
+    /** Le reçu doit être verrouillé par l'appelant pour sérialiser les rattrapages. */
+    public function xCompanionReply(object $receipt): void
+    {
+        $at = Carbon::parse($receipt->updated_at);
+        if (! in_array($receipt->status, ['published', 'uncertain'], true) || $at->lt(now()->subDays(7))) {
+            return;
+        }
+
+        $confirmed = $receipt->status === 'published';
+        $log = BotActionLog::firstOrNew([
+            'social_account_id' => $receipt->social_account_id,
+            'action_type' => 'x.reply',
+            'source' => 'extension',
+            'target_uri' => "https://x.com/{$receipt->author}/status/{$receipt->tweet_id}",
+        ]);
+        $log->fill([
+            'target_author' => $this->text($receipt->author, 255),
+            'target_text' => $this->text($receipt->reply_text, 2000),
+            'success' => $confirmed,
+            'metadata' => [
+                'status' => $confirmed ? 'confirmed' : 'uncertain',
+                'proof' => $this->proof(['confirmed' => $confirmed, 'liked' => (bool) $receipt->liked, 'proof' => $receipt->proof]),
+            ],
+            'performed_at' => $at,
+        ]);
+        $log->created_at = $at;
+        if ($log->isDirty()) {
+            $log->save();
+        }
+    }
+
     public function append(BrowserTask $task, array $steps, bool $final = false): void
     {
         if ($task->created_at->lt(now()->subDays(7))) {
@@ -113,7 +145,7 @@ class AutomationJournal
 
     public function proof(array $result): array
     {
-        $proof = array_intersect_key($result, array_flip(['confirmed', 'unchanged', 'gesture', 'proof', 'send_clicked', 'initial_visible', 'target_found', 'pause_ms', 'input_mode', 'verification_source', 'comment_id', 'id', 'post_id', 'reply_id', 'parent_id', 'quote_id', 'media_count', 'visibility', 'upload_order_verified']));
+        $proof = array_intersect_key($result, array_flip(['confirmed', 'unchanged', 'gesture', 'proof', 'liked', 'send_clicked', 'initial_visible', 'target_found', 'pause_ms', 'input_mode', 'verification_source', 'comment_id', 'id', 'post_id', 'reply_id', 'parent_id', 'quote_id', 'media_count', 'visibility', 'upload_order_verified']));
         $proof = array_filter($proof, fn ($value) => is_scalar($value));
         $proof = array_map(fn ($value) => is_string($value) ? $this->text($value, 120) : $value, $proof);
         foreach (['post_url', 'reply_url'] as $key) {

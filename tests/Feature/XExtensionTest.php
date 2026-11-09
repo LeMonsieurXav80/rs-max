@@ -2,12 +2,15 @@
 
 namespace Tests\Feature;
 
+use App\Models\BotActionLog;
 use App\Models\Persona;
 use App\Models\Platform;
 use App\Models\Setting;
 use App\Models\SocialAccount;
 use App\Models\User;
+use App\Services\Agent\AutomationJournal;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
 use Laravel\Sanctum\Sanctum;
 use Tests\TestCase;
@@ -104,6 +107,9 @@ class XExtensionTest extends TestCase
         $d['username'] = 'alias_xav';
         $this->postJson('/api/extension/x/suggest', $d)->assertConflict();
         $this->postJson('/api/extension/x/'.$draft['id'].'/finish', ['username' => 'test_xav', 'status' => 'uncertain', 'liked' => true, 'proof' => 'Non confirmé'])->assertOk();
+        $log = BotActionLog::where('action_type', 'x.reply')->sole();
+        $this->assertFalse($log->success);
+        $this->assertSame(['confirmed' => false, 'liked' => true, 'proof' => 'Non confirmé'], $log->metadata['proof']);
         $this->postJson('/api/extension/x/suggest', $this->data())->assertConflict();
     }
 
@@ -121,6 +127,17 @@ class XExtensionTest extends TestCase
         $this->postJson('/api/extension/x/'.$draft['id'].'/finish', [
             'username' => 'test_xav', 'status' => 'published', 'liked' => true, 'proof' => 'Réponse visible',
         ])->assertOk();
+
+        $receipt = DB::table('extension_x_replies')->where('id', $draft['id'])->lockForUpdate()->first();
+        app(AutomationJournal::class)->xCompanionReply($receipt);
+        $log = BotActionLog::where('action_type', 'x.reply')->sole();
+        $this->assertSame('extension', $log->source);
+        $this->assertNull($log->browser_task_id);
+        $this->assertSame('confirmed', $log->metadata['status']);
+        $this->assertSame($receipt->updated_at, $log->performed_at->toDateTimeString());
+        $this->actingAs($this->user)->get('/agent/twitter?source=extension')->assertOk()
+            ->assertSee('Companion · local')->assertSee('https://x.com/visiteur/status/300')
+            ->assertSee($draft['reply_text'])->assertSee('&quot;liked&quot;: true', false);
 
         $item->refresh();
         $this->assertSame('replied', $item->status);
