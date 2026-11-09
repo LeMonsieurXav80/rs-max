@@ -10,7 +10,7 @@ use Illuminate\Support\Facades\Log;
 
 class InboxReplyGenerator
 {
-    public function generate(InboxItem $item, SocialAccount $account, ?bool $usePersona = null, ?int $maxLength = null, ?string $videoContext = null, string $platformLabel = 'TikTok', string $contextLabel = 'de la vidéo'): ?string
+    public function generate(InboxItem $item, SocialAccount $account, ?bool $usePersona = null, ?int $maxLength = null, ?string $videoContext = null, string $platformLabel = 'TikTok', string $contextLabel = 'de la vidéo', bool $orderedConversation = false): ?string
     {
         $apiKey = Setting::getEncrypted('openai_api_key');
 
@@ -83,6 +83,10 @@ class InboxReplyGenerator
         $systemPrompt = ($usePersona && $persona) ? $persona->system_prompt : '';
         if ($replyWrapper) {
             $systemPrompt .= ($systemPrompt ? "\n\n" : '').$replyWrapper;
+        }
+
+        if ($orderedConversation) {
+            $systemPrompt .= "\n\nLis la légende de la publication d’origine, puis le fil dans l’ordre jusqu’au commentaire ciblé. Réponds uniquement à ce dernier commentaire en tenant compte de toute cette conversation et en suivant le persona du compte.";
         }
 
         if ($maxLength !== null) {

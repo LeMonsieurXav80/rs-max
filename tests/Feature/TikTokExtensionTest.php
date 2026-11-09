@@ -152,6 +152,34 @@ class TikTokExtensionTest extends TestCase
         $this->getJson('/api/community-manager/accounts/'.$account->id.'/inbox?agent_queue=1')->assertOk()->assertJsonPath('pagination.total', 0);
     }
 
+    public function test_local_reply_prompt_uses_the_caption_thread_target_and_persona(): void
+    {
+        $this->bind();
+        $data = $this->payload();
+        $this->postJson('/api/extension/tiktok/suggest', $data)->assertOk();
+        $data['content'] = 'Où exactement ?';
+        $data['fingerprint'] = hash('sha256', 'followup');
+        $data['conversation'] = [
+            ['author' => 'visiteur', 'content' => 'Belle vidéo !'],
+            ['author' => 'test.xav', 'content' => 'C’est au Portugal.', 'reply_to' => 'visiteur'],
+            ['author' => 'visiteur', 'content' => $data['content'], 'reply_to' => 'test.xav'],
+        ];
+        $draft = $this->postJson('/api/extension/tiktok/suggest', $data)->assertOk()->json();
+        $this->aiReply = 'À Lisbonne !';
+        $this->postJson('/api/extension/tiktok/suggest', $data)->assertOk()
+            ->assertJsonPath('id', $draft['id'])->assertJsonPath('reply_text', $this->aiReply);
+        Http::assertSent(fn ($request) => str_contains($request['messages'][0]['content'], 'Tu es Xavier')
+            && str_contains($request['messages'][0]['content'], 'Réponds uniquement à ce dernier')
+            && str_contains($request['messages'][1]['content'], 'publication_origine')
+            && str_contains($request['messages'][1]['content'], 'C’est au Portugal.')
+            && str_contains($request['messages'][1]['content'], 'Où exactement ?'));
+
+        $data['content'] = 'Merci !';
+        $this->postJson('/api/extension/tiktok/suggest', $data)->assertUnprocessable();
+        $data['conversation'][2]['content'] = $data['content'];
+        $this->postJson('/api/extension/tiktok/suggest', $data)->assertConflict();
+    }
+
     public function test_changed_persona_or_wrong_text_cannot_send_old_draft(): void
     {
         $this->bind();
