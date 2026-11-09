@@ -3,6 +3,7 @@
 namespace App\Services\Import;
 
 use App\Models\SocialAccount;
+use App\Services\Stats\XBrowserStatsService;
 use Illuminate\Support\Facades\Log;
 
 class ImportService
@@ -17,6 +18,18 @@ class ImportService
     public function import(SocialAccount $account, int $limit = 50): array
     {
         $platformSlug = $account->platform->slug;
+        if ($platformSlug === 'twitter' && $account->usesBrowser()) {
+            try {
+                $result = app(XBrowserStatsService::class)->sync($account, screens: 10, limit: $limit);
+
+                return $result === null
+                    ? ['success' => false, 'imported' => 0, 'error' => 'Session X du NAS indisponible.']
+                    : ['success' => true, 'imported' => $result['external_created'], 'error' => null];
+            } catch (\App\Services\Browser\BrowserException $e) {
+                return ['success' => false, 'imported' => 0, 'error' => $e->getMessage()];
+            }
+        }
+
         $service = $this->getServiceForPlatform($platformSlug);
 
         if (! $service) {

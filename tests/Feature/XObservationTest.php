@@ -100,4 +100,15 @@ class XObservationTest extends TestCase
         $this->assertNull(app(FollowersService::class)->syncFollowers($this->account));
         Http::assertNothingSent();
     }
+
+    public function test_actualiser_les_publications_dun_compte_navigateur_utilise_le_nas(): void
+    {
+        $this->mock(\App\Services\Stats\XBrowserStatsService::class)->shouldReceive('sync')
+            ->withArgs(fn (SocialAccount $account, int $screens, int $limit) => $account->is($this->account) && $screens === 10 && $limit === 25)
+            ->once()->andReturn(['external_created' => 2]);
+
+        $result = app(\App\Services\Import\ImportService::class)->import($this->account, 25);
+        $this->assertSame(['success' => true, 'imported' => 2, 'error' => null], $result);
+        Http::assertNothingSent();
+    }
 }

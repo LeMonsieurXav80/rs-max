@@ -12,7 +12,7 @@ class XBrowserStatsService
     public function __construct(private XSessionService $sessions, private BrowserTaskQueue $queue, private XObservationService $observations) {}
 
     /** @return array<string, mixed>|null `null` si la session n'est plus valide. */
-    public function sync(SocialAccount $account, int $screens = 3): ?array
+    public function sync(SocialAccount $account, int $screens = 3, ?int $limit = null): ?array
     {
         if (! $this->sessions->check($account)) {
             return null;
@@ -27,6 +27,7 @@ class XBrowserStatsService
 
         $tweets = collect($page['tweets'] ?? [])
             ->filter(fn (array $t) => $t['author'] === $username)
+            ->when($limit !== null, fn ($posts) => $posts->take($limit))
             ->map(fn (array $t) => [
                 'id' => $t['id'],
                 'text' => $t['text'],

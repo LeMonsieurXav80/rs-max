@@ -1,0 +1,91 @@
+diff --git a/manifest.json b/manifest.json
+index df22205..8ff6172 100644
+--- a/manifest.json
++++ b/manifest.json
+@@ -1,7 +1,7 @@
+ {
+   "manifest_version": 3,
+   "name": "RS-Max Companion",
+-  "version": "0.18.11",
++  "version": "0.18.12",
+   "description": "Actions assistees sur les reseaux sociaux (engagement, publication) avec remontee vers l'API RS-Max.",
+   "permissions": [
+     "storage",
+diff --git a/background.js b/background.js
+index d479899..821e3e9 100644
+--- a/background.js
++++ b/background.js
+@@ -327,9 +327,9 @@ async function waitTaskTab(tabId, timeout=20000) {
+     });
+   } finally {clearTimeout(timer);if(listener)chrome.tabs.onUpdated.removeListener(listener);}
+ }
+-async function taskTab(url) {
++async function taskTab(url, active = true) {
+   globalThis.RSTaskJournal?.mark('page.open',{url});
+-  const tab=await chrome.tabs.create({url,active:true});globalThis.RSTaskJournal?.bind(tab.id);
++  const tab=await chrome.tabs.create({url,active});globalThis.RSTaskJournal?.bind(tab.id);
+   try {await waitTaskTab(tab.id);return tab.id;}
+   catch(e){await chrome.tabs.remove(tab.id).catch(()=>{});throw e;}
+ }
+@@ -685,7 +685,7 @@ async function executeTask(task) {
+     if (task.kind === 'x.whoami') return { status: 'done', result: { username: null } };
+     throw e;
+   }
+-  const tabId = await taskTab(task.payload.url);
++  const tabId = await taskTab(task.payload.url, !(task.kind === 'x.tweets' && task.payload.followers));
+   try {
+     // Sans session, TikTok renvoie hors de Studio, où Companion n'est pas chargé.
+     const { url } = await chrome.tabs.get(tabId);
+diff --git a/x/tasks.js b/x/tasks.js
+index 9e2abbc..1b90031 100644
+--- a/x/tasks.js
++++ b/x/tasks.js
+@@ -62,7 +62,48 @@
+     return {...t,published_at,classification_known:Boolean(a.getAttribute('data-testid')),stats:group?.getAttribute('aria-label')||'',pinned:/pinned|épinglé/i.test(social),
+       reposted:/repost/i.test(social),reply:/^(replying to|en réponse à)/im.test(a.innerText)};
+   }
++  function profileTweet(article, username) {
++    const D = window.RSXDom, primary = D.primary(article);
++    if (primary?.author !== username) return null;
++    const group = [...article.querySelectorAll('[role="group"][aria-label]')].find(node => D.own(node, article));
++    const legacy = article.getAttribute('data-testid') === 'tweet';
++    const tabs = [...D.main().querySelectorAll('[aria-selected="true"]')];
++    const profileFeed = tabs.length === 1 && /^(Posts|Publications)$/i.test(tabs[0].innerText.trim());
++    const wrapper = article.parentElement;
++    const peers = [...wrapper.parentElement.children]
++      .map(row => [...row.children].find(node => node.tagName === 'ARTICLE')).filter(Boolean);
++    const social = article.querySelector('[data-testid="socialContext"]')?.innerText
++      || [...wrapper.children].filter(node => node !== article).map(node => node.innerText || '').join(' ');
++    const date = article.querySelector('time')?.getAttribute('datetime')
++      || new Date(Number((BigInt(primary.id) >> 22n) + 1288834974657n)).toISOString();
++    return {...primary, text: D.bodies(article).map(D.text).join('\n'), published_at: date,
++      classification_known: legacy || (profileFeed && article.classList.contains('group/post') && Boolean(group)),
++      stats: group?.getAttribute('aria-label') || '',
++      reply: (!legacy && peers.length > 1 && peers[0] !== article) || /^(replying to|en réponse à)/im.test(article.innerText),
++      reposted: /reposté|reposted|a republié|retweeté/i.test(social)};
++  }
++  async function profileTweets(p) {
++    const username = new URL(p.url).pathname.replace(/^\/|\/$/g, '').toLowerCase();
++    const scan = () => {
++      if (location.pathname.replace(/\/$/, '').toLowerCase() !== '/' + username) return [];
++      return window.RSXDom.articles().map(article => profileTweet(article, username)).filter(Boolean);
++    };
++    const first = await until(() => { const posts = scan(); return posts.length ? posts : null; }, 25);
++    if (!first) return failed('Flux de publications X indisponible sur le profil.');
++    const found = new Map(first.map(post => [post.id, post]));
++    const screens = Math.min(Number(p.screens) || 1, 10);
++    for (let i = 1; i < screens; i++) {
++      window.scrollBy(0, Math.round(innerHeight * 1.3));
++      await sleep(1600);
++      for (const post of scan()) found.set(post.id, post);
++    }
++    const observation = followersObservation();
++    return done({tweets: [...found.values()], followers: observation?.precision === 'exact' ? observation.value : null,
++      followers_observation: observation});
++  }
+   async function tweets(p){
++    if (p.followers && window.RSXDom) return profileTweets(p);
++
+     await until(()=>window.RSXDom?window.RSXDom.articles().length:$(S.tweet),20);
+     const found=new Map(),observation=followersObservation(),count=observation?.precision==='exact'?observation.value:null,screens=Math.min(Number(p.screens)||1,10);
+     for(let i=0;i<screens;i++){
