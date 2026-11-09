@@ -12,3 +12,9 @@ Companion 0.18.8 est requis. Appliquer `companion/patches/0.18.8-tiktok-studio.p
 Appliquer `companion/patches/0.18.9-tiktok-preuve-publique.patch` sur 0.18.8. La relecture anonyme privilégie le fil du parent exact et attend les chargements lents dans la fenêtre existante. Seuls le CID, le parent, la vidéo, l’auteur et le texte exacts, servis publiquement et visibles après rechargement, confirment la réponse et permettent le like.
 
 `public_reply_absent` exige une lecture paginée complète du fil. `public_reply_unverified` indique une lecture incomplète ou une preuve visuelle manquante. Le code commentaire `2` a été observé après un clic accepté avec un reçu HTTP 200, sans visibilité publique. Sa signification interne reste inconnue. Garder la tentative verrouillée, même en cas de délai ou de preuve manquante.
+
+### Découverte des comptes cibles — Companion 0.18.10
+
+Appliquer `companion/patches/0.18.10-tiktok-comptes-cibles.patch` sur 0.18.9. L’action `feed.read` accepte `feed: targets` et un `target` facultatif. Le profil doit figurer dans les comptes cibles du compte TikTok associé. Sans profil explicite, RS-Max prend le premier compte cible valide. Companion relève jusqu’à dix vidéos publiques du profil sur le NAS.
+
+Pour Hermès, envoyer ces paramètres à `POST /api/community-manager/read` avec `account_id` et `action: feed.read`. Lire les commentaires d’une vidéo avec `action: video.comments`, puis consulter jusqu’à vingt-cinq entrées avec `GET /api/community-manager/snapshots/{id}?limit=25`. Le client propose aussi `discover` et `snapshot`. Un like demande une préparation puis une exécution explicite. Vérifier la preuve `after_reload` et conserver un like déjà présent.

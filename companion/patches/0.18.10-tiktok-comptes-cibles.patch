@@ -1,0 +1,107 @@
+--- a/background.js
++++ b/background.js
+@@ -519,13 +519,18 @@
+ async function executeTikTokFeedTask(task) {
+   const url = new URL(task.payload.url);
+   const feed = task.kind === 'tiktok.feed.read';
+-  if (url.origin !== 'https://www.tiktok.com' || (feed ? !['/', '/following'].includes(url.pathname) : !/^\/@[a-zA-Z0-9_.]+\/video\/[0-9]+$/.test(url.pathname))) throw Error('URL du flux TikTok invalide.');
++  const timeline = feed && ['/', '/following'].includes(url.pathname);
++  const profile = feed && /^\/@[a-zA-Z0-9_.]{1,24}$/.test(url.pathname);
++  const video = !feed && /^\/@[a-zA-Z0-9_.]+\/video\/[0-9]+$/.test(url.pathname);
++  if (url.origin !== 'https://www.tiktok.com' || url.username || url.password || url.search || url.hash || !(timeline || profile || video)) {
++    throw Error('URL du flux TikTok invalide.');
++  }
+   const tabs = await chrome.tabs.query({url:'https://www.tiktok.com/*'});
+-  const saved = feed ? (await chrome.storage.session.get('rsmaxTikTokFeedTabs')).rsmaxTikTokFeedTabs || {} : {};
+-  const resumed = feed ? tabs.find(t=>t.id === saved[url.pathname] && /^https:\/\/www\.tiktok\.com\/(?:@[^/]+\/video\/\d+|following)?(?:[?#].*)?$/.test(t.url)) : null;
++  const saved = timeline ? (await chrome.storage.session.get('rsmaxTikTokFeedTabs')).rsmaxTikTokFeedTabs || {} : {};
++  const resumed = timeline ? tabs.find(t=>t.id === saved[url.pathname] && /^https:\/\/www\.tiktok\.com\/(?:@[^/]+\/video\/\d+|following)?(?:[?#].*)?$/.test(t.url)) : null;
+   const tab = resumed || tabs.find(t=>t.url?.split('?')[0] === task.payload.url);
+   const tabId = tab?.id ?? await taskTab(task.payload.url);
+-  if (feed) { await chrome.storage.session.set({rsmaxTikTokFeedTabs:{...saved,[url.pathname]:tabId}}); task={...task,payload:{...task.payload,resume:Boolean(resumed)}}; }
++  if (timeline) { await chrome.storage.session.set({rsmaxTikTokFeedTabs:{...saved,[url.pathname]:tabId}}); task={...task,payload:{...task.payload,resume:Boolean(resumed)}}; }
+   await chrome.tabs.update(tabId,{active:true});
+   await askPage(tabId,{kind:'tiktok.feed.ready'});
+   if (feed || task.kind === 'tiktok.video.comments') return askPage(tabId, task);
+@@ -538,7 +543,7 @@
+     await reloadStudio(tabId);
+     await askPage(tabId,{kind:'tiktok.feed.ready'});
+     const proof=await askPage(tabId,{kind:'tiktok.feed.verify',payload:{...task.payload,action:task.kind}});
+-    return proof?.result?.confirmed === true ? {status:'done',result:{...action.result,...proof.result}} : {status:'uncertain',result:action.result,error:'Geste absent après rechargement : aucune relance.'};
++    return proof?.result?.confirmed === true ? {status:'done',result:{...action.result,...proof.result,proof:'after_reload'}} : {status:'uncertain',result:action.result,error:'Geste absent après rechargement : aucune relance.'};
+   } catch(e) { return {status:'uncertain',result:action?.result,error:'Geste non confirmé : '+e.message}; }
+ }
+
+--- a/manifest.json
++++ b/manifest.json
+@@ -1,7 +1,7 @@
+ {
+   "manifest_version": 3,
+   "name": "RS-Max Companion",
+-  "version": "0.18.9",
++  "version": "0.18.10",
+   "description": "Actions assistees sur les reseaux sociaux (engagement, publication) avec remontee vers l'API RS-Max.",
+   "permissions": [
+     "storage",
+--- a/tiktok/feed.js
++++ b/tiktok/feed.js
+@@ -179,6 +179,26 @@
+       progress: {version:chrome.runtime.getManifest?.()?.version || null,last_reply_wait:lastReplyWait,mounted_rows: document.querySelectorAll(S.row).length, reply_controls: [...document.querySelectorAll(S.more)].filter(visible).map(text).slice(0,8), at_bottom: scroll ? scroll.scrollTop + scroll.clientHeight >= scroll.scrollHeight - 4 : null, scroll_top: scroll?.scrollTop, scroll_height: scroll?.scrollHeight, viewport_height: scroll?.clientHeight},
+       reason: complete ? null : accessibleComplete ? `${state.size} commentaires accessibles lus / ${exactTotal ?? 'total inconnu'} annoncés.` : state.size >= 5000 ? 'Limite de 5000 commentaires atteinte.' : 'Chargement partiel ou compteur non vérifiable. Relancer la lecture sur le même onglet pour poursuivre.'};
+   }
++  async function profileVideos(payload) {
++    const profile = new URL(payload.url);
++    const target = profile.pathname.slice(2).toLowerCase();
++    const limit = Math.min(10, payload.limit || 3);
++    const items = await wait(() => {
++      if (location.origin !== profile.origin || location.pathname.replace(/\/$/, '').toLowerCase() !== profile.pathname) return null;
++      const videos = new Map();
++      for (const link of document.querySelectorAll('a[href*="/video/"]')) {
++        const url = videoUrl(link.href);
++        if (!url || !new URL(url).pathname.toLowerCase().startsWith('/@' + target + '/video/') || videos.has(url)) continue;
++        const thumbnail = link.querySelector('img');
++        videos.set(url, {url, author: target, caption: link.getAttribute('aria-label') || thumbnail?.alt || ''});
++        if (videos.size === limit) break;
++      }
++      return videos.size ? [...videos.values()] : null;
++    });
++    activity(payload);
++    if (!items) throw Error('Aucune vidéo publique trouvée sur le profil TikTok cible.');
++    return {target, items};
++  }
+   async function feed(payload) {
+     if (payload.resume) {
+       const before = await current();
+@@ -217,8 +237,19 @@
+     if (task.kind === 'tiktok.comment.like') {
+       const c = await comments(p, p.target);
+       if (!c) throw Error('Commentaire exact introuvable.');
+-      if (!c.liked) { await paced(); await assertIdentity(p.username); await current(p.url); const matches=rows().filter(x=>same(x,p.target)); if(matches.length!==1)throw Error('Commentaire déplacé ou ambigu.'); activity(p); matches[0].row.querySelector(S.commentLike).click(); }
+-      return {already_liked: c.liked};
++      if (c.liked) return {already_liked: true};
++      await paced();
++      await assertIdentity(p.username);
++      await current(p.url);
++      const matches = rows().filter(row => same(row, p.target));
++      if (matches.length !== 1) throw Error('Commentaire déplacé ou ambigu.');
++      const heart = matches[0].row.querySelector(S.commentLike);
++      const pressed = heart?.getAttribute('aria-pressed');
++      if (pressed === 'true') return {already_liked: true};
++      if (pressed !== 'false') throw Error('État du like inconnu.');
++      activity(p);
++      heart.click();
++      return {already_liked: false};
+     }
+     if (task.kind === 'tiktok.video.comment') {
+       await openComments();
+@@ -251,7 +282,9 @@
+   async function dispatch(task) {
+     activity(task.payload);
+     await assertIdentity(task.payload.username);
+-    if (task.kind === 'tiktok.feed.read') return feed(task.payload);
++    if (task.kind === 'tiktok.feed.read') {
++      return new URL(task.payload.url).pathname.startsWith('/@') ? profileVideos(task.payload) : feed(task.payload);
++    }
+     if (task.kind === 'tiktok.video.comments') return comments(task.payload);
+     if (task.kind === 'tiktok.feed.verify') return verify(task);
+     return act(task);

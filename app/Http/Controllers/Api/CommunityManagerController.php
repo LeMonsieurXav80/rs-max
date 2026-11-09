@@ -82,7 +82,7 @@ class CommunityManagerController extends Controller
                     'liked' => $video['liked'] ?? null, 'snapshot_id' => $snapshot];
             }, $data['items']);
 
-            return response()->json(['items' => $items, 'left' => $data['left']]);
+            return response()->json(['items' => $items, 'left' => $data['left']] + array_intersect_key($data, ['target' => true]));
         }
 
         return response()->json($this->compactSnapshot($data) + ['left' => $data['left']]);
@@ -94,10 +94,12 @@ class CommunityManagerController extends Controller
         abort_unless($data, 404, 'Lecture expirée.');
         $this->account($request, $data['account_id']);
 
-        return response()->json($this->compactSnapshot($data + ['snapshot_id' => $id]));
+        $options = $request->validate(['limit' => 'sometimes|integer|min:1|max:25']);
+
+        return response()->json($this->compactSnapshot($data + ['snapshot_id' => $id], $options['limit'] ?? 3));
     }
 
-    private function compactSnapshot(array $data): array
+    private function compactSnapshot(array $data, int $limit = 3): array
     {
         return ['snapshot_id' => $data['snapshot_id'], 'url' => $data['video']['url'],
             'caption' => Str::limit($data['video']['caption'] ?? '', 180), 'complete' => $data['complete'],
@@ -105,7 +107,7 @@ class CommunityManagerController extends Controller
             'observed' => $data['observed'] ?? count($data['comments']), 'expected' => $data['expected'] ?? null,
             'at_bottom' => $data['progress']['at_bottom'] ?? null,
             'sample' => array_map(fn ($c) => ['key' => $c['key'], 'text' => Str::limit($c['text'] ?? '', 120),
-                'liked' => $c['liked'] ?? null], array_slice($data['comments'], 0, 3))];
+                'liked' => $c['liked'] ?? null], array_slice($data['comments'], 0, $limit))];
     }
 
     public function prepare(Request $request, TikTokFeedController $feed, TikTokVideoCommentGenerator $generator): JsonResponse

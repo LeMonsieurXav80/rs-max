@@ -169,6 +169,13 @@ def main(argv=None):
             p.add_argument('--context', required=True); p.add_argument('--text-file', type=Path, required=True)
     p = subs.add_parser('comment-context'); p.add_argument('--account', type=int, required=True); p.add_argument('--snapshot', required=True)
     p = subs.add_parser('comments'); p.add_argument('--account', type=int, required=True); p.add_argument('--url', required=True)
+    p = subs.add_parser('discover')
+    p.add_argument('--account', type=int, required=True)
+    p.add_argument('--target')
+    p.add_argument('--limit', type=int, choices=range(1, 11), default=3)
+    p = subs.add_parser('snapshot')
+    p.add_argument('id')
+    p.add_argument('--limit', type=int, choices=range(1, 26), default=3)
     p = subs.add_parser('status'); p.add_argument('id', type=int)
     p = subs.add_parser('inspect-upload'); p.add_argument('--account', type=int, required=True)
     p = subs.add_parser('threads-read'); p.add_argument('--account',type=int,required=True); p.add_argument('--action',choices=['feed.read','search.read','thread.read','profile.read'],required=True); p.add_argument('--query'); p.add_argument('--url'); p.add_argument('--handle'); p.add_argument('--limit',type=int,default=10)
@@ -274,6 +281,13 @@ def main(argv=None):
         result = client.action(args.account, action, args.snapshot, args.commit, getattr(args, 'comment_key', None), text, getattr(args, 'context', None))
     elif args.command == 'comment-context': result = client.api('GET', f'accounts/{args.account}/comment-context?' + urlencode({'snapshot_id': args.snapshot}))
     elif args.command == 'comments': result = client.api('POST', 'read', {'account_id': args.account, 'action': 'video.comments', 'url': args.url})
+    elif args.command == 'discover':
+        options = {'account_id': args.account, 'action': 'feed.read', 'feed': 'targets', 'limit': args.limit}
+        if args.target:
+            options['target'] = args.target
+        result = client.api('POST', 'read', options)
+    elif args.command == 'snapshot':
+        result = client.api('GET', 'snapshots/' + args.id + '?' + urlencode({'limit': args.limit}))
     elif args.command == 'status': result = client.api('GET', 'engagements/' + str(args.id))
     else: result = client.api('POST', 'upload/inspect', {'account_id': args.account})
     print(json.dumps(result, ensure_ascii=False, separators=(',', ':')))

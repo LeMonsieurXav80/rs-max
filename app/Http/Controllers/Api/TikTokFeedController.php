@@ -46,14 +46,35 @@ class TikTokFeedController extends Controller
         $account = $this->account($request, $id);
         $data = $request->validate(['action' => 'required|in:feed.read,video.comments',
             'url' => ['required_if:action,video.comments', 'nullable', 'string', 'regex:~^https://www\.tiktok\.com/@[a-zA-Z0-9_.]+/video/[0-9]+$~'],
-            'limit' => 'sometimes|integer|min:1|max:10', 'feed' => 'sometimes|in:following,foryou']);
+            'limit' => 'sometimes|integer|min:1|max:10', 'feed' => 'sometimes|in:following,foryou,targets',
+            'target' => ['sometimes', 'string', 'regex:~^@?[a-zA-Z0-9_.]{1,24}$~']]);
         $state = $this->enabled($account, $data['action']);
-        $url = $data['action'] === 'feed.read' ? 'https://www.tiktok.com/'.(($data['feed'] ?? 'following') === 'following' ? 'following' : '') : $data['url'];
+        $mode = $data['feed'] ?? 'following';
+        $target = null;
+        if ($data['action'] === 'feed.read' && $mode === 'targets') {
+            $targets = collect(data_get($account->agent_strategy, 'target_accounts', []))
+                ->filter(fn ($value) => is_string($value) && preg_match('~^@?[a-zA-Z0-9_.]{1,24}$~', trim($value)))
+                ->map(fn (string $value) => strtolower(ltrim(trim($value), '@')));
+            $target = isset($data['target']) ? strtolower(ltrim($data['target'], '@')) : $targets->first();
+            abort_unless($target && $targets->containsStrict($target), 422, 'Profil absent des comptes cibles de ce compte TikTok.');
+        }
+        $url = $data['action'] === 'video.comments' ? $data['url'] : match ($mode) {
+            'targets' => 'https://www.tiktok.com/@'.$target,
+            'following' => 'https://www.tiktok.com/following',
+            default => 'https://www.tiktok.com/',
+        };
         try {
             $result = $browser->run($account, 'tiktok.'.$data['action'], ['username' => $account->browser_username,
                 'url' => $url, 'limit' => $data['limit'] ?? 3], 100);
         } catch (BrowserException $e) {
             return response()->json(['message' => $e->getMessage()], 502);
+        }
+        if ($target !== null) {
+            abort_unless(isset($result['items']) && is_array($result['items']) && ($result['target'] ?? null) === $target, 502, 'Lecture du profil TikTok invalide.');
+            $videoPattern = '~^https://www\.tiktok\.com/@'.preg_quote($target, '~').'/video/[0-9]+$~iD';
+            $result['items'] = collect($result['items'])
+                ->filter(fn ($video) => is_array($video) && is_string($video['url'] ?? null) && preg_match($videoPattern, $video['url']))
+                ->unique('url')->take($data['limit'] ?? 3)->values()->all();
         }
         BotActionLog::create(['social_account_id' => $account->id, 'action_type' => $this->catalog->logType($data['action']),
             'source' => AgentCatalog::SOURCE, 'target_uri' => $url, 'success' => true, 'performed_at' => now()]);

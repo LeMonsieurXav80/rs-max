@@ -113,6 +113,8 @@ class CommunityManagerTest extends TestCase
         $this->assertLessThan(1300, strlen($r->getContent()));
         $snapshot = \Illuminate\Support\Facades\Cache::get('tiktok-video:'.$r->json('snapshot_id'));
         $this->assertCount(50, $snapshot['comments']);
+        $this->getJson('/api/community-manager/snapshots/'.$r->json('snapshot_id').'?limit=20')
+            ->assertOk()->assertJsonCount(20, 'sample')->assertJsonPath('observed', 50);
     }
 
     public function test_un_like_de_video_ne_charge_pas_de_commentaires(): void
@@ -127,6 +129,29 @@ class CommunityManagerTest extends TestCase
             ->assertCreated();
         $this->assertNotEmpty(\App\Models\TikTokEngagement::find($p->json('id'))->payload['activity_window']);
         $this->postJson('/api/community-manager/prepare', ['account_id' => $this->account->id, 'action' => 'video.comment', 'snapshot_id' => $id])->assertUnprocessable();
+    }
+
+    public function test_decouverte_tiktok_est_limitee_aux_videos_du_profil_cible_configure(): void
+    {
+        Sanctum::actingAs($this->user);
+        $this->account->update(['agent_strategy' => ['target_accounts' => ['@fashion.one', '@Fashion.Two']]]);
+        $this->mock(BrowserTaskQueue::class)->shouldReceive('run')->once()
+            ->withArgs(fn ($account, $kind, $payload) => $kind === 'tiktok.feed.read'
+                && $payload['url'] === 'https://www.tiktok.com/@fashion.two' && $payload['limit'] === 2)
+            ->andReturn(['target' => 'fashion.two', 'items' => [
+                ['url' => 'https://www.tiktok.com/@fashion.one/video/111'],
+                ['url' => 'https://www.tiktok.com/@fashion.two/video/222'],
+                ['url' => 'https://www.tiktok.com/@fashion.two/video/222'],
+                ['url' => 'https://www.tiktok.com/@fashion.two/video/333'],
+                ['url' => 'https://www.tiktok.com/@fashion.two/video/444'],
+            ]]);
+
+        $request = ['account_id' => $this->account->id, 'action' => 'feed.read', 'feed' => 'targets', 'limit' => 2];
+        $this->postJson('/api/community-manager/read', $request + ['target' => '@other'])->assertUnprocessable();
+        $this->postJson('/api/community-manager/read', $request + ['target' => '@Fashion.Two'])
+            ->assertOk()->assertJsonPath('target', 'fashion.two')->assertJsonCount(2, 'items')
+            ->assertJsonPath('items.0.url', 'https://www.tiktok.com/@fashion.two/video/222')
+            ->assertJsonPath('items.1.url', 'https://www.tiktok.com/@fashion.two/video/333');
     }
 
     public function test_refus_des_actions_sur_un_compte_non_attribue(): void
