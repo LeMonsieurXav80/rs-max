@@ -1389,6 +1389,8 @@ reste `unprepared` dans ces compteurs jusqu'à son envoi ou sa programmation.
 
 
 ### Stratégie et cadence par compte (Community Manager)
+
+Les lectures journalisées (flux, recherches, profils, mentions et discussions) ont un plafond séparé de 1 000 par type de lecture, compte et jour de Lisbonne. Elles ne consomment aucun geste et ne déclenchent pas d’ajustement de cadence. Le plafond de lectures est réglable depuis Automatisation ou l’API ; le nombre de résultats par requête reste défini par chaque parcours.
 `GET /api/accounts/{id}/strategy` et `PATCH` au même endroit ; mêmes routes sous `/api/community-manager/accounts/{id}/strategy` pour le jeton dédié. Manager et compte attribué actif requis. PATCH partiel :
 ```json
 {"agent_hourly_limit":2,"agent_min_interval_seconds":60,"agent_strategy":{"audience":"Public francophone","objective":"Échanges utiles","hashtags":["#mode"],"target_accounts":["@exemple"],"search_queries":["idées de tenue"],"exclusions":[]}}

@@ -84,8 +84,9 @@ class AccountActionBudget
     {
         app(AutomationJournal::class)->task($task);
         $status = $task->status === 'done' ? (($task->result['confirmed'] ?? null) === true ? (($task->result['unchanged'] ?? false) ? 'unchanged' : 'confirmed') : 'completed') : $task->status;
-        AccountActionEvent::where('browser_task_id', $task->id)->where('status', '!=', $status)->update(['status' => $status, 'error' => $task->error, 'updated_at' => now()]);
-        if ($adjustment = app(AdaptiveAccountLimits::class)->evaluate($task->socialAccount)) {
+        $updated = AccountActionEvent::where('browser_task_id', $task->id)->where('status', '!=', $status)
+            ->update(['status' => $status, 'error' => $task->error, 'updated_at' => now()]);
+        if ($updated && ($adjustment = app(AdaptiveAccountLimits::class)->evaluate($task->socialAccount))) {
             \App\Jobs\NotifyAccountLimitAdjustment::dispatch($adjustment->id)->afterCommit();
         }
     }

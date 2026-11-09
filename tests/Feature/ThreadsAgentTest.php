@@ -64,6 +64,27 @@ class ThreadsAgentTest extends TestCase
         $this->assertSame('api', $this->a->fresh()->driver);
     }
 
+    public function test_les_lectures_restent_disponibles_quand_les_gestes_sont_bloques(): void
+    {
+        $this->a->update(['agent_hourly_limit' => 0]);
+        $this->a->agentActions()->where('action', 'feed.read')->update(['daily_limit' => 12]);
+        (require database_path('migrations/2026_11_09_150000_raise_agent_read_limits.php'))->up();
+        $catalog = app(\App\Services\Agent\AgentCatalog::class);
+        $this->assertSame(1000, $catalog->forAccount($this->a)->get('feed.read')['daily_limit']);
+        $this->assertSame(5, $catalog->forAccount($this->a)->get('like')['daily_limit']);
+
+        $this->read('feed.read');
+        $this->assertSame(1, $catalog->usedToday($this->a, 'feed.read'));
+
+        $task = BrowserTask::create(['social_account_id' => $this->a->id, 'profile' => 'nas-test',
+            'kind' => 'threads.agent.read', 'status' => 'done', 'payload' => ['action' => 'feed.read']]);
+        $this->mock(\App\Services\Agent\AdaptiveAccountLimits::class)->shouldNotReceive('evaluate');
+        $budget = app(\App\Services\Agent\AccountActionBudget::class);
+        $budget->forTask($task);
+        $budget->finish($task);
+        $this->assertDatabaseCount('account_action_events', 0);
+    }
+
     public function test_like_sans_clic_en_apercu_et_persona_manquant_refuse_commentaire(): void
     {
         $snapshot = $this->read('feed.read');

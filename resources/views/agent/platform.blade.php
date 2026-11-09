@@ -59,7 +59,7 @@
                                                class="rounded border-gray-300 text-indigo-600 focus:ring-indigo-500">
                                         <span class="text-sm text-gray-800">{{ $action['label'] }}</span>
                                     </label>
-                                    <span class="text-xs text-gray-400">{{ $action['used'] }} aujourd'hui, maximum</span>
+                                    <span class="text-xs text-gray-400">{{ $action['used'] }} {{ $action['kind'] === 'read' ? 'lecture(s)' : 'geste(s)' }} aujourd'hui, maximum</span>
                                     <input type="number" name="daily_limit" min="0" max="1000" value="{{ $action['daily_limit'] }}" aria-label="Maximum par jour"
                                            class="w-20 rounded-lg border-gray-300 text-sm focus:border-indigo-500 focus:ring-indigo-500">
                                     <button type="submit" class="px-3 py-1.5 text-xs font-medium text-indigo-700 bg-indigo-50 rounded-lg hover:bg-indigo-100 transition-colors">Enregistrer</button>
