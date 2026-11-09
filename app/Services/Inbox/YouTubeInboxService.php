@@ -44,12 +44,26 @@ class YouTubeInboxService implements PlatformInboxInterface
             }
 
             $videos = $playlistResponse->json('items', []);
+            $videoIds = collect($videos)->pluck('contentDetails.videoId')->filter()->unique();
+            $publications = collect();
+            if ($videoIds->isNotEmpty()) {
+                $details = Http::withToken($accessToken)->get(self::API_BASE.'/videos', [
+                    'part' => 'snippet',
+                    'id' => $videoIds->implode(','),
+                ]);
+                if ($details->successful()) {
+                    $publications = collect($details->json('items', []))->keyBy('id');
+                }
+            }
 
             foreach ($videos as $video) {
                 $videoId = $video['contentDetails']['videoId'] ?? null;
                 if (! $videoId) {
                     continue;
                 }
+
+                $videoSnippet = $publications->get($videoId)['snippet'] ?? [];
+                $postContent = trim(($videoSnippet['title'] ?? '')."\n\n".($videoSnippet['description'] ?? ''));
 
                 // Fetch comment threads for this video
                 $commentsResponse = Http::withToken($accessToken)->get(self::API_BASE.'/commentThreads', [
@@ -85,6 +99,7 @@ class YouTubeInboxService implements PlatformInboxInterface
                         'type' => 'comment',
                         'external_id' => $topCommentId,
                         'external_post_id' => $videoId,
+                        'post_content' => $postContent ?: null,
                         'conversation_key' => $topCommentId,
                         'author_name' => $snippet['authorDisplayName'] ?? null,
                         'author_avatar_url' => $snippet['authorProfileImageUrl'] ?? null,
@@ -108,6 +123,7 @@ class YouTubeInboxService implements PlatformInboxInterface
                             'type' => 'reply',
                             'external_id' => $reply['id'],
                             'external_post_id' => $videoId,
+                            'post_content' => $postContent ?: null,
                             'parent_id' => $topCommentId,
                             'conversation_key' => $topCommentId,
                             'author_name' => $replySnippet['authorDisplayName'] ?? null,

@@ -69,6 +69,7 @@ class ThreadsInboxService implements PlatformInboxInterface
                         'type' => 'reply',
                         'external_id' => $reply['id'],
                         'external_post_id' => $threadId,
+                        'post_content' => $thread['text'] ?? null,
                         'parent_id' => $parent && (string) $parent !== (string) $threadId ? (string) $parent : null,
                         'conversation_key' => "post:{$threadId}",
                         'author_username' => $reply['username'] ?? null,

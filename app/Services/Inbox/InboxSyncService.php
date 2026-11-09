@@ -165,6 +165,7 @@ class InboxSyncService
                     'parent_id' => $itemData['parent_id'] ?? null,
                     'type' => $itemData['type'] ?? null,
                     'author_external_id' => $itemData['author_external_id'] ?? null,
+                    'post_content' => $itemData['post_content'] ?? null,
                 ], fn ($v) => $v !== null);
 
                 if (! empty($updates)) {

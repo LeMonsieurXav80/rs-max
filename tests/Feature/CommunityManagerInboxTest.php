@@ -150,14 +150,17 @@ class CommunityManagerInboxTest extends TestCase
         InboxItem::create($base + ['type' => 'comment', 'external_id' => 'root', 'content' => 'Jolie tenue',
             'reply_content' => 'Merci', 'reply_external_id' => 'ours', 'replied_at' => now()->subHour(), 'status' => 'replied']);
         $question = InboxItem::create($base + ['type' => 'reply', 'external_id' => 'q', 'parent_id' => 'root',
-            'posted_at' => now(), 'content' => 'Où trouver cette veste', 'status' => 'unread']);
+            'posted_at' => now(), 'content' => 'Où trouver cette veste', 'post_content' => 'Présentation de la collection hiver', 'status' => 'unread']);
         $reaction = InboxItem::create($base + ['type' => 'reply', 'external_id' => 'r', 'parent_id' => 'ours',
             'content' => 'Super, merci !', 'status' => 'unread']);
         $own = InboxItem::create(array_replace($base, ['type' => 'reply', 'external_id' => 'ours', 'parent_id' => 'root',
             'author_external_id' => '123', 'content' => 'Merci', 'status' => 'unread']));
 
         $context = '/api/community-manager/inbox/';
-        $this->getJson($context.$question->id.'/context')->assertOk()->assertJsonPath('followup', true)->assertJsonPath('conversation.1.mine', true);
+        $this->getJson($context.$question->id.'/context')->assertOk()->assertJsonPath('followup', true)->assertJsonPath('publication.text', 'Présentation de la collection hiver')
+            ->assertJsonPath('conversation.2.mine', true);
+        $question->update(['post_content' => null]);
+        $this->getJson($context.$question->id.'/context')->assertConflict()->assertJsonPath('review_reason', 'context_changed');
         $this->getJson($context.$reaction->id.'/context')->assertConflict()->assertJsonPath('review_reason', 'not_relevant');
         $this->getJson($context.$own->id.'/context')->assertConflict()->assertJsonPath('review_reason', 'already_handled');
         $this->postJson('/api/inbox/'.$own->id.'/reply', ['reply_text' => 'Bonjour !'])->assertConflict();

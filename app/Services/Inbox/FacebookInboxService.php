@@ -66,6 +66,7 @@ class FacebookInboxService implements PlatformInboxInterface
                             'type' => $nested ? 'reply' : 'comment',
                             'external_id' => $comment['id'],
                             'external_post_id' => $postId,
+                            'post_content' => $post['message'] ?? null,
                             'parent_id' => $nested ? $rootComment['id'] : null,
                             'conversation_key' => $rootComment['id'],
                             'author_name' => $comment['from']['name'] ?? null,

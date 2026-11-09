@@ -76,7 +76,7 @@ class InboxConversationBuilder
         return array_slice($thread, -config('agent.thread_messages'));
     }
 
-    private function originalText(SocialAccount $account, InboxItem $item): ?string
+    public function originalText(SocialAccount $account, InboxItem $item): ?string
     {
         if ($item->post_content) {
             return $item->post_content;

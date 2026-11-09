@@ -23,7 +23,7 @@ class InstagramInboxService implements PlatformInboxInterface
         try {
             // Fetch recent media (always fetch latest to catch new comments on existing posts)
             $params = [
-                'fields' => 'id,timestamp,permalink',
+                'fields' => 'id,caption,timestamp,permalink',
                 'access_token' => $accessToken,
                 'limit' => 20,
             ];
@@ -64,6 +64,7 @@ class InstagramInboxService implements PlatformInboxInterface
                         'type' => 'comment',
                         'external_id' => $commentId,
                         'external_post_id' => $mediaId,
+                        'post_content' => $media['caption'] ?? null,
                         'conversation_key' => $commentId,
                         'author_username' => $comment['username'] ?? $comment['from']['username'] ?? null,
                         'author_external_id' => $comment['from']['id'] ?? null,
@@ -80,6 +81,7 @@ class InstagramInboxService implements PlatformInboxInterface
                             'type' => 'reply',
                             'external_id' => $reply['id'],
                             'external_post_id' => $mediaId,
+                            'post_content' => $media['caption'] ?? null,
                             'parent_id' => $commentId,
                             'conversation_key' => $commentId,
                             'author_username' => $reply['username'] ?? $reply['from']['username'] ?? null,

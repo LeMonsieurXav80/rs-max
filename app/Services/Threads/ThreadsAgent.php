@@ -60,11 +60,13 @@ class ThreadsAgent
     {
         $s = $this->snapshot($a, $id);
         abort_unless($s['read_action'] === 'thread.read' && ($s['result']['context_complete'] ?? false), 422, 'Lire d’abord le fil Threads ciblé.');
+        abort_unless(filled($s['result']['target']['text'] ?? null), 422, 'Texte de la publication indisponible.');
         abort_unless($a->persona?->is_active && filled($a->persona->system_prompt), 422, 'Persona actif requis.');
         $ctx = (string) Str::uuid();
         Cache::put('threads-context:'.$ctx, ['account_id' => $a->id, 'snapshot_id' => $id, 'persona_hash' => \App\Models\TikTokEngagement::personaHash($a)], now()->addMinutes(15));
 
-        return ['context_id' => $ctx, 'target' => $s['result']['target'], 'conversation' => $s['result']['conversation'] ?? [], 'persona' => ['instructions' => $a->persona->system_prompt], 'context_complete' => true, 'discussion_complete' => $s['result']['complete'] ?? false];
+        return ['context_id' => $ctx, 'target' => $s['result']['target'], 'conversation' => $s['result']['conversation'] ?? [], 'persona' => ['instructions' => $a->persona->system_prompt], 'context_complete' => true, 'discussion_complete' => $s['result']['complete'] ?? false,
+            'instruction' => 'Lire la publication et le fil avant de rédiger. Si un média non consulté est nécessaire à la compréhension, passer au suivant.'];
     }
 
     public function submit(SocialAccount $a, array $d): array
