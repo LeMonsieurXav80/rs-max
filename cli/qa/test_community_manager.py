@@ -9,6 +9,17 @@ spec = importlib.util.spec_from_file_location('community_manager', Path(__file__
 cm = importlib.util.module_from_spec(spec); spec.loader.exec_module(cm)
 
 class CommunityManagerTest(unittest.TestCase):
+    def test_attente_reply_status_est_en_lecture_seule_et_attend_le_like(self):
+        from unittest.mock import Mock
+        client = Mock()
+        sent = {'status': 'replied', 'replied_at': 'heure', 'like_required': True, 'liked_at': None}
+        liked = dict(sent, liked_at='heure du like')
+        client.api.side_effect = [sent, liked]
+        with patch.object(cm.time, 'sleep'):
+            self.assertEqual(cm.Client.reply_status(client, 42, 60), liked)
+        self.assertEqual([call.args for call in client.api.call_args_list],
+                         [('GET', 'inbox/42'), ('GET', 'inbox/42')])
+
     def test_night_and_summer_boundary(self):
         self.assertTrue(cm.daytime(dt.datetime.fromisoformat('2026-07-07T20:59:00+00:00')))
         self.assertFalse(cm.daytime(dt.datetime.fromisoformat('2026-07-07T21:00:00+00:00')))

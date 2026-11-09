@@ -36,6 +36,23 @@ class XWatchTest(unittest.TestCase):
         self.assertEqual(r['accounts'][0]['batch_max'],1);self.assertEqual(r['accounts'][0]['items'][0]['post_content'],'La tenue du jour')
         self.assertIn('order=oldest', c.api.call_args.args[1])
 
+    def test_tiktok_lot_de_dix_borne_par_les_gestes_le_quota_et_le_stock(self):
+        now = dt.datetime.fromisoformat('2026-11-07T12:30:00+00:00')
+        for hourly, daily, replies, stock, expected in [
+            (80, 100, 30, 20, 10), (7, 100, 30, 20, 3), (80, 5, 30, 20, 2),
+            (80, 100, 4, 20, 4), (80, 100, 30, 6, 6),
+        ]:
+            with self.subTest(hourly=hourly, daily=daily, replies=replies, stock=stock):
+                account = self.account(hourly)
+                account.update(platform='tiktok', actions={'reply': {'left': replies}})
+                account['cadence']['daily'] = {'remaining': daily}
+                client = Mock()
+                client.api.side_effect = [{'daytime': True, 'accounts': [account]},
+                    {'items': [{'id': i, 'content': 'Commentaire', 'can_reply': True} for i in range(stock)]}]
+                plan = watch.snapshot(client, now)['accounts'][0]
+                self.assertEqual(plan['batch_max'], expected)
+                self.assertIn('order=oldest&limit=20', client.api.call_args.args[1])
+
     def test_tiktok_ne_demarre_pas_avec_un_seul_geste_ni_un_quota_de_flux_seul(self):
         for remaining,reply_left in [(1,10),(2,0)]:
             c=Mock();a=self.account(remaining);a['platform']='tiktok';a['actions']['reply']['left']=reply_left;a['actions']['feed.read']={'left':5}

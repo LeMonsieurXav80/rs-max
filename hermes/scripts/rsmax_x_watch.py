@@ -7,6 +7,9 @@ from pathlib import Path
 from urllib.parse import urlencode
 from community_manager import Client, daytime, pending_inbox_order
 
+TIKTOK_MAX_REPLIES = 10
+TIKTOK_MAX_CANDIDATES = 20
+
 
 def snapshot(client, now=None):
     now = now or dt.datetime.now(dt.timezone.utc)
@@ -79,11 +82,26 @@ def snapshot(client, now=None):
             can_feed = threads_discovery
             if not can_reply and not can_feed:
                 continue
-        inbox = client.api('GET', f"accounts/{account['id']}/inbox?" + urlencode({'order':pending_inbox_order(platform),'limit':5,'status':'unanswered','agent_queue':1})) if can_reply else {}
+        inbox = client.api('GET', f"accounts/{account['id']}/inbox?" + urlencode({'order':pending_inbox_order(platform),'limit':TIKTOK_MAX_CANDIDATES if tiktok else 5,'status':'unanswered','agent_queue':1})) if can_reply else {}
         items = [{'id':i['id'], 'content':i['content'], 'posted_at':i.get('posted_at'), 'post_url':i.get('post_url'), 'post_content':i.get('post_content')} for i in inbox.get('items', []) if i.get('can_reply')]
         if items or can_feed:
+            hourly = cadence.get('remaining')
+            daily = cadence.get('daily', {}).get('remaining')
+            hourly_reserve = required - (steps if can_reply else 1)
+            daily_reserve = int(bool(upcoming))
+            if tiktok:
+                # Le plafond de réponses et les deux gestes par réponse sont distincts.
+                batch_max = min(TIKTOK_MAX_REPLIES, len(items), actions['reply']['left'])
+                if hourly is not None:
+                    batch_max = min(batch_max, (hourly - hourly_reserve) // steps)
+                if daily is not None:
+                    batch_max = min(batch_max, (daily - daily_reserve) // steps)
+            else:
+                batch_max = min(1 if api else 5,
+                                max(1, ((hourly if hourly is not None else 11) - hourly_reserve) // steps),
+                                max(1, ((daily if daily is not None else 11) - daily_reserve) // steps))
             work.append({'platform':account['platform'], 'account_id':account['id'], 'strategy':account.get('strategy', {}), 'items':items,
-                         'persona':account.get('persona'),'auto_like':auto_like,'executor':'api' if api else 'browser', 'threads_discovery':threads_discovery, 'discovery_plan':discovery_plan, 'remaining':cadence.get('remaining'), 'daily_remaining':cadence.get('daily', {}).get('remaining'), 'batch_max':min(1 if tiktok or api else 5, max(1, ((cadence.get('remaining') if cadence.get('remaining') is not None else 11) - (required - (steps if can_reply else 1)))//steps), max(1, ((cadence.get('daily', {}).get('remaining') if cadence.get('daily', {}).get('remaining') is not None else 11) - (1 if upcoming else 0))//steps)), 'next_publication_at':upcoming})
+                         'persona':account.get('persona'),'auto_like':auto_like,'executor':'api' if api else 'browser', 'threads_discovery':threads_discovery, 'discovery_plan':discovery_plan, 'remaining':cadence.get('remaining'), 'daily_remaining':cadence.get('daily', {}).get('remaining'), 'batch_max':batch_max, 'next_publication_at':upcoming})
             if discovery_plan:
                 explorations.append(discovery_plan)
     discovery_first=[a for a in work if a['threads_discovery']]
