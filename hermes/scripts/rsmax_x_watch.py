@@ -79,11 +79,11 @@ def snapshot(client, now=None):
             can_feed = threads_discovery
             if not can_reply and not can_feed:
                 continue
-        inbox = client.api('GET', f"accounts/{account['id']}/inbox?" + urlencode({'order':pending_inbox_order(platform),'limit':5,'status':'unanswered','agent_queue':1})) if can_reply else {}
+        inbox = client.api('GET', f"accounts/{account['id']}/inbox?" + urlencode({'order':pending_inbox_order(platform),'limit':20 if platform == 'twitter' else 5,'status':'unanswered','agent_queue':1})) if can_reply else {}
         items = [{'id':i['id'], 'content':i['content'], 'posted_at':i.get('posted_at'), 'post_url':i.get('post_url'), 'post_content':i.get('post_content')} for i in inbox.get('items', []) if i.get('can_reply')]
         if items or can_feed:
             work.append({'platform':account['platform'], 'account_id':account['id'], 'strategy':account.get('strategy', {}), 'items':items,
-                         'persona':account.get('persona'),'auto_like':auto_like,'executor':'api' if api else 'browser', 'threads_discovery':threads_discovery, 'discovery_plan':discovery_plan, 'remaining':cadence.get('remaining'), 'daily_remaining':cadence.get('daily', {}).get('remaining'), 'batch_max':min(1 if tiktok or api else 5, max(1, ((cadence.get('remaining') if cadence.get('remaining') is not None else 11) - (required - (steps if can_reply else 1)))//steps), max(1, ((cadence.get('daily', {}).get('remaining') if cadence.get('daily', {}).get('remaining') is not None else 11) - (1 if upcoming else 0))//steps)), 'next_publication_at':upcoming})
+                         'persona':account.get('persona'),'auto_like':auto_like,'executor':'api' if api else 'browser', 'threads_discovery':threads_discovery, 'discovery_plan':discovery_plan, 'remaining':cadence.get('remaining'), 'daily_remaining':cadence.get('daily', {}).get('remaining'), 'batch_max':min(1 if tiktok or api else 10, max(1, ((cadence.get('remaining') if cadence.get('remaining') is not None else 11) - (required - (steps if can_reply else 1)))//steps), max(1, ((cadence.get('daily', {}).get('remaining') if cadence.get('daily', {}).get('remaining') is not None else 11) - (1 if upcoming else 0))//steps)), 'next_publication_at':upcoming})
             if discovery_plan:
                 explorations.append(discovery_plan)
     discovery_first=[a for a in work if a['threads_discovery']]

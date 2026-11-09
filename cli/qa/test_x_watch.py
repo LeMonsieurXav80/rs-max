@@ -28,6 +28,16 @@ class XWatchTest(unittest.TestCase):
         self.assertEqual(r['accounts'][0]['account_id'],11);self.assertEqual(r['accounts'][0]['items'][0]['id'],99)
         self.assertIn('accounts/11/inbox?',c.api.call_args.args[1])
 
+    def test_x_prelecture_elargie_et_dix_reponses_si_la_cadence_le_permet(self):
+        client = Mock()
+        items = [{'id': i, 'content': 'Merci', 'can_reply': True} for i in range(20)]
+        account = self.account()
+        account['cadence']['daily'] = {'remaining': 100}
+        client.api.side_effect = [{'daytime': True, 'accounts': [account]}, {'items': items}]
+        result = watch.snapshot(client, dt.datetime.fromisoformat('2026-11-07T12:30:00+00:00'))
+        self.assertIn('limit=20', client.api.call_args.args[1])
+        self.assertEqual(result['accounts'][0]['batch_max'], 10)
+
     def test_tiktok_reserve_le_duo_sans_action_like_de_flux_et_garde_la_legende(self):
         c=Mock();a=self.account(2);a['platform']='tiktok';a['actions']={'reply':{'enabled':True,'left':10}}
         c.api.side_effect=[{'daytime':True,'accounts':[a]},{'items':[{'id':99,'content':'Merci','post_content':'La tenue du jour','can_reply':True}]}]
