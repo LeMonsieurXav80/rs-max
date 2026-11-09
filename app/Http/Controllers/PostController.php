@@ -457,20 +457,19 @@ class PostController extends Controller
 
         $user = $request->user();
 
-        // Only keep accounts that are active for this user
-        $validAccounts = $user->publishablePostAccounts()
+        $newAccounts = $user->publishablePostAccounts()
             ->whereIn('social_accounts.id', $validated['accounts'])
+            ->whereNotIn('social_accounts.id', $post->postPlatforms->pluck('social_account_id'))
+            ->with('platform')
             ->get();
 
-        // Skip accounts already attached to this post (no duplicates, no reset)
-        $existingAccountIds = $post->postPlatforms->pluck('social_account_id')->all();
+        $mediaConflict = app(TikTokPostMedia::class)->conflictForAccounts($post->media, $newAccounts);
+        if ($mediaConflict) {
+            return back()->withErrors(['accounts' => $mediaConflict]);
+        }
 
         $added = 0;
-        foreach ($validAccounts as $account) {
-            if (in_array($account->id, $existingAccountIds, true)) {
-                continue;
-            }
-
+        foreach ($newAccounts as $account) {
             PostPlatform::create([
                 'post_id' => $post->id,
                 'social_account_id' => $account->id,
@@ -480,9 +479,11 @@ class PostController extends Controller
             $added++;
         }
 
-        $message = $added > 0
-            ? "{$added} plateforme(s) ajoutée(s). Cliquez sur « Publier » pour les diffuser."
-            : 'Aucune nouvelle plateforme à ajouter.';
+        $message = match (true) {
+            $added === 0 => 'Aucune nouvelle plateforme à ajouter.',
+            $post->status === 'scheduled' => "{$added} plateforme(s) ajoutée(s) à la publication planifiée.",
+            default => "{$added} plateforme(s) ajoutée(s). Cliquez sur « Publier » pour les diffuser.",
+        };
 
         return redirect()->route('posts.show', $post->id)->with('success', $message);
     }

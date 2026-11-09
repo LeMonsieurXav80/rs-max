@@ -88,6 +88,36 @@ class TikTokComposerAndStudioTest extends TestCase
         }
     }
 
+    public function test_ajouter_tiktok_depuis_la_fiche_conserve_la_planification_et_les_autres_diffusions(): void
+    {
+        $this->actingAs($this->manager);
+        $post = Post::create([
+            'user_id' => $this->manager->id, 'content_fr' => 'Contenu', 'status' => 'scheduled',
+            'scheduled_at' => now()->addDay()->startOfMinute(),
+        ]);
+        $platform = Platform::create(['slug' => 'instagram', 'name' => 'Instagram', 'auth_type' => 'oauth2']);
+        $other = SocialAccount::create(['name' => 'Instagram de test', 'platform_id' => $platform->id]);
+        $original = $post->postPlatforms()->create(['platform_id' => $platform->id,
+            'social_account_id' => $other->id, 'status' => 'pending']);
+
+        $this->get(route('posts.show', $post))->assertOk()->assertSee('Compte TikTok de test');
+        $url = route('posts.addPlatforms', $post);
+        $data = ['accounts' => [$this->account->id]];
+        $this->post($url, $data)->assertSessionHasErrors('accounts');
+        $this->assertSame(1, $post->postPlatforms()->count());
+
+        MediaFile::create(['filename' => 'fiche-photo.png', 'mime_type' => 'image/png', 'size' => 4, 'intimacy_level' => 'public']);
+        $post->update(['media' => [['url' => '/media/fiche-photo.png', 'type' => 'image']]]);
+        $this->post($url, $data)->assertRedirect(route('posts.show', $post))->assertSessionHasNoErrors();
+        $this->post($url, $data)->assertRedirect(route('posts.show', $post))->assertSessionHasNoErrors();
+
+        $this->assertSame(2, $post->postPlatforms()->count());
+        $this->assertSame('pending', $original->fresh()->status);
+        $this->assertSame('pending', $post->postPlatforms()->where('social_account_id', $this->account->id)->firstOrFail()->status);
+        $this->assertSame('scheduled', $post->fresh()->status);
+        $this->assertTrue($post->scheduled_at->equalTo($post->fresh()->scheduled_at));
+    }
+
     public function test_autorisation_du_clic_liee_a_la_diffusion_et_a_usage_unique(): void
     {
         Sanctum::actingAs($this->manager);

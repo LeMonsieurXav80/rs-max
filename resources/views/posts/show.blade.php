@@ -566,10 +566,10 @@
                         'facebook' => 'Facebook', 'instagram' => 'Instagram',
                         'threads' => 'Threads', 'twitter' => 'Twitter / X',
                         'bluesky' => 'Bluesky', 'telegram' => 'Telegram',
-                        'youtube' => 'YouTube', 'linkedin' => 'LinkedIn',
-                        'pinterest' => 'Pinterest',
+                        'youtube' => 'YouTube', 'tiktok' => 'TikTok',
+                        'linkedin' => 'LinkedIn', 'pinterest' => 'Pinterest',
                     ];
-                    $addPlatformOrder = ['facebook', 'instagram', 'threads', 'twitter', 'bluesky', 'telegram', 'youtube', 'linkedin', 'pinterest'];
+                    $addPlatformOrder = array_keys($addPlatformLabels);
                 @endphp
                 <div class="bg-white rounded-2xl shadow-sm border border-gray-100" x-data="{ count: 0 }">
                     <div class="px-6 lg:px-8 py-5 border-b border-gray-100">
