@@ -31,7 +31,7 @@ class BrowserTaskQueue
         }
 
         $task = DB::transaction(function () use ($account, $kind, $payload) {
-            $key = in_array($kind, ['x.post', 'x.like', 'x.repost'], true) ? ($payload['publication_key'] ?? null) : null;
+            $key = in_array($kind, ['x.post', 'x.like', 'x.repost', 'tiktok.publish'], true) ? ($payload['publication_key'] ?? null) : null;
             if ($key !== null) {
                 // Verrou du compte, même quand la ligne de tâche n'existe pas encore.
                 SocialAccount::whereKey($account->id)->lockForUpdate()->firstOrFail();
@@ -71,13 +71,14 @@ class BrowserTaskQueue
         parse_str(parse_url($payload['url'] ?? '', PHP_URL_QUERY) ?? '', $query);
 
         return [array_intersect_key($payload['target'] ?? [], array_flip(['id', 'author', 'text'])),
-            $query['in_reply_to'] ?? null, $query['quote_tweet_id'] ?? null];
+            $query['in_reply_to'] ?? null, $query['quote_tweet_id'] ?? null,
+            isset($payload['media_type']) ? [$payload['username'] ?? null, $payload['media_type'], $payload['visibility'] ?? null] : null];
     }
 
     /** Les URLs signées changent, pas l'identité du média livré. */
     private function mediaIdentity(array $media): array
     {
-        return array_map(fn ($m) => [parse_url($m['url'] ?? '', PHP_URL_HOST), parse_url($m['url'] ?? '', PHP_URL_PATH), $m['mimetype'] ?? null], $media);
+        return array_map(fn ($m) => [parse_url($m['url'] ?? '', PHP_URL_HOST), parse_url($m['url'] ?? '', PHP_URL_PATH), $m['mimetype'] ?? null, $m['sha256'] ?? null], $media);
     }
 
     /** Une seule tâche à la fois par profil : deux onglets se voleraient la session. */

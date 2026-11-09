@@ -16,6 +16,30 @@ class CommunityManagerInboxTest extends TestCase
 {
     use RefreshDatabase;
 
+    public function test_un_ancien_commentaire_tiktok_introuvable_est_differe_sans_tentative(): void
+    {
+        $this->travelTo(\Illuminate\Support\Carbon::parse('2026-11-09T10:00:00Z'));
+        $user = User::factory()->create(['role' => 'manager']);
+        $persona = Persona::create(['name' => 'Persona', 'system_prompt' => 'Réponse brève', 'is_active' => true]);
+        $account = SocialAccount::create(['name' => 'Compte TikTok', 'platform_id' => Platform::where('slug', 'tiktok')->firstOrFail()->id,
+            'persona_id' => $persona->id, 'driver' => 'browser', 'browser_profile' => 'nas-test', 'browser_username' => 'owner']);
+        $account->users()->attach($user, ['is_active' => true]);
+        Sanctum::actingAs($user);
+        $item = InboxItem::create(['social_account_id' => $account->id, 'platform_id' => $account->platform_id,
+            'type' => 'comment', 'external_id' => 'old-comment', 'author_username' => 'visitor', 'content' => 'Bonjour',
+            'post_content' => 'Légende', 'status' => 'unread', 'posted_at' => now()->subDays(3)]);
+
+        $this->mock(\App\Services\Browser\BrowserTaskQueue::class)->shouldReceive('run')->once()
+            ->withArgs(fn ($a, $kind, $payload) => $a->is($account) && $kind === 'tiktok.target'
+                && $payload['target'] === ['author' => 'visitor', 'content' => 'Bonjour', 'caption' => 'Légende'])
+            ->andReturn(['target_found' => false]);
+
+        $this->getJson('/api/community-manager/inbox/'.$item->id.'/context')
+            ->assertConflict()->assertJsonPath('skip_item', true);
+        $this->assertSame(0, (int) $item->fresh()->reply_attempts);
+        $this->assertNull($item->fresh()->reply_scheduled_at);
+    }
+
     public function test_contexte_persona_scope_aperçu_puis_planification_sans_appel_ia(): void
     {
         \Illuminate\Support\Facades\Queue::fake([\App\Jobs\SendAutonomousInboxReply::class]);

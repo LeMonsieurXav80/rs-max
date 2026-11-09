@@ -53,6 +53,24 @@ class CommunityManagerInboxController extends Controller
         if (filled($inboxItem->author_username) && in_array(strtolower(ltrim($inboxItem->author_username, '@')), array_filter([strtolower($a->browser_username ?? ''), strtolower($a->name)]), true)) {
             $this->deferContext($inboxItem, 'already_handled', 'Commentaire du compte lui-même : passer au suivant.');
         }
+        if ($a->platform->slug === 'tiktok' && $inboxItem->posted_at?->lt(now()->subDay())) {
+            abort_if($inboxItem->reply_attempts > 0 || $inboxItem->replied_at || $inboxItem->reply_scheduled_at, 409, 'Commentaire déjà tenté ou en cours.');
+            $r->attributes->set('community_manager', true);
+            try {
+                $target = app(\App\Services\Browser\BrowserTaskQueue::class)->run($a, 'tiktok.target', [
+                    'url' => 'https://www.tiktok.com/tiktokstudio/comment',
+                    'username' => $a->browser_username,
+                    'target' => ['author' => $inboxItem->author_username, 'content' => $inboxItem->content,
+                        'caption' => $inboxItem->post_content],
+                ], 75);
+            } catch (\App\Services\Browser\BrowserException $e) {
+                abort(502, $e->getMessage());
+            }
+            if (($target['target_found'] ?? false) !== true) {
+                $this->deferContext($inboxItem, 'context_changed', 'Ancien commentaire introuvable dans Studio. Passer au suivant.');
+            }
+        }
+
         $xThread = null;
         if ($a->platform->slug === 'twitter' && $a->usesBrowser()) {
             abort_unless(app(CommunityManagerWindow::class)->isOpen(), 423, 'Lecture X autorisée de 06 h à 22 h à Lisbonne.');

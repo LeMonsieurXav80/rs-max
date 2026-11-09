@@ -16,7 +16,7 @@ class ProfilePictureService
      * @param  string  $accountId  The platform_account_id for consistent filenames
      * @return string|null Local path (/media/pp_{slug}_{hash}.{ext}) or null on failure
      */
-    public static function download(string $remoteUrl, string $platformSlug, string $accountId): ?string
+    public static function download(string $remoteUrl, string $platformSlug, string $accountId, bool $allowRedirects = true): ?string
     {
         if (! $remoteUrl) {
             return null;
@@ -28,7 +28,11 @@ class ProfilePictureService
         }
 
         try {
-            $response = Http::timeout(15)->get($remoteUrl);
+            $request = Http::timeout(15);
+            if (! $allowRedirects) {
+                $request->withoutRedirecting();
+            }
+            $response = $request->get($remoteUrl);
 
             if (! $response->successful()) {
                 Log::warning('ProfilePictureService: download failed', [
@@ -41,7 +45,11 @@ class ProfilePictureService
             }
 
             $contentType = $response->header('Content-Type');
-            $extension = self::extensionFromMime($contentType) ?? self::extensionFromUrl($remoteUrl) ?? 'jpg';
+            $extension = self::extensionFromMime($contentType);
+            if (! $allowRedirects && ($extension === null || strlen($response->body()) > 5 * 1024 * 1024)) {
+                return null;
+            }
+            $extension ??= self::extensionFromUrl($remoteUrl) ?? 'jpg';
 
             $filename = 'pp_'.$platformSlug.'_'.abs(crc32($accountId)).'.'.$extension;
 

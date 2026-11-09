@@ -31,7 +31,7 @@ class ImportExternalPostsCommand extends Command
      *
      * @see \App\Services\Import\ImportService::getServiceForPlatform()
      */
-    private const IMPORTABLE = ['facebook', 'instagram', 'twitter', 'youtube', 'threads', 'bluesky', 'pinterest'];
+    private const IMPORTABLE = ['facebook', 'instagram', 'twitter', 'youtube', 'threads', 'bluesky', 'pinterest', 'tiktok'];
 
     public function handle(ImportService $importService, ExternalMediaHasher $hasher): int
     {
@@ -51,7 +51,19 @@ class ImportExternalPostsCommand extends Command
             ->when($this->option('account'), fn ($q, $id) => $q->where('id', (int) $id))
             ->when($this->option('platform'), fn ($q, $slug) => $q->whereHas('platform', fn ($p) => $p->where('slug', $slug)))
             ->get()
-            ->filter(fn (SocialAccount $a) => in_array($a->platform?->slug, self::IMPORTABLE, true) && ! $a->usesBrowser());
+            ->filter(function (SocialAccount $account) {
+                if (! in_array($account->platform?->slug, self::IMPORTABLE, true)) {
+                    return false;
+                }
+                if (! $account->usesBrowser()) {
+                    return true;
+                }
+
+                return $account->platform?->slug === 'tiktok'
+                    && ($this->option('account') || $this->option('platform') === 'tiktok')
+                    && filled($account->browser_profile)
+                    && $account->browser_session_status === 'connected';
+            });
 
         if ($accounts->isEmpty()) {
             $this->warn('Aucun compte a importer.');

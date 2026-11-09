@@ -84,6 +84,8 @@ Schedule::call(function () {
 Schedule::command('x:session-check')->hourly()->withoutOverlapping(30);
 Schedule::command('tiktok:session-check')->hourly()->withoutOverlapping(30);
 Schedule::command('x:browser-sync')->everySixHours()->withoutOverlapping(60);
+// Même source pour les statistiques et le miroir des publications natives TikTok.
+Schedule::command('external:import --platform=tiktok --limit=100 --no-hash')->cron('20 0,6,12,18 * * *')->withoutOverlapping(30);
 
 // Check for application updates (hourly)
 Schedule::call(function () {

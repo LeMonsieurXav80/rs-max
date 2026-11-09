@@ -4,9 +4,14 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Models\BrowserTask;
+use App\Models\PostPlatform;
+use App\Services\Browser\BrowserException;
 use App\Services\Browser\BrowserTaskQueue;
+use App\Services\Media\TikTokPostMedia;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Carbon;
+use Illuminate\Support\Facades\DB;
 
 /** Tâches exécutées par Companion dans le Chromium du NAS. */
 class BrowserTaskController extends Controller
@@ -81,6 +86,38 @@ class BrowserTaskController extends Controller
         return response()->json(['ok' => true]);
     }
 
+    /** Réserve le seul clic final d'une diffusion demandée dans RS-Max. */
+    public function authorizeTikTokPublication(Request $request, BrowserTask $task): JsonResponse
+    {
+        abort_unless($request->user()->isAdmin(), 403);
+
+        DB::transaction(function () use ($task) {
+            $task = BrowserTask::whereKey($task->id)->lockForUpdate()->firstOrFail();
+            $payload = $task->payload;
+            abort_unless($task->kind === 'tiktok.publish' && $task->status === BrowserTask::RUNNING
+                && empty($payload['dry']) && empty($task->result['commit_authorized'])
+                && isset($payload['deadline']) && now()->lt(Carbon::parse($payload['deadline']))
+                && preg_match('/^post-platform:(\d+)$/', $task->idempotency_key ?? '', $match), 409);
+
+            $delivery = PostPlatform::whereKey($match[1])->lockForUpdate()->first();
+            abort_unless($delivery && $delivery->social_account_id === $task->social_account_id
+                && $delivery->status === 'publishing' && $delivery->post?->status === 'publishing'
+                && $delivery->socialAccount?->browser_profile === $task->profile, 409);
+            $rules = app(TikTokPostMedia::class);
+            try {
+                $rules->type($payload['media'] ?? []);
+                foreach ($payload['media'] as $media) {
+                    abort_unless($rules->catalogFile($media['name'] ?? ''), 422, 'Média TikTok indisponible.');
+                }
+            } catch (BrowserException $e) {
+                abort(422, $e->getMessage());
+            }
+            $task->update(['result' => ['commit_authorized' => true]]);
+        });
+
+        return response()->json(['ok' => true]);
+    }
+
     public function finish(Request $r, BrowserTask $task): JsonResponse
     {
         abort_unless($r->user()->isAdmin(), 403);
@@ -101,7 +138,7 @@ class BrowserTaskController extends Controller
                 $v['result']['submission'] = $task->result['submission'];
             }
         }
-        if (in_array($task->kind, ['tiktok.photo.publish', 'threads.agent.act', 'tiktok.reply'], true)) {
+        if (in_array($task->kind, ['tiktok.photo.publish', 'threads.agent.act', 'tiktok.reply', 'tiktok.publish'], true)) {
             $v['result'] = array_replace($task->result ?? [], $v['result'] ?? []);
         }
         $task->update($v + ['finished_at' => now()]);

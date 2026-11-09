@@ -7,6 +7,7 @@ use App\Models\Partner;
 use App\Models\Post;
 use App\Models\PostPlatform;
 use App\Services\Media\MediaRatioService;
+use App\Services\Media\TikTokPostMedia;
 use App\Services\PartnerTagService;
 use App\Services\PostUrlBuilder;
 use App\Services\PublishingService;
@@ -115,7 +116,7 @@ class PostApiController extends Controller
         ]);
 
         $user = $request->user();
-        $validAccounts = $user->activeSocialAccounts()
+        $validAccounts = $user->publishablePostAccounts()
             ->whereIn('social_accounts.id', $validated['accounts'])
             ->get();
 
@@ -124,7 +125,8 @@ class PostApiController extends Controller
         }
 
         if ($validated['status'] === 'scheduled') {
-            $ratioConflict = app(MediaRatioService::class)->conflictForAccounts($validated['media'] ?? null, $validAccounts);
+            $ratioConflict = app(TikTokPostMedia::class)->conflictForAccounts($validated['media'] ?? null, $validAccounts)
+                ?? app(MediaRatioService::class)->conflictForAccounts($validated['media'] ?? null, $validAccounts);
             if ($ratioConflict) {
                 return response()->json(['error' => $ratioConflict], 422);
             }
@@ -202,11 +204,12 @@ class PostApiController extends Controller
         // ou les comptes, le reste etant deja en base.
         if (($validated['status'] ?? $post->status) === 'scheduled') {
             $accounts = isset($validated['accounts'])
-                ? $request->user()->activeSocialAccounts()->whereIn('social_accounts.id', $validated['accounts'])->get()
+                ? $request->user()->publishablePostAccounts()->whereIn('social_accounts.id', $validated['accounts'])->get()
                 : $this->accountsOf($post);
             $media = array_key_exists('media', $validated) ? $validated['media'] : $post->media;
 
-            $ratioConflict = app(MediaRatioService::class)->conflictForAccounts($media, $accounts);
+            $ratioConflict = app(TikTokPostMedia::class)->conflictForAccounts($media, $accounts)
+                ?? app(MediaRatioService::class)->conflictForAccounts($media, $accounts);
             if ($ratioConflict) {
                 return response()->json(['error' => $ratioConflict], 422);
             }
@@ -230,7 +233,7 @@ class PostApiController extends Controller
             // Mettre à jour les comptes si fournis
             if (isset($validated['accounts'])) {
                 $user = $request->user();
-                $validAccounts = $user->activeSocialAccounts()
+                $validAccounts = $user->publishablePostAccounts()
                     ->whereIn('social_accounts.id', $validated['accounts'])
                     ->get();
 
@@ -319,7 +322,8 @@ class PostApiController extends Controller
 
         // Sans ce controle, un brouillon repondrait « Publication lancee » puis
         // echouerait sur Instagram sans que l'appelant le voie.
-        $ratioConflict = app(MediaRatioService::class)->conflictForAccounts($post->media, $this->accountsOf($post));
+        $ratioConflict = app(TikTokPostMedia::class)->conflictForAccounts($post->media, $this->accountsOf($post))
+                ?? app(MediaRatioService::class)->conflictForAccounts($post->media, $this->accountsOf($post));
         if ($ratioConflict) {
             return response()->json(['error' => $ratioConflict], 422);
         }

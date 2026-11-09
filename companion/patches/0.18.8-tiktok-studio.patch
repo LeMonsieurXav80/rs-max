@@ -1,0 +1,479 @@
+--- a/background.js
++++ b/background.js
+@@ -404,7 +404,7 @@
+ 
+ const TIKTOK_STUDIO_COMMENTS = 'https://www.tiktok.com/tiktokstudio/comment';
+ const TIKTOK_REPLY_RELOAD_DELAY = 105000;
+-const TIKTOK_STUDIO_TASKS = new Set(['tiktok.comments', 'tiktok.reply', 'tiktok.like', 'tiktok.verify']);
++const TIKTOK_STUDIO_TASKS = new Set(['tiktok.comments', 'tiktok.target', 'tiktok.reply', 'tiktok.like', 'tiktok.verify']);
+ 
+ async function reloadStudio(tabId) {
+   globalThis.RSTaskJournal?.bind(tabId);globalThis.RSTaskJournal?.mark('page.reload',{kind:'tiktok.studio'});
+@@ -432,7 +432,7 @@
+ async function nativeRequest(operation,body) {
+   const token=(await nativeConfig()).nativeInputToken;
+   if(!token)throw Error('Service natif NAS non configuré.');
+-  const r=await fetch('http://127.0.0.1:9223/tiktok/'+operation,{method:'POST',headers:{'Content-Type':'application/json',Authorization:'Bearer '+token},body:JSON.stringify(body),signal:AbortSignal.timeout(operation==='verify'?80000:15000)});
++  const r=await fetch('http://127.0.0.1:9223/tiktok/'+operation,{method:'POST',headers:{'Content-Type':'application/json',Authorization:'Bearer '+token},body:JSON.stringify(body),signal:AbortSignal.timeout(['verify','studio'].includes(operation)?80000:15000)});
+   if(!r.ok)throw Error('Service natif NAS : opération refusée ou interrompue, aucun renvoi.');return r.json();
+ }
+ async function publicTikTokProof(task,submission,studio) {
+@@ -468,7 +468,7 @@
+     await chrome.tabs.update(tabId, { active: true });
+     if (task.kind !== 'tiktok.reply') await reloadStudio(tabId);
+   }
+-  if (task.kind === 'tiktok.comments') return askPage(tabId, task);
++  if (['tiktok.comments','tiktok.target'].includes(task.kind)) return askPage(tabId, task);
+   if (task.kind === 'tiktok.verify') {
+     if (!['tiktok.reply','tiktok.like'].includes(task.payload.action)) throw Error('Action de relecture TikTok invalide.');
+     const studio = await askPage(tabId, task);
+@@ -574,6 +574,48 @@
+   try{return await readTikTokPhotoProof(tabId,task.payload)}finally{await chrome.tabs.remove(tabId).catch(()=>{});}
+ }
+ 
++async function executeTikTokPublication(task) {
++  const p = task.payload;
++  if (p.url !== 'https://www.tiktok.com/tiktokstudio/upload' || !['photo', 'video'].includes(p.media_type))
++    throw Error('Import TikTok inattendu.');
++  const tabId = await taskTab(p.url);
++  let requested = false, receipt = {};
++  try {
++    await askPage(tabId, {kind: p.media_type === 'photo' ? 'tiktok.photo.ready' : 'tiktok.video.publish.ready'});
++    requested = true;
++    const action = await chrome.tabs.sendMessage(tabId, {type:'x.task', task});
++    if (!action) throw Error('Résultat de publication TikTok absent.');
++    receipt = action.result || {};
++    if (p.dry || action.status !== 'done' || !receipt.send_clicked) return action;
++
++    // Studio effectue lui-même les lectures de son inventaire. La preuve
++    // exige un seul nouveau contenu public du bon compte, texte et type exacts.
++    await pause(8000);
++    for (let read = 0; read < 3; read++) {
++      const seen = await nativeRequest('studio', {username:p.username, limit:12, analytics:false});
++      const matches = seen.posts.filter(item =>
++        item.type === p.media_type && item.caption === p.caption &&
++        item.published_at * 1000 >= receipt.sent_at - 5000);
++      if (matches.length > 1) break;
++      if (matches.length === 1) {
++        const {id, url} = matches[0];
++        if (p.media_type === 'photo') {
++          const proof = await readTikTokPhotoProof(tabId, {...p, photo_url:url});
++          return {...proof, result:{...receipt, ...proof.result, id}};
++        }
++        return {status:'done', result:{...receipt, id, url, confirmed:true, proof:'after_reload', proof_source:'studio_inventory'}};
++      }
++      if (read < 2) await pause(5000);
++    }
++    return {status:'uncertain', result:receipt, error:'Publication TikTok non retrouvée dans Studio après rechargement.'};
++  } catch (error) {
++    return {status:requested && !p.dry ? 'uncertain' : 'failed', result:receipt, error:error.message};
++  } finally {
++    taskMedia = null;
++    await chrome.tabs.remove(tabId).catch(() => {});
++  }
++}
++
+ async function executeThreadsTask(task) {
+   const tabId=await taskTab(task.payload.url||'https://www.threads.com/');let requested=false,receipt={};
+   try {
+@@ -609,6 +651,11 @@
+   if(task.kind.startsWith('threads.'))return executeThreadsTask(task);
+   if(task.kind==='tiktok.photo.check')return checkTikTokPhotoTask(task);
+   if(task.kind==='tiktok.photo.publish')return executeTikTokPhotoTask(task);
++  if(task.kind==='tiktok.publish')return executeTikTokPublication(task);
++  if(task.kind==='tiktok.studio.read'){
++    const result=await nativeRequest('studio',{username:task.payload.username,limit:task.payload.limit});
++    return {status:'done',result};
++  }
+   if(task.kind==='x.post')return executeXPostTask(task);
+   if (['x.agent.read','x.agent.act','x.like','x.repost'].includes(task.kind)) return executeXAgentTask(task);
+   if (TIKTOK_FEED_TASKS.has(task.kind)) return executeTikTokFeedTask(task);
+--- a/manifest.json
++++ b/manifest.json
+@@ -1,7 +1,7 @@
+ {
+   "manifest_version": 3,
+   "name": "RS-Max Companion",
+-  "version": "0.18.7",
++  "version": "0.18.8",
+   "description": "Actions assistees sur les reseaux sociaux (engagement, publication) avec remontee vers l'API RS-Max.",
+   "permissions": [
+     "storage",
+@@ -117,7 +117,8 @@
+         "tiktok/worker.js",
+         "tiktok/session.js",
+         "tiktok/upload-agent.js",
+-        "tiktok/photos.js"
++        "tiktok/photos.js",
++        "tiktok/publish-video.js"
+       ],
+       "css": [
+         "content/ui.css"
+--- a/native/server.cjs
++++ b/native/server.cjs
+@@ -2,6 +2,7 @@
+ const http = require('node:http'), fs = require('node:fs'), crypto = require('node:crypto');
+ const {perform} = require('./input.cjs');
+ const {verifyPublic} = require('./public.cjs');
++const {readStudio} = require('./studio.cjs');
+ function createServer(config, handlers = {perform, verifyPublic}) {
+   if (!/^[a-f0-9]{64}$/.test(config.nativeInputToken || '') || !/^chrome-extension:\/\/[a-p]{32}$/.test(config.nativeInputOrigin || '')) throw Error('Configuration native NAS absente');
+   let busy = false;
+@@ -12,10 +13,10 @@
+     res.setHeader('Access-Control-Allow-Origin', config.nativeInputOrigin);
+     if (req.method === 'OPTIONS') { res.setHeader('Access-Control-Allow-Methods','POST');res.setHeader('Access-Control-Allow-Headers','Authorization, Content-Type');res.writeHead(204);return res.end(); }
+     if (auth.length !== expected.length || !crypto.timingSafeEqual(auth,expected)) {res.writeHead(403);return res.end('{"error":"Accès refusé"}');}
+-    if (req.method !== 'POST' || !['/tiktok/fill','/tiktok/send','/tiktok/verify','/tiktok/health'].includes(req.url)) {res.writeHead(404);return res.end('{}');}
++    if (req.method !== 'POST' || !['/tiktok/fill','/tiktok/send','/tiktok/verify','/tiktok/studio','/tiktok/health'].includes(req.url)) {res.writeHead(404);return res.end('{}');}
+     if (busy) {res.writeHead(409);return res.end('{"error":"Opération native déjà en cours"}');}
+     busy=true;
+-    try { let body=''; for await (const part of req) {body+=part;if(body.length>16000){res.writeHead(413);return res.end('{}');}} const s=JSON.parse(body);const value=req.url.endsWith('/health')?{ready:true,version:'0.18.7'}:req.url.endsWith('/verify')?await handlers.verifyPublic(s):await handlers.perform(req.url.split('/').at(-1),s);res.end(JSON.stringify(value)); }
++    try { let body=''; for await (const part of req) {body+=part;if(body.length>16000){res.writeHead(413);return res.end('{}');}} const s=JSON.parse(body);const value=req.url.endsWith('/health')?{ready:true,version:'0.18.8'}:req.url.endsWith('/verify')?await handlers.verifyPublic(s):req.url.endsWith('/studio')?await readStudio(s):await handlers.perform(req.url.split('/').at(-1),s);res.end(JSON.stringify(value)); }
+     catch {res.writeHead(409);res.end('{"error":"Opération native refusée ou interrompue : vérifier sans renvoyer"}');}
+     finally {busy=false;}
+   });
+--- /dev/null
++++ b/native/studio.cjs
+@@ -0,0 +1,141 @@
++'use strict';
++
++const { connect } = require('./cdp.cjs');
++const wait = ms => new Promise(resolve => setTimeout(resolve, ms));
++const host = 'https://www.tiktok.com';
++const paths = {
++  profile: '/tiktokstudio/api/web/user',
++  posts: '/tiktok/creator/manage/item_list/v1/',
++  analytics: '/aweme/v2/data/insight/',
++};
++
++function count(value) {
++  if (!/^\d+$/.test(String(value ?? ''))) return null;
++  const number = Number(value);
++  return Number.isSafeInteger(number) ? number : null;
++}
++
++function cdn(value) {
++  try {
++    const url = new URL(value);
++    if (url.protocol === 'https:' && !url.username && !url.password && !url.port &&
++        /(^|\.)tiktokcdn(?:-eu|-us)?\.com$/.test(url.hostname)) return url.href;
++  } catch {}
++  return null;
++}
++
++function readPost(item, username, now = Math.floor(Date.now() / 1000)) {
++  const id = item?.item_id;
++  const published = count(item?.post_time);
++  if (typeof id !== 'string' || !/^\d{15,25}$/.test(id) || !published ||
++      published > now || item.status !== 102 || item.visibility !== 1 ||
++      item.in_review !== false || ![1, 2].includes(item.item_type)) return null;
++  const type = item.item_type === 2 ? 'photo' : 'video';
++  const metrics = {};
++  for (const [key, field] of Object.entries({
++    views: 'play_count', likes: 'like_count', comments: 'comment_count',
++    shares: 'share_count', bookmarks: 'favorite_count',
++  })) {
++    const value = count(item[field]);
++    if (value !== null) metrics[key] = value;
++  }
++  const cover = (item.cover_url || []).map(cdn).find(Boolean) || null;
++  const video = (item.play_addr || []).map(cdn).find(Boolean) || null;
++  return {
++    id, type, published_at: published, caption: String(item.desc || '').slice(0, 8000),
++    url: host + '/@' + username + '/' + type + '/' + id, cover, video, metrics,
++  };
++}
++
++async function readStudio(spec, cdp = 'http://127.0.0.1:9222') {
++  const { username, limit, analytics = true } = spec;
++  if (!/^[\w.]{1,32}$/.test(username || '') || !Number.isInteger(limit) || limit < 1 || limit > 200)
++    throw Error('Paramètres de lecture Studio invalides.');
++
++  const version = await (await fetch(cdp + '/json/version')).json();
++  const browser = await connect(version.webSocketDebuggerUrl);
++  let id, page;
++  try {
++    id = (await browser.call('Target.createTarget', { url: 'about:blank', background: true })).targetId;
++    const target = (await (await fetch(cdp + '/json')).json()).find(tab => tab.id === id);
++    if (!target) throw Error('Onglet de lecture Studio absent.');
++    page = await connect(target.webSocketDebuggerUrl);
++    const requests = new Map(), posts = new Map();
++    let profile, followerCount = null, hasMore = true, lists = 0, wrongIdentity = false;
++    page.onEvent = ({ method, params }) => {
++      if (method === 'Network.responseReceived' && params.response.status === 200) {
++        const url = new URL(params.response.url);
++        if (url.origin === host && Object.values(paths).includes(url.pathname))
++          requests.set(params.requestId, url.pathname);
++      }
++      if (method !== 'Network.loadingFinished' || !requests.has(params.requestId)) return;
++      const path = requests.get(params.requestId);
++      requests.delete(params.requestId);
++      page.call('Network.getResponseBody', { requestId: params.requestId }).then(response => {
++        const body = JSON.parse(response.base64Encoded ? Buffer.from(response.body, 'base64').toString() : response.body);
++        if (path === paths.profile && body.statusCode === 0) {
++          const user = body.userBaseInfo?.UserProfile?.UserBase;
++          const handle = user?.UniqId?.toLowerCase();
++          if (handle && handle !== username) wrongIdentity = true;
++          if (handle === username) profile = { username, avatar: cdn(user.Avatars?.[0]?.UrlInfo?.UrlList?.[0]) };
++        }
++        if (path === paths.posts && body.status_code === 0 && Array.isArray(body.item_list)) {
++          lists++;
++          hasMore = body.has_more === true;
++          for (const item of body.item_list) {
++            const post = readPost(item, username);
++            if (post) posts.set(post.id, post);
++          }
++        }
++        if (path === paths.analytics && body.status_code === 0 && body.follower_num?.status === 0) {
++          followerCount = count(body.follower_num.value);
++        }
++      }).catch(() => {});
++    };
++
++    await page.call('Network.enable');
++    await page.call('Page.navigate', { url: host + '/tiktokstudio/content' });
++    let quiet = 0;
++    const until = Date.now() + 42000;
++    while (Date.now() < until && !wrongIdentity) {
++      if (profile && lists && (posts.size >= limit || !hasMore || quiet >= 5)) break;
++      await wait(1500);
++      if (!profile || !lists) continue;
++      const before = posts.size;
++      // La liste Studio charge la page suivante lorsque sa zone défile.
++      await page.call('Runtime.evaluate', { expression: `(() => {
++        const scrollers = [document.scrollingElement, ...document.querySelectorAll('main,section,div')];
++        for (const el of scrollers) {
++          if (el && el.scrollHeight > el.clientHeight + 40 && el.clientHeight > 160 &&
++              (el === document.scrollingElement || /auto|scroll/.test(getComputedStyle(el).overflowY)))
++            el.scrollTop = el.scrollHeight;
++        }
++      })()` });
++      await wait(1200);
++      quiet = posts.size === before ? quiet + 1 : 0;
++    }
++    if (!profile || wrongIdentity || !lists) throw Error('Identité ou liste Studio non confirmée.');
++    if (!profile.avatar) {
++      const avatar = await page.call('Runtime.evaluate', { expression: `document
++        .querySelector('[data-tt="Header_NewHeader_Clickable"] img')?.src || null`, returnByValue: true });
++      profile.avatar = cdn(avatar.result.value);
++    }
++
++
++    if (analytics) {
++      await page.call('Page.navigate', { url: host + '/tiktokstudio/analytics' });
++      const deadline = Date.now() + 17000;
++      while (followerCount === null && !wrongIdentity && Date.now() < deadline) await wait(600);
++      if (wrongIdentity) throw Error('Compte Studio différent pendant la lecture.');
++    }
++
++    return { ...profile, followers_count: followerCount, has_more: hasMore,
++      posts: [...posts.values()].sort((a, b) => b.published_at - a.published_at).slice(0, limit) };
++  } finally {
++    page?.close();
++    if (id) await browser.call('Target.closeTarget', { targetId: id }).catch(() => {});
++    browser.close();
++  }
++}
++
++module.exports = { readStudio, readPost };
+--- a/tiktok/comments.js
++++ b/tiktok/comments.js
+@@ -95,6 +95,18 @@
+     if (!await ctx.waitFor(correct)) throw Error('Filtre des commentaires non confirmé.');
+     await ctx.pause(1000);
+   }
++  function changeSearch(field, value) {
++    field.focus();
++    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(field, value);
++    field.dispatchEvent(new Event('input', {bubbles:true}));
++    field.dispatchEvent(new KeyboardEvent('keydown', {key:'Enter', code:'Enter', bubbles:true}));
++  }
++
++  function exactMatches(target, items = rows().map(snapshot)) {
++    return items.filter(item =>
++      item.author === target.author && item.content === target.content && item.caption === target.caption);
++  }
++
+   /** Cherche aussi au-delà du premier lot chargé ; aucune écriture sociale. */
+   async function findTarget(ctx, target, timeout = 22000) {
+     const seen = new Set(), deadline = Date.now() + timeout;
+@@ -105,6 +117,25 @@
+       return item;
+     };
+     await ctx.waitFor(() => rows().length, {timeout: Math.min(5000, timeout)});
++    const initialRows = rows().map(snapshot);
++    initialRows.forEach(item => seen.add(item.key));
++    const initial = exactMatches(target, initialRows);
++    if (initial.length > 1) throw Error('Commentaire ciblé ambigu : aucune action.');
++    if (initial.length === 1) return finish(initial[0], 'found');
++
++    const field = document.querySelector('[data-tt="components_SearchBar_TUXTextInput"]');
++    if (field instanceof HTMLInputElement && /^[\w.]{1,32}$/.test(target.author)) {
++      changeSearch(field, target.author);
++      await ctx.pause(1800);
++      const matches = exactMatches(target);
++      if (matches.length > 1) throw Error('Commentaire ciblé ambigu : aucune action.');
++      if (matches.length === 1) {
++        seen.add(matches[0].key);
++        return finish(matches[0], 'found_by_search');
++      }
++      changeSearch(field, '');
++      await ctx.pause(1200);
++    }
+     while (Date.now() < deadline && screens <= 20 && seen.size <= 200) {
+       if (ctx.stopped) throw Error('Arrêt demandé.');
+       const current = rows().map(snapshot);
+--- a/tiktok/session.js
++++ b/tiktok/session.js
+@@ -88,7 +88,18 @@
+       return true;
+     }
+     if(m.task?.kind==='tiktok.whoami'){
+-      identity().then(username=>reply({status:'done',result:{username}}),()=>reply({status:'done',result:{username:null}}));
++      identity().then(username=>reply({status:'done',result:{username,avatar:document.querySelector('[data-tt="Header_NewHeader_Clickable"] img')?.src||null}}),()=>reply({status:'done',result:{username:null}}));
++      return true;
++    }
++    if(m.task?.kind==='tiktok.target'){
++      const {username,target} = m.task.payload;
++      const check = async () => {
++        if (await identity() !== username) throw Error('Compte TikTok différent à la lecture.');
++        const ctx = recipeContext();
++        const item = await findInComments(target, true, ctx);
++        return {status:'done',result:{target_found:Boolean(item),verification:ctx.targetSearch}};
++      };
++      check().then(reply,e=>reply({status:'failed',error:e.message}));
+       return true;
+     }
+     if(m.task?.kind==='tiktok.comments'){
+--- a/tiktok/photos.js
++++ b/tiktok/photos.js
+@@ -12,7 +12,29 @@
+  function guard(p){window.RSActivityWindow.assert(p.activity_window);if(!p.deadline||Date.now()>Date.parse(p.deadline))throw Error('Demande photo périmée.');}
+  async function identity(p){guard(p);if(!location.pathname.startsWith('/tiktokstudio')||!window.RSTikTokComments)throw Error('Studio indisponible ou session déconnectée.');if(await window.RSTikTokComments.readIdentity({waitFor:(fn,o)=>wait(fn,o?.timeout)})!==p.username)throw Error('Compte TikTok différent : aucun envoi.');}
+  const sha=async bytes=>[...new Uint8Array(await crypto.subtle.digest('SHA-256',bytes))].map(b=>b.toString(16).padStart(2,'0')).join('');
+- async function files(media){if(!Array.isArray(media)||media.length<1||media.length>35||media.reduce((n,m)=>n+m.size,0)>250*1024*1024)throw Error('Lot photo invalide ou supérieur à 250 Mo.');const result=[];for(const m of media){const response=await chrome.runtime.sendMessage({type:'x.task.media',url:m.url});if(!response?.ok||response.data.size!==m.size||m.size>50*1024*1024)throw Error('Photo inaccessible ou taille différente.');const chunks=[];for(let offset=0;offset<m.size;offset+=512*1024){const r=await chrome.runtime.sendMessage({type:'x.task.chunk',offset,size:512*1024});if(!r?.ok)throw Error('Photo interrompue.');chunks.push(Uint8Array.from(atob(r.data),c=>c.charCodeAt(0)));}const file=new File(chunks,m.name,{type:m.mimetype});if(await sha(await file.arrayBuffer())!==m.sha256)throw Error('Octets de la photo modifiés.');result.push(file)}return result}
++
++ async function readFile(media, maxBytes) {
++   const response = await chrome.runtime.sendMessage({type:'x.task.media', url:media.url});
++   if (!response?.ok || response.data.size !== media.size || media.size > maxBytes)
++     throw Error('Média inaccessible ou taille différente.');
++   const chunks = [];
++   for (let offset = 0; offset < media.size; offset += 512 * 1024) {
++     const reply = await chrome.runtime.sendMessage({type:'x.task.chunk', offset, size:512 * 1024});
++     if (!reply?.ok) throw Error('Lecture du média interrompue.');
++     chunks.push(Uint8Array.from(atob(reply.data), char => char.charCodeAt(0)));
++   }
++   const file = new File(chunks, media.name, {type:media.mimetype});
++   if (await sha(await file.arrayBuffer()) !== media.sha256) throw Error('Octets du média modifiés.');
++   return file;
++ }
++ async function files(media) {
++   if (!Array.isArray(media) || media.length < 1 || media.length > 35 ||
++       media.reduce((bytes, item) => bytes + item.size, 0) > 250 * 1024 * 1024)
++     throw Error('Lot photo invalide ou supérieur à 250 Mo.');
++   const result = [];
++   for (const item of media) result.push(await readFile(item, 50 * 1024 * 1024));
++   return result;
++ }
+  const titleInput=()=>document.querySelector('input[placeholder="Add a catchy title"],input[placeholder="Ajoute un titre accrocheur"],input[placeholder="Ajoutez un titre accrocheur"]');
+  const captionInput=()=>document.querySelector('[contenteditable][role="combobox"], [contenteditable="true"], [contenteditable="plaintext-only"], [role="combobox"][aria-autocomplete="list"]');
+  const thumbnails=()=>[...document.querySelectorAll('[aria-roledescription="draggable"][data-id]')].filter(visible);
+@@ -28,12 +50,12 @@
+  async function prepare(p){await identity(p);if(location.pathname!=='/tiktokstudio/upload'||location.search)throw Error('Import photo vide attendu.');if(captionInput()||document.querySelector('textarea'))throw Error('Un éditeur existe déjà : aucun remplacement.');mark('prepare');const photo=await wait(()=>buttons().find(e=>e.getAttribute('aria-controls')==='panel-photo'||/^(Photos|Photo)$/.test(text(e))));if(!photo)throw Error('Photos indisponibles sur ce compte.');photo.click();const input=await wait(()=>document.querySelector('input[type="file"][accept*="image"]'));if(!input)throw Error('Import image introuvable.');const ordered=await files(p.media);await identity(p);const transfer=new DataTransfer();ordered.forEach(f=>transfer.items.add(f));input.files=transfer.files;input.dispatchEvent(new Event('input',{bubbles:true}));input.dispatchEvent(new Event('change',{bubbles:true}));const field=await wait(captionInput,120000);if(!field?.isContentEditable)throw Error('Description TikTok non éditable.');const title=titleInput();if(!title)throw Error('Champ titre photo introuvable.');Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value').set.call(title,p.title||'');title.dispatchEvent(new Event('input',{bubbles:true}));title.dispatchEvent(new Event('change',{bubbles:true}));const accepted=()=>captionText(captionInput())===p.caption.trim()&&titleInput()?.value===(p.title||'')&&[...document.querySelectorAll('span,div')].some(e=>visible(e)&&new RegExp('^'+p.caption.length+'\\s*\\/\\s*4000$').test(text(e)));const checkedWait=async(fn,label)=>{const result=await wait(fn);if(!result)throw Error(label+' non confirmé.');return result};if(!captionText(field)){field.focus();await sleep(100);guard(p);try{window.RSTikTokCaption.select(field)}catch(e){if(e.message!=='Sélection native impossible.'||captionText(field)||document.activeElement!==field)throw e;const range=document.createRange();range.selectNodeContents(field);range.collapse(false);const selection=getSelection();selection.removeAllRanges();selection.addRange(range);field.dispatchEvent(new KeyboardEvent('keyup',{key:'a',code:'KeyA',bubbles:true}));field.dispatchEvent(new MouseEvent('mouseup',{bubbles:true}));if(!field.contains(selection.anchorNode)||!field.contains(selection.focusNode))throw Error('Sélection photo sortie du champ.');}await sleep(300);guard(p);window.RSTikTokCaption.paste(field,p.caption);await checkedWait(accepted,'Description et compteur');field.blur();await sleep(700);await checkedWait(accepted,'Description conservée');}else{await window.RSTikTokCaption.replace(field,p.caption,{pause:sleep,check:()=>guard(p),wait:checkedWait,accepted,ready:accepted});}if(!accepted())throw Error('Titre ou description saisis différents.');await checkOrder(p);await privacy(p);const now=document.querySelector('input[type="radio"][value="post_now"]');if(!now?.checked)throw Error('Publication immédiate non sélectionnée.');const post=await wait(()=>buttons().find(e=>/^(Post|Publier)$/.test(text(e))&&!e.disabled&&e.getAttribute('aria-disabled')!=='true'),120000);if(!post)throw Error('Publication indisponible après import.');mark('prepared',{attached:p.media.length,text_matched:true});return {title,field,post};}
+  function canonical(value,username){try{const u=new URL(value,location.origin);const match=u.pathname.match(/^\/@([\w.]+)\/(photo|video)\/([0-9]+)$/);return u.origin==='https://www.tiktok.com'&&match&&match[1].toLowerCase()===username.toLowerCase()?{id:match[3],url:`https://www.tiktok.com/@${match[1]}/photo/${match[3]}`}:null}catch{return null}}
+  function recent(id,started){try{const at=Number(BigInt(id)>>32n)*1000;return at>=started-5000&&at<=Date.now()+5000}catch{return false}}
+- async function publish(task){const p=task.payload;const started_at=Date.now();let clicked=false;try{const {title,field,post}=await prepare(p);const result={username:p.username,title:p.title||'',caption:p.caption,visibility:p.visibility,media_count:p.media.length,upload_order_verified:true,source_hashes:p.media.map(m=>m.sha256)};if(p.dry)return{status:'done',result:{...result,rehearsed:true,confirmed:false}};await window.RSPacing.pause({});await identity(p);if(title.value!==(p.title||'')||captionText(field)!==p.caption.trim()||!visible(post)||post.disabled||post.getAttribute('aria-disabled')==='true')throw Error('Éditeur photo modifié avant envoi.');await checkOrder(p);if(!privacyMatches(p))throw Error('Visibilité modifiée avant envoi.');guard(p);await window.RSMAX.api.post('/extension/tasks/'+task.id+'/authorize-photo',{});await checkOrder(p);guard(p);if(title.value!==(p.title||'')||captionText(field)!==p.caption.trim()||!privacyMatches(p)||!visible(post)||post.disabled||post.getAttribute('aria-disabled')==='true')throw Error('Éditeur modifié après autorisation.');const key='rsmaxPhotoIntent:'+p.username+':'+task.id;if((await chrome.storage.local.get(key))[key])throw Error('Envoi déjà demandé : contrôler le résultat.');await chrome.storage.local.set({[key]:{at:Date.now(),state:'intent'}});clicked=true;post.click();mark('clicked',{gesture:true,count:p.media.length});return{status:'done',result:{...result,send_clicked:true,started_at}}}catch(e){mark('error',{error:e.message,gesture:clicked});return{status:clicked?'uncertain':'failed',error:e.message,result:{send_clicked:clicked,...(p.dry?{diagnostic:diagnostic()}: {})}}}}
++ async function publish(task){const p=task.payload;const started_at=Date.now();let clicked=false;try{const {title,field,post}=await prepare(p);const result={username:p.username,title:p.title||'',caption:p.caption,visibility:p.visibility,media_count:p.media.length,upload_order_verified:true,source_hashes:p.media.map(m=>m.sha256)};if(p.dry)return{status:'done',result:{...result,rehearsed:true,confirmed:false}};await window.RSPacing.pause({});await identity(p);if(title.value!==(p.title||'')||captionText(field)!==p.caption.trim()||!visible(post)||post.disabled||post.getAttribute('aria-disabled')==='true')throw Error('Éditeur photo modifié avant envoi.');await checkOrder(p);if(!privacyMatches(p))throw Error('Visibilité modifiée avant envoi.');guard(p);await window.RSMAX.api.post('/extension/tasks/'+task.id+(task.kind==='tiktok.publish'?'/authorize-tiktok-publication':'/authorize-photo'),{});await checkOrder(p);guard(p);if(title.value!==(p.title||'')||captionText(field)!==p.caption.trim()||!privacyMatches(p)||!visible(post)||post.disabled||post.getAttribute('aria-disabled')==='true')throw Error('Éditeur modifié après autorisation.');const key='rsmaxPhotoIntent:'+p.username+':'+task.id;if((await chrome.storage.local.get(key))[key])throw Error('Envoi déjà demandé : contrôler le résultat.');await chrome.storage.local.set({[key]:{at:Date.now(),state:'intent'}});const sent_at=Date.now();clicked=true;post.click();mark('clicked',{gesture:true,count:p.media.length});return{status:'done',result:{...result,send_clicked:true,started_at,sent_at}}}catch(e){mark('error',{error:e.message,gesture:clicked});return{status:clicked?'uncertain':'failed',error:e.message,result:{send_clicked:clicked,...(p.dry?{diagnostic:diagnostic()}: {})}}}}
+  async function locate(p){await identity(p);const found=await wait(()=>{const candidates=[...document.querySelectorAll('a[href]')].map(a=>canonical(a.href,p.username)).filter(v=>v&&recent(v.id,p.started_at));const unique=[...new Map(candidates.map(v=>[v.id,v])).values()];return unique.length===1?unique[0]:null},90000);return {status:'done',result:{url:found?.url||null}}}
+  function itemStruct(id){const script=document.querySelector('#__UNIVERSAL_DATA_FOR_REHYDRATION__');if(!script)return null;try{const state=JSON.parse(script.textContent).__DEFAULT_SCOPE__||{};for(const key of ['webapp.video-detail','webapp.photo-detail']){const item=state[key]?.itemInfo?.itemStruct;if(String(item?.id)===id)return item}return null}catch{return null}}
+  function publishedCaption(field){if(!field)return '';const copy=field.cloneNode(true);copy.querySelectorAll('br').forEach(br=>br.replaceWith(document.createTextNode('\n')));return(copy.textContent||'').replace(/\r\n/g,'\n').trim()}
+  function domItem(p){const normalize=v=>String(v||'').replace(/\s+/g,' ').trim();const wanted=normalize([p.title,p.caption].filter(Boolean).join(' '));for(const card of document.querySelectorAll('section[data-e2e="feed-video"]')){const links=[...card.querySelectorAll('a[href]')].filter(a=>{try{return new URL(a.href).pathname==='/@'+p.username}catch{return false}});const desc=card.querySelector('[data-e2e="video-desc"]');if(!links.length||publishedCaption(desc)!==p.caption.trim())continue;const slides=[...card.querySelectorAll('[data-swiper-slide-index]')];const indices=[...new Set(slides.map(e=>Number(e.getAttribute('data-swiper-slide-index'))))].sort((a,b)=>a-b);if(!indices.length||indices.some((v,i)=>v!==i)||!slides.every(e=>{const img=e.querySelector('img');return img&&normalize(img.alt).endsWith('“'+wanted+'”')}))continue;if(!slides.some(e=>e.querySelector('img')?.naturalWidth>0))continue;const privateLabel=[...card.querySelectorAll('span,div,p')].some(e=>!e.children.length&&!desc.contains(e)&&/^(Private|Privé|Privée|Moi uniquement)$/i.test(text(e)));if(p.visibility==='private'&&!privateLabel)continue;return{id:canonical(location.href,p.username)?.id,author:{uniqueId:new URL(links[0].href).pathname.slice(2)},title:p.title,desc:publishedCaption(desc),imagePost:{images:indices.map(()=>({}))},proof_source:'photo_dom',private_observed:privateLabel}}return null}
+  async function verify(p){const source=canonical(location.href,p.username);if(!source||source.url!==p.photo_url)return {status:'failed',error:'Page de photo différente.'};const item=await wait(()=>itemStruct(source.id)||domItem(p),30000);if(!item)return{status:'done',result:{confirmed:false,reason:'Données ou éléments de la photo non confirmés.'}};const actualTitle=item.imagePost?.title??item.title??'';const desc=item.desc??'';const count=item.imagePost?.images?.length;const author=item.author?.uniqueId;const titleCaption=actualTitle===p.title&&desc===p.caption;const combined=!actualTitle&&p.title&&desc===(p.title+'\n'+p.caption);const confirmed=author===p.username&&count===p.media.length&&Boolean(titleCaption||combined);mark('verified',{confirmed,observed_count:count||0});return{status:'done',result:{confirmed,proof:confirmed?'after_reload':undefined,url:source.url,username:author,title:confirmed?p.title:actualTitle,caption:confirmed?p.caption:desc,media_count:count,visibility:p.visibility,proof_source:item.proof_source||'hydration',...(!confirmed?{reason:'Titre, description, auteur ou nombre de photos différents.'}:{})}}}
+- chrome.runtime.onMessage.addListener((m,_s,reply)=>{if(m?.type!=='x.task')return false;const task=m.task;if(task?.kind==='tiktok.photo.ready'){reply({status:'done'});return false}const fn=task?.kind==='tiktok.photo.publish'?()=>publish(task):task?.kind==='tiktok.photo.locate'?()=>locate(task.payload):task?.kind==='tiktok.photo.verify'?()=>verify(task.payload):null;if(!fn)return false;fn().then(reply,e=>reply({status:'failed',error:e.message}));return true});
+- window.RSTikTokPhotos={prepare,publish,locate,verify,wait,diagnostic,canonical,recent,files,checkOrder};
++ chrome.runtime.onMessage.addListener((m,_s,reply)=>{if(m?.type!=='x.task')return false;const task=m.task;if(task?.kind==='tiktok.photo.ready'){reply({status:'done'});return false}const fn=(task?.kind==='tiktok.photo.publish'||(task?.kind==='tiktok.publish'&&task.payload.media_type==='photo'))?()=>publish(task):task?.kind==='tiktok.photo.locate'?()=>locate(task.payload):task?.kind==='tiktok.photo.verify'?()=>verify(task.payload):null;if(!fn)return false;fn().then(reply,e=>reply({status:'failed',error:e.message}));return true});
++ window.RSTikTokPhotos={prepare,publish,locate,verify,wait,diagnostic,canonical,recent,files,checkOrder,readFile,privacy,privacyMatches,identity,guard,captionInput,captionText,visible,text,buttons,sleep};
+ })();
+--- /dev/null
++++ b/tiktok/publish-video.js
+@@ -0,0 +1,80 @@
++/* Publication vidéo du compositeur RS-Max. Une seule autorisation et un seul clic. */
++(() => {
++  'use strict';
++  const studio = window.RSTikTokPhotos;
++  if (!studio || !window.RSMAX) return;
++  const { wait, identity, guard, readFile, privacy, privacyMatches, captionInput,
++    captionText, visible, buttons, text, sleep } = studio;
++  const ready = post => visible(post) && !post.disabled && post.getAttribute('aria-disabled') !== 'true';
++
++  async function publish(task) {
++    const payload = task.payload;
++    let clicked = false;
++    try {
++      await identity(payload);
++      if (location.pathname !== '/tiktokstudio/upload' || location.search || captionInput() || document.querySelector('table'))
++        throw Error('Un formulaire TikTok vide est requis.');
++      if (payload.media?.length !== 1 || payload.media[0].mimetype !== 'video/mp4')
++        throw Error('Une vidéo MP4 est requise.');
++      const input = await wait(() => document.querySelector('input[type="file"][accept*="video"]'));
++      if (!input) throw Error('Sélecteur vidéo TikTok absent.');
++      const file = await readFile(payload.media[0], 250 * 1024 * 1024);
++      await identity(payload);
++      const transfer = new DataTransfer();
++      transfer.items.add(file);
++      input.files = transfer.files;
++      input.dispatchEvent(new Event('input', {bubbles:true}));
++      input.dispatchEvent(new Event('change', {bubbles:true}));
++
++      const field = await wait(captionInput, 180000);
++      if (!field?.isContentEditable) throw Error('Description vidéo non éditable.');
++      const accepted = () => captionText(captionInput()) === payload.caption &&
++        [...document.querySelectorAll('span,div')].some(el =>
++          visible(el) && new RegExp('^' + payload.caption.length + '\\s*/\\s*4000$').test(text(el)));
++      const checkedWait = async (test, label) => {
++        const result = await wait(test);
++        if (!result) throw Error(label + ' non confirmé.');
++        return result;
++      };
++      await window.RSTikTokCaption.replace(field, payload.caption, {
++        pause:sleep, wait:checkedWait, check:() => guard(payload), accepted, ready:accepted,
++      });
++      await privacy(payload);
++      const postNow = () => document.querySelector('input[type="radio"][value="post_now"]')?.checked === true;
++      const uploaded = () => {
++        const lines = document.body.innerText.split('\n').map(line => line.trim());
++        return lines.includes(file.name) && lines.some(line => /^(?:Uploaded|Importé)(?:\s*[（(][^）)]+[）)])?$/i.test(line));
++      };
++      const post = await wait(() => uploaded() && buttons().find(el => /^(Post|Publier)$/.test(text(el)) && ready(el)), 420000);
++      const safeToSend = () => uploaded() && postNow() && accepted() && privacyMatches(payload) && ready(post);
++      if (!post || !safeToSend()) throw Error('Import, visibilité ou description vidéo non confirmés.');
++
++      const receipt = {media_count:1, source_hashes:[payload.media[0].sha256], text_matched:true};
++      if (payload.dry) return {status:'done', result:{...receipt, rehearsed:true, send_clicked:false}};
++      await window.RSPacing.pause({});
++      await identity(payload);
++      if (!safeToSend()) throw Error('Formulaire vidéo modifié avant envoi.');
++      await window.RSMAX.api.post('/extension/tasks/' + task.id + '/authorize-tiktok-publication', {});
++      guard(payload);
++      if (!safeToSend()) throw Error('Formulaire vidéo modifié après autorisation.');
++      const sent_at = Date.now();
++      clicked = true;
++      post.click();
++      return {status:'done', result:{...receipt, send_clicked:true, sent_at}};
++    } catch (error) {
++      return {status:clicked ? 'uncertain' : 'failed', error:error.message, result:{send_clicked:clicked}};
++    }
++  }
++
++  chrome.runtime.onMessage.addListener((message, _sender, reply) => {
++    if (message?.type !== 'x.task') return false;
++    const task = message.task;
++    if (task?.kind === 'tiktok.video.publish.ready') {
++      reply({status:'done'});
++      return false;
++    }
++    if (task?.kind !== 'tiktok.publish' || task.payload.media_type !== 'video') return false;
++    publish(task).then(reply);
++    return true;
++  });
++})();

@@ -215,6 +215,7 @@ Route::middleware(['auth:sanctum', \App\Http\Middleware\CommunityManagerTokenSco
     Route::post('/extension/tasks/{task}/checkpoint', [\App\Http\Controllers\Api\BrowserTaskController::class, 'checkpoint']);
     Route::post('/extension/tasks/{task}/authorize-threads', [\App\Http\Controllers\Api\BrowserTaskController::class, 'authorizeThreads']);
     Route::post('/extension/tasks/{task}/authorize-photo', [\App\Http\Controllers\Api\BrowserTaskController::class, 'authorizePhoto']);
+    Route::post('/extension/tasks/{task}/authorize-tiktok-publication', [\App\Http\Controllers\Api\BrowserTaskController::class, 'authorizeTikTokPublication']);
     Route::post('/extension/tasks/{task}/progress', [\App\Http\Controllers\Api\BrowserTaskController::class, 'progress'])->middleware('throttle:240,1');
     Route::get('/extension/x/session', [\App\Http\Controllers\Api\XExtensionController::class, 'sessionStatus']);
     Route::get('/extension/threads/session', [\App\Http\Controllers\Api\ThreadsExtensionController::class, 'status']);

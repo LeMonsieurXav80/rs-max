@@ -9,6 +9,7 @@ use App\Models\PostPlatform;
 use App\Models\Setting;
 use App\Models\SocialAccount;
 use App\Services\Media\MediaRatioService;
+use App\Services\Media\TikTokPostMedia;
 use App\Services\PartnerTagService;
 use App\Services\Stats\PostBenchmarkService;
 use App\Services\Stats\StatsSyncService;
@@ -38,7 +39,7 @@ class PostController extends Controller
         ]);
 
         // Seuls les comptes réellement accessibles à l'utilisateur.
-        $accounts = $request->user()->activeSocialAccounts()
+        $accounts = $request->user()->publishablePostAccounts()
             ->whereIn('social_accounts.id', $validated['accounts'])
             ->get();
 
@@ -163,7 +164,7 @@ class PostController extends Controller
         // voit tout, « tous les comptes » veut donc dire tous les comptes.
         $accounts = ($voitTout
             ? SocialAccount::query()->with('platform')->orderBy('name')->get()
-            : $user->activeSocialAccounts()->with('platform')->orderBy('name')->get()
+            : $user->publishablePostAccounts()->with('platform')->orderBy('name')->get()
         )->groupBy(fn (SocialAccount $account) => $account->platform->slug);
 
         // Filtre par groupe (au moins un compte du groupe) ou par compte individuel
@@ -237,7 +238,7 @@ class PostController extends Controller
         $user = $request->user();
 
         // Both admin and regular user see their own active accounts (per-user is_active)
-        $accounts = $user->activeSocialAccounts()
+        $accounts = $user->publishablePostAccounts()
             ->with('platform')
             ->orderBy('name')
             ->get()
@@ -286,7 +287,7 @@ class PostController extends Controller
 
         // Verify all selected accounts are accessible and active for this user
         $accountIds = $validated['accounts'];
-        $validAccounts = $user->activeSocialAccounts()->whereIn('social_accounts.id', $accountIds)->get();
+        $validAccounts = $user->publishablePostAccounts()->whereIn('social_accounts.id', $accountIds)->get();
 
         if ($validAccounts->count() !== count($accountIds)) {
             if ($request->expectsJson()) {
@@ -297,13 +298,13 @@ class PostController extends Controller
         }
 
         // Un brouillon reste enregistrable : on peut y preparer un carrousel en plusieurs fois.
-        $ratioConflict = $this->ratioConflict($validated, $validAccounts, $publishNow);
-        if ($ratioConflict) {
+        $mediaConflict = $this->mediaConflict($validated, $validAccounts, $publishNow);
+        if ($mediaConflict) {
             if ($request->expectsJson()) {
-                return response()->json(['errors' => ['media' => [$ratioConflict]]], 422);
+                return response()->json(['errors' => ['media' => [$mediaConflict]]], 422);
             }
 
-            return back()->withErrors(['media' => $ratioConflict])->withInput();
+            return back()->withErrors(['media' => $mediaConflict])->withInput();
         }
 
         $post = DB::transaction(function () use ($validated, $user, $validAccounts, $publishNow) {
@@ -424,7 +425,7 @@ class PostController extends Controller
 
         // Accounts the user can still add to this post (active, not already attached)
         $attachedAccountIds = $post->postPlatforms->pluck('social_account_id')->all();
-        $availableAccounts = $user->activeSocialAccounts()
+        $availableAccounts = $user->publishablePostAccounts()
             ->with('platform')
             ->whereNotIn('social_accounts.id', $attachedAccountIds)
             ->orderBy('name')
@@ -457,7 +458,7 @@ class PostController extends Controller
         $user = $request->user();
 
         // Only keep accounts that are active for this user
-        $validAccounts = $user->activeSocialAccounts()
+        $validAccounts = $user->publishablePostAccounts()
             ->whereIn('social_accounts.id', $validated['accounts'])
             ->get();
 
@@ -501,7 +502,7 @@ class PostController extends Controller
         $user = $request->user();
 
         // Both admin and regular user see their own active accounts (per-user is_active)
-        $accounts = $user->activeSocialAccounts()
+        $accounts = $user->publishablePostAccounts()
             ->with('platform')
             ->orderBy('name')
             ->get()
@@ -537,13 +538,14 @@ class PostController extends Controller
      * @param  array<string, mixed>  $validated
      * @param  iterable<SocialAccount>  $accounts
      */
-    private function ratioConflict(array $validated, iterable $accounts, bool $publishNow): ?string
+    private function mediaConflict(array $validated, iterable $accounts, bool $publishNow): ?string
     {
         if ($validated['status'] !== 'scheduled' && ! $publishNow) {
             return null;
         }
 
-        return app(MediaRatioService::class)->conflictForAccounts($validated['media'] ?? null, $accounts);
+        return app(TikTokPostMedia::class)->conflictForAccounts($validated['media'] ?? null, $accounts)
+            ?? app(MediaRatioService::class)->conflictForAccounts($validated['media'] ?? null, $accounts);
     }
 
     /**
@@ -592,15 +594,15 @@ class PostController extends Controller
 
         // Verify all selected accounts are accessible and active for this user
         $accountIds = $validated['accounts'];
-        $validAccounts = $user->activeSocialAccounts()->whereIn('social_accounts.id', $accountIds)->get();
+        $validAccounts = $user->publishablePostAccounts()->whereIn('social_accounts.id', $accountIds)->get();
 
         if ($validAccounts->count() !== count($accountIds)) {
             return back()->withErrors(['accounts' => 'One or more selected accounts are invalid.'])->withInput();
         }
 
-        $ratioConflict = $this->ratioConflict($validated, $validAccounts, $publishNow);
-        if ($ratioConflict) {
-            return back()->withErrors(['media' => $ratioConflict])->withInput();
+        $mediaConflict = $this->mediaConflict($validated, $validAccounts, $publishNow);
+        if ($mediaConflict) {
+            return back()->withErrors(['media' => $mediaConflict])->withInput();
         }
 
         DB::transaction(function () use ($post, $validated, $validAccounts, $publishNow) {

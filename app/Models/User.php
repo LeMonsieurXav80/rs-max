@@ -93,7 +93,16 @@ class User extends Authenticatable
         return $this->connectedSocialAccounts()->whereRelation('platform', 'slug', '!=', 'tiktok');
     }
 
-    /** Comptes actifs, y compris ceux vers lesquels RS-Max ne sait pas encore publier (TikTok). */
+    /** Cibles des publications simples. Les fils gardent leur propre liste. */
+    public function publishablePostAccounts(): BelongsToMany
+    {
+        return $this->connectedSocialAccounts()->where(fn ($query) => $query
+            ->whereRelation('platform', 'slug', '!=', 'tiktok')
+            ->orWhere(fn ($tiktok) => $tiktok->whereRelation('platform', 'slug', 'tiktok')
+                ->where('driver', 'browser')->whereNotNull('browser_profile')->where('browser_profile', '!=', '')));
+    }
+
+    /** Comptes actifs, y compris les comptes réservés à la lecture ou à l’inbox. */
     public function connectedSocialAccounts(): BelongsToMany
     {
         return $this->socialAccounts()->wherePivot('is_active', true);

@@ -13,10 +13,17 @@
                 headers: {
                     'X-CSRF-TOKEN': document.querySelector('meta[name=csrf-token]').content,
                     'Accept': 'application/json',
+                    'Content-Type': 'application/json',
                 },
+                body: JSON.stringify({ accounts: @js($selectedAccounts ?: $accounts->pluck('id')->all()) }),
             })
-            .then(r => r.json())
-            .then(() => window.location.reload())
+            .then(async r => {
+                if (!r.ok) throw new Error('Import indisponible.');
+                const data = await r.json();
+                const errors = (data.results || []).filter(x => x.error).map(x => x.account + ' — ' + x.error);
+                if (errors.length) alert(errors.join('\n'));
+                window.location.reload();
+            })
             .catch(() => { loading = false; alert('L\'import a echoue. Voir les logs.'); })
         "
         :disabled="loading"

@@ -11,6 +11,10 @@ class AdapterFactory
     {
         $slug = $account->platform->slug;
 
+        if ($slug === 'tiktok' && $account->usesBrowser()) {
+            return app(TikTokBrowserAdapter::class);
+        }
+
         return $slug === 'twitter' && $account->usesBrowser()
             ? app(TwitterBrowserAdapter::class)
             : self::make($slug);

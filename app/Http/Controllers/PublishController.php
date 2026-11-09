@@ -84,6 +84,13 @@ class PublishController extends Controller
             ], 422);
         }
 
+        if ($platform->slug === 'tiktok') {
+            $queued = $this->queueTikTok($postPlatform);
+
+            return response()->json(['success' => $queued, 'queued' => $queued,
+                'message' => 'Publication TikTok mise en file sur le NAS.'], $queued ? 202 : 409);
+        }
+
         // Build content (translations handled by PublishingService)
         $content = $this->publishingService->getContentForAccount($post, $account);
 
@@ -108,6 +115,7 @@ class PublishController extends Controller
             $postPlatform->update([
                 'status' => 'published',
                 'external_id' => $result['external_id'] ?? null,
+                'platform_url' => $result['permalink'] ?? $postPlatform->platform_url,
                 'published_at' => now(),
             ]);
 
@@ -202,6 +210,13 @@ class PublishController extends Controller
                 continue;
             }
 
+            if ($platform->slug === 'tiktok') {
+                $queued = $this->queueTikTok($pp);
+                $results[] = ['account' => $account->name, 'success' => $queued, 'queued' => $queued];
+
+                continue;
+            }
+
             $content = $this->publishingService->getContentForAccount($post, $account);
             $media = $this->resolveMediaUrls($post->media, $platform->slug);
 
@@ -219,6 +234,7 @@ class PublishController extends Controller
                 $pp->update([
                     'status' => 'published',
                     'external_id' => $result['external_id'] ?? null,
+                    'platform_url' => $result['permalink'] ?? $pp->platform_url,
                     'published_at' => now(),
                 ]);
 
@@ -257,12 +273,13 @@ class PublishController extends Controller
 
         $this->updatePostStatus($post);
 
+        $queuedCount = collect($results)->where('queued', true)->count();
         $successCount = collect($results)->where('success', true)->count();
         $totalCount = count($results);
 
         return response()->json([
             'success' => $successCount > 0,
-            'message' => "{$successCount}/{$totalCount} publication(s) réussie(s).",
+            'message' => $queuedCount ? "{$queuedCount} publication(s) TikTok mise(s) en file sur le NAS." : "{$successCount}/{$totalCount} publication(s) réussie(s).",
             'results' => $results,
         ]);
     }
@@ -321,5 +338,19 @@ class PublishController extends Controller
                 'published_at' => $hasPublished ? now() : null,
             ]);
         }
+    }
+
+    private function queueTikTok(PostPlatform $delivery): bool
+    {
+        $claimed = PostPlatform::whereKey($delivery->id)->whereIn('status', ['pending', 'failed'])
+            ->update(['status' => 'publishing', 'error_message' => null]);
+        if (! $claimed) {
+            return false;
+        }
+
+        $delivery->post->update(['status' => 'publishing']);
+        \App\Jobs\PublishToPlatformJob::dispatch($delivery);
+
+        return true;
     }
 }

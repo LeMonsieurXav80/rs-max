@@ -25,7 +25,7 @@ class ExternalFeedController extends Controller
      * @see \App\Services\Import\ImportService::getServiceForPlatform()
      */
     private const IMPORTABLE_PLATFORMS = [
-        'facebook', 'instagram', 'twitter', 'youtube', 'threads', 'bluesky', 'pinterest',
+        'facebook', 'instagram', 'twitter', 'youtube', 'threads', 'bluesky', 'pinterest', 'tiktok',
     ];
 
     /**
@@ -217,7 +217,13 @@ class ExternalFeedController extends Controller
         $results = [];
         $total = 0;
 
-        foreach ($this->visibleAccounts($request) as $account) {
+        $scope = $request->validate(['accounts' => 'sometimes|array', 'accounts.*' => 'integer']);
+        $accounts = $this->visibleAccounts($request);
+        if (isset($scope['accounts'])) {
+            $accounts = $accounts->whereIn('id', $scope['accounts']);
+        }
+
+        foreach ($accounts as $account) {
             if (! in_array($account->platform->slug, self::IMPORTABLE_PLATFORMS, true)) {
                 continue;
             }
@@ -253,7 +259,7 @@ class ExternalFeedController extends Controller
 
         $query = $user->isAdmin()
             ? SocialAccount::query()
-            : $user->activeSocialAccounts();
+            : $user->connectedSocialAccounts();
 
         return $query->with('platform')->orderBy('name')->get();
     }

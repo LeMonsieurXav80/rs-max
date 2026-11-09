@@ -34,6 +34,7 @@ class XWatchTest(unittest.TestCase):
         r=watch.snapshot(c,dt.datetime.fromisoformat('2026-11-07T12:30:00+00:00'))
         self.assertEqual(r['state'],'work');self.assertEqual(r['accounts'][0]['platform'],'tiktok')
         self.assertEqual(r['accounts'][0]['batch_max'],1);self.assertEqual(r['accounts'][0]['items'][0]['post_content'],'La tenue du jour')
+        self.assertIn('order=oldest', c.api.call_args.args[1])
 
     def test_tiktok_ne_demarre_pas_avec_un_seul_geste_ni_un_quota_de_flux_seul(self):
         for remaining,reply_left in [(1,10),(2,0)]:

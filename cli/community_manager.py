@@ -20,6 +20,10 @@ def daytime(now=None):
     return 6 <= local.hour < 22
 
 
+def pending_inbox_order(platform):
+    return 'oldest' if platform == 'tiktok' else 'newest'
+
+
 class ApiError(RuntimeError):
     def __init__(self, status, payload):
         self.status, self.payload = status, payload
@@ -234,7 +238,16 @@ def main(argv=None):
     elif args.command == 'x-status': result = client.api('GET', f'x/engagements/{args.id}')
     elif args.command == 'x-contacts': result = client.api('GET', f'accounts/{args.account}/x/contacts?' + urlencode({'page':args.page}))
     elif args.command == 'strategy': result = client.api('PATCH' if args.update_file else 'GET', f'accounts/{args.account}/strategy', json.loads(args.update_file.read_text()) if args.update_file else None)
-    elif args.command == 'inbox': result = client.api('GET', f'accounts/{args.account}/inbox?' + urlencode({'order':'newest','limit':args.limit,'status':args.status,**({'agent_queue':1} if args.pending else {})}))
+    elif args.command == 'inbox':
+        order = 'newest'
+        if args.pending:
+            accounts = client.api('GET', 'accounts').get('accounts', [])
+            platform = next((account['platform'] for account in accounts if account['id'] == args.account), None)
+            order = pending_inbox_order(platform)
+        result = client.api('GET', f'accounts/{args.account}/inbox?' + urlencode({
+            'order': order, 'limit': args.limit, 'status': args.status,
+            **({'agent_queue': 1} if args.pending else {}),
+        }))
     elif args.command == 'review': result = client.api('POST', f'inbox/{args.id}/review', {'reason':args.reason})
     elif args.command == 'inbox-like': result=client.api('POST',f'inbox/{args.id}/like',{'dry_run':not args.commit})
     elif args.command == 'reply-status': result = client.api('GET', f'inbox/{args.id}')

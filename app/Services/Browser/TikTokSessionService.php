@@ -3,6 +3,7 @@
 namespace App\Services\Browser;
 
 use App\Models\SocialAccount;
+use App\Services\ProfilePictureService;
 use Illuminate\Support\Facades\Log;
 
 /**
@@ -67,10 +68,37 @@ class TikTokSessionService
             'browser_username' => $connected ? $username : $account->browser_username,
         ]);
 
+        if ($connected && blank($account->profile_picture_url) && ($avatar = self::localAvatar($account, $result['avatar'] ?? null))) {
+            $account->update(['profile_picture_url' => $avatar]);
+        }
+
         if (! $connected) {
             Log::warning('Session TikTok absente du navigateur du VPS', ['account_id' => $account->id, 'vu' => $result['username'] ?? null]);
         }
 
         return $connected;
+    }
+
+    public static function cdnUrl(mixed $value): ?string
+    {
+        if (! is_string($value) || strlen($value) > 2048) {
+            return null;
+        }
+
+        $url = parse_url($value);
+        if (! $url || ($url['scheme'] ?? null) !== 'https'
+            || isset($url['user']) || isset($url['pass']) || isset($url['port'])
+            || ! preg_match('/(?:^|\.)tiktokcdn(?:-eu|-us)?\.com$/i', $url['host'] ?? '')) {
+            return null;
+        }
+
+        return $value;
+    }
+
+    public static function localAvatar(SocialAccount $account, mixed $value): ?string
+    {
+        $url = self::cdnUrl($value);
+
+        return $url ? ProfilePictureService::download($url, 'tiktok', (string) $account->id, allowRedirects: false) : null;
     }
 }

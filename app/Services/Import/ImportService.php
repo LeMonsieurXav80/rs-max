@@ -117,6 +117,7 @@ class ImportService
             'threads' => app(ThreadsImportService::class),
             'bluesky' => app(BlueskyImportService::class),
             'pinterest' => app(PinterestImportService::class),
+            'tiktok' => app(TikTokImportService::class),
             default => null,
         };
     }
