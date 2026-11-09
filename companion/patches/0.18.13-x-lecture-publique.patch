@@ -1,0 +1,150 @@
+diff --git a/manifest.json b/manifest.json
+index 8ff6172..2dea1ed 100644
+--- a/manifest.json
++++ b/manifest.json
+@@ -1,7 +1,7 @@
+ {
+   "manifest_version": 3,
+   "name": "RS-Max Companion",
+-  "version": "0.18.12",
++  "version": "0.18.13",
+   "description": "Actions assistees sur les reseaux sociaux (engagement, publication) avec remontee vers l'API RS-Max.",
+   "permissions": [
+     "storage",
+diff --git a/background.js b/background.js
+index 821e3e9..3842eda 100644
+--- a/background.js
++++ b/background.js
+@@ -429,10 +429,10 @@ async function nativeConfig() {
+   const stored=await chrome.storage.local.get('rsmaxNativeConfig');
+   return stored.rsmaxNativeConfig||self.RSMAX_DEFAULTS||{};
+ }
+-async function nativeRequest(operation,body) {
++async function nativeRequest(operation,body,platform='tiktok') {
+   const token=(await nativeConfig()).nativeInputToken;
+   if(!token)throw Error('Service natif NAS non configuré.');
+-  const r=await fetch('http://127.0.0.1:9223/tiktok/'+operation,{method:'POST',headers:{'Content-Type':'application/json',Authorization:'Bearer '+token},body:JSON.stringify(body),signal:AbortSignal.timeout(['verify','studio'].includes(operation)?80000:15000)});
++  const r=await fetch('http://127.0.0.1:9223/'+platform+'/'+operation,{method:'POST',headers:{'Content-Type':'application/json',Authorization:'Bearer '+token},body:JSON.stringify(body),signal:AbortSignal.timeout(['verify','studio','profile'].includes(operation)?80000:15000)});
+   if(!r.ok)throw Error('Service natif NAS : opération refusée ou interrompue, aucun renvoi.');return r.json();
+ }
+ async function publicTikTokProof(task,submission,studio) {
+@@ -692,7 +692,14 @@ async function executeTask(task) {
+     if (task.kind === 'tiktok.whoami' && !new URL(url).pathname.startsWith('/tiktokstudio')) {
+       return { status: 'done', result: { username: null } };
+     }
+-    return await askPage(tabId, task);
++    const outcome = await askPage(tabId, task);
++    if (task.kind === 'x.tweets' && task.payload.followers && outcome?.status === 'failed') {
++      const username = new URL(task.payload.url).pathname.replace(/^\/|\/$/g, '');
++      globalThis.RSTaskJournal?.mark('x.profile.public_fallback');
++      const result = await nativeRequest('profile', {username, screens: Math.min(Number(task.payload.screens) || 1, 10)}, 'x');
++      return {status: 'done', result};
++    }
++    return outcome;
+   } finally {
+     taskMedia = null;
+     await chrome.tabs.remove(tabId).catch(() => {});
+diff --git a/x/tasks.js b/x/tasks.js
+index 1b90031..ffd3543 100644
+--- a/x/tasks.js
++++ b/x/tasks.js
+@@ -131,5 +131,5 @@
+     (run?run(m.task.payload):Promise.resolve(failed(`Tâche inconnue : ${m.task.kind}`))).catch(e=>failed(e.message)).then(reply);
+     return true;
+   });
+-  window.RSXTasks={tweet,followers,followersObservation,nativeTweet};
++  window.RSXTasks={tweet,followers,followersObservation,nativeTweet,profileTweet};
+ })();
+diff --git a/native/server.cjs b/native/server.cjs
+index b019798..5847d31 100644
+--- a/native/server.cjs
++++ b/native/server.cjs
+@@ -3,6 +3,7 @@ const http = require('node:http'), fs = require('node:fs'), crypto = require('no
+ const {perform} = require('./input.cjs');
+ const {verifyPublic} = require('./public.cjs');
+ const {readStudio} = require('./studio.cjs');
++const {readPublicProfile} = require('./x-public-profile.cjs');
+ function createServer(config, handlers = {perform, verifyPublic}) {
+   if (!/^[a-f0-9]{64}$/.test(config.nativeInputToken || '') || !/^chrome-extension:\/\/[a-p]{32}$/.test(config.nativeInputOrigin || '')) throw Error('Configuration native NAS absente');
+   let busy = false;
+@@ -13,10 +14,10 @@ function createServer(config, handlers = {perform, verifyPublic}) {
+     res.setHeader('Access-Control-Allow-Origin', config.nativeInputOrigin);
+     if (req.method === 'OPTIONS') { res.setHeader('Access-Control-Allow-Methods','POST');res.setHeader('Access-Control-Allow-Headers','Authorization, Content-Type');res.writeHead(204);return res.end(); }
+     if (auth.length !== expected.length || !crypto.timingSafeEqual(auth,expected)) {res.writeHead(403);return res.end('{"error":"Accès refusé"}');}
+-    if (req.method !== 'POST' || !['/tiktok/fill','/tiktok/send','/tiktok/verify','/tiktok/studio','/tiktok/health'].includes(req.url)) {res.writeHead(404);return res.end('{}');}
++    if (req.method !== 'POST' || !['/tiktok/fill','/tiktok/send','/tiktok/verify','/tiktok/studio','/tiktok/health','/x/profile'].includes(req.url)) {res.writeHead(404);return res.end('{}');}
+     if (busy) {res.writeHead(409);return res.end('{"error":"Opération native déjà en cours"}');}
+     busy=true;
+-    try { let body=''; for await (const part of req) {body+=part;if(body.length>16000){res.writeHead(413);return res.end('{}');}} const s=JSON.parse(body);const value=req.url.endsWith('/health')?{ready:true,version:'0.18.9'}:req.url.endsWith('/verify')?await handlers.verifyPublic(s):req.url.endsWith('/studio')?await readStudio(s):await handlers.perform(req.url.split('/').at(-1),s);res.end(JSON.stringify(value)); }
++    try { let body=''; for await (const part of req) {body+=part;if(body.length>16000){res.writeHead(413);return res.end('{}');}} const s=JSON.parse(body);const value=req.url.endsWith('/health')?{ready:true,version:'0.18.13'}:req.url === '/x/profile'?await readPublicProfile(s):req.url.endsWith('/verify')?await handlers.verifyPublic(s):req.url.endsWith('/studio')?await readStudio(s):await handlers.perform(req.url.split('/').at(-1),s);res.end(JSON.stringify(value)); }
+     catch {res.writeHead(409);res.end('{"error":"Opération native refusée ou interrompue : vérifier sans renvoyer"}');}
+     finally {busy=false;}
+   });
+diff --git a/native/x-public-profile.cjs b/native/x-public-profile.cjs
+new file mode 100644
+index 0000000..29a9b9e
+--- /dev/null
++++ b/native/x-public-profile.cjs
+@@ -0,0 +1,62 @@
++'use strict';
++
++const {readFileSync} = require('node:fs');
++const {join} = require('node:path');
++const {connect} = require('./cdp.cjs');
++const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
++
++async function readPublicProfile({username, screens}) {
++  if (typeof username !== 'string' || !/^[a-zA-Z0-9_]{1,15}$/.test(username)
++      || !Number.isInteger(screens) || screens < 1 || screens > 10) {
++    throw Error('Profil X ou nombre d’écrans invalide.');
++  }
++  const handle = username.toLowerCase();
++  const base = 'http://127.0.0.1:9222';
++  const browser = await connect((await (await fetch(base + '/json/version')).json()).webSocketDebuggerUrl);
++  let context, page;
++  try {
++    context = (await browser.call('Target.createBrowserContext', {disposeOnDetach: true})).browserContextId;
++    const {targetId} = await browser.call('Target.createTarget', {url: 'about:blank', browserContextId: context, background: true});
++    let tab;
++    for (let i = 0; i < 20 && !tab; i++) {
++      tab = (await (await fetch(base + '/json')).json()).find(t => t.id === targetId);
++      if (!tab) await sleep(100);
++    }
++    if (!tab) throw Error('Chromium n’a pas ouvert le profil X public.');
++    page = await connect(tab.webSocketDebuggerUrl);
++    await page.call('Page.navigate', {url: 'https://x.com/' + handle});
++
++    const sources = readFileSync(join(__dirname, '../x/dom.js'), 'utf8') + '\n;'
++      + 'window.RSMAX ??= {}; window.chrome ??= {}; window.chrome.runtime ??= {}; window.chrome.runtime.onMessage ??= {addListener() {}};\n'
++      + readFileSync(join(__dirname, '../x/tasks.js'), 'utf8');
++    const scan = sources + '\n;(() => {'
++      + 'const handle = ' + JSON.stringify(handle) + ';'
++      + 'if (location.origin !== "https://x.com" || location.pathname.toLowerCase().replace(/\\/$/, "") !== "/" + handle) return [];'
++      + 'return window.RSXDom.articles().map(article => window.RSXTasks.profileTweet(article, handle)).filter(Boolean);'
++      + '})()';
++    const found = new Map();
++    const collect = async () => {
++      const result = await page.call('Runtime.evaluate', {expression: scan, returnByValue: true});
++      for (const post of result.result?.value || []) {
++        if (post.classification_known && post.stats) found.set(post.id, post);
++      }
++    };
++    for (let i = 0; i < 20 && !found.size; i++) {
++      await sleep(1000);
++      await collect().catch(() => {});
++    }
++    if (!found.size) throw Error('Flux de publications X public indisponible.');
++    for (let i = 1; i < screens; i++) {
++      await page.call('Runtime.evaluate', {expression: 'window.scrollBy(0, Math.round(innerHeight * 1.3))'});
++      await sleep(1600);
++      await collect();
++    }
++    return {tweets: [...found.values()], followers: null, source: 'nas_public_browser'};
++  } finally {
++    page?.close();
++    if (context) await browser.call('Target.disposeBrowserContext', {browserContextId: context}).catch(() => {});
++    browser.close();
++  }
++}
++
++module.exports = {readPublicProfile};

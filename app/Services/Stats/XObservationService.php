@@ -38,7 +38,7 @@ class XObservationService
                 'likes' => (int) ($tweet['likes'] ?? 0),
                 'comments' => (int) ($tweet['replies'] ?? 0),
                 'shares' => (int) ($tweet['reposts'] ?? 0),
-                'bookmarks' => (int) ($tweet['bookmarks'] ?? 0),
+                'bookmarks' => isset($tweet['bookmarks']) ? (int) $tweet['bookmarks'] : null,
             ];
 
             $postPlatform = PostPlatform::where('social_account_id', $account->id)
@@ -56,7 +56,10 @@ class XObservationService
                 ->first();
 
             if ($existing) {
-                $existing->update(['metrics' => $metrics, 'metrics_synced_at' => now()]);
+                $existing->update([
+                    'metrics' => array_replace($existing->metrics ?? [], array_filter($metrics, fn ($value) => $value !== null)),
+                    'metrics_synced_at' => now(),
+                ]);
                 $result['external_updated']++;
             } elseif (! $postPlatform) {
                 ExternalPost::create($this->newExternalPost($account, $tweet, $metrics));

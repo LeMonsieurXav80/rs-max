@@ -89,6 +89,13 @@ class XObservationTest extends TestCase
 
         $this->assertNull(ExternalPost::where('external_id', '600')->first()->ignored_at);
         $this->assertSame('auto_noise', ExternalPost::where('external_id', '601')->first()->ignored_reason);
+
+        $this->send([['id' => '600', 'views' => 42, 'bookmarks' => 2]], null);
+        $this->send([['id' => '600', 'likes' => 3]], null);
+        $metrics = ExternalPost::where('external_id', '600')->first()->metrics;
+        $this->assertSame(42, $metrics['views']);
+        $this->assertSame(2, $metrics['bookmarks']);
+        $this->assertSame(3, $metrics['likes']);
     }
 
     public function test_un_compte_en_mode_navigateur_napelle_plus_lapi_x(): void
