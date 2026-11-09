@@ -1,0 +1,296 @@
+--- a/background.js
++++ b/background.js
+@@ -459,6 +459,17 @@
+   return outcome;
+ }
+
++function tikTokVerificationError(action, proof) {
++  const status = proof?.result?.verification?.status;
++  if (action.result?.submission?.comment_status === 2 && status !== 'public_unavailable') {
++    return 'TikTok a retourné le code commentaire 2 ; visibilité publique non confirmée. Aucun renvoi.';
++  }
++  if (status === 'public_reply_absent') return 'Fil public parcouru : réponse exacte absente. Aucun renvoi.';
++  if (status === 'public_target_not_found') return 'Commentaire parent non retrouvé dans la lecture publique. Aucun renvoi.';
++  if (status === 'public_reply_unverified') return 'Fil public incomplet ou preuve visuelle manquante. Aucun renvoi.';
++  return 'Action TikTok sans preuve après rechargement. Aucun renvoi.';
++}
++
+ async function executeTikTokStudioTask(task) {
+   if (task.payload.url !== TIKTOK_STUDIO_COMMENTS) throw new Error('Page de commentaires TikTok inattendue.');
+   const tabs = await chrome.tabs.query({ url: TIKTOK_STUDIO_COMMENTS });
+@@ -498,7 +509,7 @@
+       if (proof?.result?.confirmed === true) return finishTikTokRecipe(task, action, { ...proof, result: { ...action.result, ...proof.result, proof:'after_reload' } });
+       if (proof?.status === 'failed') return finishTikTokRecipe(task, action, {status:'uncertain',result:{...action.result,verification_error:proof.error},error:'Relecture TikTok impossible : '+proof.error});
+     }
+-    return finishTikTokRecipe(task, action, { status: 'uncertain', result: {...action.result, ...lastProof?.result}, error: action.error || (lastProof?.result?.target_found === false ? 'Commentaire TikTok non retrouvé après parcours de la liste : vérifier sans renvoi.' : 'Réponse TikTok absente du fil retrouvé après rechargement : vérifier sans renvoi.') });
++    return finishTikTokRecipe(task, action, { status: 'uncertain', result: {...action.result, ...lastProof?.result}, error: action.error || tikTokVerificationError(action, lastProof) });
+   } catch (e) {
+     return finishTikTokRecipe(task, action, { status: 'uncertain', result: action?.result, error: 'Action TikTok non vérifiée après envoi : ' + e.message });
+   }
+--- a/manifest.json
++++ b/manifest.json
+@@ -1,7 +1,7 @@
+ {
+   "manifest_version": 3,
+   "name": "RS-Max Companion",
+-  "version": "0.18.8",
++  "version": "0.18.9",
+   "description": "Actions assistees sur les reseaux sociaux (engagement, publication) avec remontee vers l'API RS-Max.",
+   "permissions": [
+     "storage",
+--- a/native/public.cjs
++++ b/native/public.cjs
+@@ -1,52 +1,179 @@
+ 'use strict';
+-const {connect}=require('./cdp.cjs');
+-const sleep=ms=>new Promise(r=>setTimeout(r,ms));
++
++const {connect} = require('./cdp.cjs');
++const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
++const origin = 'https://www.tiktok.com';
++
+ function valid(s) {
+-  if(!/^[\w.]{1,32}$/.test(s.username||'')||typeof s.text!=='string'||!s.text.trim()||s.text.length>150||!['post_id','parent_id','comment_id'].every(k=>typeof s.submission?.[k]==='string'&&/^\d{1,30}$/.test(s.submission[k])))throw Error('Reçu public incomplet');
++  if (!/^[\w.]{1,32}$/.test(s.username || '') || typeof s.text !== 'string' || !s.text.trim() || s.text.length > 150
++    || !['post_id', 'parent_id', 'comment_id'].every(key => /^\d{1,30}$/.test(s.submission?.[key] || '') && typeof s.submission[key] === 'string')) {
++    throw Error('Reçu public incomplet');
++  }
+ }
++
+ function step(s) {
+-  if(location.origin!=='https://www.tiktok.com')return{page_matched:false};
+-  const match=location.pathname.match(/^\/@([\w.]+)\/(?:video|photo)\/(\d+)$/);
+-  if(!match||match[1].toLowerCase()!==s.username||match[2]!==s.submission.post_id)return {page_matched:false};
+-  const skip=[...document.querySelectorAll('button')].find(b=>b.getClientRects().length&&/^(Skip|Pas maintenant|Ignorer)$/.test(b.innerText.trim()));skip?.click();
+-  const visible=e=>!!e?.getClientRects().length&&getComputedStyle(e).visibility!=='hidden';
+-  const norm=v=>String(v||'').trim();
+-  const tab=[...document.querySelectorAll('button')].find(b=>visible(b)&&/^(Comments|Commentaires)$/.test(norm(b.innerText)));
+-  const parents=[...document.querySelectorAll('[data-e2e="comment-level-1"]')];
+-  if(!parents.length&&tab){tab.click();return {page_matched:true,waiting:true};}
+-  const reply=[...document.querySelectorAll('[data-e2e="comment-level-2"]')].find(e=>{const row=e.closest('[class*="DivCommentItemWrapper"]');return norm(e.innerText||e.textContent)===s.text&&row?.querySelector('a[href^="/@"]')?.getAttribute('href')?.split('/@')[1]?.split(/[/?]/)[0]?.toLowerCase()===s.username;});
+-  if(reply)return {page_matched:true,dom_matched:true};
+-  const more=[...document.querySelectorAll('[data-key-interaction="comment_view_replies"]')].find(e=>visible(e)&&!/^(Hide|Masquer)/i.test(norm(e.innerText)));
+-  if(more){more.scrollIntoView({block:'center'});(more.querySelector('button')||more).click();return {page_matched:true,expanded:true,count:parents.length};}
+-  const last=parents.at(-1);if(last){last.scrollIntoView({block:'end'});let sc=last.parentElement;while(sc&&!(sc.scrollHeight>sc.clientHeight+2&&/auto|scroll/.test(getComputedStyle(sc).overflowY)))sc=sc.parentElement;(sc||document.scrollingElement).scrollBy({top:600,behavior:'instant'});}
+-  return {page_matched:true,count:parents.length,waiting:!parents.length};
++  if (location.origin !== 'https://www.tiktok.com') return {page_matched: false};
++  const match = location.pathname.match(/^\/@([\w.]+)\/(?:video|photo)\/(\d+)$/);
++  if (!match || match[1].toLowerCase() !== s.username || match[2] !== s.submission.post_id) return {page_matched: false};
++
++  const visible = element => !!element?.getClientRects().length && getComputedStyle(element).visibility !== 'hidden';
++  const norm = value => String(value || '').trim();
++  const author = element => element.closest('[class*="DivCommentItemWrapper"]')
++    ?.querySelector('a[href^="/@"]')?.getAttribute('href')?.split('/@')[1]?.split(/[/?]/)[0]?.toLowerCase();
++  const buttons = [...document.querySelectorAll('button')];
++  buttons.find(button => visible(button) && /^(Skip|Pas maintenant|Ignorer)$/.test(norm(button.innerText)))?.click();
++  const parents = [...document.querySelectorAll('[data-e2e="comment-level-1"]')];
++  const tab = buttons.find(button => visible(button) && /^(Comments|Commentaires)$/.test(norm(button.innerText)));
++  if (!parents.length && tab) {
++    tab.click();
++    return {page_matched: true, waiting: true};
++  }
++
++  const target = s.parent && parents.find(element => norm(element.innerText || element.textContent) === norm(s.parent.text)
++    && author(element) === s.parent.username);
++  const branch = target?.closest('[class*="DivCommentObjectWrapper"]');
++  const domMatched = [...(branch || document).querySelectorAll('[data-e2e="comment-level-2"]')]
++    .some(element => visible(element) && norm(element.innerText || element.textContent) === s.text && author(element) === s.username);
++  const state = {page_matched: true, dom_matched: domMatched, count: parents.length, waiting: !parents.length};
++  if (domMatched && s.networkMatched) return state;
++
++  const selector = '[data-key-interaction="comment_view_replies"]';
++  const buttonsToExpand = branch ? [...branch.querySelectorAll(selector)] : s.parent ? [] : [...document.querySelectorAll(selector)];
++  const pressed = globalThis.rsmaxPublicReadButtons ??= new WeakMap();
++  const more = buttonsToExpand.find(element => {
++    const label = norm(element.innerText);
++    return visible(element) && !/^(Hide|Masquer)/i.test(label) && pressed.get(element) !== label;
++  });
++  if (more) {
++    pressed.set(more, norm(more.innerText));
++    more.scrollIntoView({block: 'center'});
++    (more.querySelector('button') || more).click();
++    return {...state, expanded: true};
++  }
++
++  const last = target ?? parents.at(-1);
++  if (last && !branch) {
++    last.scrollIntoView({block: 'end'});
++    let scroller = last.parentElement;
++    while (scroller && !(scroller.scrollHeight > scroller.clientHeight + 2 && /auto|scroll/.test(getComputedStyle(scroller).overflowY))) {
++      scroller = scroller.parentElement;
++    }
++    (scroller || document.scrollingElement)?.scrollBy({top: 600, behavior: 'instant'});
++  }
++  return state;
+ }
+-async function verifyPublic(s,{cdp='http://127.0.0.1:9222',timeout=65000,connector=connect}={}) {
+-  valid(s);const version=await(await fetch(cdp+'/json/version')).json(),browser=await connector(version.webSocketDebuggerUrl);let context,page;
+-  let networkMatched=false,domMatched=false,parentSeen=false,observed=0;const requests=new Set(),seen=new Set();
++
++function observe(body, url, receipt, state) {
++  if (body.status_code !== 0 || !Array.isArray(body.comments)) return;
++  const {post_id: post, parent_id: parent, comment_id: reply} = receipt.submission;
++  const branch = url.pathname === '/api/comment/list/reply/' && url.searchParams.get('comment_id') === parent;
++  if (branch) {
++    const cursor = url.searchParams.get('cursor');
++    if (/^\d+$/.test(cursor || '')) {
++      if (body.has_more === 0 || body.has_more === false) {
++        state.pages.set(cursor, null);
++      } else if (/^\d+$/.test(String(body.cursor ?? ''))) {
++        state.pages.set(cursor, String(body.cursor));
++      }
++    }
++  }
++
++  const comments = [...body.comments];
++  for (let i = 0; i < comments.length && i < 500; i++) {
++    const c = comments[i];
++    for (const child of Array.isArray(c.reply_comment) ? c.reply_comment : []) {
++      comments.push({...child, aweme_id: child.aweme_id ?? c.aweme_id, reply_id: child.reply_id ?? c.cid});
++    }
++    if (typeof c.cid === 'string' && state.seen.size < 600) state.seen.add(c.cid);
++    const author = c.user?.unique_id?.toLowerCase();
++    if (c.cid === parent && c.aweme_id === post) {
++      state.parentSeen = true;
++      if (author && typeof c.text === 'string') state.parent = {username: author, text: c.text};
++    }
++    if (c.cid === reply && c.reply_id === parent && c.aweme_id === post) {
++      state.replySeen = true;
++      state.parentSeen = true;
++      if (c.text === receipt.text && author === receipt.username && c.no_show !== true && c.no_show !== 1) {
++        state.networkMatched = true;
++      }
++    }
++  }
++}
++
++function completeBranch(pages) {
++  const visited = new Set();
++  let cursor = '0';
++  while (pages.has(cursor) && !visited.has(cursor)) {
++    visited.add(cursor);
++    cursor = pages.get(cursor);
++    if (cursor === null) return true;
++  }
++  return false;
++}
++
++async function verifyPublic(s, {cdp = 'http://127.0.0.1:9222', timeout = 65000, connector = connect} = {}) {
++  valid(s);
++  const version = await (await fetch(cdp + '/json/version')).json();
++  const browser = await connector(version.webSocketDebuggerUrl);
++  const state = {seen: new Set(), pages: new Map()};
++  const requests = new Map();
++  let context, page;
+   try {
+-    context=(await browser.call('Target.createBrowserContext',{disposeOnDetach:true})).browserContextId;
+-    const type=s.submission.post_type==='photo'?'photo':'video',url='https://www.tiktok.com/@'+s.username+'/'+type+'/'+s.submission.post_id;
+-    const id=(await browser.call('Target.createTarget',{url:'about:blank',browserContextId:context})).targetId;
+-    let target;for(let i=0;i<20&&!target;i++){target=(await(await fetch(cdp+'/json')).json()).find(t=>t.id===id);if(!target)await sleep(100);}
+-    if(!target)throw Error('Lecture publique indisponible');page=await connector(target.webSocketDebuggerUrl);
+-    page.onEvent=v=>{
+-      const p=v.params||{};
+-      if(v.method==='Network.requestWillBeSent'){try{const u=new URL(p.request.url);if(u.origin==='https://www.tiktok.com'&&/^\/api\/comment\/list\/(?:reply\/)?$/.test(u.pathname)&&p.request.method==='GET')requests.add(p.requestId);}catch{}}
+-      if(v.method==='Network.loadingFinished'&&requests.delete(p.requestId))page.call('Network.getResponseBody',{requestId:p.requestId}).then(r=>{try{const b=JSON.parse(r.base64Encoded?Buffer.from(r.body,'base64').toString():r.body);const comments=b.status_code===0?[...(b.comments||[])]:[];for(let i=0;i<comments.length&&i<500;i++){const c=comments[i];for(const child of c.reply_comment||[])comments.push({...child,aweme_id:child.aweme_id??c.aweme_id,reply_id:child.reply_id??c.cid});if(typeof c.cid==='string')seen.add(c.cid);if(c.cid===s.submission.parent_id&&c.aweme_id===s.submission.post_id)parentSeen=true;if(c.cid===s.submission.comment_id&&c.reply_id===s.submission.parent_id&&c.aweme_id===s.submission.post_id&&c.text===s.text&&c.user?.unique_id?.toLowerCase()===s.username&&c.no_show!==true&&c.no_show!==1){networkMatched=true;parentSeen=true;}}observed=seen.size;}catch{}}).catch(()=>{});
++    context = (await browser.call('Target.createBrowserContext', {disposeOnDetach: true})).browserContextId;
++    const type = s.submission.post_type === 'photo' ? 'photo' : 'video';
++    const url = origin + '/@' + s.username + '/' + type + '/' + s.submission.post_id;
++    const id = (await browser.call('Target.createTarget', {url: 'about:blank', browserContextId: context, background: true})).targetId;
++    let target;
++    for (let i = 0; i < 20 && !target; i++) {
++      target = (await (await fetch(cdp + '/json')).json()).find(t => t.id === id);
++      if (!target) await sleep(100);
++    }
++    if (!target) throw Error('Lecture publique indisponible');
++    page = await connector(target.webSocketDebuggerUrl);
++    page.onEvent = ({method, params: p}) => {
++      if (method === 'Network.requestWillBeSent') {
++        try {
++          const endpoint = new URL(p.request.url);
++          if (endpoint.origin === origin && /^\/api\/comment\/list\/(?:reply\/)?$/.test(endpoint.pathname) && p.request.method === 'GET') {
++            requests.set(p.requestId, endpoint);
++          }
++        } catch {}
++      }
++      if (method === 'Network.loadingFailed') requests.delete(p.requestId);
++      if (method === 'Network.loadingFinished' && requests.has(p.requestId)) {
++        const endpoint = requests.get(p.requestId);
++        page.call('Network.getResponseBody', {requestId: p.requestId}).then(response => {
++          const body = JSON.parse(response.base64Encoded ? Buffer.from(response.body, 'base64').toString() : response.body);
++          observe(body, endpoint, s, state);
++        }).catch(() => {}).finally(() => requests.delete(p.requestId));
++      }
+     };
+-    await page.call('Network.enable');await page.call('Page.navigate',{url});
+-    const deadline=Date.now()+timeout;let quiet=0,lastCount=-1,matchedPage=false;
+-    while(Date.now()<deadline&&seen.size<400){
+-      const r=await page.call('Runtime.evaluate',{expression:'('+step.toString()+')('+JSON.stringify(s)+')',returnByValue:true});const state=r.result?.value;
+-      if(state?.page_matched)matchedPage=true;
+-      domMatched=Boolean(state?.dom_matched);
+-      if(networkMatched&&domMatched)return {confirmed:true,target_found:true,proof:'after_reload',visibility:'public',verification_source:'anonymous_browser',comment_id:s.submission.comment_id,verification:{status:'public_confirmed',observed_count:observed}};
+-      const count=state?.count??-1;quiet=!state?.expanded&&!state?.waiting&&count===lastCount?quiet+1:0;lastCount=count;
+-      if(quiet>=5&&matchedPage)break;
+-      await sleep(state?.expanded?1200:900);
++    await page.call('Network.enable');
++    await page.call('Page.navigate', {url});
++    const deadline = Date.now() + timeout;
++    let matchedPage = false;
++    while (Date.now() < deadline) {
++      const input = {...s, parent: state.parent, networkMatched: state.networkMatched};
++      const response = await page.call('Runtime.evaluate', {expression: '(' + step.toString() + ')(' + JSON.stringify(input) + ')', returnByValue: true});
++      const current = response.result?.value;
++      matchedPage ||= current?.page_matched === true;
++      if (state.networkMatched && current?.dom_matched) {
++        return {confirmed: true, target_found: true, proof: 'after_reload', visibility: 'public', verification_source: 'anonymous_browser',
++          comment_id: s.submission.comment_id, verification: {status: 'public_confirmed', observed_count: state.seen.size}};
++      }
++      if (state.parentSeen && !state.replySeen && !requests.size && completeBranch(state.pages)) break;
++      await sleep(current?.expanded ? 1200 : 900);
+     }
+-    return {confirmed:false,target_found:parentSeen,visibility:'unconfirmed',verification_source:'anonymous_browser',verification:{status:matchedPage&&observed?(parentSeen?'public_reply_absent':'public_target_not_found'):'public_unavailable',observed_count:observed}};
+-  } finally { page?.close();if(context)await browser.call('Target.disposeBrowserContext',{browserContextId:context}).catch(()=>{});browser.close(); }
++    const status = !matchedPage || !state.seen.size ? 'public_unavailable'
++      : !state.parentSeen ? 'public_target_not_found'
++        : !state.replySeen && completeBranch(state.pages) ? 'public_reply_absent' : 'public_reply_unverified';
++    return {confirmed: false, target_found: Boolean(state.parentSeen), visibility: 'unconfirmed', verification_source: 'anonymous_browser',
++      verification: {status, observed_count: state.seen.size}};
++  } finally {
++    page?.close();
++    if (context) await browser.call('Target.disposeBrowserContext', {browserContextId: context}).catch(() => {});
++    browser.close();
++  }
+ }
+-module.exports={verifyPublic,valid,step};
++
++module.exports = {verifyPublic, valid, step};
+--- a/native/server.cjs
++++ b/native/server.cjs
+@@ -16,7 +16,7 @@
+     if (req.method !== 'POST' || !['/tiktok/fill','/tiktok/send','/tiktok/verify','/tiktok/studio','/tiktok/health'].includes(req.url)) {res.writeHead(404);return res.end('{}');}
+     if (busy) {res.writeHead(409);return res.end('{"error":"Opération native déjà en cours"}');}
+     busy=true;
+-    try { let body=''; for await (const part of req) {body+=part;if(body.length>16000){res.writeHead(413);return res.end('{}');}} const s=JSON.parse(body);const value=req.url.endsWith('/health')?{ready:true,version:'0.18.8'}:req.url.endsWith('/verify')?await handlers.verifyPublic(s):req.url.endsWith('/studio')?await readStudio(s):await handlers.perform(req.url.split('/').at(-1),s);res.end(JSON.stringify(value)); }
++    try { let body=''; for await (const part of req) {body+=part;if(body.length>16000){res.writeHead(413);return res.end('{}');}} const s=JSON.parse(body);const value=req.url.endsWith('/health')?{ready:true,version:'0.18.9'}:req.url.endsWith('/verify')?await handlers.verifyPublic(s):req.url.endsWith('/studio')?await readStudio(s):await handlers.perform(req.url.split('/').at(-1),s);res.end(JSON.stringify(value)); }
+     catch {res.writeHead(409);res.end('{"error":"Opération native refusée ou interrompue : vérifier sans renvoyer"}');}
+     finally {busy=false;}
+   });
+--- a/tests/e2e/tiktok-native.cjs
++++ b/tests/e2e/tiktok-native.cjs
+@@ -15,12 +15,13 @@
+ await sw.evaluate(({token,spec})=>{self.RSMAX_DEFAULTS={taskProfile:'test',nativeInputToken:token,nativeInputRequired:true};nativeTask={id:spec.task_id,kind:'tiktok.reply',payload:{username:spec.username,text:spec.text,target:spec.target}}},{token,spec});
+ const rpc=operation=>sw.evaluate(({operation,spec})=>handlers['tiktok.native']({task_id:spec.task_id,operation,nonce:spec.nonce,avatar:spec.avatar},{id:chrome.runtime.id,tab:{url:'https://www.tiktok.com/tiktokstudio/comment'}}),{operation,spec});
+ assert.equal((await rpc('fill')).filled,true,'Transport service worker vers loopback');assert.equal(lastOrigin,origin,'Origine Chrome réelle');assert.equal(await page.inputValue('textarea'),text);assert.equal((await rpc('send')).send_clicked,true);assert.equal(await page.evaluate(()=>sends),1);assert.deepEqual(await page.evaluate(()=>events),[{type:'input',trusted:true},{type:'send',trusted:true}]);await assert.rejects(rpc('send'));assert.equal(await page.evaluate(()=>sends),1);
+-let hidden=false,preloaded=false,writes=0;
++let hidden=false,preloaded=false,delayed=false,writes=0;
+ const publicHtml=`<!doctype html><meta charset="utf-8"><button id="comments">Comments</button><main></main><script>
+-const parent={cid:'42',aweme_id:'99',text:'Jolie tenue',user:{unique_id:'visitor'}};document.querySelector('#comments').onclick=async()=>{if(document.querySelector('main').children.length)return;const r=await fetch('/api/comment/list/');await r.json();document.querySelector('main').innerHTML='<div class="DivCommentObjectWrapper"><div class="DivCommentItemWrapper"><a href="/@visitor">Visiteur</a><span data-e2e="comment-level-1">Jolie tenue</span></div><button data-key-interaction="comment_view_replies">View 1 reply</button></div>';document.querySelector('[data-key-interaction]').onclick=async e=>{const button=e.currentTarget;const r=await fetch('/api/comment/list/reply/');await r.json();button.textContent='Hide';document.querySelector('.DivCommentObjectWrapper').insertAdjacentHTML('beforeend','<div class="DivCommentItemWrapper"><a href="/@owner">Créateur</a><span data-e2e="comment-level-2">Merci pour ton avis 🌹</span></div>')}};</script>`;
+-const connector=async url=>{const base=await connect(url);let external;const wrapper={call:(...args)=>base.call(...args),close:()=>base.close(),get onEvent(){return external},set onEvent(v){external=v}};base.onEvent=v=>{if(v.method==='Fetch.requestPaused'){const p=v.params,u=new URL(p.request.url);if(p.request.method==='POST')writes++;let body,contentType;if(u.pathname.startsWith('/api/comment/list/')){contentType='application/json';body=JSON.stringify({status_code:0,comments:u.pathname.includes('/reply/')?[{cid:hidden?'999':'1234567890123456789',reply_id:'42',aweme_id:'99',text,user:{unique_id:'owner'},no_show:false}]:[{cid:'42',aweme_id:'99',text:'Jolie tenue',user:{unique_id:'visitor'},reply_comment:preloaded?[{cid:'1234567890123456789',text,user:{unique_id:'owner'},no_show:false}]:[]}]});}else{contentType='text/html';body=publicHtml}base.call('Fetch.fulfillRequest',{requestId:p.requestId,responseCode:200,responseHeaders:[{name:'Content-Type',value:contentType}],body:Buffer.from(body).toString('base64')}).catch(()=>{});}else external?.(v)};await base.call('Fetch.enable',{patterns:[{urlPattern:'https://www.tiktok.com/*'}]});return wrapper;};
++const parent={cid:'42',aweme_id:'99',text:'Jolie tenue',user:{unique_id:'visitor'}};document.querySelector('#comments').onclick=async()=>{if(document.querySelector('main').children.length)return;const r=await fetch('/api/comment/list/');await r.json();document.querySelector('main').innerHTML='<div class="DivCommentObjectWrapper"><div class="DivCommentItemWrapper"><a href="/@visitor">Visiteur</a><span data-e2e="comment-level-1">Jolie tenue</span></div><button data-key-interaction="comment_view_replies">View 1 reply</button></div>';document.querySelector('[data-key-interaction]').onclick=async e=>{const button=e.currentTarget;const r=await fetch('/api/comment/list/reply/?comment_id=42&cursor=0');await r.json();button.textContent='Hide';document.querySelector('.DivCommentObjectWrapper').insertAdjacentHTML('beforeend','<div class="DivCommentItemWrapper"><a href="/@owner">Créateur</a><span data-e2e="comment-level-2">Merci pour ton avis 🌹</span></div>')}};</script>`;
++const connector=async url=>{const base=await connect(url);let external;const wrapper={call:(...args)=>base.call(...args),close:()=>base.close(),get onEvent(){return external},set onEvent(v){external=v}};base.onEvent=v=>{if(v.method==='Fetch.requestPaused'){const p=v.params,u=new URL(p.request.url);if(p.request.method==='POST')writes++;let body,contentType;if(u.pathname.startsWith('/api/comment/list/')){contentType='application/json';body=JSON.stringify({status_code:0,has_more:0,comments:u.pathname.includes('/reply/')?[{cid:hidden?'999':'1234567890123456789',reply_id:'42',aweme_id:'99',text,user:{unique_id:'owner'},no_show:false}]:[{cid:'42',aweme_id:'99',text:'Jolie tenue',user:{unique_id:'visitor'},reply_comment:preloaded?[{cid:'1234567890123456789',text,user:{unique_id:'owner'},no_show:false}]:[]}]});}else{contentType='text/html';body=publicHtml}const fulfill=()=>base.call('Fetch.fulfillRequest',{requestId:p.requestId,responseCode:200,responseHeaders:[{name:'Content-Type',value:contentType}],body:Buffer.from(body).toString('base64')}).catch(()=>{});if(delayed&&u.pathname.includes('/list/reply/'))setTimeout(fulfill,6500);else fulfill();}else external?.(v)};await base.call('Fetch.enable',{patterns:[{urlPattern:'https://www.tiktok.com/*'}]});return wrapper;};
+ const receipt={username:'owner',text,submission:{post_id:'99',parent_id:'42',comment_id:'1234567890123456789'}};
+ let proof=await verifyPublic(receipt,{cdp,connector,timeout:10000});assert.equal(proof.confirmed,true,JSON.stringify(proof));assert.equal(proof.visibility,'public');assert.equal(proof.verification_source,'anonymous_browser');
+-hidden=true;preloaded=true;proof=await verifyPublic(receipt,{cdp,connector,timeout:10000});assert.equal(proof.confirmed,true,'CID préchargé sous le parent, sans aweme/reply redondants');preloaded=false;proof=await verifyPublic(receipt,{cdp,connector,timeout:8000});assert.equal(proof.confirmed,false,'Un texte visible sans son CID public ne confirme rien');assert.equal(writes,0,'Aucune écriture dans la vérification publique');
++delayed=true;proof=await verifyPublic(receipt,{cdp,connector,timeout:13000});assert.equal(proof.confirmed,true,'Attendre la réponse publique lente même si le DOM reste stable');delayed=false;
++hidden=true;preloaded=true;proof=await verifyPublic(receipt,{cdp,connector,timeout:10000});assert.equal(proof.confirmed,true,'CID préchargé sous le parent, sans aweme/reply redondants');preloaded=false;proof=await verifyPublic(receipt,{cdp,connector,timeout:8000});assert.equal(proof.confirmed,false,'Un texte visible sans son CID public ne confirme rien');assert.equal(proof.verification.status,'public_reply_absent','Absence uniquement après lecture complète du parent exact');assert.equal(writes,0,'Aucune écriture dans la vérification publique');
+ console.log('Chromium : saisie Unicode et clic isTrusted, un seul envoi malgré doublon ; preuve anonyme positive et faux affichage refusé, zéro écriture de vérification.');
+ }finally{server?.closeAllConnections();if(server)await new Promise(r=>server.close(r));await context?.close();fs.rmSync(dir,{recursive:true,force:true})}})().catch(e=>{console.error(e);process.exitCode=1});

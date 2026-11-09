@@ -6,3 +6,9 @@
 - Inbox TikTok : priorité au plus ancien commentaire éligible. Au-delà de 24 h, relire la cible exacte dans Studio avant de préparer la réponse. Si elle est introuvable, reporter sa sélection et passer à la suivante. Les tentatives existantes restent exclues.
 
 Companion 0.18.8 est requis. Appliquer `companion/patches/0.18.8-tiktok-studio.patch` sur 0.18.7. Le service natif NAS observe uniquement les réponses des requêtes que Studio effectue déjà et ne transmet que les champs nécessaires. Suspendre les futurs cycles et laisser la file se vider avant les deux redémarrages. Vérifier la version et le refus d’un compte sans session avant de reprendre.
+
+### Preuve publique des réponses — Companion 0.18.9
+
+Appliquer `companion/patches/0.18.9-tiktok-preuve-publique.patch` sur 0.18.8. La relecture anonyme privilégie le fil du parent exact et attend les chargements lents dans la fenêtre existante. Seuls le CID, le parent, la vidéo, l’auteur et le texte exacts, servis publiquement et visibles après rechargement, confirment la réponse et permettent le like.
+
+`public_reply_absent` exige une lecture paginée complète du fil. `public_reply_unverified` indique une lecture incomplète ou une preuve visuelle manquante. Le code commentaire `2` a été observé après un clic accepté avec un reçu HTTP 200, sans visibilité publique. Sa signification interne reste inconnue. Garder la tentative verrouillée, même en cas de délai ou de preuve manquante.
