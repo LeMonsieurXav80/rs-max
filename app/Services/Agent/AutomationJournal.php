@@ -87,6 +87,32 @@ class AutomationJournal
             'source' => 'extension',
             'target_uri' => "https://x.com/{$author}/status/{$tweetId}",
         ]);
+        $this->writeCompanionLike($log, $author, $at, $observed
+            ? 'Like constaté dans le reçu de réponse'
+            : 'Like ajouté puis confirmé dans X');
+    }
+
+    /** L'appelant verrouille le compte pendant l'enregistrement. */
+    public function tiktokCompanionLike(int $accountId, string $author, string $fingerprint, Carbon $at, bool $observed = false): void
+    {
+        if ($at->lt(now()->subDays(7))) {
+            return;
+        }
+
+        $log = BotActionLog::where('created_at', '>=', now()->subDays(7))
+            ->where('metadata->comment_fingerprint', $fingerprint)->firstOrNew([
+                'social_account_id' => $accountId,
+                'action_type' => 'tiktok.like',
+                'source' => 'extension',
+                'target_uri' => \App\Services\Inbox\TikTokInboxService::COMMENTS_URL,
+            ]);
+        $this->writeCompanionLike($log, $author, $at, $observed
+            ? 'Like constaté dans le reçu de réponse'
+            : 'Like ajouté puis confirmé dans TikTok Studio', ['comment_fingerprint' => $fingerprint]);
+    }
+
+    private function writeCompanionLike(BotActionLog $log, string $author, Carbon $at, string $proof, array $metadata = []): void
+    {
         if ($log->exists) {
             return;
         }
@@ -94,11 +120,9 @@ class AutomationJournal
         $log->fill([
             'target_author' => $author,
             'success' => true,
-            'metadata' => [
+            'metadata' => $metadata + [
                 'status' => 'confirmed',
-                'proof' => ['confirmed' => true, 'liked' => true, 'proof' => $observed
-                    ? 'Like constaté dans le reçu de réponse'
-                    : 'Like ajouté puis confirmé dans X'],
+                'proof' => ['confirmed' => true, 'liked' => true, 'proof' => $proof],
             ],
             'performed_at' => $at,
         ]);

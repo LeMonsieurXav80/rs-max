@@ -180,6 +180,26 @@ class TikTokExtensionTest extends TestCase
         $this->postJson('/api/extension/tiktok/suggest', $data)->assertConflict();
     }
 
+    public function test_local_likes_are_journaled_once_on_the_tiktok_account_without_a_persona(): void
+    {
+        $this->user->update(['role' => 'admin']);
+        $platform = Platform::firstOrCreate(['slug' => 'tiktok'], ['name' => 'TikTok']);
+        $account = SocialAccount::create(['platform_id' => $platform->id, 'name' => 'TikTok', 'browser_username' => 'test.xav']);
+        $payload = ['username' => 'test.xav', 'author' => 'visiteur', 'fingerprint' => hash('sha256', 'commentaire')];
+        $this->postJson('/api/extension/tiktok/like', $payload)->assertUnprocessable();
+        $account->users()->attach($this->user, ['is_active' => true]);
+        $this->postJson('/api/extension/tiktok/like', $payload)->assertOk()->assertJsonPath('status', 'confirmed');
+        $this->postJson('/api/extension/tiktok/like', $payload)->assertOk();
+        $log = BotActionLog::sole();
+        $this->assertSame($account->id, $log->social_account_id);
+        $this->assertSame('tiktok.like', $log->action_type);
+        $this->assertSame('extension', $log->source);
+        $this->assertSame('confirmed', $log->metadata['status']);
+        $this->assertTrue($log->metadata['proof']['liked']);
+        $this->assertDatabaseCount('extension_tiktok_comments', 0);
+        Http::assertNothingSent();
+    }
+
     public function test_changed_persona_or_wrong_text_cannot_send_old_draft(): void
     {
         $this->bind();

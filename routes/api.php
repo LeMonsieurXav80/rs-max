@@ -232,6 +232,7 @@ Route::middleware(['auth:sanctum', \App\Http\Middleware\CommunityManagerTokenSco
     Route::get('/extension/tiktok/context', [\App\Http\Controllers\Api\TikTokExtensionController::class, 'context']);
     Route::put('/extension/tiktok/context', [\App\Http\Controllers\Api\TikTokExtensionController::class, 'bind']);
     Route::post('/extension/tiktok/session', [\App\Http\Controllers\Api\TikTokExtensionController::class, 'session']);
+    Route::post('/extension/tiktok/like', [\App\Http\Controllers\Api\TikTokExtensionController::class, 'like']);
     Route::post('/extension/tiktok/suggest', [\App\Http\Controllers\Api\TikTokExtensionController::class, 'suggest'])->middleware('throttle:30,1');
     Route::post('/extension/tiktok/{id}/begin', [\App\Http\Controllers\Api\TikTokExtensionController::class, 'begin']);
     Route::post('/extension/tiktok/{id}/finish', [\App\Http\Controllers\Api\TikTokExtensionController::class, 'finish']);

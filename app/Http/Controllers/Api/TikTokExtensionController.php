@@ -242,6 +242,24 @@ class TikTokExtensionController extends Controller
         return $accounts->count() === 1 ? $accounts->first() : null;
     }
 
+    public function like(Request $request, AutomationJournal $journal): JsonResponse
+    {
+        $username = $this->username($request);
+        $data = $request->validate([
+            'fingerprint' => 'required|string|size:64|regex:/^[a-f0-9]+$/',
+            'author' => 'required|string|max:255',
+        ]);
+        $account = $this->inboxAccount($request, $username);
+        abort_unless($account, 422, 'Associe ce profil au bon compte TikTok dans RS-Max.');
+
+        DB::transaction(function () use ($account, $data, $journal) {
+            SocialAccount::whereKey($account->id)->lockForUpdate()->firstOrFail();
+            $journal->tiktokCompanionLike($account->id, $data['author'], $data['fingerprint'], now());
+        });
+
+        return response()->json(['status' => 'confirmed']);
+    }
+
     public function begin(Request $request, int $id): JsonResponse
     {
         $profile = $this->profile($request);
