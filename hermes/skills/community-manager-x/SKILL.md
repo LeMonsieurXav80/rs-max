@@ -3,6 +3,12 @@ name: community-manager-x
 description: Lire et traiter les commentaires reçus X, TikTok, Facebook, Instagram, Threads et YouTube et rechercher des échanges pertinents avec le persona et les limites des comptes RS-Max attribués, via Companion sur le NAS.
 ---
 
+### Conduite à tenir si la lecture bloque
+
+Lancer un seul appel `reply-context` par commande, avec `python3 scripts/community_manager.py --config community-manager.json`. Lire sa sortie JSON directement. Une réponse `skip_item: true` fait passer immédiatement au candidat suivant. Éviter les chaînes de commandes qui masquent ce résultat et les appels à `jq` ou `uuidgen`, absents de ce profil. Pour une réponse déjà programmée, le client déployé accepte `reply-status ITEM --wait 60` pour vérifier la preuve avec une attente bornée, sans renvoi.
+
+Si trois cibles distinctes d’un même compte échouent au même point de lecture dans un cycle, passer aux autres comptes. Noter le compte, le réseau, l’étape, le nombre de cibles et le motif répété via `note`. Reprendre au prochain cycle sur les cibles que RS-Max rend éligibles. Conserver le contrôle de la preuve et de l’anti-doublon pour toute écriture.
+
 Utiliser `scripts/community_manager.py --config community-manager.json` depuis le profil Hermès existant. Commencer par `accounts`, puis `strategy --account ID` : compte, réseau, session, persona, actions activées, audience, recherches, exclusions et quotas viennent de RS-Max. Aucun identifiant dans les consignes. Travailler entre 06 h et 22 h, heure de Lisbonne. Réserver deux gestes pour une réponse et son like ; si `next_publication_at` est à moins d’une heure, garder au moins un geste disponible pour elle.
 
 Pour les mentions déjà en messagerie : `inbox --account ID --pending`, `reply-context ITEM`, rédiger avec le persona reçu et l’abonnement connecté, puis `reply ITEM --context UUID --text "RÉPONSE" --commit`. Ne pas appeler la génération IA RS-Max. Vérifier ensuite l’état dans `inbox` et le like automatique, qui est un second geste et attend la cadence.
