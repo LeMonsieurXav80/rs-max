@@ -32,6 +32,7 @@ Route::middleware(['auth:sanctum', \App\Http\Middleware\CommunityManagerTokenSco
         Route::get('accounts/{id}/strategy', [\App\Http\Controllers\Api\AccountStrategyController::class, 'show']);
         Route::patch('accounts/{id}/strategy', [\App\Http\Controllers\Api\AccountStrategyController::class, 'update']);
         Route::get('accounts/{id}/inbox', [\App\Http\Controllers\Api\CommunityManagerInboxController::class, 'index']);
+        Route::get('accounts/{id}/inbox/contexts', [\App\Http\Controllers\Api\CommunityManagerInboxController::class, 'contexts'])->whereNumber('id');
         Route::get('inbox/{inboxItem}', [\App\Http\Controllers\Api\CommunityManagerInboxController::class, 'status']);
         Route::post('inbox/{inboxItem}/reconcile', [\App\Http\Controllers\Api\CommunityManagerInboxController::class, 'reconcile']);
         Route::post('inbox/{inboxItem}/verify-reply', [\App\Http\Controllers\Api\CommunityManagerInboxController::class, 'verifyReply']);

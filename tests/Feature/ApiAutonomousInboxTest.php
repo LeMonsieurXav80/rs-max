@@ -26,7 +26,7 @@ class ApiAutonomousInboxTest extends TestCase
 
     private function fixture(string $slug = 'facebook'): array
     {
-        $this->travelTo(\Illuminate\Support\Carbon::parse('2026-11-08T12:00:00Z'));
+        $this->travelTo(\Illuminate\Support\Carbon::parse('2026-11-08T12:00:00Z')->setTimezone(config('app.timezone')));
         $user = User::factory()->create(['role' => 'manager']);
         $persona = Persona::create(['name' => 'Voix', 'system_prompt' => 'Répondre chaleureusement sans inventer.', 'is_active' => true]);
         $account = SocialAccount::create(['name' => 'Compte attribué', 'platform_id' => Platform::firstOrCreate(['slug' => $slug], ['name' => ucfirst($slug)])->id, 'platform_account_id' => 'owner', 'persona_id' => $persona->id, 'driver' => 'api', 'credentials' => ['access_token' => 'test'], 'agent_hourly_limit' => 20, 'agent_daily_limit' => 100]);

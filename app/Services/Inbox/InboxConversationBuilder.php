@@ -26,10 +26,10 @@ class InboxConversationBuilder
      * @param  Collection<int, InboxItem>  $items
      * @return list<array{inbox_item_id: int, thread: list<array{author: string, mine: bool, text: string}>}>
      */
-    public function build(SocialAccount $account, Collection $items): array
+    public function build(SocialAccount $account, Collection $items, bool $includeOriginal = true): array
     {
-        return $items->map(function (InboxItem $item) use ($account) {
-            $thread = $account->usesBrowser() && $account->platform->slug === 'twitter' ? $this->xThread($account, $item) : $this->inboxThread($account, $item);
+        return $items->map(function (InboxItem $item) use ($account, $includeOriginal) {
+            $thread = $account->usesBrowser() && $account->platform->slug === 'twitter' ? $this->xThread($account, $item) : $this->inboxThread($account, $item, $includeOriginal);
 
             return $thread === null ? null : ['inbox_item_id' => $item->id, 'thread' => $thread];
         })->filter()->values()->all();
@@ -50,9 +50,9 @@ class InboxConversationBuilder
             trim($p['text'].($p['quote'] ? ' [cite : '.$p['quote'].']' : ''))), $conversation);
     }
 
-    private function inboxThread(SocialAccount $account, InboxItem $item): array
+    private function inboxThread(SocialAccount $account, InboxItem $item, bool $includeOriginal): ?array
     {
-        $original = $this->originalText($account, $item);
+        $original = $includeOriginal ? $this->originalText($account, $item) : null;
         $thread = $original ? [$this->message($account->name, true, $original)] : [];
         $root = $item->parent_id ?: $item->external_id;
 
@@ -60,13 +60,25 @@ class InboxConversationBuilder
             ->where(fn ($q) => $item->type === 'dm' && $item->external_post_id
                 ? $q->where('external_post_id', $item->external_post_id)
                 : $q->where('external_id', $root)->orWhere('parent_id', $root)->orWhere('reply_external_id', $root))
-            ->where(fn ($q) => $q->whereNull('posted_at')->orWhere('posted_at', '<=', $item->posted_at))
+            ->where(function ($query) use ($item) {
+                $query->whereNull('posted_at');
+                if ($item->posted_at) {
+                    $query->orWhere('posted_at', '<=', $item->posted_at);
+                }
+            })
             ->orderBy('posted_at')->limit(config('agent.thread_messages'))->get();
 
         $policy = app(InboxFollowup::class);
+        if (! $includeOriginal && $policy->isNestedReply($item) && ! $previous->contains(
+            fn (InboxItem $earlier) => $earlier->external_id === $root || $earlier->reply_external_id === $root
+        )) {
+            return null;
+        }
+
         foreach ($previous as $earlier) {
             $thread[] = $this->message($earlier->author_username ?? $earlier->author_name ?? 'inconnu', $policy->isOwn($earlier, $account), (string) $earlier->content);
-            if ($earlier->reply_content) {
+            if ($earlier->reply_content && ($earlier->replied_at || $earlier->reply_external_id || $earlier->status === 'replied')
+                && (! $earlier->replied_at || ! $item->posted_at || $earlier->replied_at->lte($item->posted_at))) {
                 $thread[] = $this->message($account->name, true, $earlier->reply_content);
             }
         }

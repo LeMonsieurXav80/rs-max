@@ -199,6 +199,51 @@ class CommunityManagerInboxTest extends TestCase
         $this->postJson('/api/inbox/'.$own->id.'/reply', ['reply_text' => 'Bonjour !'])->assertConflict();
     }
 
+    public function test_le_lot_isole_le_compte_et_garde_le_contexte_de_chaque_cible(): void
+    {
+        $this->travelTo(\Illuminate\Support\Carbon::parse('2026-11-10T10:00:00Z'));
+        Http::preventStrayRequests();
+        $user = User::factory()->create(['role' => 'manager']);
+        $persona = Persona::create(['name' => 'Voix', 'system_prompt' => 'Répondre simplement', 'is_active' => true]);
+        $platform = Platform::firstOrCreate(['slug' => 'instagram'], ['name' => 'Instagram']);
+        $account = SocialAccount::create(['name' => 'Compte', 'platform_id' => $platform->id, 'persona_id' => $persona->id,
+            'driver' => 'api', 'credentials' => ['access_token' => 'test']]);
+        $other = SocialAccount::create(['name' => 'Autre compte', 'platform_id' => $platform->id]);
+        $account->users()->attach($user, ['is_active' => true]);
+        $other->users()->attach($user, ['is_active' => true]);
+        $account->agentActions()->create(['action' => 'reply', 'enabled' => true, 'daily_limit' => 5]);
+        Sanctum::actingAs($user, ['community-manager']);
+        $base = ['social_account_id' => $account->id, 'platform_id' => $platform->id, 'type' => 'comment', 'status' => 'unread',
+            'author_username' => 'lecteur', 'post_content' => 'La publication'];
+        InboxItem::create(array_replace($base, ['external_id' => 'root', 'content' => 'Jolie veste', 'status' => 'replied',
+            'posted_at' => now()->subHour(), 'replied_at' => now()->subMinutes(45), 'reply_external_id' => 'ours', 'reply_content' => 'Merci !']));
+        $direct = InboxItem::create($base + ['external_id' => 'direct', 'content' => 'Très jolie', 'posted_at' => now()->subMinute()]);
+        $question = InboxItem::create(array_replace($base, ['external_id' => 'question', 'parent_id' => 'ours',
+            'type' => 'reply', 'content' => 'Où trouver cette veste ?', 'posted_at' => now()]));
+        $reaction = InboxItem::create(array_replace($base, ['external_id' => 'reaction', 'parent_id' => 'ours',
+            'type' => 'reply', 'content' => 'Merci !', 'posted_at' => now()]));
+        InboxItem::create(array_replace($base, ['social_account_id' => $other->id, 'external_id' => 'other',
+            'content' => 'Question sur un autre compte ?', 'posted_at' => now()]));
+
+        $path = "/api/community-manager/accounts/{$account->id}/inbox/contexts";
+        $batch = $this->getJson($path)->assertOk()->assertJsonCount(2, 'items')->assertJsonCount(1, 'skipped')
+            ->assertJsonPath('persona.instructions', 'Répondre simplement')
+            ->assertJsonPath('items.0.item_id', $question->id)->assertJsonPath('items.0.followup', true)
+            ->assertJsonPath('items.0.publication.text', 'La publication')
+            ->assertJsonPath('items.0.previous_messages.0.text', 'Jolie veste')
+            ->assertJsonPath('items.0.previous_messages.1.text', 'Merci !')
+            ->assertJsonPath('items.0.target.text', 'Où trouver cette veste ?')
+            ->assertJsonMissingPath('items.0.persona')
+            ->assertJsonPath('items.1.item_id', $direct->id)
+            ->assertJsonPath('skipped.0.item_id', $reaction->id)->assertJsonPath('skipped.0.review_reason', 'not_relevant');
+        $data = ['context_id' => $batch->json('items.0.context_id'), 'reply_text' => 'Je te retrouve la référence.'];
+        $this->postJson("/api/community-manager/inbox/{$direct->id}/reply", $data)->assertConflict();
+        $this->postJson("/api/community-manager/inbox/{$question->id}/reply", $data)->assertOk()->assertJsonPath('dry_run', true);
+        $this->getJson($path.'?limit=6')->assertUnprocessable();
+        $this->assertNull($question->fresh()->reply_scheduled_at);
+        Http::assertNothingSent();
+    }
+
     public function test_x_accepte_uniquement_les_destinataires_de_reponse_avant_le_texte_exact(): void
     {
         $this->travelTo(\Illuminate\Support\Carbon::parse('2026-11-08T14:00:00Z'));

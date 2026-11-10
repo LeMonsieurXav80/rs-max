@@ -12,6 +12,7 @@ use App\Services\Inbox\InboxFollowup;
 use App\Services\Inbox\InboxReplyService;
 use Carbon\Carbon;
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Validation\Rule;
@@ -47,6 +48,15 @@ class InboxApiController extends Controller
                 'total' => $items->total(),
             ],
         ]);
+    }
+
+    public function pendingForAgent(User $user, int $accountId, int $limit): Collection
+    {
+        $query = $this->query($user, ['accounts' => [$accountId], 'order' => 'newest']);
+        $this->unanswered($query);
+
+        return $query->where(fn ($q) => $q->whereNull('agent_retry_at')->orWhere('agent_retry_at', '<=', now()))
+            ->limit($limit)->get();
     }
 
     /** Select a bounded lot, without generating or sending any reply in this request. */
