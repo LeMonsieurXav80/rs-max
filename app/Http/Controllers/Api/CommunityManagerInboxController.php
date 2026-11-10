@@ -83,6 +83,9 @@ class CommunityManagerInboxController extends Controller
 
         $xThread = null;
         if ($a->platform->slug === 'twitter' && $a->usesBrowser()) {
+            if ($inboxItem->agent_review_reason === 'x_target_not_found' && $inboxItem->agent_retry_at?->isFuture()) {
+                $this->skipContext($inboxItem, 'x_target_not_found', 'Mention X à relire plus tard. Passer à la suivante.');
+            }
             if ($inboxItem->status === 'ignored' && in_array($inboxItem->agent_review_reason, ['x_account_suspended', 'x_post_deleted'], true)) {
                 $this->skipContext($inboxItem, $inboxItem->agent_review_reason, 'Cible X retirée de la file.');
             }
@@ -97,7 +100,7 @@ class CommunityManagerInboxController extends Controller
                 ], 110);
             } catch (\App\Services\Browser\BrowserException $e) {
                 if ($e->getMessage() === 'Mention absente du fil.') {
-                    $this->deferContext($inboxItem, 'context_changed', 'Mention X non chargée. Passer à la suivante.');
+                    $this->deferContext($inboxItem, 'x_target_not_found', 'Mention X non chargée. Passer à la suivante.');
                 }
                 abort(502, $e->getMessage());
             }

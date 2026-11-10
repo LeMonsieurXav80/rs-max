@@ -1,0 +1,56 @@
+diff --git a/manifest.json b/manifest.json
+index ceb6def..bc57ac0 100644
+--- a/manifest.json
++++ b/manifest.json
+@@ -1,7 +1,7 @@
+ {
+   "manifest_version": 3,
+   "name": "RS-Max Companion",
+-  "version": "0.18.19",
++  "version": "0.18.20",
+   "description": "Actions assistees sur les reseaux sociaux (engagement, publication) avec remontee vers l'API RS-Max.",
+   "permissions": [
+     "storage",
+diff --git a/x/dom.js b/x/dom.js
+index 7220080..6b69e33 100644
+--- a/x/dom.js
++++ b/x/dom.js
+@@ -11,7 +11,8 @@
+   };
+   const own=(node,article)=>{
+     if(node.closest('article')!==article)return false;
+-    const quote=node.closest('[role="link"]');
++    // X donne aussi role="link" aux vrais permaliens et liens de profil.
++    const quote=node.closest('[role="link"]:not(a[href])');
+     return !quote||!article.contains(quote);
+   };
+   const main=()=>document.querySelector('[data-testid="primaryColumn"],main')||document;
+diff --git a/tests/x-dom-role-link.test.cjs b/tests/x-dom-role-link.test.cjs
+new file mode 100644
+index 0000000..1b9be94
+--- /dev/null
++++ b/tests/x-dom-role-link.test.cjs
+@@ -0,0 +1,23 @@
++const {test} = require('node:test');
++const assert = require('node:assert/strict');
++const {readFileSync} = require('node:fs');
++const {join} = require('node:path');
++const {JSDOM} = require('jsdom');
++
++test('X reconnaît le permalien daté malgré role=link et écarte la citation', () => {
++  const dom = new JSDOM('<main><article data-testid="tweet"><a role="link" href="/visitor">Visiteur</a><a role="link" href="/visitor/status/123"><time datetime="2026-11-10T07:00:00Z"></time></a><div data-testid="tweetText">Bonjour</div><div role="link"><a role="link" href="/other/status/456"><time></time></a><div data-testid="tweetText">Citation</div></div></article></main>', {
++    url: 'https://x.com/visitor/status/123',
++    runScripts: 'outside-only',
++  });
++  try {
++    const {window} = dom;
++    window.eval(readFileSync(join(__dirname, '../x/dom.js'), 'utf8'));
++    const row = window.RSXDom.snapshot(window.document.querySelector('article'));
++    assert.equal(row.id, '123');
++    assert.equal(row.name, 'Visiteur');
++    assert.equal(row.text, 'Bonjour');
++    assert.equal(row.quote, 'Citation');
++  } finally {
++    dom.window.close();
++  }
++});

@@ -116,6 +116,35 @@ class CommunityManagerInboxTest extends TestCase
         Http::assertNothingSent();
     }
 
+    public function test_x_agent_queue_defers_a_missing_target_without_reopening_its_thread(): void
+    {
+        $this->travelTo(\Illuminate\Support\Carbon::parse('2026-11-10T10:00:00Z'));
+        $user = User::factory()->create(['role' => 'manager']);
+        $persona = Persona::create(['name' => 'Persona', 'system_prompt' => 'Sobre', 'is_active' => true]);
+        $account = SocialAccount::create([
+            'name' => 'Compte X', 'platform_id' => Platform::firstOrCreate(['slug' => 'twitter'], ['name' => 'X'])->id,
+            'driver' => 'browser', 'browser_profile' => 'nas-test', 'browser_username' => 'owner', 'persona_id' => $persona->id,
+        ]);
+        $account->users()->attach($user, ['is_active' => true]);
+        Sanctum::actingAs($user);
+        $common = ['social_account_id' => $account->id, 'platform_id' => $account->platform_id,
+            'type' => 'comment', 'author_username' => 'visitor', 'content' => 'Bonjour', 'status' => 'unread'];
+        $item = InboxItem::create($common + ['external_id' => '987', 'posted_at' => now()->subDay()]);
+        $inbox = '/api/community-manager/accounts/'.$account->id.'/inbox';
+        $this->getJson($inbox.'?agent_queue=1')->assertOk()->assertJsonPath('pagination.total', 1);
+
+        $this->mock(\App\Services\Browser\BrowserTaskQueue::class)->shouldReceive('run')->once()
+            ->andThrow(new \App\Services\Browser\BrowserException('Mention absente du fil.'));
+        $context = '/api/community-manager/inbox/'.$item->id.'/context';
+        $this->getJson($context)->assertConflict()->assertJsonPath('review_reason', 'x_target_not_found');
+        $this->getJson($context)->assertConflict()->assertJsonPath('skip_item', true);
+        $this->getJson($inbox.'?agent_queue=1')->assertOk()->assertJsonPath('pagination.total', 0);
+        $this->getJson($inbox)->assertOk()->assertJsonPath('pagination.total', 1);
+        $item->refresh();
+        $this->assertSame(360, (int) $item->agent_reviewed_at->diffInMinutes($item->agent_retry_at));
+        $this->assertSame(0, (int) $item->reply_attempts);
+    }
+
     public function test_x_retire_un_compte_suspendu_et_ne_relit_pas_la_cible(): void
     {
         $this->travelTo(\Illuminate\Support\Carbon::parse('2026-11-09T12:00:00Z'));
