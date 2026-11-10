@@ -110,6 +110,7 @@
             <div class="flex flex-wrap items-center gap-3">
                 <div class="flex items-center gap-1 bg-gray-100 rounded-xl p-1">
                     @foreach(['' => 'Tous', 'new' => 'Nouveau', 'followup' => 'Relance', 'draft' => 'À valider', 'replied' => 'Répondus', 'ignored' => 'Ignorés', 'archived' => 'Archivés'] as $val => $label)
+                        @continue($val === 'draft' && $counts['draft'] === 0)
                         <button type="submit"
                                 @click.prevent="$refs.statusInput.value = '{{ $val }}'; $refs.filterForm.submit()"
                                 class="px-3 py-1.5 rounded-lg text-sm font-medium transition-colors {{ $currentStatus === $val ? 'bg-white shadow-sm' . ($val === 'replied' ? ' text-green-600' : ($val === 'archived' ? ' text-gray-600' : ($val === 'ignored' ? ' text-gray-600' : ($val === 'new' ? ' text-amber-600' : ($val === 'followup' ? ' text-orange-600' : ' text-indigo-600'))))) : 'text-gray-500 hover:text-gray-700' }}">

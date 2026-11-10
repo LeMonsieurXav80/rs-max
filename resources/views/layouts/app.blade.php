@@ -268,16 +268,16 @@
                                 </svg>
                                 Bot Actions
                             </a>
-                            <a href="{{ route('inbox.index', ['status' => 'draft']) }}"
-                               class="flex items-center justify-between gap-3 px-3 py-2 rounded-lg text-sm transition-colors text-gray-500 hover:bg-gray-50 hover:text-gray-900">
-                                À valider
-                                @php
-                                    $agentPending = \Illuminate\Support\Facades\Cache::remember('inbox-drafts-count', 60, fn () => \App\Models\InboxItem::awaitingValidation()->count());
-                                @endphp
-                                @if ($agentPending)
+                            @php
+                                $agentPending = \Illuminate\Support\Facades\Cache::remember('inbox-drafts-count', 60, fn () => \App\Models\InboxItem::awaitingValidation()->count());
+                            @endphp
+                            @if ($agentPending)
+                                <a href="{{ route('inbox.index', ['status' => 'draft']) }}"
+                                   class="flex items-center justify-between gap-3 px-3 py-2 rounded-lg text-sm transition-colors text-gray-500 hover:bg-gray-50 hover:text-gray-900">
+                                    À valider
                                     <span class="text-xs bg-indigo-600 text-white rounded-full px-1.5">{{ $agentPending }}</span>
-                                @endif
-                            </a>
+                                </a>
+                            @endif
                             @foreach (config('agent.platforms') as $agentSlug => $agentPlatform)
                                 <a href="{{ url('/agent/'.$agentSlug) }}"
                                    class="flex items-center gap-3 px-3 py-2 rounded-lg text-sm transition-colors {{ $currentRoute === 'agent/'.$agentSlug ? 'bg-indigo-50 text-indigo-600 font-medium' : 'text-gray-500 hover:bg-gray-50 hover:text-gray-900' }}">
