@@ -140,10 +140,13 @@ class Client:
             data.update(text=text, context_id=context)
         prepared = self.api('POST', f'accounts/{account}/x/prepare', data)
         ident = prepared['id']
-        if not commit or prepared['status'] != 'prepared':
-            return prepared
+        if prepared['status'] != 'prepared':
+            return {**prepared, 'reused': True, 'new_gesture_confirmed': False}
+        if not commit:
+            return {**prepared, 'new_gesture_confirmed': False}
         if self.db.execute('SELECT 1 FROM x_attempts WHERE id=?', (ident,)).fetchone():
-            return {'id': ident, 'status': 'check_required', 'reason': 'Demande X déjà enregistrée : consulter x-status, sans renvoyer.'}
+            return {'id': ident, 'status': 'check_required', 'reused': True, 'new_gesture_confirmed': False,
+                    'reason': 'Demande X déjà enregistrée : consulter x-status, sans renvoyer.'}
         self.db.execute('INSERT INTO x_attempts VALUES(?,?,?)', (ident, 'execution_requested', dt.datetime.now(dt.timezone.utc).isoformat()))
         self.db.commit()  # avant le HTTP, y compris en cas de coupure ou de délai dépassé
         self.api('POST', f'x/engagements/{ident}/execute', {'dry_run': False})
@@ -154,9 +157,12 @@ class Client:
                 self.db.execute('UPDATE x_attempts SET state=?, updated_at=? WHERE id=?',
                     (result['status'], dt.datetime.now(dt.timezone.utc).isoformat(), ident))
                 self.db.commit()
-                return result
+                proven = (result['status'] == 'confirmed' and not result.get('unchanged')
+                          and (result.get('result') or {}).get('proof') == 'after_reload')
+                return {**result, 'new_gesture_confirmed': proven}
             time.sleep(5)
-        return {'id': ident, 'status': 'check_required', 'reason': 'Délai local dépassé : consulter x-status, sans renvoyer.'}
+        return {'id': ident, 'status': 'check_required', 'new_gesture_confirmed': False,
+                'reason': 'Délai local dépassé : consulter x-status, sans renvoyer.'}
 
 
 def main(argv=None):

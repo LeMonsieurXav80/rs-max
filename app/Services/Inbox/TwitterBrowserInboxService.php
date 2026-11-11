@@ -52,7 +52,7 @@ class TwitterBrowserInboxService implements PlatformInboxInterface
     public function like(SocialAccount $account, InboxItem $item): array
     {
         $engagements = app(\App\Services\Agent\XEngagementService::class);
-        $saved = $engagements->recordedCompanionLike($account, (string) $item->external_id);
+        $saved = $engagements->recordedLike($account, (string) $item->external_id);
         if ($saved?->status === 'confirmed') {
             return ['success' => true, 'confirmed' => true];
         }
@@ -70,7 +70,7 @@ class TwitterBrowserInboxService implements PlatformInboxInterface
 
             return ['success' => true, 'confirmed' => true];
         } catch (\App\Services\Browser\BrowserException $e) {
-            if ($engagements->recordedCompanionLike($account, (string) $item->external_id)?->status === 'confirmed') {
+            if ($engagements->recordedLike($account, (string) $item->external_id)?->status === 'confirmed') {
                 return ['success' => true, 'confirmed' => true];
             }
 

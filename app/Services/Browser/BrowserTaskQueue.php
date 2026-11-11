@@ -57,8 +57,8 @@ class BrowserTaskQueue
                 if ($key === null) {
                     SocialAccount::whereKey($account->id)->lockForUpdate()->firstOrFail();
                 }
-                if (app(\App\Services\Agent\XEngagementService::class)->recordedCompanionLike($account, (string) $payload['target']['id'])) {
-                    throw new BrowserException('J’aime déjà réservé ou enregistré par Companion.');
+                if (app(\App\Services\Agent\XEngagementService::class)->recordedLike($account, (string) $payload['target']['id'])) {
+                    throw new BrowserException('J’aime déjà réservé ou enregistré dans RS-Max.');
                 }
             }
 

@@ -154,6 +154,28 @@ class XAgentTest extends TestCase
         Http::assertNothingSent();
     }
 
+    public function test_la_decouverte_prefiltre_les_likes_de_l_inbox_sans_bloquer_une_reponse(): void
+    {
+        InboxItem::create(['social_account_id' => $this->a->id, 'platform_id' => $this->a->platform_id,
+            'external_id' => '987', 'type' => 'comment', 'status' => 'unread', 'liked_at' => now()]);
+        $pending = $this->target();
+        $pending['id'] = '988';
+        BrowserTask::create(['social_account_id' => $this->a->id, 'profile' => 'nas-test', 'kind' => 'x.like',
+            'payload' => ['target' => $pending]]);
+        $this->mock(BrowserTaskQueue::class)->shouldReceive('run')->once()->andReturn([
+            'items' => [$this->target(), $pending], 'observed' => 2, 'complete' => false,
+        ]);
+        $snapshot = $this->postJson($this->url('read'), ['action' => 'feed.read', 'feed' => 'following'])
+            ->assertOk()->assertJsonPath('like_blocked_ids', ['987', '988'])->assertJsonPath('reply_blocked_ids', [])->json('snapshot_id');
+        foreach (['987', '988'] as $target) {
+            $this->postJson($this->url('prepare'), ['snapshot_id' => $snapshot, 'action' => 'like', 'target_id' => $target])->assertConflict();
+            $this->postJson('/api/extension/x/assisted/reactions/reserve', ['action' => 'like', 'target_id' => $target,
+                'author' => 'visitor', 'platform_account_id' => '12345', 'username' => 'owner'])->assertConflict();
+        }
+        $this->assertDatabaseCount('browser_tasks', 1);
+        $this->assertDatabaseCount('x_engagements', 0);
+    }
+
     public function test_jeton_et_snapshots_ne_traversent_pas_un_compte_non_attribue(): void
     {
         $other = SocialAccount::create(['name' => 'Non attribué', 'platform_id' => $this->a->platform_id]);
@@ -515,11 +537,20 @@ class XAgentTest extends TestCase
     public function test_un_like_du_flux_confirme_met_aussi_a_jour_la_messagerie_du_meme_compte(): void
     {
         $item = \App\Models\InboxItem::create(['social_account_id' => $this->a->id, 'platform_id' => $this->a->platform_id, 'external_id' => '987', 'type' => 'comment', 'status' => 'unread']);
-        $row = $this->prepare($this->snapshot());
+        $snapshot = $this->snapshot();
+        $row = $this->prepare($snapshot);
         $this->execute($row);
+        $service = app(\App\Services\Inbox\TwitterBrowserInboxService::class);
+        $this->assertFalse($service->like($this->a, $item)['success']);
+        $this->assertDatabaseCount('browser_tasks', 1);
         $task = $row->fresh()->browserTask;
         app(BrowserTaskQueue::class)->claim('nas-test');
         $this->finish($task->fresh(), ['confirmed' => true, 'proof' => 'after_reload', 'target' => $this->target()]);
         $this->assertNotNull($item->fresh()->liked_at);
+        $this->assertTrue($service->like($this->a, $item->fresh())['success']);
+        $this->postJson($this->url('prepare'), ['snapshot_id' => $snapshot, 'action' => 'like', 'target_id' => '987'])
+            ->assertOk()->assertJsonPath('id', $row->id)->assertJsonPath('confirmed', true)->assertJsonPath('source', 'browser')
+            ->assertJsonPath('reused', true)->assertJsonPath('new_gesture_confirmed', false);
+        $this->assertDatabaseCount('browser_tasks', 1);
     }
 }

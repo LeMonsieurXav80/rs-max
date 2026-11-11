@@ -25,10 +25,7 @@ class XEngagementService
                 $row = XEngagement::where('social_account_id', $account->id)->where('action', $action)->where('target_key', $key)->first();
                 abort_if($row && $row->status !== 'prepared', 409, 'Ce geste est déjà enregistré ou réservé pour cette cible.');
                 if ($action === 'like') {
-                    $liked = InboxItem::where('social_account_id', $account->id)->where('external_id', $target['id'])->whereNotNull('liked_at')->exists();
-                    $pending = BrowserTask::where('social_account_id', $account->id)->where('kind', 'x.like')
-                        ->whereIn('status', ['pending', 'running', 'uncertain'])->where('payload->target->id', $target['id'])->exists();
-                    abort_if($liked || $pending, 409, 'J’aime déjà relevé, réservé ou incertain dans la messagerie.');
+                    $this->assertLikeAvailable($account, $target['id']);
                 }
                 $destination = $action === 'follow'
                     ? ['url' => 'https://x.com/'.$target['handle'], 'handle' => $target['handle']]
@@ -85,11 +82,41 @@ class XEngagementService
         });
     }
 
-    public function recordedCompanionLike(SocialAccount $account, string $tweetId): ?XEngagement
+    public function recordedLike(SocialAccount $account, string $tweetId): ?XEngagement
     {
         return XEngagement::where('social_account_id', $account->id)->where('action', 'like')
-            ->where('target_key', hash('sha256', $tweetId))->where('payload->source', 'companion')
-            ->whereIn('status', ['running', 'confirmed', 'uncertain'])->first();
+            ->where('target_key', hash('sha256', $tweetId))
+            ->whereIn('status', ['queued', 'running', 'confirmed', 'uncertain'])->first();
+    }
+
+    public function assertLikeAvailable(SocialAccount $account, string $tweetId, ?int $ignoreEngagement = null): void
+    {
+        abort_if($this->blockedLikeIds($account, [$tweetId], $ignoreEngagement), 409,
+            'J’aime déjà relevé, réservé ou incertain pour cette publication.');
+    }
+
+    /**
+     * @param  list<string>  $tweetIds
+     * @return list<string>
+     */
+    public function blockedLikeIds(SocialAccount $account, array $tweetIds, ?int $ignoreEngagement = null): array
+    {
+        if ($tweetIds === []) {
+            return [];
+        }
+
+        $keys = array_combine(array_map(fn (string $id) => hash('sha256', $id), $tweetIds), $tweetIds);
+        $reservations = XEngagement::where('social_account_id', $account->id)->where('action', 'like')
+            ->whereIn('target_key', array_keys($keys))->where('status', '!=', 'prepared')
+            ->when($ignoreEngagement, fn ($q) => $q->where('id', '!=', $ignoreEngagement))
+            ->pluck('target_key')->map(fn ($key) => $keys[$key])->all();
+        $liked = InboxItem::where('social_account_id', $account->id)->whereIn('external_id', $tweetIds)
+            ->whereNotNull('liked_at')->pluck('external_id')->all();
+        $pending = BrowserTask::where('social_account_id', $account->id)->where('kind', 'x.like')
+            ->whereIn('status', ['pending', 'running', 'uncertain'])->whereIn('payload->target->id', $tweetIds)
+            ->get(['payload'])->map(fn (BrowserTask $task) => $task->payload['target']['id'])->all();
+
+        return array_values(array_intersect($tweetIds, [...$reservations, ...$liked, ...$pending]));
     }
 
     public function execute(XEngagement $row): XEngagement
@@ -165,6 +192,9 @@ class XEngagementService
         if ($row->action === 'reply') {
             abort_unless(CommentFreshness::allowsPublishedAt($row->payload['target']['published_at'] ?? null), 409, CommentFreshness::REJECTION);
             $this->assertReplyAvailable($account, $row->payload['target']['id'], $row->id, $row->payload['inbox_item_id'] ?? null);
+        }
+        if ($row->action === 'like') {
+            $this->assertLikeAvailable($account, $row->payload['target']['id'], $row->id);
         }
         if ($row->action === 'unfollow') {
             $contact = SocialContact::where('social_account_id', $account->id)->where('handle', $row->payload['handle'])->first();

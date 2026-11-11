@@ -65,6 +65,37 @@ class CommunityManagerTest(unittest.TestCase):
                 self.assertEqual(api.call_count,1)
             client.db.close()
 
+    def test_un_recu_x_existant_ne_compte_pas_comme_un_nouveau_geste(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            client = cm.Client({'state_path': tmp+'/state.sqlite'})
+            previous = {'id':42, 'status':'confirmed', 'confirmed':True, 'source':'extension'}
+            try:
+                with patch.object(cm,'daytime',return_value=True), patch.object(client,'api',return_value=previous) as api:
+                    result = client.x_action(7,'like','snapshot',True,'987')
+                    self.assertTrue(result['reused'])
+                    self.assertFalse(result['new_gesture_confirmed'])
+                    self.assertEqual(result['source'],'extension')
+                    self.assertEqual(api.call_count,1)
+            finally:
+                client.db.close()
+
+    def test_seul_un_nouveau_geste_x_prouve_est_compte(self):
+        for unchanged in (False, True):
+            with tempfile.TemporaryDirectory() as tmp:
+                client = cm.Client({'state_path': tmp+'/state.sqlite'})
+                responses = [
+                    {'id':42, 'status':'prepared'},
+                    {'id':42, 'status':'queued'},
+                    {'id':42, 'status':'confirmed', 'unchanged':unchanged, 'result':{'proof':'after_reload'}},
+                ]
+                try:
+                    with patch.object(cm,'daytime',return_value=True), patch.object(client,'api',side_effect=responses) as api:
+                        result = client.x_action(7,'like','snapshot',True,'987')
+                        self.assertEqual(result['new_gesture_confirmed'],not unchanged)
+                        self.assertEqual(api.call_count,3)
+                finally:
+                    client.db.close()
+
     def test_le_client_demarre_et_expose_ses_commandes_sans_configuration(self):
         import subprocess
         import sys

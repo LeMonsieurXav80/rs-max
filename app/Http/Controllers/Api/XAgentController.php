@@ -122,9 +122,13 @@ class XAgentController extends Controller
         if (isset($result['items'])) {
             $ids = array_values(array_unique(array_filter(array_column($result['items'], 'id'), fn ($id) => is_string($id) && ctype_digit($id))));
             $result['reply_blocked_ids'] = $engagements->blockedReplyIds($a, $ids);
+            $result['like_blocked_ids'] = $engagements->blockedLikeIds($a, $ids);
             $metadata = ['steps' => [[
                 'id' => (string) Str::uuid(), 'stage' => 'agent.x.reply_prefilter',
                 'details' => ['count' => count($result['reply_blocked_ids'])],
+            ], [
+                'id' => (string) Str::uuid(), 'stage' => 'agent.x.like_prefilter',
+                'details' => ['count' => count($result['like_blocked_ids'])],
             ]]];
         }
         \App\Models\BotActionLog::create(['social_account_id' => $a->id, 'action_type' => 'agent.'.$data['action'],
@@ -196,7 +200,7 @@ class XAgentController extends Controller
         return Cache::lock('x-prepare:'.$a->id.':'.$data['action'].':'.$key, 30)->block(2, function () use ($a, $data, $profile, $target, $key) {
             $existing = XEngagement::where('social_account_id', $a->id)->where('action', $data['action'])->where('target_key', $key)->first();
             if ($existing && $existing->status !== 'prepared') {
-                return response()->json($this->format($existing));
+                return response()->json($this->format($existing) + ['reused' => true, 'new_gesture_confirmed' => false]);
             }
             $payload = ['action' => $data['action'], 'username' => $a->browser_username, 'url' => $profile ? 'https://x.com/'.$target['handle'] : $target['url'],
                 'activity_window' => app(CommunityManagerWindow::class)->specification(), 'target' => $profile ? null : $target,
@@ -208,6 +212,9 @@ class XAgentController extends Controller
             if ($data['action'] === 'reply') {
                 abort_unless(CommentFreshness::allowsPublishedAt($target['published_at'] ?? null), 409, CommentFreshness::REJECTION);
                 app(XEngagementService::class)->assertReplyAvailable($a, $target['id'], $existing?->id);
+            }
+            if ($data['action'] === 'like') {
+                app(XEngagementService::class)->assertLikeAvailable($a, $target['id'], $existing?->id);
             }
             if (in_array($data['action'], ['reply', 'quote'], true)) {
                 $context = Cache::get('x-agent-context:'.($data['context_id'] ?? ''));
@@ -264,6 +271,8 @@ class XAgentController extends Controller
     private function format(XEngagement $row): array
     {
         return ['id' => $row->id, 'action' => $row->action, 'status' => $row->status, 'confirmed' => $row->status === 'confirmed',
-            'unchanged' => ($row->result['unchanged'] ?? false), 'target' => $row->payload['url'], 'text' => $row->payload['text'] ?? null, 'result' => $row->result, 'error' => $row->error];
+            'unchanged' => ($row->result['unchanged'] ?? false), 'target' => $row->payload['url'], 'text' => $row->payload['text'] ?? null,
+            'source' => ($row->payload['source'] ?? null) === 'companion' ? 'extension' : 'browser',
+            'requested_at' => $row->requested_at?->toIso8601String(), 'result' => $row->result, 'error' => $row->error];
     }
 }
