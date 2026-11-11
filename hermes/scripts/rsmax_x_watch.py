@@ -8,6 +8,33 @@ from urllib.parse import urlencode
 from community_manager import Client, daytime, pending_inbox_order
 
 
+def discovery_source(client, account, now):
+    actions = account['actions']
+    strategy = account.get('strategy') or {}
+    queries = [q.strip() for q in strategy.get('search_queries', []) if isinstance(q, str) and 0 < len(q.strip()) <= 150]
+    sources = {}
+    if actions.get('feed.read', {}).get('left', 0) > 0:
+        sources['feed.read'] = {}
+    if queries and actions.get('search.read', {}).get('left', 0) > 0:
+        sources['search.read'] = {'query': queries[(int(now.timestamp()) // 3600) % len(queries)]}
+    if not sources:
+        return None
+    recent = []
+    for action in ('feed.read', 'search.read'):
+        history = client.api('GET', 'logs?' + urlencode({'account_id': account['id'], 'action': 'agent.' + action, 'limit': 1}))
+        last = next(iter(history.get('logs', [])), {}).get('at')
+        if last:
+            recent.append((dt.datetime.fromisoformat(last).astimezone(dt.timezone.utc), action))
+    if recent:
+        at, previous = max(recent)
+        if now.astimezone(dt.timezone.utc) - at < dt.timedelta(hours=1):
+            return None
+        choice = next((action for action in sources if action != previous), previous)
+    else:
+        choice = next(iter(sources))
+    return {'read_action': choice, **sources[choice]}
+
+
 def snapshot(client, now=None):
     now = now or dt.datetime.now(dt.timezone.utc)
     if not daytime(now):
@@ -17,6 +44,7 @@ def snapshot(client, now=None):
         return {'state': 'sleep'}
     work = []
     explorations = []
+    x_explorations = []
     for account in catalog.get('accounts', []):
         platform = account.get('platform')
         api = platform in ('facebook','instagram','threads','youtube')
@@ -32,8 +60,11 @@ def snapshot(client, now=None):
         if platform == 'facebook' and 'comment.like' in actions and actions['comment.like'].get('left', 0) < 1:
             can_reply = False  # conserver une place au like demandé après la réponse
         can_feed = platform == 'twitter' and actions.get('feed.read', {}).get('left', 0) > 0 and any(actions.get(k, {}).get('enabled', True) and actions.get(k, {}).get('left', 0) > 0 for k in ('like', 'bookmark'))
-        threads_discovery = platform == 'threads' and account.get('session') == 'connected' and bool(account.get('strategy', {}).get('search_queries')) and actions.get('thread.read', {}).get('left', 0) > 0 and any(actions.get(k, {}).get('left', 0) > 0 for k in ('like', 'comment'))
-        can_feed = can_feed or threads_discovery
+        can_discover = (platform in ('twitter', 'threads') and account.get('session') == 'connected'
+                        and account.get('persona') and actions.get('thread.read', {}).get('left', 0) > 0)
+        threads_discovery = can_discover and platform == 'threads' and any(actions.get(k, {}).get('left', 0) > 0 for k in ('like', 'comment'))
+        x_discovery = can_discover and platform == 'twitter' and actions.get('reply', {}).get('left', 0) > 0
+        can_feed = can_feed or threads_discovery or x_discovery
         if (not can_reply and not can_feed) or cadence.get('blocked'):
             continue
         required = steps if can_reply else 1  # réponse et like, ou geste de flux
@@ -54,9 +85,6 @@ def snapshot(client, now=None):
             reserve = (1 if can_reply else 0) + (1 if upcoming else 0)
             needed = len(writes) + reserve
             enough = bool(writes) and all(value is None or value >= needed for value in (cadence.get('remaining'), cadence.get('daily', {}).get('remaining')))
-            history = client.api('GET', 'logs?' + urlencode({'account_id': account['id'], 'action': 'agent.search.read', 'limit': 1}))
-            last = next(iter(history.get('logs', [])), {}).get('at')
-            due = not last or dt.datetime.fromisoformat(last).astimezone(dt.timezone.utc) <= now - dt.timedelta(hours=1)
             recent = {}
             for action in ('like', 'comment'):
                 recent[action] = client.api('GET', 'logs?' + urlencode({'account_id': account['id'], 'action': 'threads.' + action, 'limit': 10})).get('logs', [])
@@ -70,15 +98,21 @@ def snapshot(client, now=None):
                 discovery_plan = {'account_id': account['id'], 'mode': 'finish_like', 'target_url': unfinished[0]['target_url'],
                                   'write_actions': ['like'], 'persona': account['persona'], 'reserve_for_inbox': can_reply,
                                   'reason': 'Commentaire NAS confirmé sans tentative de like ; relire la cible, aucun nouveau commentaire.'}
-            queries = [q.strip() for q in account['strategy']['search_queries'] if isinstance(q, str) and 0 < len(q.strip()) <= 150]
-            if not discovery_plan and enough and due and queries and actions.get('search.read', {}).get('left', 0) > 0:
-                discovery_plan = {'account_id': account['id'], 'mode': 'explore', 'query': queries[(int(now.timestamp()) // 3600) % len(queries)],
+            source = discovery_source(client, account, now) if not discovery_plan and enough else None
+            if source:
+                discovery_plan = {'account_id': account['id'], 'mode': 'explore', **source,
                                   'recent_targets': recent_targets, 'write_actions': writes, 'persona': account['persona'], 'reserve_for_inbox': can_reply,
                                   'reason': 'Exploration horaire due, indépendante du stock inbox.'}
             threads_discovery = discovery_plan is not None
             can_feed = threads_discovery
             if not can_reply and not can_feed:
                 continue
+        if x_discovery:
+            reserve = (steps if can_reply else 0) + int(bool(upcoming))
+            enough = all(value is None or value >= 1 + reserve for value in (cadence.get('remaining'), cadence.get('daily', {}).get('remaining')))
+            source = discovery_source(client, account, now) if enough else None
+            if source:
+                x_explorations.append({'account_id': account['id'], **source, 'reserve_for_inbox': can_reply})
         inbox = client.api('GET', f"accounts/{account['id']}/inbox?" + urlencode({'order':pending_inbox_order(platform),'limit':20 if platform == 'twitter' else 5,'status':'unanswered','agent_queue':1})) if can_reply else {}
         items = [{'id':i['id'], 'content':i['content'], 'posted_at':i.get('posted_at'), 'post_url':i.get('post_url'), 'post_content':i.get('post_content')} for i in inbox.get('items', []) if i.get('can_reply')]
         if items or can_feed:
@@ -93,7 +127,7 @@ def snapshot(client, now=None):
     if any(a.get('executor')=='api' for a in other) and other:
         offset=(int(now.timestamp())//300)%len(other);other=other[offset:]+other[:offset]
     work=discovery_first+browser_first+other
-    return {'state':'work','cycle_key':int(now.timestamp())//300,'accounts':work,'priority_threads':explorations} if work else {'state':'idle'}
+    return {'state':'work','cycle_key':int(now.timestamp())//300,'accounts':work,'priority_threads':explorations,'priority_x':x_explorations} if work or x_explorations else {'state':'idle'}
 
 
 def main():

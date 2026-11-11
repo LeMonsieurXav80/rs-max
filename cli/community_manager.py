@@ -89,7 +89,7 @@ class Client:
             data['comment_key'] = comment_key
         if action == 'video.comment':
             if not text or not context:
-                raise RuntimeError('Rédiger dans Hermès après comment-context, puis fournir --context et --text-file. Aucun appel IA dans RS-Max.')
+                raise RuntimeError('Rédiger dans Hermès après comment-context, puis fournir --context et --text ou --text-file. Aucun appel IA dans RS-Max.')
             data.update(text=text, context_id=context)
         prepared = self.api('POST', 'prepare', data)
         ident = prepared['id']
@@ -117,7 +117,7 @@ class Client:
         if target: data['target_id'] = target
         if action in ('reply', 'quote'):
             if not text or not context:
-                raise RuntimeError('Lire x-context et fournir --context et --text-file. Aucun appel IA dans RS-Max.')
+                raise RuntimeError('Lire x-context et fournir --context et --text ou --text-file. Aucun appel IA dans RS-Max.')
             data.update(text=text, context_id=context)
         prepared = self.api('POST', f'accounts/{account}/x/prepare', data)
         ident = prepared['id']
@@ -190,7 +190,11 @@ def main(argv=None):
     p.add_argument('--query'); p.add_argument('--url'); p.add_argument('--handle'); p.add_argument('--feed', choices=['following','foryou']); p.add_argument('--limit', type=int, default=10); p.add_argument('--screens', type=int, default=2)
     p = subs.add_parser('x-context'); p.add_argument('--account', type=int, required=True); p.add_argument('--snapshot', required=True); p.add_argument('--purpose', choices=['reply','quote'], default='reply')
     p = subs.add_parser('x-action'); p.add_argument('--account', type=int, required=True); p.add_argument('--action', choices=['like','unlike','bookmark','unbookmark','repost','unrepost','reply','quote','follow','unfollow'], required=True)
-    p.add_argument('--snapshot', required=True); p.add_argument('--target'); p.add_argument('--context'); p.add_argument('--text-file', type=Path); p.add_argument('--commit', action='store_true')
+    p.add_argument('--snapshot', required=True); p.add_argument('--target'); p.add_argument('--context')
+    text = p.add_mutually_exclusive_group()
+    text.add_argument('--text-file', type=Path)
+    text.add_argument('--text')
+    p.add_argument('--commit', action='store_true')
     p = subs.add_parser('x-status'); p.add_argument('id', type=int)
     p = subs.add_parser('x-contacts'); p.add_argument('--account', type=int, required=True); p.add_argument('--page', type=int, default=1)
     p = subs.add_parser('report'); p.add_argument('--hours', type=int, default=24); p.add_argument('--scheduled',action='store_true'); p.add_argument('--note-file', type=Path); p.add_argument('--note'); p.add_argument('--commit', action='store_true'); p.add_argument('--key')
@@ -243,8 +247,9 @@ def main(argv=None):
         data = {k: getattr(args, k) for k in ('action','query','url','handle','feed','limit','screens') if getattr(args,k) is not None}
         result = client.api('POST', f'accounts/{args.account}/x/read', data)
     elif args.command == 'x-context': result = client.api('GET', f'accounts/{args.account}/x/context?' + urlencode({'snapshot_id':args.snapshot, 'purpose':args.purpose}))
-    elif args.command == 'x-action': result = client.x_action(args.account, args.action, args.snapshot, args.commit, args.target,
-        args.text_file.read_text(encoding='utf-8').strip() if args.text_file else None, args.context)
+    elif args.command == 'x-action':
+        text = args.text_file.read_text(encoding='utf-8').strip() if args.text_file else args.text
+        result = client.x_action(args.account, args.action, args.snapshot, args.commit, args.target, text, args.context)
     elif args.command == 'x-status': result = client.api('GET', f'x/engagements/{args.id}')
     elif args.command == 'x-contacts': result = client.api('GET', f'accounts/{args.account}/x/contacts?' + urlencode({'page':args.page}))
     elif args.command == 'strategy': result = client.api('PATCH' if args.update_file else 'GET', f'accounts/{args.account}/strategy', json.loads(args.update_file.read_text()) if args.update_file else None)
