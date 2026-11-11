@@ -1,0 +1,429 @@
+diff --git a/manifest.json b/manifest.json
+--- a/manifest.json
++++ b/manifest.json
+@@ -1,7 +1,7 @@
+ {
+   "manifest_version": 3,
+   "name": "RS-Max Companion",
+-  "version": "0.18.32",
++  "version": "0.18.33",
+   "description": "Actions assistees sur les reseaux sociaux (engagement, publication) avec remontee vers l'API RS-Max.",
+   "permissions": [
+     "storage",
+diff --git a/background.js b/background.js
+--- a/background.js
++++ b/background.js
+@@ -478,7 +478,7 @@
+   globalThis.RSTaskJournal?.mark('proof.after_reload');
+   let proof=await askPage(tabId,verification);
+   if(proof?.status==='done'&&proof.result?.confirmed===false&&!proof.result.platform_limit
+-    &&proof.result.verification?.observed_ids?.length===0){
++    &&(proof.result.verification?.observed_ids?.length===0||proof.result.verification?.parent_incomplete===true)){
+     let proofTab;
+     globalThis.RSTaskJournal?.mark('proof.fresh_tab');
+     try{
+@@ -492,7 +492,12 @@
+       globalThis.RSTaskJournal?.bind(tabId);
+     }
+   }
+-  return proof?.result?.confirmed===true?proof:{status:'uncertain',result:{id:p.id,started_at:p.started_at,verification:proof?.result||null,...(proof?.result?.platform_limit?{platform_limit:proof.result.platform_limit}:{})},error:'Publication non prouvée après rechargement : aucun renvoi.'};
++  if(proof?.result?.confirmed===true)return proof;
++  return {status:'uncertain',result:{
++    id:p.id,started_at:p.started_at,verification:proof?.result||null,
++    ...(proof?.result?.platform_limit?{platform_limit:proof.result.platform_limit}:{}),
++    ...(proof?.result?.thread_hidden?{thread_hidden:true}:{})
++  },error:proof?.result?.thread_hidden?proof.error:'Publication non prouvée après rechargement : aucun renvoi.'};
+ }
+ 
+ async function executeXPostTask(task) {
+diff --git a/x/publisher.js b/x/publisher.js
+--- a/x/publisher.js
++++ b/x/publisher.js
+@@ -108,26 +108,63 @@
+   async function locate(p){
+     try{guard(p);const match=await until(()=>{const list=matching(p);return list.length===1?list[0]:null;},25);return done({id:match?.id||null});}catch(e){return {status:'uncertain',error:e.message,result:e.platform_limit?{platform_limit:e.platform_limit}:undefined};}
+   }
+-  async function verify(p){
+-    try{
+-      guard(p);window.RSXLimits?.assert();const match=await until(()=>matching(p).find(t=>t.id===String(p.id)),25);
+-      const original=new URL(p.compose_url||p.url),parent=original.searchParams.get('in_reply_to'),quote=original.searchParams.get('quote_tweet_id');
+-      const parentBeforePost=()=>{
+-        const ids=D.articles().map(a=>D.primary(a)?.id),i=ids.indexOf(String(p.id));
+-        return i>=0&&ids.slice(0,i).includes(parent);
+-      };
+-      if(parent && match && !parentBeforePost()){
+-        for(let i=0;i<5;i++){
+-          const more=window.RSXMentions?.ancestorButtons?.()[0];if(!more)break;
+-          more.click();await sleep(1000);if(parentBeforePost())break;
++  async function verifyReplyParent(p, parent) {
++    const deadline = Date.now() + 23000;
++    const id = String(p.id);
++    const guardProof = () => {
++      guard(p);
++      window.RSXLimits?.assert();
++      const page = D.canonical(location.href);
++      if (page?.id !== id || page.author !== p.username.toLowerCase()) {
++        throw Error('Le permalien de la réponse X a changé pendant la vérification.');
++      }
++      if (Date.now() >= deadline) throw Error('Le fil de la réponse X ne s’est pas chargé à temps.');
++    };
++    const thread = await window.RSXThreadContext.read(id, {
++      expected:{reply_parent_id:parent},
++      requireText:false,
++      wait:(predicate, ms) => until(predicate, Math.min(ms, deadline - Date.now()) / 1000),
++      pause:sleep,
++      guard:guardProof
++    });
++    guardProof();
++    return thread.conversation.at(-2)?.id === parent &&
++      matching(p).some(post => post.id === id);
++  }
++  async function verify(p) {
++    try {
++      guard(p);
++      window.RSXLimits?.assert();
++      const match = await until(() => matching(p).find(post => post.id === String(p.id)), 25);
++      const original = new URL(p.compose_url || p.url);
++      const parent = original.searchParams.get('in_reply_to');
++      const quote = original.searchParams.get('quote_tweet_id');
++      let parentSeen = !parent;
++      let parentIncomplete = false;
++      if (parent && match && (!match.reply_parent_id || match.reply_parent_id === parent)) {
++        try {
++          parentSeen = await verifyReplyParent(p, parent);
++        } catch (error) {
++          if (error.platform_limit || error.thread_hidden) throw error;
++          parentIncomplete = true;
+         }
+-        await until(parentBeforePost,25);
+       }
+-      const parentSeen=(!quote||match?.quoted_ids?.includes(quote))&&(!parent||parentBeforePost());
+-      window.RSTaskTrace?.mark('x.post.proof',{target_id:p.id,post_matched:Boolean(match),parent_visible:parentSeen});
+-      return done({id:p.id,confirmed:Boolean(match&&parentSeen),proof:'after_reload',parent_id:parentSeen?parent||undefined:undefined,
+-        verification:{post_matched:Boolean(match),parent_visible:parentSeen,observed_ids:D.articles().map(a=>D.primary(a)?.id).filter(Boolean)}});
+-    }catch(e){return {status:'uncertain',error:e.message,result:e.platform_limit?{platform_limit:e.platform_limit}:undefined};}
++      const quoteSeen = !quote || match?.quoted_ids?.includes(quote);
++      const confirmed = Boolean(match && parentSeen && quoteSeen);
++      window.RSTaskTrace?.mark('x.post.proof', {target_id:p.id, post_matched:Boolean(match), parent_visible:parentSeen});
++      return done({
++        id:p.id, confirmed, proof:'after_reload', parent_id:parentSeen ? parent || undefined : undefined,
++        verification:{
++          post_matched:Boolean(match), parent_visible:parentSeen, parent_incomplete:parentIncomplete,
++          observed_ids:D.articles().map(article => D.primary(article)?.id).filter(Boolean)
++        }
++      });
++    } catch (error) {
++      return {status:'uncertain', error:error.message, result:{
++        ...(error.platform_limit ? {platform_limit:error.platform_limit} : {}),
++        ...(error.thread_hidden ? {thread_hidden:true} : {})
++      }};
++    }
+   }
+   window.RSXPublisher={post,locate,verify,matching,mediaNodes};
+ })();
+diff --git a/x/thread-context.js b/x/thread-context.js
+--- a/x/thread-context.js
++++ b/x/thread-context.js
+@@ -34,7 +34,7 @@
+     });
+   }
+ 
+-  function context(page, expected) {
++  function context(page, expected, requireText = true) {
+     if (!page || page.prior.length || page.unavailable || !validBranch(page, expected)) {
+       throw Error('Publication d’origine ou échanges précédents inaccessibles.');
+     }
+@@ -42,14 +42,14 @@
+     if (prefix.length > maxPosts || new Set(prefix.map(row => row.post.id)).size !== prefix.length) {
+       throw Error('Branche X trop longue ou ambiguë.');
+     }
+-    if (prefix.some(row => [...row.article.querySelectorAll(expandText)].some(D.visible))) {
++    if (requireText && prefix.some(row => [...row.article.querySelectorAll(expandText)].some(D.visible))) {
+       throw Error('Un texte de la discussion est encore tronqué.');
+     }
+     const conversation = prefix.map(({post}) => ({
+       id:post.id, author:post.author, text:post.text, quote:post.quote,
+       media:[...post.media.filter(label => label !== 'Image sans description'), ...(post.has_video ? ['Vidéo non transcrite.'] : [])].join(' · ')
+     }));
+-    if (!conversation.every(row => row.text.trim() || row.quote.trim())) {
++    if (requireText && !conversation.every(row => row.text.trim() || row.quote.trim())) {
+       throw Error('Un message de la branche est sans texte ni citation lisible.');
+     }
+     return {root_id:conversation[0].id, target:target.post, conversation,
+@@ -66,7 +66,7 @@
+     {thread_hidden:true}
+   );
+ 
+-  async function read(id, {wait, pause, guard, expected}) {
++  async function read(id, {wait, pause, guard, expected, requireText = true}) {
+     const assertVisible = () => {
+       guard();
+       if (document.visibilityState !== 'visible') throw hiddenThread();
+@@ -91,8 +91,8 @@
+       }
+       if (!page || page.unavailable) throw Error('Publication d’origine ou échanges précédents inaccessibles.');
+       const previous = page.prior[0];
+-      const expand = previous || page.prefix.flatMap(row => [...row.article.querySelectorAll(expandText)]).find(D.visible);
+-      if (!expand) return context(page, expected);
++      const expand = previous || (requireText && page.prefix.flatMap(row => [...row.article.querySelectorAll(expandText)]).find(D.visible));
++      if (!expand) return context(page, expected, requireText);
+       const order = page.prefix.map(row => row.post.id).join(',');
+       if (previous) expected = {...expected, reply_hint:true};
+       assertVisible();
+@@ -111,7 +111,7 @@
+       }, 5500)) throw Error('X ne charge pas la suite du contexte.');
+       await pause(200);
+     }
+-    return snapshot(id, expected);
++    return context(readPage(id), expected, requireText);
+   }
+ 
+   window.RSXThreadContext = {read, snapshot};
+diff --git a/x/batch-worker.js b/x/batch-worker.js
+--- a/x/batch-worker.js
++++ b/x/batch-worker.js
+@@ -259,5 +259,5 @@
+     return {status:'uncertain', error:'Reçu de la réponse indisponible. '+error.message};
+   }
+   if (outcome.status === 'failed') return outcome;
+-  return {status:'uncertain', error:outcome.error || 'Réponse non confirmée sur la cible.'};
+-}
++  return {...outcome, status:'uncertain', error:outcome.error || 'Réponse non confirmée sur la cible.'};
++}
+diff --git a/tests/x-thread-context.test.cjs b/tests/x-thread-context.test.cjs
+--- a/tests/x-thread-context.test.cjs
++++ b/tests/x-thread-context.test.cjs
+@@ -21,7 +21,7 @@
+   w.scrollTo = () => {};
+   w.RSMAX = {};
+   w.RSXMentions = {identity:() => ({username:'cyril'})};
+-  for (const name of ['dom', 'thread-context', 'agent']) {
++  for (const name of ['dom', 'thread-context', 'agent', 'publisher']) {
+     w.eval(readFileSync(join(__dirname, '../x', name+'.js'), 'utf8'));
+   }
+   return {dom, w, main:w.document.querySelector('main')};
+@@ -98,7 +98,6 @@
+     let clicks = 0;
+     f.main.querySelector('button').onclick = () => clicks++;
+     f.w.RSPacing = {pause:async () => Object.defineProperty(f.w.document, 'visibilityState', {value:'hidden'})};
+-    f.w.eval(readFileSync(join(__dirname, '../x/publisher.js'), 'utf8'));
+     const result = await f.w.RSXPublisher.post({
+       username:'cyril', url, text:'Merci pour la précision !', media:[], require_visible:true, companion_speed:'natural'
+     });
+@@ -107,3 +106,46 @@
+     assert.equal(clicks, 0);
+   } finally { f.dom.window.close(); }
+ });
++
++function verifyReply(f, parent = '200') {
++  f.w.history.replaceState({}, '', 'https://x.com/cyril/status/300');
++  return f.w.RSXPublisher.verify({
++    id:'300', username:'cyril', text:'Merci pour la précision !',
++    url:'https://x.com/compose/post?in_reply_to=' + parent
++  });
++}
++
++test('la preuve X exige le parent immédiat même si l’ancêtre attendu est visible', async () => {
++  const f = browser(post('100', 'author', 'Un post') +
++    post('200', 'coach', 'Une réponse', '/author/status/100') +
++    post('300', 'cyril', 'Merci pour la précision !', '/coach/status/200'));
++  try {
++    const result = await verifyReply(f, '100');
++    assert.equal(result.status, 'done');
++    assert.equal(result.result.verification.post_matched, true);
++    assert.equal(result.result.verification.parent_incomplete, false);
++    assert.equal(result.result.confirmed, false);
++    assert.equal(result.result.parent_id, undefined);
++  } finally { f.dom.window.close(); }
++});
++
++test('la preuve X charge les ancêtres masqués et confirme le bon parent sans clic d’envoi', async () => {
++  const f = browser('<button id="previous">Show previous replies</button>' +
++    post('300', 'cyril', 'Merci pour la précision !'));
++  let expanded = 0;
++  f.w.document.querySelector('#previous').onclick = event => {
++    expanded++;
++    event.currentTarget.insertAdjacentHTML('beforebegin',
++      post('100', 'author', '', '', '<img alt="Photo">') +
++      post('200', 'coach', 'Une réponse', '/author/status/100'));
++    event.currentTarget.remove();
++  };
++  try {
++    const result = await verifyReply(f);
++    assert.equal(result.status, 'done');
++    assert.equal(result.result.confirmed, true);
++    assert.equal(result.result.parent_id, '200');
++    assert.equal(result.result.proof, 'after_reload');
++    assert.equal(expanded, 1);
++  } finally { f.dom.window.close(); }
++});
+diff --git a/tests/x-agent-reply-task.test.cjs b/tests/x-agent-reply-task.test.cjs
+--- a/tests/x-agent-reply-task.test.cjs
++++ b/tests/x-agent-reply-task.test.cjs
+@@ -105,3 +105,27 @@
+   assert.equal(f.opened.length,0);
+   assert.equal(f.sends.length,1);
+ });
++
++test('X ouvre le permalien dans un nouvel onglet si la réponse existe mais son parent est incomplet', async () => {
++  const f = fixture({firstProof:{
++    status:'done', result:{id:'789', confirmed:false,
++      verification:{observed_ids:['789'], parent_incomplete:true}}
++  }});
++  const result = await f.run();
++  assert.equal(result.status, 'done');
++  assert.equal(result.result.parent_id, target.id);
++  assert.equal(f.opened.length, 1);
++  assert.equal(f.sends.length, 1);
++});
++
++test('X conserve un parent explicitement différent sans seconde ouverture ni renvoi', async () => {
++  const f = fixture({firstProof:{
++    status:'done', result:{id:'789', confirmed:false,
++      verification:{observed_ids:['123','456','789'], parent_incomplete:false}}
++  }});
++  const result = await f.run();
++  assert.equal(result.status, 'uncertain');
++  assert.equal(result.result.id, '789');
++  assert.equal(f.opened.length, 0);
++  assert.equal(f.sends.length, 1);
++});
+diff --git a/tests/e2e/README.md b/tests/e2e/README.md
+--- a/tests/e2e/README.md
++++ b/tests/e2e/README.md
+@@ -25,3 +25,5 @@
+ intermédiaire, sans IA ni clic public. `x-backlog.cjs` vérifie quatre lots avec
+ rechargement de page et progression persistante malgré une nouvelle mention en
+ tête, puis le choix de repartir des récentes. Réseau X simulé, profils jetables.
++
++`x-reply-proof.cjs` vérifie la réponse X avec un profil jetable et un serveur HTTPS local. Le parent chargé au second passage confirme le reçu ; un autre parent le laisse incertain. Un clic simulé par cas. Utiliser `RS_CHROMIUM`, `RS_TEST_OUTPUT` et `NODE_PATH` comme ci-dessus.
+diff --git a/tests/e2e/x-reply-proof.cjs b/tests/e2e/x-reply-proof.cjs
+new file mode 100644
+--- /dev/null
++++ b/tests/e2e/x-reply-proof.cjs
+@@ -0,0 +1,125 @@
++/* Extension réelle, réseau simulé, profil sans session. */
++const assert = require('node:assert/strict');
++const fs = require('node:fs');
++const https = require('node:https');
++const {execFileSync} = require('node:child_process');
++const path = require('node:path');
++const {chromium} = require('playwright');
++
++const root = path.resolve(__dirname, '../..');
++const out = process.env.RS_TEST_OUTPUT;
++if (!out || fs.existsSync(path.join(root, 'config.local.js'))) {
++  throw Error('Copie sans configuration privée et dossier de test requis.');
++}
++
++const profileLink = '<a data-testid="AppTabBar_Profile_Link" href="/account">Profil</a>';
++const replyText = 'Merci pour la précision !';
++const post = (id, author, text, parent = '') =>
++  `<article data-testid="tweet"><a href="/${author}/status/${id}"><time>11 h</time></a>
++  ${parent ? `<div data-testid="replyingTo">En réponse à <a href="${parent}">@parent</a></div>` : ''}
++  <div data-testid="tweetText">${text}</div></article>`;
++
++const composer = `<!doctype html><html lang="fr"><meta charset="utf-8">${profileLink}<main>
++  <textarea aria-label="Postez votre réponse"></textarea>
++  <button data-testid="tweetButton">Répondre</button></main><script>
++  document.querySelector('button').onclick = () => {
++    const reply = ((BigInt(Date.now()) - 1288834974657n) << 22n).toString();
++    fetch('/_fixture/click', {method:'POST'});
++    document.querySelector('main').insertAdjacentHTML('beforeend',
++      '<a href="/account/status/' + reply + '">Voir la réponse</a>');
++  };
++  </script></html>`;
++
++async function main() {
++  fs.mkdirSync(out, {recursive:true});
++  const key = path.join(out, 'fixture-key.pem');
++  const cert = path.join(out, 'fixture-cert.pem');
++  execFileSync('openssl', ['req', '-x509', '-newkey', 'rsa:2048', '-nodes',
++    '-keyout', key, '-out', cert, '-days', '1', '-subj', '/CN=x.com'], {stdio:'ignore'});
++  let reads = 0;
++  let clicks = 0;
++  let delayParent = false;
++  const server = https.createServer({key:fs.readFileSync(key), cert:fs.readFileSync(cert)}, (request, response) => {
++    const url = new URL(request.url, 'https://x.com');
++    response.setHeader('Cache-Control', 'no-store');
++    if (url.pathname === '/_fixture/click') {
++      clicks++;
++      response.writeHead(204).end();
++      return;
++    }
++    response.setHeader('Content-Type', 'text/html; charset=utf-8');
++    if (url.pathname === '/compose/post') {
++      response.end(composer);
++      return;
++    }
++    const match = url.pathname.match(/^\/account\/status\/(\d+)$/);
++    if (!match) {
++      response.writeHead(404).end();
++      return;
++    }
++    reads++;
++    const includeParents = !delayParent || reads > 1;
++    const thread = includeParents
++      ? post('100', 'origin', 'Le sujet') + post('200', 'member', 'Une question', '/origin/status/100')
++      : '';
++    const reply = post(match[1], 'account', replyText, '/member/status/200');
++    response.end(`<!doctype html><html lang="fr"><meta charset="utf-8">${profileLink}<main>${thread}${reply}</main></html>`);
++  });
++  await new Promise((resolve, reject) => server.once('error', reject).listen(0, '127.0.0.1', resolve));
++
++  let ctx;
++  try {
++    ctx = await chromium.launchPersistentContext(path.join(out, 'profile'), {
++      executablePath:process.env.RS_CHROMIUM,
++      headless:true,
++      args:[`--disable-extensions-except=${root}`, `--load-extension=${root}`,
++        `--host-resolver-rules=MAP x.com 127.0.0.1:${server.address().port}, MAP * ~NOTFOUND`,
++        '--no-proxy-server', '--ignore-certificate-errors', '--disable-quic']
++    });
++    const worker = ctx.serviceWorkers()[0] || await ctx.waitForEvent('serviceworker');
++    assert.equal(await worker.evaluate(() => chrome.runtime.getManifest().version), '0.18.33');
++    const page = ctx.pages()[0] || await ctx.newPage();
++
++    async function verify(parent, lateParent) {
++      reads = 0;
++      clicks = 0;
++      delayParent = lateParent;
++      const url = `https://x.com/compose/post?in_reply_to=${parent}`;
++      await page.goto(url);
++      await page.bringToFront();
++      const observed = await worker.evaluate(async ({url, replyText}) => {
++        const tab = (await chrome.tabs.query({active:true})).find(tab => tab.url === url);
++        if (!tab) throw Error('Compositeur de test introuvable.');
++        RSTaskJournal.start({id:1, kind:'x.post'});
++        try {
++          const result = await postXInTab({kind:'x.post', payload:{
++            url, username:'account', text:replyText, media:[], require_visible:true
++          }}, tab.id);
++          return {result, trace:RSTaskJournal.finish(result)};
++        } finally {
++          RSTaskJournal.clear();
++        }
++      }, {url, replyText});
++      return {...observed.result, trace:observed.trace, reads, clicks};
++    }
++
++    const proven = await verify('200', true);
++    assert.equal(proven.status, 'done', JSON.stringify(proven));
++    assert.equal(proven.result.proof, 'after_reload');
++    assert.equal(proven.result.parent_id, '200');
++    assert.equal(reads, 2);
++    assert.equal(clicks, 1);
++
++    const wrong = await verify('100', false);
++    assert.equal(wrong.status, 'uncertain', JSON.stringify(wrong));
++    assert.equal(wrong.result.verification.verification.parent_incomplete, false);
++    assert.equal(reads, 1);
++    assert.equal(clicks, 1);
++    console.log('Chromium : parent tardif confirmé, ancêtre incorrect refusé, un clic simulé par réponse.');
++  } finally {
++    await ctx?.close();
++    await new Promise(resolve => server.close(resolve));
++  }
++}
++
++main().catch(error => { console.error(error); process.exitCode = 1; });
