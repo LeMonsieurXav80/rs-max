@@ -17,6 +17,7 @@ use Illuminate\Support\Facades\Route;
 
 Route::middleware(['auth:sanctum', \App\Http\Middleware\CommunityManagerTokenScope::class])->group(function () {
     Route::prefix('community-manager')->controller(\App\Http\Controllers\Api\CommunityManagerController::class)->group(function () {
+        Route::post('accounts/{id}/x/reply-preview', [\App\Http\Controllers\Api\XReplyPreviewController::class, 'forAgent'])->whereNumber('id')->middleware('throttle:20,1');
         Route::post('accounts/{id}/threads/read', [\App\Http\Controllers\Api\ThreadsAgentController::class, 'read']);
         Route::get('accounts/{id}/threads/context', [\App\Http\Controllers\Api\ThreadsAgentController::class, 'context']);
         Route::post('accounts/{id}/threads/actions', [\App\Http\Controllers\Api\ThreadsAgentController::class, 'submit']);
@@ -226,6 +227,7 @@ Route::middleware(['auth:sanctum', \App\Http\Middleware\CommunityManagerTokenSco
     Route::post('/extension/threads/session', [\App\Http\Controllers\Api\ThreadsExtensionController::class, 'store']);
     Route::post('/extension/x/session', [\App\Http\Controllers\Api\XExtensionController::class, 'session'])->middleware('throttle:10,1');
     Route::post('/extension/x/like', [\App\Http\Controllers\Api\XExtensionController::class, 'like']);
+    Route::post('/extension/x/reply-preview', [\App\Http\Controllers\Api\XReplyPreviewController::class, 'forCompanion'])->middleware('throttle:20,1');
     Route::post('/extension/x/suggest', [\App\Http\Controllers\Api\XExtensionController::class, 'suggest'])->middleware('throttle:30,1');
     Route::post('/extension/x/{id}/begin', [\App\Http\Controllers\Api\XExtensionController::class, 'begin']);
     Route::post('/extension/x/{id}/finish', [\App\Http\Controllers\Api\XExtensionController::class, 'finish']);
