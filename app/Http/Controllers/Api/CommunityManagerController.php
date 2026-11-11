@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Models\SocialAccount;
 use App\Models\TikTokEngagement;
 use App\Services\Agent\AgentCatalog;
+use App\Services\Agent\CommentFreshness;
 use App\Services\Agent\CommunityManagerWindow;
 use App\Services\Agent\TikTokVideoCommentGenerator;
 use App\Services\Browser\BrowserTaskQueue;
@@ -79,7 +80,8 @@ class CommunityManagerController extends Controller
                 Cache::put('tiktok-video:'.$snapshot, ['account_id' => $account->id, 'video' => $video, 'comments' => [], 'complete' => false], now()->addHour());
 
                 return ['url' => $video['url'], 'caption' => Str::limit($video['caption'] ?? '', 180),
-                    'liked' => $video['liked'] ?? null, 'snapshot_id' => $snapshot];
+                    'liked' => $video['liked'] ?? null, 'snapshot_id' => $snapshot,
+                    'published_at' => CommentFreshness::tikTokVideoDate($video['url'])?->toIso8601String()];
             }, $data['items']);
 
             return response()->json(['items' => $items, 'left' => $data['left']] + array_intersect_key($data, ['target' => true]));
@@ -144,6 +146,7 @@ class CommunityManagerController extends Controller
         abort_if($state['left'] < 1, 429, 'Quota de commentaires atteint.');
         $snapshot = Cache::get('tiktok-video:'.$data['snapshot_id']);
         abort_unless($snapshot && $snapshot['account_id'] === $account->id, 422, 'Lecture expirée ou d’un autre compte.');
+        abort_unless(CommentFreshness::allows(CommentFreshness::tikTokVideoDate($snapshot['video']['url'])), 409, CommentFreshness::REJECTION);
         abort_unless(($snapshot['complete'] ?? false) || ($snapshot['accessible_complete'] ?? false), 422, 'Commentaires accessibles encore partiels.');
         abort_unless($account->persona?->is_active && filled($account->persona->system_prompt), 422, 'Persona actif du compte obligatoire.');
         abort_unless(filled($snapshot['video']['caption'] ?? null), 422, 'Légende vidéo indisponible : lire la publication avant de rédiger.');

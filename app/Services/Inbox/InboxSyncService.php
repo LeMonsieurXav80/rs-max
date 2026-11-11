@@ -168,10 +168,14 @@ class InboxSyncService
                     'post_content' => $itemData['post_content'] ?? null,
                 ], fn ($v) => $v !== null);
 
+                $item = InboxItem::where('platform_id', $account->platform_id)->where('external_id', $externalId);
                 if (! empty($updates)) {
-                    InboxItem::where('platform_id', $account->platform_id)
-                        ->where('external_id', $externalId)
-                        ->update($updates);
+                    (clone $item)->update($updates);
+                }
+                if ($account->platform->slug === 'tiktok' && ($postedAt = $itemData['posted_at'] ?? null)) {
+                    // Un âge Studio arrondi peut avancer d'une lecture à la suivante.
+                    $item->where(fn ($q) => $q->whereNull('posted_at')->orWhere('posted_at', '>', $postedAt))
+                        ->update(['posted_at' => $postedAt]);
                 }
 
                 continue;

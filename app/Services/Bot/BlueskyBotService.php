@@ -6,6 +6,7 @@ use App\Models\BotActionLog;
 use App\Models\BotSearchTerm;
 use App\Models\Setting;
 use App\Models\SocialAccount;
+use App\Services\Agent\CommentFreshness;
 use App\Services\AiAssistService;
 use Carbon\Carbon;
 use Illuminate\Support\Facades\Cache;
@@ -967,6 +968,7 @@ class BlueskyBotService
             'skip_self' => 0,
             'skip_already' => 0,
             'skip_no_context' => 0,
+            'skip_age' => 0,
             'skip_ai_fail' => 0,
             'skip_reply_fail' => 0,
             'posted' => 0,
@@ -1006,6 +1008,11 @@ class BlueskyBotService
             }
 
             $record = $post['record'] ?? [];
+            if (! CommentFreshness::allowsPublishedAt($record['createdAt'] ?? null)) {
+                $stats['skip_age']++;
+
+                continue;
+            }
             $kind = $this->detectPostKind($post);
             $imageUrl = $kind === 'image' ? $this->extractImageUrl($post) : null;
 

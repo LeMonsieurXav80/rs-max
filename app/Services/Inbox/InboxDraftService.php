@@ -7,6 +7,7 @@ use App\Models\InboxItem;
 use App\Models\Setting;
 use App\Models\SocialAccount;
 use App\Services\Agent\AgentCatalog;
+use App\Services\Agent\CommentFreshness;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Log;
 
@@ -53,7 +54,9 @@ class InboxDraftService
 
         $this->refresh($account);
 
+        $now = now();
         $items = InboxItem::where('social_account_id', $account->id)
+            ->whereBetween('posted_at', [CommentFreshness::cutoff($now), $now])
             ->whereIn('status', ['unread', 'read'])->whereNull('replied_at')->whereNull('reply_scheduled_at')
             ->whereNull('reply_draft')->whereNull('reply_content')->orderByDesc('posted_at')->limit($room)->get();
         if ($items->isEmpty()) {

@@ -40,7 +40,7 @@ class ThreadsAgentTest extends TestCase
 
     private function target(): array
     {
-        return ['id' => 'ABC123', 'author' => 'visitor', 'text' => 'Une belle promenade.', 'url' => 'https://www.threads.com/@visitor/post/ABC123', 'liked' => false];
+        return ['id' => 'ABC123', 'author' => 'visitor', 'text' => 'Une belle promenade.', 'url' => 'https://www.threads.com/@visitor/post/ABC123', 'liked' => false, 'published_at' => now()->subHour()->toIso8601String()];
     }
 
     private function read(string $action = 'thread.read'): string

@@ -8,6 +8,7 @@ use App\Models\SocialContact;
 use App\Models\TikTokEngagement;
 use App\Models\XEngagement;
 use App\Services\Agent\AgentCatalog;
+use App\Services\Agent\CommentFreshness;
 use App\Services\Agent\CommunityManagerWindow;
 use App\Services\Agent\XEngagementService;
 use App\Services\Browser\BrowserException;
@@ -130,6 +131,7 @@ class XAgentController extends Controller
         abort_unless(($result['context_complete'] ?? false) === true && isset($result['target'],$result['conversation']), 422, 'Lire le fil du post avant de rédiger.');
         $hash = null;
         if ($action === 'reply') {
+            abort_unless(CommentFreshness::allowsPublishedAt($result['target']['published_at'] ?? null), 409, CommentFreshness::REJECTION);
             abort_unless(filled($result['conversation'][0]['text'] ?? null), 422, 'Publication d’origine indisponible.');
             abort_if(count($result['conversation']) > 2 && ! app(\App\Services\Inbox\InboxFollowup::class)->isQuestion($result['target']['text'] ?? null), 409, 'Réponse sans question.');
             app(XEngagementService::class)->assertReplyAvailable($a, $result['target']['id']);
@@ -183,6 +185,7 @@ class XAgentController extends Controller
                 abort_if($payload['handle'] === strtolower($a->browser_username), 422, 'Pas d’abonnement au compte lui-même.');
             }
             if ($data['action'] === 'reply') {
+                abort_unless(CommentFreshness::allowsPublishedAt($target['published_at'] ?? null), 409, CommentFreshness::REJECTION);
                 app(XEngagementService::class)->assertReplyAvailable($a, $target['id'], $existing?->id);
             }
             if (in_array($data['action'], ['reply', 'quote'], true)) {

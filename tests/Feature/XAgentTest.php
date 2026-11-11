@@ -49,7 +49,7 @@ class XAgentTest extends TestCase
 
     private function target(): array
     {
-        return ['id' => '987', 'author' => 'visitor', 'url' => 'https://x.com/visitor/status/987', 'text' => 'Très jolie tenue', 'liked' => false];
+        return ['id' => '987', 'author' => 'visitor', 'url' => 'https://x.com/visitor/status/987', 'text' => 'Très jolie tenue', 'liked' => false, 'published_at' => now()->subHour()->toIso8601String()];
     }
 
     private function snapshot(bool $thread = false): string
@@ -157,6 +157,32 @@ class XAgentTest extends TestCase
         $this->assertSame('failed', $e->fresh()->status);
         $this->assertSame(0, AccountActionEvent::count());
         Http::assertNothingSent();
+    }
+
+    public function test_age_de_la_cible_filtre_avant_le_vault_et_le_contexte_reste_disponible(): void
+    {
+        \App\Models\Setting::set("x_reply_vault_account_{$this->a->id}", json_encode([
+            'persona_id' => $this->a->persona_id, 'corpus' => 'test',
+        ], JSON_THROW_ON_ERROR));
+        Http::fake(['http://localhost/lookup' => Http::response(['revision' => 'test123', 'sources' => []])]);
+        $snapshot = $this->snapshot(true);
+        $cacheKey = 'x-agent-snapshot:'.$snapshot;
+        $data = Cache::get($cacheKey);
+        $data['result']['target']['published_at'] = now()->subDays(15)->toIso8601String();
+        Cache::put($cacheKey, $data, now()->addHour());
+
+        $url = $this->url('context').'?snapshot_id='.$snapshot;
+        $this->getJson($url)->assertConflict();
+        Http::assertNothingSent();
+
+        $data['result']['conversation'][0]['published_at'] = $data['result']['target']['published_at'];
+        $data['result']['target']['published_at'] = now()->subHour()->toIso8601String();
+        $data['result']['conversation'][1] = $data['result']['target'];
+        Cache::put($cacheKey, $data, now()->addHour());
+
+        $this->getJson($url)->assertOk()->assertJsonPath('vault.revision', 'test123');
+        Http::assertSentCount(1);
+        $this->assertSame(0, XEngagement::count());
     }
 
     public function test_pas_de_generation_api_ni_reponse_sans_contexte(): void

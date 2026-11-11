@@ -200,7 +200,7 @@ class CommunityManagerTest extends TestCase
         $this->account->unsetRelation('persona');
         $id = (string) \Illuminate\Support\Str::uuid();
         \Illuminate\Support\Facades\Cache::put('tiktok-video:'.$id, ['account_id' => $this->account->id,
-            'video' => ['url' => 'https://www.tiktok.com/@creator/video/123', 'caption' => 'Reprendre le sport'],
+            'video' => ['url' => 'https://www.tiktok.com/@creator/video/'.(now()->subHour()->timestamp << 32), 'caption' => 'Reprendre le sport'],
             'complete' => false, 'accessible_complete' => true, 'expected' => 3,
             'comments' => [['key' => str_repeat('a', 64), 'author' => 'a', 'text' => 'À son rythme !'],
                 ['key' => str_repeat('b', 64), 'author' => 'b', 'text' => 'Chaque pas compte.']]], 3600);

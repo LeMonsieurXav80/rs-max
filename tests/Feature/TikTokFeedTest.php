@@ -24,7 +24,7 @@ class TikTokFeedTest extends TestCase
 
     private string $base;
 
-    private string $url = 'https://www.tiktok.com/@creator/video/123456789';
+    private string $url;
 
     private bool $complete = true;
 
@@ -35,6 +35,7 @@ class TikTokFeedTest extends TestCase
     protected function setUp(): void
     {
         parent::setUp();
+        $this->url = 'https://www.tiktok.com/@creator/video/'.(now()->subHour()->timestamp << 32);
         $user = User::factory()->create(['role' => 'manager']);
         Sanctum::actingAs($user);
         $persona = Persona::create(['name' => 'Persona test', 'system_prompt' => 'Voix du compte associé', 'is_active' => true]);
@@ -186,6 +187,16 @@ class TikTokFeedTest extends TestCase
         $job->handle(app(BrowserTaskQueue::class), app(AgentCatalog::class));
         $this->assertCount($count, $this->calls);
         $this->postJson('/api/tiktok/engagements/'.$id.'/send', ['dry_run' => false])->assertConflict();
+    }
+
+    public function test_une_video_ancienne_reste_lisible_et_ne_recoit_pas_de_commentaire(): void
+    {
+        $this->url = 'https://www.tiktok.com/@creator/video/'.(now()->subDays(15)->timestamp << 32);
+        $snapshot = $this->snapshot();
+        $this->postJson($this->base.'/prepare', ['action' => 'video.comment', 'snapshot_id' => $snapshot])->assertConflict();
+        $this->prepare('video.like', $snapshot);
+        Http::assertNothingSent();
+        Queue::assertNothingPushed();
     }
 
     public function test_geste_confirme_decompte_le_quota(): void

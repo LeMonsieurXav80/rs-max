@@ -18,7 +18,7 @@ class CommunityManagerInboxTest extends TestCase
 
     public function test_un_ancien_commentaire_tiktok_introuvable_est_differe_sans_tentative(): void
     {
-        $this->travelTo(\Illuminate\Support\Carbon::parse('2026-11-09T10:00:00Z'));
+        $this->travelTo(\Illuminate\Support\Carbon::parse('2026-11-09T10:00:00Z')->setTimezone(config('app.timezone')));
         $user = User::factory()->create(['role' => 'manager']);
         $persona = Persona::create(['name' => 'Persona', 'system_prompt' => 'Réponse brève', 'is_active' => true]);
         $account = SocialAccount::create(['name' => 'Compte TikTok', 'platform_id' => Platform::where('slug', 'tiktok')->firstOrFail()->id,
@@ -47,7 +47,7 @@ class CommunityManagerInboxTest extends TestCase
     public function test_contexte_persona_scope_aperçu_puis_planification_sans_appel_ia(): void
     {
         \Illuminate\Support\Facades\Queue::fake([\App\Jobs\SendAutonomousInboxReply::class]);
-        $this->travelTo(\Illuminate\Support\Carbon::parse('2026-11-07T12:00:00Z'));
+        $this->travelTo(\Illuminate\Support\Carbon::parse('2026-11-07T12:00:00Z')->setTimezone(config('app.timezone')));
         Http::preventStrayRequests();
         $u = User::factory()->create(['role' => 'manager']);
         $p = Persona::create(['name' => 'Persona associé', 'system_prompt' => 'Ton chaleureux et sobre', 'is_active' => true]);
@@ -91,7 +91,7 @@ class CommunityManagerInboxTest extends TestCase
     public function test_le_contexte_x_contient_la_publication_origine_et_refuse_un_fil_deja_traite(): void
     {
         \Illuminate\Support\Facades\Queue::fake([\App\Jobs\SendAutonomousInboxReply::class]);
-        $this->travelTo(\Illuminate\Support\Carbon::parse('2026-11-07T12:00:00Z'));
+        $this->travelTo(\Illuminate\Support\Carbon::parse('2026-11-07T12:00:00Z')->setTimezone(config('app.timezone')));
         Http::preventStrayRequests();
         $u = User::factory()->create(['role' => 'manager']);
         $p = Persona::create(['name' => 'Voix associée', 'system_prompt' => 'Chaleureux', 'is_active' => true]);
@@ -100,7 +100,7 @@ class CommunityManagerInboxTest extends TestCase
         $a->users()->attach($u, ['is_active' => true]);
         Sanctum::actingAs($u);
         $i = InboxItem::create(['social_account_id' => $a->id, 'platform_id' => $a->platform_id, 'type' => 'comment', 'external_id' => '987',
-            'author_username' => 'visitor', 'content' => 'Très jolie tenue', 'status' => 'unread']);
+            'author_username' => 'visitor', 'content' => 'Très jolie tenue', 'status' => 'unread', 'posted_at' => now()->subMinute()]);
         $data = ['target' => ['id' => '987', 'author' => 'visitor', 'text' => 'Très jolie tenue'], 'context_complete' => true,
             'conversation' => [['author' => 'owner', 'text' => 'La robe du jour'], ['author' => 'visitor', 'text' => 'Très jolie tenue']], 'visible_replies' => []];
         $queue = $this->mock(\App\Services\Browser\BrowserTaskQueue::class);
@@ -118,7 +118,7 @@ class CommunityManagerInboxTest extends TestCase
 
     public function test_x_agent_queue_defers_a_missing_target_without_reopening_its_thread(): void
     {
-        $this->travelTo(\Illuminate\Support\Carbon::parse('2026-11-10T10:00:00Z'));
+        $this->travelTo(\Illuminate\Support\Carbon::parse('2026-11-10T10:00:00Z')->setTimezone(config('app.timezone')));
         $user = User::factory()->create(['role' => 'manager']);
         $persona = Persona::create(['name' => 'Persona', 'system_prompt' => 'Sobre', 'is_active' => true]);
         $account = SocialAccount::create([
@@ -147,7 +147,7 @@ class CommunityManagerInboxTest extends TestCase
 
     public function test_x_retire_un_compte_suspendu_et_ne_relit_pas_la_cible(): void
     {
-        $this->travelTo(\Illuminate\Support\Carbon::parse('2026-11-09T12:00:00Z'));
+        $this->travelTo(\Illuminate\Support\Carbon::parse('2026-11-09T12:00:00Z')->setTimezone(config('app.timezone')));
         $user = User::factory()->create(['role' => 'manager']);
         $persona = Persona::create(['name' => 'Persona', 'system_prompt' => 'Sobre', 'is_active' => true]);
         $account = SocialAccount::create([
@@ -157,7 +157,7 @@ class CommunityManagerInboxTest extends TestCase
         $account->users()->attach($user, ['is_active' => true]);
         Sanctum::actingAs($user);
         $item = InboxItem::create(['social_account_id' => $account->id, 'platform_id' => $account->platform_id,
-            'type' => 'comment', 'external_id' => '987', 'author_username' => 'visitor', 'content' => 'Bonjour', 'status' => 'unread']);
+            'type' => 'comment', 'external_id' => '987', 'author_username' => 'visitor', 'content' => 'Bonjour', 'status' => 'unread', 'posted_at' => now()->subMinute()]);
         $this->mock(\App\Services\Browser\BrowserTaskQueue::class)->shouldReceive('run')->once()
             ->andReturn(['unavailable' => ['target_id' => '987', 'author' => 'visitor', 'reason' => 'account_suspended']]);
 
@@ -179,7 +179,7 @@ class CommunityManagerInboxTest extends TestCase
         ]);
         $account->users()->attach($user, ['is_active' => true]);
         Sanctum::actingAs($user);
-        $base = ['social_account_id' => $account->id, 'platform_id' => $account->platform_id, 'author_external_id' => '456'];
+        $base = ['social_account_id' => $account->id, 'platform_id' => $account->platform_id, 'posted_at' => now()->subMinute(), 'author_external_id' => '456'];
         InboxItem::create($base + ['type' => 'comment', 'external_id' => 'root', 'content' => 'Jolie tenue',
             'reply_content' => 'Merci', 'reply_external_id' => 'ours', 'replied_at' => now()->subHour(), 'status' => 'replied']);
         $question = InboxItem::create($base + ['type' => 'reply', 'external_id' => 'q', 'parent_id' => 'root',
@@ -201,7 +201,7 @@ class CommunityManagerInboxTest extends TestCase
 
     public function test_le_lot_isole_le_compte_et_garde_le_contexte_de_chaque_cible(): void
     {
-        $this->travelTo(\Illuminate\Support\Carbon::parse('2026-11-10T10:00:00Z'));
+        $this->travelTo(\Illuminate\Support\Carbon::parse('2026-11-10T10:00:00Z')->setTimezone(config('app.timezone')));
         Http::preventStrayRequests();
         $user = User::factory()->create(['role' => 'manager']);
         $persona = Persona::create(['name' => 'Voix', 'system_prompt' => 'Répondre simplement', 'is_active' => true]);
@@ -244,15 +244,49 @@ class CommunityManagerInboxTest extends TestCase
         Http::assertNothingSent();
     }
 
+    public function test_file_autonome_ecarte_les_anciennes_cibles_et_revalide_avant_envoi(): void
+    {
+        \Illuminate\Support\Facades\Queue::fake([\App\Jobs\SendAutonomousInboxReply::class]);
+        $this->travelTo(now()->setDate(2026, 11, 11)->setTime(12, 0));
+        $user = User::factory()->create(['role' => 'manager']);
+        $persona = Persona::create(['name' => 'Persona', 'system_prompt' => 'Sobre', 'is_active' => true]);
+        $account = SocialAccount::create(['name' => 'Compte', 'platform_id' => Platform::firstOrCreate(['slug' => 'instagram'], ['name' => 'Instagram'])->id, 'persona_id' => $persona->id]);
+        $account->users()->attach($user, ['is_active' => true]);
+        $account->agentActions()->create(['action' => 'reply', 'enabled' => true, 'daily_limit' => 10]);
+        Sanctum::actingAs($user);
+        Http::preventStrayRequests();
+        $base = ['social_account_id' => $account->id, 'platform_id' => $account->platform_id, 'type' => 'comment',
+            'content' => 'Bonjour', 'post_content' => 'Une ancienne publication', 'status' => 'unread'];
+        $old = InboxItem::create($base + ['external_id' => 'old', 'posted_at' => now()->subRealDays(14)->subSecond()]);
+        InboxItem::create($base + ['external_id' => 'unknown', 'posted_at' => null]);
+        $boundary = InboxItem::create($base + ['external_id' => 'boundary', 'posted_at' => now()->subRealDays(14)]);
+        $inbox = "/api/community-manager/accounts/{$account->id}/inbox";
+        $this->getJson($inbox.'?agent_queue=1')->assertOk()->assertJsonCount(1, 'items')->assertJsonPath('items.0.id', $boundary->id);
+        $this->getJson($inbox)->assertOk()->assertJsonCount(3, 'items');
+        $this->getJson("/api/community-manager/inbox/{$old->id}/context")->assertConflict()
+            ->assertJsonPath('review_reason', 'target_date_outside_window');
+        $path = "/api/community-manager/inbox/{$boundary->id}";
+        $context = $this->getJson($path.'/context')->assertOk()->json('context_id');
+        $this->postJson($path.'/reply', ['context_id' => $context, 'reply_text' => 'Merci !', 'dry_run' => false])->assertAccepted();
+
+        $this->travel(1)->second();
+        (new \App\Jobs\SendAutonomousInboxReply($boundary->id))->handle(app(\App\Services\Inbox\InboxReplyService::class));
+
+        $this->assertNull($boundary->fresh()->reply_scheduled_at);
+        $this->assertSame(0, (int) $boundary->fresh()->reply_attempts);
+        $this->assertSame(0, \App\Models\AccountActionEvent::count());
+        Http::assertNothingSent();
+    }
+
     public function test_x_accepte_uniquement_les_destinataires_de_reponse_avant_le_texte_exact(): void
     {
-        $this->travelTo(\Illuminate\Support\Carbon::parse('2026-11-08T14:00:00Z'));
+        $this->travelTo(\Illuminate\Support\Carbon::parse('2026-11-08T14:00:00Z')->setTimezone(config('app.timezone')));
         $u = User::factory()->create(['role' => 'manager']);
         $p = Persona::create(['name' => 'Voix', 'system_prompt' => 'Sobre', 'is_active' => true]);
         $a = SocialAccount::create(['name' => 'Compte attribué', 'platform_id' => Platform::firstOrCreate(['slug' => 'twitter'], ['name' => 'X'])->id, 'driver' => 'browser', 'browser_username' => 'owner', 'persona_id' => $p->id]);
         $a->users()->attach($u, ['is_active' => true]);
         Sanctum::actingAs($u);
-        $item = InboxItem::create(['social_account_id' => $a->id, 'platform_id' => $a->platform_id, 'type' => 'comment', 'external_id' => '987', 'author_username' => 'visitor', 'content' => '@owner @other Très jolie tenue 😊', 'status' => 'unread']);
+        $item = InboxItem::create(['social_account_id' => $a->id, 'platform_id' => $a->platform_id, 'type' => 'comment', 'external_id' => '987', 'author_username' => 'visitor', 'content' => '@owner @other Très jolie tenue 😊', 'status' => 'unread', 'posted_at' => now()->subMinute()]);
         $data = ['context_complete' => true, 'target' => ['id' => '987', 'author' => 'visitor', 'text' => 'Très jolie tenue 😊'], 'conversation' => [['author' => 'visitor', 'text' => 'Très jolie tenue 😊']], 'visible_replies' => []];
         $updated = ['id' => '987', 'author' => 'visitor', 'text' => 'Version visible sur X'];
         $this->mock(\App\Services\Browser\BrowserTaskQueue::class)->shouldReceive('run')->times(3)->andReturn(

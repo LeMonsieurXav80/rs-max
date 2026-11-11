@@ -8,6 +8,7 @@ use App\Models\BotActionLog;
 use App\Models\SocialAccount;
 use App\Models\TikTokEngagement;
 use App\Services\Agent\AgentCatalog;
+use App\Services\Agent\CommentFreshness;
 use App\Services\Agent\TikTokVideoCommentGenerator;
 use App\Services\Browser\BrowserException;
 use App\Services\Browser\BrowserTaskQueue;
@@ -116,6 +117,7 @@ class TikTokFeedController extends Controller
             $payload = ['username' => $account->browser_username, 'url' => $url, 'target' => $target];
             $personaHash = null;
             if ($data['action'] === 'video.comment') {
+                abort_unless(CommentFreshness::allows(CommentFreshness::tikTokVideoDate($url)), 409, CommentFreshness::REJECTION);
                 abort_unless($snapshot['complete'] === true || ($snapshot['accessible_complete'] ?? false) === true, 422, 'Lecture des commentaires accessibles incomplète : poursuivre la lecture avant de rédiger.');
                 abort_unless($account->persona?->is_active && filled($account->persona->system_prompt), 422, 'Persona actif du compte obligatoire.');
                 abort_if(collect($snapshot['comments'])->contains('author', $account->browser_username), 409, 'Ce compte a déjà commenté cette vidéo.');
@@ -155,6 +157,9 @@ class TikTokFeedController extends Controller
         $request->validate(['dry_run' => 'sometimes|boolean']);
         abort_unless($engagement->status === 'prepared', 409, 'Action déjà réservée ou tentée. Vérifier son résultat, sans relancer.');
         abort_if($engagement->persona_hash && (! $account->persona?->is_active || $engagement->persona_hash !== TikTokEngagement::personaHash($account)), 409, 'Persona modifié depuis la préparation.');
+        if ($engagement->action === 'video.comment') {
+            abort_unless(CommentFreshness::allows(CommentFreshness::tikTokVideoDate($engagement->payload['url'])), 409, CommentFreshness::REJECTION);
+        }
         if ($request->boolean('dry_run', true)) {
             return response()->json(['dry_run' => true] + $this->format($engagement));
         }

@@ -7,6 +7,7 @@ use App\Models\InboxItem;
 use App\Models\Setting;
 use App\Models\SocialAccount;
 use App\Models\User;
+use App\Services\Agent\CommentFreshness;
 use App\Services\Inbox\InboxDraftService;
 use App\Services\Inbox\InboxFollowup;
 use App\Services\Inbox\InboxReplyService;
@@ -34,7 +35,7 @@ class InboxApiController extends Controller
         }
 
         if ($request->attributes->get('cm_agent_queue')) {
-            $query->where(fn ($q) => $q->whereNull('agent_retry_at')->orWhere('agent_retry_at', '<=', now()));
+            $this->applyAgentQueue($query);
         }
         $items = $query->paginate($filters['limit'] ?? 20);
         $writable = $request->user()->connectedSocialAccounts()->pluck('social_accounts.id')->all();
@@ -55,8 +56,16 @@ class InboxApiController extends Controller
         $query = $this->query($user, ['accounts' => [$accountId], 'order' => 'newest']);
         $this->unanswered($query);
 
-        return $query->where(fn ($q) => $q->whereNull('agent_retry_at')->orWhere('agent_retry_at', '<=', now()))
-            ->limit($limit)->get();
+        $this->applyAgentQueue($query);
+
+        return $query->limit($limit)->get();
+    }
+
+    private function applyAgentQueue(Builder $query): void
+    {
+        $now = now();
+        $query->whereBetween('posted_at', [CommentFreshness::cutoff($now), $now])
+            ->where(fn ($q) => $q->whereNull('agent_retry_at')->orWhere('agent_retry_at', '<=', $now));
     }
 
     /** Select a bounded lot, without generating or sending any reply in this request. */

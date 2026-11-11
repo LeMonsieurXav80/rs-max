@@ -4,6 +4,7 @@ namespace App\Services\Inbox;
 
 use App\Jobs\LikeInboxItem;
 use App\Models\InboxItem;
+use App\Services\Agent\CommentFreshness;
 use Carbon\CarbonInterface;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
@@ -45,6 +46,14 @@ class InboxReplyService
                 return $item->reply_content === $text
                     ? ['success' => true, 'external_id' => $item->reply_external_id, 'already_replied' => true]
                     : $this->conflict('Ce message a déjà reçu une réponse.');
+            }
+
+            if ((filled($item->reply_activity_window) || request()->attributes->get('community_manager')) && ! CommentFreshness::allows($item->posted_at)) {
+                if ($scheduled) {
+                    $item->update(['reply_scheduled_at' => null] + ($item->reply_attempts === 0 ? ['reply_content' => null, 'reply_activity_window' => null] : []));
+                }
+
+                return $this->conflict(CommentFreshness::REJECTION);
             }
 
             $account = $item->socialAccount()->with('platform')->first();
@@ -189,6 +198,11 @@ class InboxReplyService
             }
             if (($item->platform->slug === 'tiktok' || ($item->platform->slug === 'twitter' && $item->socialAccount->usesBrowser())) && ($item->reply_attempts > 0 || ! in_array($item->status, ['unread', 'read'], true))) {
                 return $this->conflict('Ce commentaire ne peut plus être programmé. Vérifiez son état sur le réseau.');
+            }
+
+            if (request()->attributes->get('community_manager')
+                && (! CommentFreshness::allows($item->posted_at) || ! CommentFreshness::allows($item->posted_at, $at))) {
+                return $this->conflict(CommentFreshness::REJECTION);
             }
 
             $item->update([

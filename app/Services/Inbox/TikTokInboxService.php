@@ -104,24 +104,38 @@ class TikTokInboxService implements PlatformInboxInterface
             : ['success' => false, 'external_id' => null, 'error' => 'Action TikTok non confirmée après rechargement. Vérifiez le fil avant toute relance.', 'uncertain' => true];
     }
 
-    /** Studio n'affiche qu'un texte : « 1h ago », « il y a 2 j », ou une date ; à défaut, la date de lecture. */
-    private function postedAt(?string $date): Carbon
+    /** Studio fournit une date affichée ou un âge relatif. */
+    private function postedAt(?string $date): ?Carbon
     {
-        if (preg_match('/(\d+)\s*(min|m|h|d|j|w|sem)/i', (string) $date, $match)) {
-            $unit = match (strtolower($match[2])) {
-                'min', 'm' => 'minutes',
-                'h' => 'hours',
-                'd', 'j' => 'days',
-                default => 'weeks',
+        $date = trim((string) $date);
+        if (preg_match('/^(?:il y a\s+)?(\d+)\s*([a-zéû.]+)(?:\s+ago)?$/iu', $date, $match)) {
+            $unit = match (mb_strtolower(rtrim($match[2], '.'))) {
+                's', 'sec', 'second', 'seconds', 'seconde', 'secondes' => 'seconds',
+                'm', 'min', 'minute', 'minutes' => 'minutes',
+                'h', 'hour', 'hours', 'heure', 'heures' => 'hours',
+                'd', 'j', 'day', 'days', 'jour', 'jours' => 'days',
+                'w', 'sem', 'week', 'weeks', 'semaine', 'semaines' => 'weeks',
+                'mo', 'month', 'months', 'mois' => 'months',
+                'y', 'a', 'an', 'ans', 'year', 'years', 'année', 'années' => 'years',
+                default => null,
             };
 
-            return now()->sub($unit, (int) $match[1]);
+            return $unit === null ? null : now()->sub($unit, (int) $match[1]);
+        }
+        if (in_array(mb_strtolower($date), ['just now', 'à l’instant', "à l'instant"], true)) {
+            return now();
+        }
+        if (in_array(mb_strtolower($date), ['yesterday', 'hier'], true)) {
+            return now()->subDay()->startOfDay();
+        }
+        if (! preg_match('/\b\d{4}\b/', $date)) {
+            return null;
         }
 
         try {
-            return Carbon::parse((string) $date);
-        } catch (\Throwable) {
-            return now();
+            return Carbon::parse($date)->setTimezone(config('app.timezone'));
+        } catch (\InvalidArgumentException) {
+            return null;
         }
     }
 }

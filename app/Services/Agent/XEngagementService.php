@@ -60,6 +60,7 @@ class XEngagementService
         abort_if($row->persona_hash && (! $account->persona?->is_active
             || TikTokEngagement::personaHash($account) !== $row->persona_hash), 409, 'Persona modifié : refaire la lecture et le brouillon.');
         if ($row->action === 'reply') {
+            abort_unless(CommentFreshness::allowsPublishedAt($row->payload['target']['published_at'] ?? null), 409, CommentFreshness::REJECTION);
             $this->assertReplyAvailable($account, $row->payload['target']['id'], $row->id, $row->payload['inbox_item_id'] ?? null);
         }
         if ($row->action === 'unfollow') {

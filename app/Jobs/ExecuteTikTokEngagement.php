@@ -5,6 +5,7 @@ namespace App\Jobs;
 use App\Models\BotActionLog;
 use App\Models\TikTokEngagement;
 use App\Services\Agent\AgentCatalog;
+use App\Services\Agent\CommentFreshness;
 use App\Services\Agent\CommunityManagerWindow;
 use App\Services\Browser\BrowserException;
 use App\Services\Browser\BrowserTaskQueue;
@@ -34,6 +35,11 @@ class ExecuteTikTokEngagement implements ShouldQueue
             $account = $row->socialAccount;
             // Le verrou de compte sérialise aussi le décompte du quota.
             Cache::lock('tiktok-engagement-account:'.$account->id, 310)->block(3, function () use ($row, $account, $browser, $catalog) {
+                if ($row->action === 'video.comment' && ! CommentFreshness::allows(CommentFreshness::tikTokVideoDate($row->payload['url']))) {
+                    $row->update(['status' => 'failed', 'error' => CommentFreshness::REJECTION]);
+
+                    return;
+                }
                 $state = $catalog->forAccount($account)->get($row->action);
                 if (! $state || ! $state['enabled'] || $state['left'] < 1 || ! $account->usesBrowser()
                     || $account->browser_session_status !== 'connected' || $account->browser_username !== $row->payload['username']

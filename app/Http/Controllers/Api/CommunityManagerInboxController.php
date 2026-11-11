@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Models\InboxItem;
 use App\Models\SocialAccount;
 use App\Services\Agent\ApiInboxActions;
+use App\Services\Agent\CommentFreshness;
 use App\Services\Agent\CommunityManagerWindow;
 use App\Services\Inbox\InboxFollowup;
 use App\Services\Inbox\InboxReplyService;
@@ -108,6 +109,9 @@ class CommunityManagerInboxController extends Controller
     {
         if ($inboxItem->replied_at || $inboxItem->reply_external_id || $inboxItem->status === 'replied') {
             $this->skipContext($inboxItem, 'already_handled', 'Ce commentaire a déjà reçu une réponse.');
+        }
+        if (! CommentFreshness::allows($inboxItem->posted_at)) {
+            $this->skipContext($inboxItem, 'target_date_outside_window', CommentFreshness::REJECTION);
         }
         abort_unless($a->persona?->is_active && filled($a->persona->system_prompt), 422, 'Persona actif requis.');
 
@@ -275,6 +279,9 @@ class CommunityManagerInboxController extends Controller
     public function reply(Request $r, InboxItem $inboxItem, InboxReplyService $service)
     {
         $a = $this->account($r, $inboxItem->social_account_id);
+        if (! ($inboxItem->replied_at || $inboxItem->reply_external_id || $inboxItem->status === 'replied') && ! CommentFreshness::allows($inboxItem->posted_at)) {
+            $this->skipContext($inboxItem, 'target_date_outside_window', CommentFreshness::REJECTION);
+        }
         if (in_array($a->platform->slug, ApiInboxActions::PLATFORMS, true) && ! $inboxItem->replied_at && ! $inboxItem->reply_scheduled_at) {
             app(ApiInboxActions::class)->assertEnabled($a, 'reply');
         }

@@ -6,6 +6,7 @@ use App\Models\BrowserTask;
 use App\Models\SocialAccount;
 use App\Services\Agent\AgentCatalog;
 use App\Services\Agent\ApiInboxActions;
+use App\Services\Agent\CommentFreshness;
 use App\Services\Agent\CommunityManagerWindow;
 use App\Services\Browser\BrowserTaskQueue;
 use Illuminate\Support\Facades\Cache;
@@ -60,6 +61,7 @@ class ThreadsAgent
     {
         $s = $this->snapshot($a, $id);
         abort_unless($s['read_action'] === 'thread.read' && ($s['result']['context_complete'] ?? false), 422, 'Lire d’abord le fil Threads ciblé.');
+        abort_unless(CommentFreshness::allowsPublishedAt($s['result']['target']['published_at'] ?? null), 409, CommentFreshness::REJECTION);
         abort_unless(filled($s['result']['target']['text'] ?? null), 422, 'Texte de la publication indisponible.');
         abort_unless($a->persona?->is_active && filled($a->persona->system_prompt), 422, 'Persona actif requis.');
         $ctx = (string) Str::uuid();
@@ -82,6 +84,7 @@ class ThreadsAgent
         $target['url'] = $this->canonical($target['url']);
         abort_if(strtolower($target['author']) === strtolower($a->browser_username), 422, 'Aucune interaction automatique avec le compte lui-même.');
         if ($d['action'] === 'comment') {
+            abort_unless(CommentFreshness::allowsPublishedAt($target['published_at'] ?? null), 409, CommentFreshness::REJECTION);
             $ctx = Cache::get('threads-context:'.($d['context_id'] ?? ''));
             abort_unless($ctx && $ctx['account_id'] === $a->id && $ctx['snapshot_id'] === $d['snapshot_id'] && $a->persona?->is_active && $ctx['persona_hash'] === \App\Models\TikTokEngagement::personaHash($a), 409, 'Contexte ou persona modifié.');
             abort_unless($s['read_action'] === 'thread.read' && ! empty(trim($d['text'] ?? '')), 422, 'Texte et fil complets requis.');
@@ -117,6 +120,9 @@ class ThreadsAgent
         $this->ready($a);
         app(ApiInboxActions::class)->assertEnabled($a, $t->payload['action']);
         abort_unless($a->browser_profile === $t->profile && $a->browser_username === $t->payload['username'] && now()->lte($t->payload['deadline']), 409, 'Identité Threads ou délai modifié.');
+        if ($t->payload['action'] === 'comment') {
+            abort_unless(CommentFreshness::allowsPublishedAt($t->payload['target']['published_at'] ?? null), 409, CommentFreshness::REJECTION);
+        }
     }
 
     public function authorize(BrowserTask $t): void
@@ -126,6 +132,9 @@ class ThreadsAgent
         $this->ready($a);
         $setting = app(AgentCatalog::class)->forAccount($a)->get($t->payload['action']);
         abort_unless($setting && $setting['enabled'] && $a->browser_profile === $t->profile && $a->browser_username === $t->payload['username'] && now()->lte($t->payload['deadline']), 409, 'Autorisation Threads modifiée.');
+        if ($t->payload['action'] === 'comment') {
+            abort_unless(CommentFreshness::allowsPublishedAt($t->payload['target']['published_at'] ?? null), 409, CommentFreshness::REJECTION);
+        }
         abort_if(app(\App\Services\Agent\AccountActionBudget::class)->usage($a)['blocked'], 429, 'Compte en pause : aucun geste Threads.');
     }
 

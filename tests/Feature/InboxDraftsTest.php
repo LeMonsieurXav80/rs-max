@@ -245,14 +245,15 @@ class InboxDraftsTest extends TestCase
     public function test_la_date_relative_de_studio_devient_une_date(): void
     {
         $this->freezeSecond();
-        $account = $this->tiktok([$this->comment('fan', 'Bravo', ['date' => '3h ago']), $this->comment('ami', 'Super', ['date' => 'il y a 2 j']), $this->comment('zoe', 'Top', ['date' => 'inconnu'])]);
+        $account = $this->tiktok([$this->comment('fan', 'Bravo', ['date' => '3h ago']), $this->comment('ami', 'Super', ['date' => 'il y a 2 j']), $this->comment('zoe', 'Top', ['date' => 'inconnu']), $this->comment('sam', 'Merci', ['date' => '2 months ago'])]);
 
         app(InboxSyncService::class)->syncAccount($account->fresh('platform'));
 
         $dates = InboxItem::where('social_account_id', $account->id)->pluck('posted_at', 'author_username');
         $this->assertTrue($dates['fan']->equalTo(now()->subHours(3)));
         $this->assertTrue($dates['ami']->equalTo(now()->subDays(2)));
-        $this->assertTrue($dates['zoe']->equalTo(now()));
+        $this->assertNull($dates['zoe']);
+        $this->assertTrue($dates['sam']->equalTo(now()->subMonths(2)));
     }
 
     public function test_tiktok_repond_avec_la_legende_comme_contexte(): void
