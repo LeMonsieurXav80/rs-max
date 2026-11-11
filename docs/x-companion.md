@@ -1,5 +1,8 @@
 # X — mentions avec contexte, RS Companion 0.9.0
 
+Pour le routage des tâches actuelles sur le NAS, le VPS et Chrome local, voir
+[Profils d’exécution Companion](companion-workers.md).
+
 Depuis `https://x.com/notifications/mentions`, choisir l’action X, le compte RS-Max
 si nécessaire, le mode aperçu ou publication, et un seul maximum (10 par défaut,
 1–100). Cadence : 3–8 s avant like, 8–20 s entre like et réponse, 25–75 s entre
@@ -42,8 +45,9 @@ réponse qu’après apparition d’un nouveau post exact du compte dans le fil.
 
 Les boutons X `data-testid=like` et `unlike` font foi ; aucun unlike sur un like
 existant. Le bouton Répondre doit être actif et l’éditeur viser la bonne mention.
-L’aperçu remplit l’éditeur sans like ni publication. Limite de génération 280 unités
-UTF-16, pas de texte tronqué ; le bouton X reste l’arbitre de sa limite pondérée.
+L’aperçu permet de vérifier le brouillon. RS-Max applique une borne prudente selon
+la pondération de X et reformule une fois si le texte est trop long. Le bouton X
+reste l’arbitre final de la limite.
 
 ## API Sanctum
 

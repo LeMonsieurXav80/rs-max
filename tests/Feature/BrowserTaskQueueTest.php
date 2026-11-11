@@ -50,6 +50,22 @@ class BrowserTaskQueueTest extends TestCase
         $this->getJson('/api/extension/tasks/next?profile=wildycaro')->assertOk()->assertJson(['id' => null]);
     }
 
+    public function test_un_controle_tiktok_en_cours_ne_retient_pas_la_file_x_distincte(): void
+    {
+        $tiktok = SocialAccount::create(['platform_id' => Platform::where('slug', 'tiktok')->firstOrFail()->id,
+            'name' => 'Compte de test TikTok', 'browser_profile' => 'nas-tiktok']);
+        $verification = BrowserTask::create(['social_account_id' => $tiktok->id, 'profile' => 'nas-tiktok',
+            'kind' => 'tiktok.verify', 'payload' => [], 'status' => BrowserTask::RUNNING, 'claimed_at' => now()]);
+        $read = BrowserTask::create(['social_account_id' => $this->account->id, 'profile' => 'nas-x',
+            'kind' => 'x.agent.read', 'payload' => ['action' => 'search.read']]);
+
+        $this->getJson('/api/extension/tasks/next?profile=nas-tiktok')->assertOk()->assertJson(['id' => null]);
+        $this->getJson('/api/extension/tasks/next?profile=nas-x')->assertOk()
+            ->assertJson(['id' => $read->id, 'kind' => 'x.agent.read', 'account_id' => '77']);
+        $this->assertSame(BrowserTask::RUNNING, $read->fresh()->status);
+        $this->assertSame(BrowserTask::RUNNING, $verification->fresh()->status);
+    }
+
     public function test_le_resultat_est_journalise_et_ne_peut_pas_etre_reecrit(): void
     {
         $task = $this->task(BrowserTask::RUNNING);
