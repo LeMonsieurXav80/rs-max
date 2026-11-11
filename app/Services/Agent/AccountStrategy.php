@@ -12,7 +12,17 @@ class AccountStrategy
 {
     public const LISTS = ['hashtags' => 'Hashtags à rechercher', 'target_accounts' => 'Comptes à suivre / explorer', 'search_queries' => 'Recherches spécifiques', 'exclusions' => 'Mots et comptes à exclure'];
 
-    /** @return list<string> Requêtes X issues des réglages du compte. */
+    public const X_SEARCH_QUERY_LIMIT = 263;
+
+    public function xSearchLanguage(SocialAccount $account): ?string
+    {
+        $languages = array_values($account->languages ?? []);
+
+        return count($languages) === 1 && is_string($languages[0]) && isset(ReplyLanguage::LABELS[$languages[0]])
+            ? $languages[0] : null;
+    }
+
+    /** @return list<string> Requêtes X prêtes à exécuter, dans l'ordre de la stratégie. */
     public function xDiscoveryQueries(SocialAccount $account): array
     {
         $strategy = $account->agent_strategy ?? [];
@@ -45,8 +55,12 @@ class AccountStrategy
             }
         }
 
+        $language = $this->xSearchLanguage($account);
         $distinct = [];
         foreach ($queries as $query) {
+            if ($language !== null && ! preg_match('/(*UCP)(?:^|[\s(])lang:/iu', $query)) {
+                $query .= ' lang:'.$language;
+            }
             $distinct[mb_convert_case($query, MB_CASE_FOLD)] ??= $query;
         }
 

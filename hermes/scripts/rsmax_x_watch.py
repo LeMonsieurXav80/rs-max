@@ -15,6 +15,7 @@ LANES = {
 }
 DISCOVERY_MINUTES = 15
 TIKTOK_MAX_REPLIES = 10
+X_SEARCH_QUERY_LIMIT = 263
 
 
 def action_available(actions, name):
@@ -28,7 +29,7 @@ def discovery_source(client, account, now):
     strategy = account.get('strategy') or {}
     is_x = account['platform'] == 'twitter'
     configured = account.get('discovery_queries', strategy.get('search_queries', [])) if is_x else strategy.get('search_queries', [])
-    queries = [q.strip() for q in configured if isinstance(q, str) and 0 < len(q.strip()) <= (255 if is_x else 150)]
+    queries = [q.strip() for q in configured if isinstance(q, str) and 0 < len(q.strip()) <= (X_SEARCH_QUERY_LIMIT if is_x else 150)]
     sources = {}
     if action_available(actions, 'feed.read'):
         sources['feed.read'] = {}
@@ -56,7 +57,11 @@ def discovery_source(client, account, now):
     if 'search.read' in sources:
         if is_x:
             last_query = (history.get('search.read', {}).get('text') or '').strip().casefold()
-            index = next((i + 1 for i, query in enumerate(queries) if query.casefold() == last_query), 0)
+            aliases = {last_query}
+            if last_query and account.get('search_language'):
+                # Les journaux antérieurs au catalogue qualifié contiennent la requête brute.
+                aliases.add(f"{last_query} lang:{account['search_language']}")
+            index = next((i + 1 for i, query in enumerate(queries) if query.casefold() in aliases), 0)
         else:
             index = int(now.timestamp()) // (DISCOVERY_MINUTES * 60)
         sources['search.read'] = {'query': queries[index % len(queries)]}

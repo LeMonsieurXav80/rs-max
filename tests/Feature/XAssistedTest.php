@@ -51,8 +51,9 @@ class XAssistedTest extends TestCase
         $platform = Platform::firstOrCreate(['slug' => 'twitter'], ['name' => 'X', 'auth_type' => 'oauth2']);
         $owner = User::factory()->create(['role' => 'manager']);
         $account = SocialAccount::create(['name' => 'X', 'platform_id' => $platform->id, 'platform_account_id' => '1000',
-            'browser_username' => 'owner', 'agent_strategy' => [
-                'search_queries' => ['Mode durable', 'mode durable', '#Tenue'],
+            'browser_username' => 'owner', 'languages' => ['fr'], 'agent_strategy' => [
+                'reply_language' => 'es',
+                'search_queries' => ['Mode durable', 'mode durable lang:fr', '#Tenue', '(style LANG:en)', str_repeat('x', 255)],
                 'hashtags' => ['tenue', '#élégance', '#123', '#deux mots'],
                 'target_accounts' => ['@ModePro', 'https://x.com/modepro', '@retirer', 'https://x.com/pro/status/123'],
                 'exclusions' => ['@RETIRER', 'spam'],
@@ -60,12 +61,20 @@ class XAssistedTest extends TestCase
         $account->users()->attach($owner, ['is_active' => true]);
         $this->withToken($owner->createToken('extension')->plainTextToken);
         $identity = ['platform_account_id' => '1000', 'username' => 'owner'];
-        $queries = ['Mode durable', '#Tenue', '#élégance', 'from:modepro'];
+        $queries = ['Mode durable lang:fr', '#Tenue lang:fr', '(style LANG:en)', str_repeat('x', 255).' lang:fr', '#élégance lang:fr', 'from:modepro lang:fr'];
+        $local = '/api/extension/x/assisted/context?'.http_build_query($identity);
+        $catalog = '/api/community-manager/accounts';
 
-        $this->getJson('/api/extension/x/assisted/context?'.http_build_query($identity))
-            ->assertOk()->assertJsonPath('queries', $queries);
-        $this->getJson('/api/community-manager/accounts')
-            ->assertOk()->assertJsonPath('accounts.0.discovery_queries', $queries);
+        $this->getJson($local)->assertOk()->assertJsonPath('queries', $queries)
+            ->assertJsonPath('search_language', 'fr')->assertJsonPath('reply_language', 'es');
+        $this->getJson($catalog)->assertOk()->assertJsonPath('accounts.0.discovery_queries', $queries)
+            ->assertJsonPath('accounts.0.search_language', 'fr');
+
+        $account->update(['languages' => ['fr', 'en']]);
+        $multilingual = ['Mode durable', 'mode durable lang:fr', '#Tenue', '(style LANG:en)', str_repeat('x', 255), '#élégance', 'from:modepro'];
+        $this->getJson($local)->assertOk()->assertJsonPath('queries', $multilingual)->assertJsonPath('search_language', null);
+        $this->getJson($catalog)->assertOk()->assertJsonPath('accounts.0.discovery_queries', $multilingual)
+            ->assertJsonPath('accounts.0.search_language', null);
     }
 
     public function test_le_signet_local_partage_la_reservation_et_exige_une_preuve_apres_rechargement(): void

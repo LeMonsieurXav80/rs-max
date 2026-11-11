@@ -145,6 +145,21 @@ class XWatchTest(unittest.TestCase):
             self.assertEqual(plan['query'], wanted)
             self.assertEqual(plan['fallback']['read_action'], 'feed.read')
 
+    def test_x_reprend_apres_une_recherche_historique_non_qualifiee(self):
+        account = self.account()
+        long = 'x' * 255 + ' lang:fr'
+        account.update(search_language='fr', discovery_queries=['mode lang:fr', long, '#mode lang:es'])
+        account['actions']['search.read'] = {'left': 4}
+        now = dt.datetime.fromisoformat('2026-11-07T12:30:00+00:00')
+        for last_query in ('Mode', 'mode lang:fr'):
+            client = Mock()
+            client.api.side_effect = [
+                {'logs': []}, {'logs': [{'at': '2026-11-07T11:50:00+00:00', 'text': last_query}]},
+            ]
+            plan = watch.discovery_source(client, account, now)
+            self.assertEqual(plan['query'], long)
+            self.assertEqual(plan['fallback']['query'], '#mode lang:es')
+
     def test_x_peut_essayer_une_autre_recherche_si_le_flux_est_desactive(self):
         client = Mock()
         client.api.return_value = {'logs': []}

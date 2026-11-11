@@ -41,10 +41,8 @@ class XAssistedController extends Controller
         $account = $this->account($request);
         $strategy = $account->agent_strategy ?? [];
 
-        $languages = array_values($account->languages ?? []);
-
         return response()->json([
-            'search_language' => count($languages) === 1 ? $languages[0] : null,
+            'search_language' => $strategies->xSearchLanguage($account),
             'reply_language' => ReplyLanguage::code($account),
             'queries' => $strategies->xDiscoveryQueries($account),
             'exclusions' => array_values($strategy['exclusions'] ?? []),

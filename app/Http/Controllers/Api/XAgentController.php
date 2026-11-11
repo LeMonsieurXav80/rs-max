@@ -7,6 +7,7 @@ use App\Models\SocialAccount;
 use App\Models\SocialContact;
 use App\Models\TikTokEngagement;
 use App\Models\XEngagement;
+use App\Services\Agent\AccountStrategy;
 use App\Services\Agent\AgentCatalog;
 use App\Services\Agent\CommentFreshness;
 use App\Services\Agent\CommunityManagerWindow;
@@ -58,7 +59,7 @@ class XAgentController extends Controller
         $a = $this->account($r, $id);
         abort_unless(app(CommunityManagerWindow::class)->isOpen(), 423, 'Community Manager travaille de 06 h à 22 h à Lisbonne.');
         $data = $r->validate(['action' => ['required', Rule::in(['feed.read', 'search.read', 'mentions.read', 'thread.read', 'profile.read'])],
-            'query' => 'required_if:action,search.read|nullable|string|max:255',
+            'query' => 'required_if:action,search.read|nullable|string|max:'.AccountStrategy::X_SEARCH_QUERY_LIMIT,
             'url' => ['required_if:action,thread.read', 'nullable', 'regex:~^https://x\\.com/[a-zA-Z0-9_]{1,15}/status/[0-9]+$~'],
             'handle' => ['required_if:action,profile.read', 'nullable', 'regex:/^@?[a-zA-Z0-9_]{1,15}$/'],
             'feed' => 'sometimes|in:following,foryou', 'limit' => 'sometimes|integer|min:1|max:30', 'screens' => 'sometimes|integer|min:1|max:5']);

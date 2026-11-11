@@ -97,6 +97,20 @@ class XAgentTest extends TestCase
         Http::assertNothingSent();
     }
 
+    public function test_la_recherche_qualifiee_garde_le_texte_exact_jusquau_navigateur(): void
+    {
+        $query = str_repeat('x', 255).' lang:fr';
+        $this->mock(BrowserTaskQueue::class)->shouldReceive('run')->once()->withArgs(function ($account, $kind, $payload) use ($query) {
+            parse_str(parse_url($payload['url'], PHP_URL_QUERY), $params);
+
+            return $account->is($this->a) && $kind === 'x.agent.read' && $params['q'] === $query && $params['f'] === 'live';
+        })->andReturn(['items' => [], 'observed' => 0, 'complete' => false]);
+        $this->postJson($this->url('read'), ['action' => 'search.read', 'query' => $query])->assertOk();
+        $this->postJson($this->url('read'), ['action' => 'search.read', 'query' => $query.'x'])->assertUnprocessable();
+        $this->getJson('/api/community-manager/logs?account_id='.$this->a->id.'&action=agent.search.read')
+            ->assertOk()->assertJsonPath('logs.0.text', $query);
+    }
+
     public function test_recherche_signale_les_reponses_connues_avant_ouverture_du_fil(): void
     {
         $other = SocialAccount::create(['name' => 'Autre compte', 'platform_id' => $this->a->platform_id]);
