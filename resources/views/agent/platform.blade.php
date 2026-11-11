@@ -40,30 +40,37 @@
                     @endif
                 </div>
 
-                <div class="divide-y divide-gray-50">
-                    @if (($row['actions']['reply']['enabled'] ?? false) && $row['account']->persona_id)
-                        <form method="POST" action="{{ route('agent.prepare', $row['account']) }}" class="px-6 py-3 flex items-center justify-between gap-3">
-                            @csrf
-                            <span class="text-sm text-gray-600">Rédiger les réponses en attente, à valider dans la messagerie</span>
-                            <button type="submit" class="px-3 py-1.5 text-xs font-medium text-white bg-indigo-600 rounded-lg hover:bg-indigo-700 transition-colors">Préparer</button>
-                        </form>
-                    @endif
+                @if (($row['actions']['reply']['enabled'] ?? false) && $row['account']->persona_id)
+                    <form method="POST" action="{{ route('agent.prepare', $row['account']) }}" class="px-6 py-3 flex items-center justify-between gap-3 border-b border-gray-50">
+                        @csrf
+                        <span class="text-sm text-gray-600">Rédiger les réponses en attente, à valider dans la messagerie</span>
+                        <button type="submit" class="px-3 py-1.5 text-xs font-medium text-white bg-indigo-600 rounded-lg hover:bg-indigo-700 transition-colors">Préparer</button>
+                    </form>
+                @endif
+                @php
+                    $canSave = $row['actions']->contains('status', 'ready');
+                    $submitted = (string) old('_settings_account') === (string) $row['account']->id;
+                @endphp
+                <form method="POST" action="{{ route('agent.actions.update', $row['account']) }}" class="divide-y divide-gray-50">
+                    @csrf
+                    @method('PUT')
+                    <input type="hidden" name="_settings_account" value="{{ $row['account']->id }}">
                     @foreach ($row['actions'] as $key => $action)
                         <div class="px-6 py-3">
                             @if ($action['status'] === 'ready')
-                                <form method="POST" action="{{ route('agent.update', ['account' => $row['account'], 'action' => $key]) }}" class="flex flex-wrap items-center gap-3">
-                                    @csrf
-                                    @method('PUT')
+                                @php($index = $loop->index)
+                                <div class="flex flex-wrap items-center gap-3">
+                                    <input type="hidden" name="actions[{{ $index }}][action]" value="{{ $key }}">
                                     <label class="flex items-center gap-3 flex-1 min-w-48 cursor-pointer">
-                                        <input type="checkbox" name="enabled" value="1" {{ $action['enabled'] ? 'checked' : '' }}
+                                        <input type="checkbox" name="actions[{{ $index }}][enabled]" value="1" @checked($submitted ? old("actions.$index.enabled", false) : $action['enabled'])
                                                class="rounded border-gray-300 text-indigo-600 focus:ring-indigo-500">
                                         <span class="text-sm text-gray-800">{{ $action['label'] }}</span>
                                     </label>
                                     <span class="text-xs text-gray-400">{{ $action['used'] }} {{ $action['kind'] === 'read' ? 'lecture(s)' : 'geste(s)' }} aujourd'hui, maximum</span>
-                                    <input type="number" name="daily_limit" min="0" max="1000" value="{{ $action['daily_limit'] }}" aria-label="Maximum par jour"
+                                    <input type="number" name="actions[{{ $index }}][daily_limit]" required min="0" max="1000"
+                                           value="{{ $submitted ? old("actions.$index.daily_limit", $action['daily_limit']) : $action['daily_limit'] }}" aria-label="Maximum par jour pour {{ $action['label'] }}"
                                            class="w-20 rounded-lg border-gray-300 text-sm focus:border-indigo-500 focus:ring-indigo-500">
-                                    <button type="submit" class="px-3 py-1.5 text-xs font-medium text-indigo-700 bg-indigo-50 rounded-lg hover:bg-indigo-100 transition-colors">Enregistrer</button>
-                                </form>
+                                </div>
                             @else
                                 <div class="flex items-center justify-between gap-3">
                                     <span class="text-sm {{ $action['status'] === 'engine' ? 'text-gray-800' : 'text-gray-400' }}">{{ $action['label'] }}</span>
@@ -72,7 +79,15 @@
                             @endif
                         </div>
                     @endforeach
-                </div>
+                    @if ($canSave)
+                        <div class="px-6 py-4 flex flex-wrap items-center justify-end gap-3">
+                            @if ($submitted && $errors->any())
+                                <p role="alert" class="mr-auto text-sm text-red-700">{{ $errors->first() }}</p>
+                            @endif
+                            <button type="submit" class="px-4 py-2 text-sm font-medium text-white bg-indigo-600 rounded-lg hover:bg-indigo-700 transition-colors">Enregistrer</button>
+                        </div>
+                    @endif
+                </form>
             </div>
         @empty
             <div class="bg-white rounded-2xl shadow-sm border border-gray-100 px-6 py-8 text-center">

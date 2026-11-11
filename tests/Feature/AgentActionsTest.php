@@ -137,6 +137,40 @@ class AgentActionsTest extends TestCase
         $this->assertDatabaseHas('agent_account_actions', ['social_account_id' => $this->account->id, 'enabled' => false]);
     }
 
+    public function test_un_formulaire_par_compte_enregistre_ensemble_les_actions_de_chaque_reseau(): void
+    {
+        $twitter = Platform::firstOrCreate(['slug' => 'twitter'], ['name' => 'X', 'auth_type' => 'oauth2']);
+        $a = SocialAccount::create(['platform_id' => $twitter->id, 'name' => 'X principal']);
+        $b = SocialAccount::create(['platform_id' => $twitter->id, 'name' => 'X secondaire']);
+        $tiktok = route('agent.platform', 'tiktok');
+        $x = route('agent.platform', 'twitter');
+
+        $this->actingAs($this->manager)->get($x)->assertOk()->assertSee(route('agent.actions.update', $a))
+            ->assertSee(route('agent.actions.update', $b))->assertDontSee(route('agent.update', [$a, 'feed.read']));
+        $this->get($tiktok)->assertOk()->assertSee(route('agent.actions.update', $this->account))
+            ->assertDontSee(route('agent.update', [$this->account, 'comments.read']));
+
+        $settings = [
+            ['action' => 'feed.read', 'enabled' => 1, 'daily_limit' => 17],
+            ['action' => 'like', 'daily_limit' => 3],
+        ];
+        $this->from($x)->put(route('agent.actions.update', $a), ['actions' => $settings])->assertRedirect($x);
+        $this->assertDatabaseHas('agent_account_actions', ['social_account_id' => $a->id, 'action' => 'feed.read', 'enabled' => true, 'daily_limit' => 17]);
+        $this->assertDatabaseHas('agent_account_actions', ['social_account_id' => $a->id, 'action' => 'like', 'enabled' => false, 'daily_limit' => 3]);
+        $this->assertDatabaseMissing('agent_account_actions', ['social_account_id' => $b->id]);
+
+        $this->from($tiktok)->put(route('agent.actions.update', $this->account), ['actions' => [
+            ['action' => 'comments.read', 'enabled' => 1, 'daily_limit' => 7],
+            ['action' => 'video.like', 'enabled' => 1, 'daily_limit' => 4],
+        ]])->assertRedirect($tiktok);
+        $this->assertDatabaseHas('agent_account_actions', ['social_account_id' => $this->account->id, 'action' => 'video.like', 'enabled' => true, 'daily_limit' => 4]);
+
+        $settings[0]['daily_limit'] = 18;
+        $settings[1]['action'] = 'comments.read';
+        $this->from($x)->put(route('agent.actions.update', $a), ['actions' => $settings])->assertSessionHasErrors('actions.1.action');
+        $this->assertDatabaseHas('agent_account_actions', ['social_account_id' => $a->id, 'action' => 'feed.read', 'daily_limit' => 17]);
+    }
+
     public function test_le_menu_propose_chaque_reseau(): void
     {
         $this->actingAs($this->manager)->get(route('bot.index'))->assertOk()->assertSee(url('/agent/tiktok'))->assertSee(url('/agent/twitter'));

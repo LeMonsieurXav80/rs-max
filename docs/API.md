@@ -1432,6 +1432,8 @@ Pour un J’aime ou une republication Companion réserve la cible avec `POST /ap
 
 Le contexte de la messagerie X (`GET /api/community-manager/inbox/{item}/context`) relit aussi le fil sur le NAS : publication d’origine, cible exacte et réponses visibles. Une réponse du compte à la cible bloque tout doublon. Une relance imbriquée sans question est écartée. Si Companion confirme que le post a été supprimé ou que son auteur est suspendu, l’élément sort de la file et conserve son motif. L’intention inbox est persistée avant le départ réseau ; le like automatique conserve la fenêtre horaire et attend la cadence.
 
+Les aperçus `POST /api/extension/x/reply-preview` et `POST /api/extension/x/assisted/preview` acceptent aussi `thread` : messages ordonnés depuis l’origine jusqu’à la cible, avec `id`, `author`, `text`, `quote` et `media`. RS-Max vérifie que le dernier message correspond à la cible et renvoie `thread_root_id`. Companion attend cet accusé avant de réserver un envoi.
+
 Rapport : `GET /api/community-manager/report?hours=24` (également `/api/agent/report`) renvoie les comptes attribués, tentatives, confirmations, échecs/incertitudes et texte Telegram. `POST` au même endroit avec `hours`, `note` facultative (600 caractères), `dry_run:false` et `report_key` UUID envoie sur le bot RS configuré. Aperçu par défaut ; clé persistée avant envoi, aucun renvoi après résultat incertain. Client : `report --hours 24 [--note-file FICHIER] [--commit] [--key UUID]` ; clé quotidienne stable par défaut et mémoire locale distincte.
 Le catalogue Community Manager expose aussi `next_publication_at` avec son fuseau. Avant une réponse et son like, réserver deux gestes ; éviter la dernière heure avant une publication planifiée afin que la cadence ne la bloque pas.
 

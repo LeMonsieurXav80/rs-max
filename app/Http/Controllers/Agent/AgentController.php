@@ -10,6 +10,8 @@ use App\Models\TikTokEngagement;
 use App\Services\Agent\AgentCatalog;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Validation\Rule;
 use Illuminate\View\View;
 
 class AgentController extends Controller
@@ -80,5 +82,28 @@ class AgentController extends Controller
         $this->catalog->configure($account, $action, (bool) ($data['enabled'] ?? false), $data['daily_limit']);
 
         return back()->with('success', 'Action enregistrée.');
+    }
+
+    public function updateActions(Request $request, SocialAccount $account): RedirectResponse
+    {
+        $definition = $this->catalog->platforms()[$account->platform->slug] ?? abort(404);
+        $ready = collect($definition['actions'])->where('status', 'ready')->keys()->all();
+        abort_if($ready === [], 404);
+        $data = $request->validate([
+            'actions' => 'required|array|min:1',
+            'actions.*' => 'required|array:action,enabled,daily_limit',
+            'actions.*.action' => ['required', 'string', 'distinct:strict', Rule::in($ready)],
+            'actions.*.enabled' => 'nullable|boolean',
+            'actions.*.daily_limit' => 'required|integer|min:0|max:1000',
+        ]);
+
+        DB::transaction(function () use ($account, $data) {
+            SocialAccount::whereKey($account->id)->lockForUpdate()->firstOrFail();
+            foreach ($data['actions'] as $row) {
+                $this->catalog->configure($account, $row['action'], (bool) ($row['enabled'] ?? false), $row['daily_limit']);
+            }
+        });
+
+        return back()->with('success', 'Réglages enregistrés pour '.$account->name.'.');
     }
 }
