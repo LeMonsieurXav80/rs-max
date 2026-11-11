@@ -21,7 +21,7 @@ class TwitterBrowserInboxService implements PlatformInboxInterface
             return collect();
         }
 
-        $tweets = $this->queue->run($account, 'x.tweets', ['url' => 'https://x.com/notifications/mentions'])['tweets'] ?? [];
+        $tweets = $this->queue->run($account, 'x.tweets', ['url' => 'https://x.com/notifications/mentions', 'screens' => 3])['tweets'] ?? [];
 
         return collect($tweets)
             ->reject(fn (array $t) => $t['author'] === strtolower((string) $account->browser_username))

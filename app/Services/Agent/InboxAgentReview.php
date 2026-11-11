@@ -44,7 +44,7 @@ class InboxAgentReview
     {
         $minutes = match ($reason) {
             'already_handled', 'not_relevant' => 10080,
-            'tiktok_target_not_found', 'x_target_not_found' => 360,
+            'tiktok_target_not_found', 'x_target_not_found', 'x_context_changed' => 360,
             'context_changed' => 30,
             default => 15,
         };

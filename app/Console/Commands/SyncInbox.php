@@ -3,6 +3,7 @@
 namespace App\Console\Commands;
 
 use App\Models\SocialAccount;
+use App\Services\Browser\BrowserException;
 use App\Services\Inbox\InboxSyncService;
 use Illuminate\Console\Command;
 
@@ -10,7 +11,8 @@ class SyncInbox extends Command
 {
     protected $signature = 'inbox:sync
                             {--account= : Sync only a specific account ID}
-                            {--platform= : Sync only accounts for this platform slug}';
+                            {--platform= : Sync only accounts for this platform slug}
+                            {--driver= : Limit platform sync to api or browser}';
 
     protected $description = 'Fetch new comments, replies, and DMs from social platforms';
 
@@ -31,14 +33,31 @@ class SyncInbox extends Command
         }
 
         if ($platformSlug = $this->option('platform')) {
+            $driver = $this->option('driver');
+            if ($driver !== null && ! in_array($driver, ['api', 'browser'], true)) {
+                $this->error('Le mode de connexion doit être api ou browser.');
+
+                return self::INVALID;
+            }
+
             $accounts = SocialAccount::whereHas('platform', fn ($q) => $q->where('slug', $platformSlug))
+                ->when($driver, fn ($query) => $query->where('driver', $driver))
                 ->with('platform')
                 ->get();
 
             $totalFetched = 0;
 
             foreach ($accounts as $account) {
-                $result = $syncService->syncAccount($account);
+                try {
+                    $result = $syncService->syncAccount($account);
+                } catch (BrowserException $e) {
+                    if ($driver !== 'browser') {
+                        throw $e;
+                    }
+                    $this->error("  {$account->name}: ".$e->getMessage());
+
+                    continue;
+                }
                 $totalFetched += $result['fetched'];
                 $this->line("  {$account->name}: {$result['fetched']} items");
             }

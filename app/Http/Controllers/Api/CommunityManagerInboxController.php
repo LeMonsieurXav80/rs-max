@@ -135,8 +135,9 @@ class CommunityManagerInboxController extends Controller
 
         $xThread = null;
         if ($a->platform->slug === 'twitter' && $a->usesBrowser()) {
-            if ($inboxItem->agent_review_reason === 'x_target_not_found' && $inboxItem->agent_retry_at?->isFuture()) {
-                $this->skipContext($inboxItem, 'x_target_not_found', 'Mention X à relire plus tard. Passer à la suivante.');
+            if (in_array($inboxItem->agent_review_reason, ['x_target_not_found', 'x_context_changed'], true)
+                && $inboxItem->agent_retry_at?->isFuture()) {
+                $this->skipContext($inboxItem, $inboxItem->agent_review_reason, 'Mention X à relire plus tard. Passer à la suivante.');
             }
             if ($inboxItem->status === 'ignored' && in_array($inboxItem->agent_review_reason, ['x_account_suspended', 'x_post_deleted'], true)) {
                 $this->skipContext($inboxItem, $inboxItem->agent_review_reason, 'Cible X retirée de la file.');
@@ -151,8 +152,15 @@ class CommunityManagerInboxController extends Controller
                     'action' => 'thread.read', 'username' => $a->browser_username, 'target_id' => (string) $inboxItem->external_id,
                 ], 110);
             } catch (\App\Services\Browser\BrowserException $e) {
-                if ($e->getMessage() === 'Mention absente du fil.') {
-                    $this->deferContext($inboxItem, 'x_target_not_found', 'Mention X non chargée. Passer à la suivante.');
+                $reason = match ($e->getMessage()) {
+                    'Mention absente du fil.', 'Post visé non chargé.' => 'x_target_not_found',
+                    'Origine de la réponse non chargée.',
+                    'Tweet d’origine ou échanges précédents inaccessibles.',
+                    'Contexte d’origine trop long ou sans texte lisible.' => 'x_context_changed',
+                    default => null,
+                };
+                if ($reason) {
+                    $this->deferContext($inboxItem, $reason, $e->getMessage().' Passer à la mention suivante.');
                 }
                 abort(502, $e->getMessage());
             }
@@ -173,17 +181,25 @@ class CommunityManagerInboxController extends Controller
             $sameText = is_string($liveText) && ($liveText === $storedText || ($liveText !== ''
                 && preg_replace('/^(?:@[a-zA-Z0-9_]{1,15}[ \t\r\n]+)+/', '', $storedText) === $liveText));
             if (! (($xThread['context_complete'] ?? false) && ($xThread['target']['id'] ?? null) === (string) $inboxItem->external_id
-                && strtolower($xThread['target']['author'] ?? '') === strtolower(ltrim($inboxItem->author_username, '@'))
-                && $sameText)) {
-                $this->deferContext($inboxItem, 'context_changed', 'Fil ou commentaire modifié : passer au commentaire suivant et relire plus tard.');
+                && strtolower($xThread['target']['author'] ?? '') === strtolower(ltrim($inboxItem->author_username, '@')))) {
+                $this->deferContext($inboxItem, 'x_context_changed', 'Fil ou identité X modifié. Passer au commentaire suivant.');
+            }
+            $own = strtolower((string) $a->browser_username);
+            if ($own !== '' && collect($xThread['visible_replies'] ?? [])->contains(fn ($p) => strtolower($p['author'] ?? '') === $own)) {
+                $this->deferContext($inboxItem, 'already_handled', 'Le compte a déjà répondu à cette cible : passer au commentaire suivant.');
+            }
+            $conversation = $xThread['conversation'] ?? [];
+            $last = $conversation[array_key_last($conversation)] ?? [];
+            // Une ancienne copie peut différer. Le fil doit confirmer le même message avec son texte actuel.
+            $verifiedText = is_string($liveText) && filled($liveText)
+                && ($last['id'] ?? null) === (string) $inboxItem->external_id
+                && ($last['author'] ?? null) === $xThread['target']['author']
+                && ($last['text'] ?? null) === $liveText;
+            if (! $sameText && ! $verifiedText) {
+                $this->deferContext($inboxItem, 'x_context_changed', 'Texte X non confirmé dans le fil. Passer au commentaire suivant.');
             }
             if ($liveText !== $storedText) {
                 $inboxItem->update(['content' => $liveText]);
-            }
-            $own = strtolower($a->browser_username);
-            $conversation = $xThread['conversation'] ?? [];
-            if (collect($xThread['visible_replies'] ?? [])->contains(fn ($p) => strtolower($p['author'] ?? '') === $own)) {
-                $this->deferContext($inboxItem, 'already_handled', 'Le compte a déjà répondu à cette cible : passer au commentaire suivant.');
             }
             $followup = $followup || count($conversation) > 2;
         }

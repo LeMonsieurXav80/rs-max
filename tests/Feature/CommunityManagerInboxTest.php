@@ -254,10 +254,19 @@ class CommunityManagerInboxTest extends TestCase
         Sanctum::actingAs($u);
         $item = InboxItem::create(['social_account_id' => $a->id, 'platform_id' => $a->platform_id, 'type' => 'comment', 'external_id' => '987', 'author_username' => 'visitor', 'content' => '@owner @other Très jolie tenue 😊', 'status' => 'unread']);
         $data = ['context_complete' => true, 'target' => ['id' => '987', 'author' => 'visitor', 'text' => 'Très jolie tenue 😊'], 'conversation' => [['author' => 'visitor', 'text' => 'Très jolie tenue 😊']], 'visible_replies' => []];
-        $this->mock(\App\Services\Browser\BrowserTaskQueue::class)->shouldReceive('run')->twice()->andReturn($data, array_replace($data, ['target' => ['id' => '987', 'author' => 'visitor', 'text' => 'Une autre tenue']]));
-        $this->getJson('/api/community-manager/inbox/'.$item->id.'/context')->assertOk();
+        $updated = ['id' => '987', 'author' => 'visitor', 'text' => 'Version visible sur X'];
+        $this->mock(\App\Services\Browser\BrowserTaskQueue::class)->shouldReceive('run')->times(3)->andReturn(
+            $data,
+            array_replace($data, ['target' => $updated, 'conversation' => [$updated]]),
+            array_replace($data, ['target' => ['id' => '987', 'author' => 'visitor', 'text' => 'Texte sans preuve']]),
+        );
+        $url = '/api/community-manager/inbox/'.$item->id.'/context';
+        $this->getJson($url)->assertOk();
         $this->assertSame('Très jolie tenue 😊', $item->fresh()->content);
-        $this->getJson('/api/community-manager/inbox/'.$item->id.'/context')->assertConflict()->assertJsonPath('skip_item', true);
-        $this->assertSame('Très jolie tenue 😊', $item->fresh()->content);
+        $this->getJson($url)->assertOk()->assertJsonPath('content', $updated['text']);
+        $this->getJson($url)->assertConflict()->assertJsonPath('skip_item', true)->assertJsonPath('review_reason', 'x_context_changed');
+        $this->getJson($url)->assertConflict()->assertJsonPath('skip_item', true);
+        $this->assertSame($updated['text'], $item->fresh()->content);
+        $this->assertSame(0, (int) $item->fresh()->reply_attempts);
     }
 }

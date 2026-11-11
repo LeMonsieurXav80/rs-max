@@ -48,7 +48,13 @@ foreach ($inboxPlatforms as $slug) {
     // TikTok se lit par le navigateur du VPS, partagé avec les autres comptes : pas tous les quarts d'heure.
     $defaultFreq = $slug === 'tiktok' ? 'hourly' : 'every_15_min';
     $freq = rescue(fn () => Setting::get("inbox_sync_freq_{$slug}", $defaultFreq), $defaultFreq, false);
-    $platformSchedule = Schedule::command("inbox:sync --platform={$slug}")->withoutOverlapping(10);
+    $command = "inbox:sync --platform={$slug}";
+    if ($slug === 'twitter') {
+        // Les mentions de Companion ont leur propre fréquence, distincte des appels à l’API X.
+        Schedule::command($command.' --driver=browser')->everyFifteenMinutes()->withoutOverlapping(10)->runInBackground();
+        $command .= ' --driver=api';
+    }
+    $platformSchedule = Schedule::command($command)->withoutOverlapping(10);
     match ($freq) {
         'every_30_min' => $platformSchedule->everyThirtyMinutes(),
         'hourly' => $platformSchedule->hourly(),
