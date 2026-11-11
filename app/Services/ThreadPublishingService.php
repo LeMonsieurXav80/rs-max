@@ -34,7 +34,7 @@ class ThreadPublishingService
      * Publish a thread as a multi-post sequence (Twitter, Threads).
      * Each segment is published as a reply to the previous one.
      */
-    public function publishThreadMode(Thread $thread, SocialAccount $account): array
+    public function publishThreadMode(Thread $thread, SocialAccount $account, bool $manualPublication = false): array
     {
         $segments = $thread->segments()->orderBy('position')->get();
         $adapter = AdapterFactory::forAccount($account);
@@ -134,6 +134,7 @@ class ThreadPublishingService
 
             $options ??= [];
             $options['publication_key'] = 'thread-segment-platform:'.$segmentPlatform->id;
+            $options['manual_publication'] = $manualPublication;
             try {
                 if ($previousExternalId === null) {
                     // First segment: standard publish. $options compte aussi ici — un
@@ -314,7 +315,7 @@ class ThreadPublishingService
     /**
      * Publish a thread to a single account, auto-detecting the mode.
      */
-    public function publishToAccount(Thread $thread, SocialAccount $account): array
+    public function publishToAccount(Thread $thread, SocialAccount $account, bool $manualPublication = false): array
     {
         $pivot = $thread->socialAccounts()->where('social_account_id', $account->id)->first();
 
@@ -325,7 +326,7 @@ class ThreadPublishingService
         $publishMode = $pivot->pivot->publish_mode;
 
         if ($publishMode === 'thread') {
-            $results = $this->publishThreadMode($thread, $account);
+            $results = $this->publishThreadMode($thread, $account, $manualPublication);
         } else {
             $results = $this->publishCompiledMode($thread, $account);
         }

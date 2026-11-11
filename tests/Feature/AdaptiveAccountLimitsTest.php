@@ -108,6 +108,28 @@ class AdaptiveAccountLimitsTest extends TestCase
         $this->assertFalse(app(AccountActionBudget::class)->usage($a->fresh())['blocked']);
     }
 
+    public function test_un_echec_de_commentaire_ne_leve_pas_une_limite_explicite_pour_la_publication_manuelle(): void
+    {
+        $this->freezeTime();
+        $a = $this->account();
+        $task = BrowserTask::create(['social_account_id' => $a->id, 'profile' => 'test', 'kind' => 'x.agent.act',
+            'payload' => [], 'status' => 'uncertain', 'result' => ['platform_limit' => ['source' => 'platform_ui', 'scope' => 'temporary']]]);
+        AccountActionEvent::create(['social_account_id' => $a->id, 'browser_task_id' => $task->id,
+            'action' => 'x.reply', 'executor' => 'browser', 'status' => 'uncertain']);
+        $limits = app(AdaptiveAccountLimits::class);
+        $limits->evaluate($a);
+
+        $this->travel(1)->minute();
+        AccountActionEvent::create(['social_account_id' => $a->id, 'action' => 'x.reply',
+            'executor' => 'browser', 'status' => 'failed']);
+        $limits->evaluate($a);
+
+        $this->travel(16)->minutes();
+        $this->expectException(BrowserException::class);
+        $this->expectExceptionMessage(AccountActionBudget::ADAPTIVE_PAUSE);
+        app(AccountActionBudget::class)->reserve($a, 'x.post', 'browser', manualPublication: true);
+    }
+
     public function test_quota_local_sans_evenement_ne_declenche_aucune_adaptation(): void
     {
         $a = $this->account();

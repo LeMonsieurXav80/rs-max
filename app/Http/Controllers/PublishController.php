@@ -108,7 +108,10 @@ class PublishController extends Controller
         ]);
 
         // Publish synchronously
-        $options = ($this->buildOptions($post) ?? []) + ['publication_key' => 'post-platform:'.$postPlatform->id];
+        $options = ($this->buildOptions($post) ?? []) + [
+            'publication_key' => 'post-platform:'.$postPlatform->id,
+            'manual_publication' => true,
+        ];
         $result = $adapter->publish($account, $content, $media, $options);
 
         if ($result['success']) {
@@ -228,7 +231,10 @@ class PublishController extends Controller
                 'details' => ['platform' => $platform->slug, 'account' => $account->name, 'manual' => true],
             ]);
 
-            $result = $adapter->publish($account, $content, $media, ($options ?? []) + ['publication_key' => 'post-platform:'.$pp->id]);
+            $result = $adapter->publish($account, $content, $media, ($options ?? []) + [
+                'publication_key' => 'post-platform:'.$pp->id,
+                'manual_publication' => true,
+            ]);
 
             if ($result['success']) {
                 $pp->update([
@@ -349,7 +355,7 @@ class PublishController extends Controller
         }
 
         $delivery->post->update(['status' => 'publishing']);
-        \App\Jobs\PublishToPlatformJob::dispatch($delivery);
+        \App\Jobs\PublishToPlatformJob::dispatch($delivery, manualPublication: true);
 
         return true;
     }

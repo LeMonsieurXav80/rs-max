@@ -11,9 +11,11 @@ use Illuminate\Support\Facades\DB;
 /** Réservation durable avant le geste. Les échecs et résultats incertains consomment aussi la cadence. */
 class AccountActionBudget
 {
-    public function reserve(SocialAccount $account, string $action, string $executor, ?string $target = null, ?int $taskId = null): AccountActionEvent
+    public const ADAPTIVE_PAUSE = 'Pause adaptative RS-Max : aucun geste effectué.';
+
+    public function reserve(SocialAccount $account, string $action, string $executor, ?string $target = null, ?int $taskId = null, bool $manualPublication = false): AccountActionEvent
     {
-        return DB::transaction(function () use ($account, $action, $executor, $target, $taskId) {
+        return DB::transaction(function () use ($account, $action, $executor, $target, $taskId, $manualPublication) {
             $account = SocialAccount::whereKey($account->id)->lockForUpdate()->firstOrFail();
             $events = AccountActionEvent::where('social_account_id', $account->id);
             if ($account->platform->slug === 'twitter' && str_starts_with($action, 'x.')) {
@@ -38,8 +40,8 @@ class AccountActionBudget
                 }
             }
             $usage = $this->usage($account);
-            if (($usage['adaptation']['state']['cooldown_until'] ?? null) && \Illuminate\Support\Carbon::parse($usage['adaptation']['state']['cooldown_until'])->isFuture()) {
-                throw new BrowserException('Pause adaptative RS-Max : aucun geste effectué.');
+            if (app(AdaptiveAccountLimits::class)->cooldownUntil($account, $manualPublication)?->isFuture()) {
+                throw new BrowserException(self::ADAPTIVE_PAUSE);
             }
             if ($account->agent_daily_limit !== null && $usage['daily']['attempted'] >= $account->agent_daily_limit) {
                 throw new BrowserException('Plafond quotidien RS-Max atteint : aucun geste effectué.');
@@ -77,7 +79,9 @@ class AccountActionBudget
             return;
         }
         $action = $task->kind === 'x.post' && str_contains($task->payload['url'] ?? '', 'in_reply_to=') ? 'x.reply' : $task->kind;
-        $this->reserve($task->socialAccount, $action, 'browser', $task->payload['url'] ?? null, $task->id);
+        $manualPublication = in_array($task->kind, ['tiktok.publish', 'x.post'], true)
+            && ($task->payload['manual_publication'] ?? false) === true;
+        $this->reserve($task->socialAccount, $action, 'browser', $task->payload['url'] ?? null, $task->id, $manualPublication);
     }
 
     public function finish(BrowserTask $task): void

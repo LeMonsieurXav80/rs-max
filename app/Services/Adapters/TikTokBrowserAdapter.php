@@ -38,6 +38,7 @@ class TikTokBrowserAdapter implements PlatformAdapterInterface
                 'url' => self::UPLOAD_URL,
                 'username' => $username,
                 'publication_key' => $key,
+                'manual_publication' => ($options['manual_publication'] ?? false) === true,
                 'text' => $caption,
                 'caption' => $caption,
                 'title' => '',

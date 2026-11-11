@@ -35,7 +35,16 @@ class AdaptiveAccountLimits
                     && in_array($limit['scope'] ?? null, ['daily', 'temporary'], true);
                 $state['handled_problem_ids'] = [...$handled, $problem->id];
                 $state['window_started_at'] = now()->toIso8601String();
-                $state['cooldown_until'] = now()->addMinutes($platform ? (($limit['scope'] === 'daily') ? 1440 : 60) : 15)->toIso8601String();
+                $until = now()->addMinutes($platform ? (($limit['scope'] === 'daily') ? 1440 : 60) : 15);
+                $state['cooldown_until'] = max($until, $this->cooldownUntil($account) ?? $until)->toIso8601String();
+                // Un incident de commentaire ne doit pas écourter une pause
+                // de publication déjà imposée pour une autre raison.
+                $publicationUntil = $this->cooldownUntil($account, manualPublication: true);
+                $commentFailure = ! $platform && preg_match('/\.(comment|reply)$/', $problem->action);
+                if (! $commentFailure && (! $publicationUntil || $until->gt($publicationUntil))) {
+                    $publicationUntil = $until;
+                }
+                $state['publication_cooldown_until'] = $publicationUntil?->toIso8601String();
                 $state['reason'] = $platform ? 'Limitation explicite du réseau : cadence réduite et pause.' : 'Échec ou résultat incertain : hausse suspendue, contrôle nécessaire.';
                 $old = $this->values($account);
                 if ($platform) {
@@ -64,12 +73,26 @@ class AdaptiveAccountLimits
             if ($old === $this->values($account)) {
                 return null;
             }
-            $account->agent_adaptation_state = array_replace($state, ['window_started_at' => now()->toIso8601String(), 'cooldown_until' => null, 'reason' => 'Au moins 10 gestes confirmés sur une fenêtre stable de 30 minutes.']);
+            $account->agent_adaptation_state = array_replace($state, ['window_started_at' => now()->toIso8601String(), 'cooldown_until' => null, 'publication_cooldown_until' => null, 'reason' => 'Au moins 10 gestes confirmés sur une fenêtre stable de 30 minutes.']);
             $account->save();
             $this->scaleActions($account);
 
             return $this->record($account, $old, $account->agent_adaptation_state['reason'], ['confirmed' => $events->where('status', 'confirmed')->count()]);
         });
+    }
+
+    public function cooldownUntil(SocialAccount $account, bool $manualPublication = false): ?Carbon
+    {
+        if (! ($account->agent_adaptation['enabled'] ?? false)) {
+            return null;
+        }
+
+        $state = $account->agent_adaptation_state ?? [];
+        $key = $manualPublication && array_key_exists('publication_cooldown_until', $state)
+            ? 'publication_cooldown_until'
+            : 'cooldown_until';
+
+        return isset($state[$key]) ? Carbon::parse($state[$key]) : null;
     }
 
     public function interval(int $hourly): int

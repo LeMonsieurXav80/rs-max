@@ -2,8 +2,11 @@
 
 namespace App\Services\Browser;
 
+use App\Models\AccountActionEvent;
 use App\Models\BrowserTask;
 use App\Models\SocialAccount;
+use App\Services\Agent\AccountActionBudget;
+use App\Services\Agent\AdaptiveAccountLimits;
 use App\Services\Agent\CommunityManagerWindow;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
@@ -34,14 +37,20 @@ class BrowserTaskQueue
             $key = in_array($kind, ['x.post', 'x.like', 'x.repost', 'tiktok.publish'], true) ? ($payload['publication_key'] ?? null) : null;
             if ($key !== null) {
                 // Verrou du compte, même quand la ligne de tâche n'existe pas encore.
-                SocialAccount::whereKey($account->id)->lockForUpdate()->firstOrFail();
+                $lockedAccount = SocialAccount::whereKey($account->id)->lockForUpdate()->firstOrFail();
                 $existing = BrowserTask::where('social_account_id', $account->id)->where('idempotency_key', $key)->first();
                 if ($existing) {
                     if ($existing->kind !== $kind || $this->targetIdentity($existing->payload) !== $this->targetIdentity($payload) || ($existing->payload['text'] ?? '') !== ($payload['text'] ?? '') || $this->mediaIdentity($existing->payload['media'] ?? []) !== $this->mediaIdentity($payload['media'] ?? [])) {
                         throw new BrowserException('Cette livraison possède déjà une intention différente : vérifier avant toute nouvelle publication.');
                     }
 
-                    return $existing;
+                    if (! $this->canRetryPausedTikTokPublication($existing, $lockedAccount, ($payload['manual_publication'] ?? false) === true)) {
+                        return $existing;
+                    }
+
+                    // Conserver la tâche annulée et son journal. La nouvelle demande
+                    // réutilise la clé sous le même verrou et repasse par les contrôles.
+                    $existing->update(['idempotency_key' => null]);
                 }
             }
             if ($kind === 'x.like' && isset($payload['target']['id'])) {
@@ -72,6 +81,17 @@ class BrowserTaskQueue
         }
 
         return $this->expire($task);
+    }
+
+    private function canRetryPausedTikTokPublication(BrowserTask $task, SocialAccount $account, bool $manualPublication): bool
+    {
+        if ($task->kind !== 'tiktok.publish' || $task->status !== BrowserTask::CANCELLED
+            || $task->error !== AccountActionBudget::ADAPTIVE_PAUSE || $task->claimed_at !== null || $task->result !== null) {
+            return false;
+        }
+
+        return ! app(AdaptiveAccountLimits::class)->cooldownUntil($account, $manualPublication)?->isFuture()
+            && ! AccountActionEvent::where('browser_task_id', $task->id)->exists();
     }
 
     private function targetIdentity(array $payload): array

@@ -7,6 +7,7 @@ use App\Models\BrowserTask;
 use App\Models\Platform;
 use App\Models\SocialAccount;
 use App\Models\User;
+use App\Services\Agent\AccountActionBudget;
 use App\Services\Browser\BrowserException;
 use App\Services\Browser\BrowserTaskQueue;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -149,6 +150,49 @@ class BrowserTaskQueueTest extends TestCase
         } finally {
             $this->assertSame(1, BrowserTask::count());
         }
+    }
+
+    public function test_une_publication_tiktok_annulee_par_la_pause_peut_repartir_sur_demande(): void
+    {
+        $this->account->update([
+            'platform_id' => Platform::where('slug', 'tiktok')->firstOrFail()->id,
+            'agent_adaptation' => ['enabled' => true],
+            'agent_adaptation_state' => ['cooldown_until' => now()->addMinutes(15)->toIso8601String()],
+        ]);
+        $payload = ['url' => 'https://www.tiktok.com/tiktokstudio/upload', 'text' => 'Bonjour',
+            'publication_key' => 'post-platform:9', 'deadline' => now()->addMinutes(15)->toIso8601String()];
+        $this->task()->updateOrFail([
+            'kind' => 'tiktok.publish', 'idempotency_key' => $payload['publication_key'], 'payload' => $payload,
+        ]);
+        $queue = app(BrowserTaskQueue::class);
+        $this->assertNull($queue->claim('wildycaro'));
+        $cancelled = BrowserTask::sole();
+        $this->assertSame(AccountActionBudget::ADAPTIVE_PAUSE, $cancelled->error);
+        $this->assertNull($cancelled->claimed_at);
+
+        try {
+            $queue->run($this->account, 'tiktok.publish', $payload);
+            $this->fail('La pause doit encore empêcher toute nouvelle tâche.');
+        } catch (BrowserException $e) {
+            $this->assertSame(AccountActionBudget::ADAPTIVE_PAUSE, $e->getMessage());
+        }
+        $this->assertSame(1, BrowserTask::count());
+
+        $this->travel(16)->minutes();
+        $payload['deadline'] = now()->addMinutes(15)->toIso8601String();
+        BrowserTask::created(function (BrowserTask $task) use ($queue) {
+            $claimed = $queue->claim($task->profile);
+            $this->assertSame($task->id, $claimed?->id);
+            $claimed->update(['status' => BrowserTask::DONE, 'result' => ['confirmed' => true]]);
+        });
+        $result = $queue->run($this->account, 'tiktok.publish', $payload);
+        $this->assertTrue($result['confirmed']);
+        $this->assertSame(2, BrowserTask::count());
+        $this->assertSame(AccountActionBudget::ADAPTIVE_PAUSE, $cancelled->fresh()->error);
+        $this->assertNull($cancelled->fresh()->idempotency_key);
+        $this->assertSame($payload['deadline'], BrowserTask::where('idempotency_key', $payload['publication_key'])->sole()->payload['deadline']);
+        $this->assertSame($result, $queue->run($this->account, 'tiktok.publish', $payload));
+        $this->assertSame(2, BrowserTask::count());
     }
 
     public function test_changer_les_medias_dune_livraison_existante_est_refuse(): void

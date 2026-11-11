@@ -658,7 +658,7 @@ class ThreadController extends Controller
         }
 
         $service = app(ThreadPublishingService::class);
-        $results = $service->publishToAccount($thread, $socialAccount);
+        $results = $service->publishToAccount($thread, $socialAccount, manualPublication: true);
 
         $thread->refresh();
 

@@ -3,6 +3,7 @@
 namespace Tests\Feature;
 
 use App\Jobs\PublishToPlatformJob;
+use App\Models\AccountActionEvent;
 use App\Models\BrowserTask;
 use App\Models\ExternalPost;
 use App\Models\MediaFile;
@@ -11,10 +12,13 @@ use App\Models\Post;
 use App\Models\SocialAccount;
 use App\Models\SocialAccountSnapshot;
 use App\Models\User;
+use App\Services\Agent\AccountActionBudget;
+use App\Services\Agent\AdaptiveAccountLimits;
 use App\Services\Browser\BrowserTaskQueue;
 use App\Services\PublishingService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Queue;
 use Illuminate\Support\Facades\Storage;
 use Laravel\Sanctum\Sanctum;
 use Tests\TestCase;
@@ -116,6 +120,53 @@ class TikTokComposerAndStudioTest extends TestCase
         $this->assertSame('pending', $post->postPlatforms()->where('social_account_id', $this->account->id)->firstOrFail()->status);
         $this->assertSame('scheduled', $post->fresh()->status);
         $this->assertTrue($post->scheduled_at->equalTo($post->fresh()->scheduled_at));
+    }
+
+    public function test_le_bouton_publier_franchit_la_pause_due_a_un_commentaire(): void
+    {
+        Queue::fake();
+        $this->actingAs($this->manager);
+        $this->account->update(['agent_adaptation' => ['enabled' => true],
+            'agent_adaptation_state' => ['enabled_at' => now()->subHour()->toIso8601String()]]);
+        AccountActionEvent::create(['social_account_id' => $this->account->id, 'action' => 'tiktok.video.comment',
+            'executor' => 'browser', 'status' => 'uncertain']);
+        app(AdaptiveAccountLimits::class)->evaluate($this->account);
+
+        $filename = 'fixture-publication-manuelle.mp4';
+        $path = storage_path('app/private/media/'.$filename);
+        if (! is_dir(dirname($path))) {
+            mkdir(dirname($path), 0777, true);
+        }
+        file_put_contents($path, 'test');
+        try {
+            MediaFile::create(['filename' => $filename, 'mime_type' => 'video/mp4', 'size' => 4, 'intimacy_level' => 'public']);
+            $post = Post::create(['user_id' => $this->manager->id, 'content_fr' => 'Relance manuelle', 'status' => 'failed',
+                'media' => [['url' => '/media/'.$filename, 'type' => 'video']]]);
+            $delivery = $post->postPlatforms()->create(['platform_id' => $this->account->platform_id,
+                'social_account_id' => $this->account->id, 'status' => 'failed']);
+            $queue = app(BrowserTaskQueue::class);
+            $automatic = BrowserTask::create(['social_account_id' => $this->account->id, 'profile' => 'nas-test',
+                'kind' => 'tiktok.publish', 'payload' => []]);
+            $this->assertNull($queue->claim('nas-test'));
+            $this->assertSame(AccountActionBudget::ADAPTIVE_PAUSE, $automatic->fresh()->error);
+
+            $id = '7705777869812731158';
+            BrowserTask::created(function (BrowserTask $task) use ($queue, $id) {
+                $claimed = $queue->claim('nas-test');
+                $this->assertSame($task->id, $claimed?->id);
+                $claimed->update(['status' => BrowserTask::DONE, 'result' => [
+                    'id' => $id, 'url' => "https://www.tiktok.com/@owner/video/{$id}",
+                    'confirmed' => true, 'proof' => 'after_reload',
+                ]]);
+            });
+            $this->postJson(route('posts.publishOne', $delivery))->assertAccepted();
+            $job = Queue::pushed(PublishToPlatformJob::class)->sole();
+            unserialize(serialize($job))->handle(app(PublishingService::class));
+            $this->assertSame('published', $delivery->fresh()->status);
+            $this->assertSame($id, $delivery->fresh()->external_id);
+        } finally {
+            unlink($path);
+        }
     }
 
     public function test_autorisation_du_clic_liee_a_la_diffusion_et_a_usage_unique(): void
