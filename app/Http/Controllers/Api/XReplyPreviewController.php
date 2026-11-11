@@ -36,7 +36,7 @@ class XReplyPreviewController extends Controller
         return $this->preview($request, $account, $vault, $generator);
     }
 
-    private function preview(Request $request, SocialAccount $account, XReplyVault $vault, InboxReplyGenerator $generator): JsonResponse
+    public function preview(Request $request, SocialAccount $account, XReplyVault $vault, InboxReplyGenerator $generator, bool $requireVault = true): JsonResponse
     {
         abort_unless($account->persona?->is_active && filled($account->persona->system_prompt), 422, 'Persona actif requis.');
         $data = $request->validate([
@@ -50,7 +50,8 @@ class XReplyPreviewController extends Controller
             app(\App\Services\Agent\XEngagementService::class)->assertReplyAvailable($account, $data['target_id']);
         }
         $evidence = $vault->search($account, $data['text'], $data['origin'] ?? null);
-        abort_unless($evidence !== null, 422, 'Aucun Vault de réponses attribué à ce compte et à ce persona.');
+        abort_if($requireVault && $evidence === null, 422, 'Aucun Vault de réponses attribué à ce compte et à ce persona.');
+        $evidence ??= ['revision' => null, 'sources' => []];
         $item = new InboxItem(['type' => 'comment', 'content' => $data['text']]);
         $input = json_encode([
             'publication' => $data['origin'] ?? null,

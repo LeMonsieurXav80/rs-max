@@ -1,0 +1,155 @@
+<?php
+
+namespace App\Http\Controllers\Api;
+
+use App\Http\Controllers\Controller;
+use App\Models\SocialAccount;
+use App\Models\TikTokEngagement;
+use App\Services\Agent\AutomationJournal;
+use App\Services\Agent\XEngagementService;
+use App\Services\Agent\XReplyVault;
+use App\Services\Inbox\InboxReplyGenerator;
+use Illuminate\Http\JsonResponse;
+use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Str;
+use Symfony\Component\HttpKernel\Exception\HttpExceptionInterface;
+
+class XAssistedController extends Controller
+{
+    private function account(Request $request): SocialAccount
+    {
+        $identity = $request->validate([
+            'platform_account_id' => 'required|string|regex:/^[0-9]{1,25}$/',
+            'username' => 'required|string|regex:/^[a-zA-Z0-9_]{1,15}$/',
+        ]);
+        $account = $request->user()->activeSocialAccounts()->with('persona')
+            ->whereRelation('platform', 'slug', 'twitter')
+            ->where('platform_account_id', $identity['platform_account_id'])->first();
+        abort_unless($account, 403, 'Compte X non attribué dans RS-Max.');
+        abort_if(filled($account->browser_username) && strcasecmp($account->browser_username, $identity['username']) !== 0,
+            409, 'Le profil X ouvert diffère de celui vérifié dans RS-Max.');
+
+        return $account;
+    }
+
+    public function context(Request $request): JsonResponse
+    {
+        $account = $this->account($request);
+        $strategy = $account->agent_strategy ?? [];
+
+        $languages = array_values($account->languages ?? []);
+
+        return response()->json([
+            'search_language' => count($languages) === 1 ? $languages[0] : null,
+            'queries' => array_values($strategy['search_queries'] ?? []),
+            'exclusions' => array_values($strategy['exclusions'] ?? []),
+        ])->header('Cache-Control', 'no-store, private');
+    }
+
+    public function check(Request $request, XEngagementService $engagements): JsonResponse
+    {
+        $account = $this->account($request);
+        $data = $request->validate(['ids' => 'required|array|min:1|max:12', 'ids.*' => 'string|distinct|regex:/^[0-9]{1,25}$/']);
+        $blocked = [];
+        foreach ($data['ids'] as $id) {
+            try {
+                $engagements->assertReplyAvailable($account, $id);
+            } catch (HttpExceptionInterface $error) {
+                if ($error->getStatusCode() !== 409) {
+                    throw $error;
+                }
+                $blocked[] = $id;
+            }
+        }
+
+        return response()->json(['blocked' => $blocked]);
+    }
+
+    public function preview(Request $request, XReplyPreviewController $preview, XReplyVault $vault, InboxReplyGenerator $generator): JsonResponse
+    {
+        $account = $this->account($request);
+        $target = $request->validate([
+            'target_id' => 'required|string|regex:/^[0-9]{1,25}$/',
+            'author' => 'required|string|regex:/^[a-zA-Z0-9_]{1,15}$/',
+        ]);
+        abort_if(strcasecmp($target['author'], $request->input('username')) === 0, 409, 'Publication du compte lui-même.');
+        $data = $preview->preview($request, $account, $vault, $generator, requireVault: false)->getData(true);
+        $key = Str::uuid()->toString();
+        Cache::put('x-assisted-draft:'.$key, [
+            'account_id' => $account->id,
+            'username' => strtolower($request->input('username')),
+            'target_id' => $target['target_id'],
+            'author' => strtolower($target['author']),
+            'persona_hash' => TikTokEngagement::personaHash($account),
+            'reply_text' => $data['reply_text'],
+        ], now()->addMinutes(15));
+
+        return response()->json($data + ['draft_key' => $key])->header('Cache-Control', 'no-store, private');
+    }
+
+    public function reserve(Request $request, XEngagementService $engagements): JsonResponse
+    {
+        $account = $this->account($request);
+        $data = $request->validate(['draft_key' => 'required|uuid']);
+        $draft = Cache::get('x-assisted-draft:'.$data['draft_key']);
+        abort_unless($draft && $draft['account_id'] === $account->id && $draft['username'] === strtolower($request->input('username')),
+            409, 'Brouillon expiré ou rattaché à un autre compte.');
+
+        $id = DB::transaction(function () use ($account, $draft, $engagements) {
+            $locked = SocialAccount::with('persona')->lockForUpdate()->findOrFail($account->id);
+            abort_unless($locked->persona?->is_active && $draft['persona_hash'] === TikTokEngagement::personaHash($locked),
+                409, 'Persona modifié depuis la préparation du brouillon.');
+            $engagements->assertReplyAvailable($locked, $draft['target_id']);
+            $existing = DB::table('extension_x_replies')->where('social_account_id', $locked->id)->where('tweet_id', $draft['target_id']);
+            $attributes = [
+                'author' => $draft['author'],
+                'context_json' => json_encode(['assisted' => true, 'username' => $draft['username']], JSON_THROW_ON_ERROR),
+                'persona_hash' => $draft['persona_hash'],
+                'reply_text' => $draft['reply_text'],
+                'status' => 'publishing',
+                'proof' => 'manual:reserved',
+                'updated_at' => now(),
+            ];
+            if ($row = $existing->first()) {
+                $existing->update($attributes);
+
+                return $row->id;
+            }
+
+            return DB::table('extension_x_replies')->insertGetId($attributes + [
+                'social_account_id' => $locked->id, 'tweet_id' => $draft['target_id'], 'created_at' => now(),
+            ]);
+        });
+
+        return response()->json(['id' => $id, 'status' => 'reserved']);
+    }
+
+    public function finish(Request $request, int $id, AutomationJournal $journal): JsonResponse
+    {
+        $account = $this->account($request);
+        $data = $request->validate(['reply_id' => 'nullable|string|regex:/^[0-9]{1,25}$/']);
+        $status = DB::transaction(function () use ($account, $request, $id, $data, $journal) {
+            $table = DB::table('extension_x_replies')->where('id', $id)->where('social_account_id', $account->id);
+            $row = $table->lockForUpdate()->first();
+            $context = $row ? json_decode($row->context_json, true) : null;
+            abort_unless($context['assisted'] ?? false, 404);
+            abort_unless($context['username'] === strtolower($request->input('username')), 409, 'Profil X changé.');
+            abort_if(($data['reply_id'] ?? null) === $row->tweet_id, 422, 'Identifiant de réponse identique à la cible.');
+            $proof = isset($data['reply_id']) ? 'manual:visible:'.$data['reply_id'] : 'manual:unconfirmed';
+            $status = isset($data['reply_id']) ? 'published' : 'uncertain';
+            if ($row->status === $status && $row->proof === $proof) {
+                return $status;
+            }
+            abort_unless($row->status === 'publishing' && $row->proof === 'manual:reserved', 409, 'Tentative déjà terminée.');
+            $change = ['status' => $status, 'proof' => $proof, 'updated_at' => now()];
+            $table->update($change);
+            $journal->xCompanionReply((object) array_replace((array) $row, $change));
+
+            return $status;
+        });
+
+        return response()->json(['status' => $status]);
+    }
+}

@@ -227,6 +227,13 @@ Route::middleware(['auth:sanctum', \App\Http\Middleware\CommunityManagerTokenSco
     Route::post('/extension/threads/session', [\App\Http\Controllers\Api\ThreadsExtensionController::class, 'store']);
     Route::post('/extension/x/session', [\App\Http\Controllers\Api\XExtensionController::class, 'session'])->middleware('throttle:10,1');
     Route::post('/extension/x/like', [\App\Http\Controllers\Api\XExtensionController::class, 'like']);
+    Route::prefix('extension/x/assisted')->controller(\App\Http\Controllers\Api\XAssistedController::class)->middleware('throttle:30,1')->group(function () {
+        Route::get('context', 'context');
+        Route::post('check', 'check');
+        Route::post('preview', 'preview');
+        Route::post('reserve', 'reserve');
+        Route::post('replies/{id}/finish', 'finish')->whereNumber('id');
+    });
     Route::post('/extension/x/reply-preview', [\App\Http\Controllers\Api\XReplyPreviewController::class, 'forCompanion'])->middleware('throttle:20,1');
     Route::post('/extension/x/suggest', [\App\Http\Controllers\Api\XExtensionController::class, 'suggest'])->middleware('throttle:30,1');
     Route::post('/extension/x/{id}/begin', [\App\Http\Controllers\Api\XExtensionController::class, 'begin']);

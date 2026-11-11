@@ -238,7 +238,8 @@ class XExtensionController extends Controller
         $v = $r->validate(['status' => 'required|in:published,uncertain', 'liked' => 'required|boolean', 'proof' => 'required|string|max:255']);
         DB::transaction(function () use ($a, $id, $v, $journal) {
             $draft = DB::table('extension_x_replies')->where('id', $id)->where('social_account_id', $a->id)->lockForUpdate()->first();
-            abort_unless($draft?->status === 'publishing', 409, 'Tentative absente ou déjà terminée.');
+            abort_unless($draft?->status === 'publishing' && ! str_starts_with($draft->proof ?? '', 'manual:'),
+                409, 'Tentative absente, manuelle ou déjà terminée.');
             $result = $v + ['updated_at' => now()];
             DB::table('extension_x_replies')->where('id', $id)->update($result);
             $journal->xCompanionReply((object) array_replace((array) $draft, $result));
