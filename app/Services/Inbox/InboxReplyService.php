@@ -24,7 +24,9 @@ class InboxReplyService
             }
             $result = $this->schedule($item, $text, $at);
             if ($autonomous && ($result['success'] ?? false) && ! ($result['already_scheduled'] ?? false)) {
-                \App\Jobs\SendAutonomousInboxReply::dispatch($item->id)->delay($at)->afterCommit();
+                \App\Jobs\SendAutonomousInboxReply::dispatch($item->id)
+                    ->onQueue($item->socialAccount->usesBrowser() ? null : config('queue.inbox_api_queue'))
+                    ->delay($at)->afterCommit();
                 $result['queued'] = true;
                 $result['validation_required'] = false;
             }
@@ -147,7 +149,8 @@ class InboxReplyService
                 // Après une réponse confirmée, le like suit avec la cadence du compte.
                 if ($tiktok || ($account->platform->slug === 'twitter' && $account->usesBrowser()) || ($apiAutonomous && $account->platform->slug === 'facebook' && app(\App\Services\Agent\AgentCatalog::class)->forAccount($account)->get('comment.like')['enabled'])) {
                     $next = app(\App\Services\Agent\AccountActionBudget::class)->usage($account)['next_allowed_at'];
-                    LikeInboxItem::dispatch($item->id)->delay($next ? \Illuminate\Support\Carbon::parse($next)->addSeconds(2) : now());
+                    LikeInboxItem::dispatch($item->id)->onQueue($apiAutonomous ? config('queue.inbox_api_queue') : null)
+                        ->delay($next ? \Illuminate\Support\Carbon::parse($next)->addSeconds(2) : now());
                 }
             } else {
                 Log::warning('InboxReplyService: reply failed', ['item_id' => $item->id, 'error' => $result['error'] ?? 'unknown']);

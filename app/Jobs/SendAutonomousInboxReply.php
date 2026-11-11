@@ -24,7 +24,7 @@ class SendAutonomousInboxReply implements ShouldQueue
             return;
         }
         if ($item->reply_scheduled_at->isFuture()) {
-            self::dispatch($this->itemId)->delay($item->reply_scheduled_at)->afterCommit();
+            self::dispatch($this->itemId)->onQueue($this->queue)->delay($item->reply_scheduled_at)->afterCommit();
 
             return;
         }

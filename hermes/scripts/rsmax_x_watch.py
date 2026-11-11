@@ -7,10 +7,20 @@ from pathlib import Path
 from urllib.parse import urlencode
 from community_manager import Client, daytime, pending_inbox_order
 
+LANES = {
+    'x': {'twitter'},
+    'tiktok': {'tiktok'},
+    'threads': {'threads'},
+    'api': {'facebook', 'instagram', 'youtube'},
+}
+DISCOVERY_MINUTES = 15
+TIKTOK_MAX_REPLIES = 10
+
 
 def action_available(actions, name):
     action = actions.get(name, {})
-    return action.get('enabled', False) and action.get('left', 0) > 0
+    # Le catalogue compact ne renvoie que les actions activées.
+    return action.get('enabled', True) and action.get('left', 0) > 0
 
 
 def discovery_source(client, account, now):
@@ -21,7 +31,7 @@ def discovery_source(client, account, now):
     if action_available(actions, 'feed.read'):
         sources['feed.read'] = {}
     if queries and action_available(actions, 'search.read'):
-        sources['search.read'] = {'query': queries[(int(now.timestamp()) // 3600) % len(queries)]}
+        sources['search.read'] = {'query': queries[(int(now.timestamp()) // (DISCOVERY_MINUTES * 60)) % len(queries)]}
     if not sources:
         return None
     recent = []
@@ -32,7 +42,7 @@ def discovery_source(client, account, now):
             recent.append((dt.datetime.fromisoformat(last).astimezone(dt.timezone.utc), action))
     if recent:
         at, previous = max(recent)
-        if now.astimezone(dt.timezone.utc) - at < dt.timedelta(hours=1):
+        if now.astimezone(dt.timezone.utc) - at < dt.timedelta(minutes=DISCOVERY_MINUTES):
             return None
         choice = next((action for action in sources if action != previous), previous)
     else:
@@ -44,7 +54,7 @@ def discovery_source(client, account, now):
     return plan
 
 
-def snapshot(client, now=None):
+def snapshot(client, now=None, lane=None):
     now = now or dt.datetime.now(dt.timezone.utc)
     if not daytime(now):
         return {'state': 'sleep'}
@@ -54,8 +64,11 @@ def snapshot(client, now=None):
     work = []
     explorations = []
     x_explorations = []
+    tiktok_explorations = []
     for account in catalog.get('accounts', []):
         platform = account.get('platform')
+        if lane and platform not in LANES[lane]:
+            continue
         api = platform in ('facebook','instagram','threads','youtube')
         if api:
             if account.get('driver') != 'api' or not account.get('api_ready') or not account.get('persona'): continue
@@ -63,17 +76,22 @@ def snapshot(client, now=None):
             continue
         tiktok = account['platform'] == 'tiktok'
         actions, cadence = account.get('actions', {}), account.get('cadence', {})
-        auto_like = tiktok or platform == 'twitter' or (platform == 'facebook' and actions.get('comment.like', {}).get('left',0)>0)
+        facebook_like = platform == 'facebook' and 'comment.like' in actions and actions['comment.like'].get('enabled', True)
+        auto_like = tiktok or platform == 'twitter' or facebook_like
         steps = 2 if auto_like else 1
         can_reply = actions.get('reply', {}).get('enabled', True) and actions.get('reply', {}).get('left', 0) > 0 and (api or tiktok or (actions.get('like', {}).get('enabled', True) and actions.get('like', {}).get('left', 0) > 0))
-        if platform == 'facebook' and 'comment.like' in actions and actions['comment.like'].get('left', 0) < 1:
+        if facebook_like and not action_available(actions, 'comment.like'):
             can_reply = False  # conserver une place au like demandé après la réponse
         can_feed = platform == 'twitter' and actions.get('feed.read', {}).get('left', 0) > 0 and any(actions.get(k, {}).get('enabled', True) and actions.get(k, {}).get('left', 0) > 0 for k in ('like', 'bookmark'))
         can_discover = (platform in ('twitter', 'threads') and account.get('session') == 'connected'
                         and account.get('persona') and action_available(actions, 'thread.read'))
         threads_discovery = can_discover and platform == 'threads' and any(action_available(actions, k) for k in ('like', 'comment'))
         x_discovery = can_discover and platform == 'twitter' and action_available(actions, 'reply')
-        can_feed = can_feed or threads_discovery or x_discovery
+        tiktok_writes = [k for k in ('video.comment', 'video.like', 'comment.like') if action_available(actions, k)]
+        if not action_available(actions, 'video.comments'):
+            tiktok_writes = [k for k in tiktok_writes if k == 'video.like']
+        tiktok_discovery = lane == 'tiktok' and account.get('persona') and action_available(actions, 'feed.read') and tiktok_writes
+        can_feed = can_feed or threads_discovery or x_discovery or tiktok_discovery
         if (not can_reply and not can_feed) or cadence.get('blocked'):
             continue
         required = steps if can_reply else 1  # réponse et like, ou geste de flux
@@ -122,10 +140,25 @@ def snapshot(client, now=None):
             source = discovery_source(client, account, now) if enough else None
             if source:
                 x_explorations.append({'account_id': account['id'], **source, 'reserve_for_inbox': can_reply})
-        inbox = client.api('GET', f"accounts/{account['id']}/inbox?" + urlencode({'order':pending_inbox_order(platform),'limit':20 if platform == 'twitter' else 5,'status':'unanswered','agent_queue':1})) if can_reply else {}
+        if tiktok_discovery:
+            reserve = (steps if can_reply else 0) + int(bool(upcoming))
+            enough = all(value is None or value >= 1 + reserve for value in (cadence.get('remaining'), cadence.get('daily', {}).get('remaining')))
+            if enough:
+                source = discovery_source(client, account, now)
+                if source:
+                    tiktok_explorations.append({'account_id': account['id'], **source, 'write_actions': tiktok_writes})
+        inbox = client.api('GET', f"accounts/{account['id']}/inbox?" + urlencode({'order':pending_inbox_order(platform),'limit':20 if platform in ('twitter', 'tiktok') else 5,'status':'unanswered','agent_queue':1})) if can_reply else {}
         items = [{'id':i['id'], 'content':i['content'], 'posted_at':i.get('posted_at'), 'post_url':i.get('post_url'), 'post_content':i.get('post_content')} for i in inbox.get('items', []) if i.get('can_reply')]
+        if api and lane:
+            items = [{'id': item['id']} for item in items]
         if items or can_feed:
             reply_limit = min(actions['reply']['left'], actions['like']['left']) if platform == 'twitter' and items else (1 if api or tiktok else 0)
+            if api and items and lane:
+                reply_limit = min(5, len(items), actions['reply']['left'])
+                if facebook_like:
+                    reply_limit = min(reply_limit, actions['comment.like']['left'])
+            if tiktok and lane:
+                reply_limit = min(TIKTOK_MAX_REPLIES, len(items), actions.get('reply', {}).get('left', 0))
             work.append({'platform':account['platform'], 'account_id':account['id'], 'strategy':account.get('strategy', {}), 'items':items,
                          'persona':account.get('persona'),'auto_like':auto_like,'executor':'api' if api else 'browser', 'threads_discovery':threads_discovery, 'discovery_plan':discovery_plan, 'remaining':cadence.get('remaining'), 'daily_remaining':cadence.get('daily', {}).get('remaining'), 'batch_max':min(reply_limit, max(1, ((cadence.get('remaining') if cadence.get('remaining') is not None else 11) - (required - (steps if can_reply else 1)))//steps), max(1, ((cadence.get('daily', {}).get('remaining') if cadence.get('daily', {}).get('remaining') is not None else 11) - (1 if upcoming else 0))//steps)), 'next_publication_at':upcoming})
             if discovery_plan:
@@ -136,14 +169,16 @@ def snapshot(client, now=None):
     if any(a.get('executor')=='api' for a in other) and other:
         offset=(int(now.timestamp())//300)%len(other);other=other[offset:]+other[:offset]
     work=discovery_first+browser_first+other
-    return {'state':'work','cycle_key':int(now.timestamp())//300,'accounts':work,'priority_threads':explorations,'priority_x':x_explorations} if work or x_explorations else {'state':'idle'}
+    if lane:
+        work = [a for a in work if a['items'] or a['discovery_plan'] or any(p['account_id'] == a['account_id'] for p in x_explorations + tiktok_explorations)]
+    return {'state':'work','cycle_key':int(now.timestamp())//300,'accounts':work,'priority_threads':explorations,'priority_x':x_explorations,'priority_tiktok':tiktok_explorations} if work or x_explorations or tiktok_explorations else {'state':'idle'}
 
 
-def main():
+def main(lane=None):
     home = Path(os.environ.get('HERMES_HOME', '~/.hermes')).expanduser()
     client = Client(json.loads((home/'community-manager.json').read_text()))
     try:
-        print(json.dumps(snapshot(client), ensure_ascii=False, sort_keys=True, separators=(',', ':')))
+        print(json.dumps(snapshot(client, lane=lane), ensure_ascii=False, sort_keys=True, separators=(',', ':')))
     except (RuntimeError, ValueError, OSError):
         print('{"state":"unreachable","instruction":"Ne pas agir ni répéter une écriture ; vérifier RS-Max."}')
     finally:
@@ -151,4 +186,4 @@ def main():
 
 
 if __name__ == '__main__':
-    main()
+    main('x')

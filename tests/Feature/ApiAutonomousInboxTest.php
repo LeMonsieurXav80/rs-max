@@ -44,6 +44,7 @@ class ApiAutonomousInboxTest extends TestCase
 
     public function test_les_quatre_api_sont_mises_en_file_sans_validation_et_comptees_une_seule_fois(): void
     {
+        config(['queue.inbox_api_queue' => 'community-inbox-api']);
         foreach (['facebook', 'instagram', 'threads', 'youtube'] as $slug) {
             [$account, $item] = $this->fixture($slug);
             $api = \Mockery::mock(PlatformInboxInterface::class);
@@ -54,13 +55,14 @@ class ApiAutonomousInboxTest extends TestCase
             $body = ['context_id' => $context, 'reply_text' => 'Merci beaucoup !', 'dry_run' => false];
             $this->postJson($url, $body)->assertAccepted()->assertJsonPath('validation_required', false);
             $this->postJson($url, $body)->assertAccepted();
+            Queue::assertPushedOn('community-inbox-api', SendAutonomousInboxReply::class, fn ($job) => $job->itemId === $item->id);
             (new SendAutonomousInboxReply($item->id))->handle(app(InboxReplyService::class));
             $this->assertNotNull($item->fresh()->replied_at);
             $this->assertSame(1, AccountActionEvent::where('social_account_id', $account->id)->count());
             $this->assertSame(1, app(AgentCatalog::class)->usedToday($account, 'reply'));
             (new SendAutonomousInboxReply($item->id))->handle(app(InboxReplyService::class));
             if ($slug === 'facebook') {
-                Queue::assertPushed(LikeInboxItem::class, fn ($job) => $job->itemId === $item->id);
+                Queue::assertPushedOn('community-inbox-api', LikeInboxItem::class, fn ($job) => $job->itemId === $item->id);
             }
         }
     }

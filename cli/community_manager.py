@@ -41,8 +41,8 @@ class Client:
         self.db.execute('CREATE TABLE IF NOT EXISTS reports(id TEXT PRIMARY KEY, state TEXT NOT NULL, updated_at TEXT NOT NULL)')
         self.db.commit()
 
-    def api(self, method, path, data=None):
-        cmd = ['curl', '--silent', '--show-error', '--max-time', '125', '--config', '-', '-H', 'Accept: application/json', '-H', 'Content-Type: application/json', '-X', method]
+    def api(self, method, path, data=None, *, timeout=125):
+        cmd = ['curl', '--silent', '--show-error', '--max-time', str(timeout), '--config', '-', '-H', 'Accept: application/json', '-H', 'Content-Type: application/json', '-X', method]
         if data is not None:
             cmd += ['--data-binary', json.dumps(data)]
         cmd += ['--write-out', '\n%{http_code}', self.config['base_url'].rstrip('/') + '/api/community-manager/' + path]
@@ -60,6 +60,25 @@ class Client:
         if not 200 <= int(code) < 300:
             raise ApiError(int(code), result)
         return result
+
+    def reply_status(self, ident, wait_seconds=0):
+        if not wait_seconds:
+            return self.api('GET', f'inbox/{ident}')
+
+        deadline = time.monotonic() + wait_seconds
+        path = f'inbox/{ident}'
+        status = self.api('GET', path, timeout=15)
+        while status.get('status') != 'reply_failed' and not (
+            status.get('replied_at') and (not status.get('like_required') or status.get('liked_at'))
+        ):
+            left = deadline - time.monotonic()
+            if left <= 0:
+                break
+            time.sleep(min(10, left))
+            left = deadline - time.monotonic()
+            if left > 0:
+                status = self.api('GET', path, timeout=min(15, left))
+        return status
 
     def remember(self, ident, state):
         self.db.execute('INSERT INTO attempts VALUES(?,?,?) ON CONFLICT(id) DO UPDATE SET state=excluded.state,updated_at=excluded.updated_at',
@@ -154,7 +173,7 @@ def main(argv=None):
     p = subs.add_parser('logs'); p.add_argument('--account', type=int); p.add_argument('--platform'); p.add_argument('--status'); p.add_argument('--action'); p.add_argument('--limit',type=int,default=20); p.add_argument('--before',type=int)
     p = subs.add_parser('strategy'); p.add_argument('--account', type=int, required=True); p.add_argument('--update-file', type=Path)
     p = subs.add_parser('inbox'); p.add_argument('--account', type=int, required=True); p.add_argument('--pending',action='store_true'); p.add_argument('--limit',type=int,default=10); p.add_argument('--status', choices=['all','unanswered','replied','reply_failed'], default='unanswered')
-    p = subs.add_parser('reply-status'); p.add_argument('id',type=int)
+    p = subs.add_parser('reply-status'); p.add_argument('id',type=int); p.add_argument('--wait',type=int,choices=(0, 60, 120, 150),default=0)
     p = subs.add_parser('verify-reply'); p.add_argument('id',type=int)
     p = subs.add_parser('reconcile-reply'); p.add_argument('id',type=int); proof=p.add_mutually_exclusive_group(required=True); proof.add_argument('--snapshot'); proof.add_argument('--verification-task',type=int); p.add_argument('--commit',action='store_true')
     p = subs.add_parser('review'); p.add_argument('id',type=int); p.add_argument('--reason',choices=['not_relevant','retry_later'],required=True)
@@ -169,7 +188,10 @@ def main(argv=None):
         p = subs.add_parser(name); p.add_argument('--account', type=int, required=True); p.add_argument('--snapshot', required=True); p.add_argument('--commit', action='store_true')
         if name == 'like-comment': p.add_argument('--comment-key', required=True)
         if name == 'comment':
-            p.add_argument('--context', required=True); p.add_argument('--text-file', type=Path, required=True)
+            p.add_argument('--context', required=True)
+            text = p.add_mutually_exclusive_group(required=True)
+            text.add_argument('--text-file', type=Path)
+            text.add_argument('--text')
     p = subs.add_parser('comment-context'); p.add_argument('--account', type=int, required=True); p.add_argument('--snapshot', required=True)
     p = subs.add_parser('comments'); p.add_argument('--account', type=int, required=True); p.add_argument('--url', required=True)
     p = subs.add_parser('discover')
@@ -265,7 +287,7 @@ def main(argv=None):
         }))
     elif args.command == 'review': result = client.api('POST', f'inbox/{args.id}/review', {'reason':args.reason})
     elif args.command == 'inbox-like': result=client.api('POST',f'inbox/{args.id}/like',{'dry_run':not args.commit})
-    elif args.command == 'reply-status': result = client.api('GET', f'inbox/{args.id}')
+    elif args.command == 'reply-status': result = client.reply_status(args.id, args.wait)
     elif args.command == 'verify-reply': result = client.api('POST', f'inbox/{args.id}/verify-reply', {})
     elif args.command == 'reconcile-reply': result = client.api('POST', f'inbox/{args.id}/reconcile', {**({'snapshot_id':args.snapshot} if args.snapshot else {'verification_task_id':args.verification_task}),'dry_run':not args.commit})
     elif args.command == 'reply-contexts':
@@ -287,7 +309,7 @@ def main(argv=None):
     elif args.command == 'scan': result = client.scan(args.account, args.limit)
     elif args.command in ('like', 'like-comment', 'comment'):
         action = {'like': 'video.like', 'like-comment': 'comment.like', 'comment': 'video.comment'}[args.command]
-        text = args.text_file.read_text(encoding='utf-8').strip() if args.command == 'comment' else None
+        text = (args.text_file.read_text(encoding='utf-8') if args.text_file else args.text).strip() if args.command == 'comment' else None
         result = client.action(args.account, action, args.snapshot, args.commit, getattr(args, 'comment_key', None), text, getattr(args, 'context', None))
     elif args.command == 'comment-context': result = client.api('GET', f'accounts/{args.account}/comment-context?' + urlencode({'snapshot_id': args.snapshot}))
     elif args.command == 'comments': result = client.api('POST', 'read', {'account_id': args.account, 'action': 'video.comments', 'url': args.url})

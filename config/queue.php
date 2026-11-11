@@ -14,6 +14,7 @@ return [
     */
 
     'default' => env('QUEUE_CONNECTION', 'database'),
+    'inbox_api_queue' => env('INBOX_API_WORKER', false) ? 'community-inbox-api' : null,
 
     /*
     |--------------------------------------------------------------------------

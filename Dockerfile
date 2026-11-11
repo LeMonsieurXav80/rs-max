@@ -119,5 +119,6 @@ HEALTHCHECK --interval=10s --timeout=5s --start-period=120s --retries=3 \
     CMD curl -f http://localhost:3000/up || exit 1
 
 # Start
+ENV INBOX_API_WORKER=true
 ENTRYPOINT ["/entrypoint.sh"]
 CMD ["/usr/bin/supervisord", "-c", "/etc/supervisor/conf.d/supervisord.conf"]

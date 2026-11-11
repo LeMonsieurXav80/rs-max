@@ -129,11 +129,11 @@ class XWatchTest(unittest.TestCase):
         self.assertTrue(r['priority_threads'][0]['reserve_for_inbox'])
         self.assertTrue(r['accounts'][0]['items'])
 
-    def test_threads_ne_recherche_pas_a_nouveau_avant_une_heure_et_garde_inbox(self):
+    def test_threads_ne_recherche_pas_a_nouveau_avant_quinze_minutes_et_garde_inbox(self):
         a=self.account();a.update(platform='threads',driver='api',api_ready=True,persona=5,strategy={'search_queries':['style']})
         a['actions']['like']['enabled']=True
         a['actions'].update({'search.read':{'enabled':True,'left':2},'thread.read':{'enabled':True,'left':2},'comment':{'enabled':True,'left':2}})
-        c=Mock();c.api.side_effect=[{'daytime':True,'accounts':[a]},{'logs':[]},{'logs':[]},{'logs':[]},{'logs':[{'at':'2026-11-08T11:40:00+00:00'}]},{'items':[{'id':99,'content':'Merci','can_reply':True}]}]
+        c=Mock();c.api.side_effect=[{'daytime':True,'accounts':[a]},{'logs':[]},{'logs':[]},{'logs':[]},{'logs':[{'at':'2026-11-08T11:50:00+00:00'}]},{'items':[{'id':99,'content':'Merci','can_reply':True}]}]
         r=watch.snapshot(c,dt.datetime.fromisoformat('2026-11-08T12:00:00+00:00'))
         self.assertEqual(r['priority_threads'],[]);self.assertFalse(r['accounts'][0]['threads_discovery']);self.assertTrue(r['accounts'][0]['items'])
 
@@ -156,7 +156,7 @@ class XWatchTest(unittest.TestCase):
                 if path=='accounts': return {'daytime':True,'accounts':[a]}
                 if 'action=threads.like' in path: return {'logs':[{'target_url':url,'status':'uncertain'}] if previous_like else []}
                 if 'action=threads.comment' in path: return {'logs':[{'target_url':url,'status':'confirmed','proof':{'confirmed':True},'at':'2026-11-08T11:45:00+00:00'}]}
-                if 'action=agent.search.read' in path: return {'logs':[{'at':'2026-11-08T11:40:00+00:00'}]}
+                if 'action=agent.search.read' in path: return {'logs':[{'at':'2026-11-08T11:50:00+00:00'}]}
                 if path.startswith('logs?'): return {'logs':[]}
                 return {'items':[{'id':99,'content':'Merci','can_reply':True}]}
             c.api.side_effect=api
@@ -170,6 +170,38 @@ class XWatchTest(unittest.TestCase):
             a=self.account();a.update(platform='youtube',driver='api',api_ready=ready,persona=persona)
             c=Mock();c.api.return_value={'daytime':True,'accounts':[a]}
             self.assertEqual(watch.snapshot(c,dt.datetime.fromisoformat('2026-11-08T12:00:00+00:00'))['state'],'idle');self.assertEqual(c.api.call_count,1)
+
+    def test_catalogue_compact_et_decouverte_x_apres_quinze_minutes(self):
+        now = dt.datetime.fromisoformat('2026-11-08T12:00:00+00:00')
+        account = self.account()
+        account.update(persona=5, strategy={'search_queries': ['mode']})
+        account['actions'].update({action: {'kind': 'read', 'left': 10} for action in ('feed.read', 'search.read', 'thread.read')})
+        client = Mock()
+        client.api.side_effect = [
+            {'daytime': True, 'accounts': [account]},
+            {'logs': [{'at': '2026-11-08T11:44:00+00:00'}]},
+            {'logs': []},
+            {'items': []},
+        ]
+        plan = watch.snapshot(client, now, lane='x')['priority_x'][0]
+        self.assertEqual(plan['read_action'], 'search.read')
+        self.assertEqual(plan['fallback']['read_action'], 'feed.read')
+
+    def test_la_file_api_ne_precharge_ni_x_ni_tiktok(self):
+        now = dt.datetime.fromisoformat('2026-11-08T12:00:00+00:00')
+        x = self.account()
+        tiktok = self.account()
+        tiktok.update(id=12, platform='tiktok')
+        instagram = self.account()
+        instagram.update(id=13, platform='instagram', driver='api', api_ready=True, persona=5)
+        items = [{'id': i, 'content': 'Merci', 'can_reply': True} for i in range(5)]
+        client = Mock()
+        client.api.side_effect = [{'daytime': True, 'accounts': [x, tiktok, instagram]}, {'items': items}]
+        result = watch.snapshot(client, now, lane='api')
+        self.assertEqual(client.api.call_count, 2)
+        self.assertEqual([a['platform'] for a in result['accounts']], ['instagram'])
+        self.assertEqual(result['accounts'][0]['batch_max'], 5)
+        self.assertEqual(result['accounts'][0]['items'], [{'id': i} for i in range(5)])
 
 
 class ReportScheduleTest(unittest.TestCase):
