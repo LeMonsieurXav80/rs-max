@@ -2,7 +2,10 @@
 
 namespace App\Services\Agent;
 
+use App\Models\BrowserTask;
 use App\Models\SocialAccount;
+use App\Models\SocialContact;
+use App\Models\XEngagement;
 use App\Services\Inbox\ReplyLanguage;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -40,19 +43,8 @@ class AccountStrategy
             }
         }
 
-        $excluded = [];
-        foreach ($strategy['exclusions'] ?? [] as $value) {
-            if (is_string($value) && preg_match('/^@([a-z0-9_]{1,15})$/iD', trim($value), $match)) {
-                $excluded[strtolower($match[1])] = true;
-            }
-        }
-        foreach ($strategy['target_accounts'] ?? [] as $value) {
-            if (is_string($value) && preg_match('~^(?:https://(?:www\.)?(?:x|twitter)\.com/)?@?([a-z0-9_]{1,15})/?$~iD', trim($value), $match)) {
-                $handle = strtolower($match[1]);
-                if (! isset($excluded[$handle])) {
-                    $queries[] = 'from:'.$handle;
-                }
-            }
+        foreach ($this->xTargetHandles($account) as $handle) {
+            $queries[] = 'from:'.$handle;
         }
 
         $language = $this->xSearchLanguage($account);
@@ -65,6 +57,74 @@ class AccountStrategy
         }
 
         return array_values($distinct);
+    }
+
+    /** @return array{handle:string,source:string}|null */
+    public function xFollowCandidate(SocialAccount $account): ?array
+    {
+        $candidates = array_fill_keys($this->xTargetHandles($account), 'configured');
+        $conversations = XEngagement::where('social_account_id', $account->id)
+            ->where('action', 'reply')->where('status', 'confirmed')->where('requested_at', '>=', now()->subDays(7))
+            ->latest('requested_at')->limit(30)->get(['payload', 'result']);
+        foreach ($conversations as $conversation) {
+            if (($conversation->result['unchanged'] ?? false) === false && ($handle = $conversation->payload['target']['author'] ?? null)) {
+                $candidates[strtolower($handle)] ??= 'conversation';
+            }
+        }
+        $discovered = SocialContact::where('social_account_id', $account->id)->where('source', 'search.read')
+            ->where('last_read_at', '>=', now()->subDays(7))->latest('last_read_at')->limit(30)->pluck('handle');
+        foreach ($discovered as $handle) {
+            $candidates[$handle] ??= 'search';
+        }
+
+        $candidates = array_diff_key($candidates, $this->xExcludedHandles($account), [strtolower((string) $account->browser_username) => true]);
+        $candidates = array_filter($candidates, fn ($handle) => preg_match('/^[a-z0-9_]{1,15}$/D', (string) $handle), ARRAY_FILTER_USE_KEY);
+        if ($candidates === []) {
+            return null;
+        }
+
+        $handles = array_map('strval', array_keys($candidates));
+        $keys = array_combine(array_map(fn ($handle) => hash('sha256', $handle), $handles), $handles);
+        $reserved = XEngagement::where('social_account_id', $account->id)->where('action', 'follow')->where('status', '!=', 'prepared')
+            ->whereIn('target_key', array_keys($keys))->pluck('target_key')->map(fn ($key) => $keys[$key])->all();
+        $following = SocialContact::where('social_account_id', $account->id)->whereIn('handle', $handles)
+            ->whereNotNull('followed_at')->whereNull('unfollowed_at')->pluck('handle')->all();
+        $checked = BrowserTask::where('social_account_id', $account->id)->where('kind', 'x.agent.read')
+            ->where('payload->action', 'profile.read')->whereIn('payload->handle', $handles)
+            ->where('created_at', '>=', now()->subHour())->get(['payload'])->map(fn (BrowserTask $task) => $task->payload['handle'])->all();
+        $eligible = array_diff_key($candidates, array_fill_keys([...$reserved, ...$following, ...$checked], true));
+        $handle = array_key_first($eligible);
+
+        return $handle === null ? null : ['handle' => (string) $handle, 'source' => $eligible[$handle]];
+    }
+
+    private function xExcludedHandles(SocialAccount $account): array
+    {
+        $excluded = [];
+        foreach ($account->agent_strategy['exclusions'] ?? [] as $value) {
+            if (is_string($value) && preg_match('/^@([a-z0-9_]{1,15})$/iD', trim($value), $match)) {
+                $excluded[strtolower($match[1])] = true;
+            }
+        }
+
+        return $excluded;
+    }
+
+    /** @return list<string> */
+    private function xTargetHandles(SocialAccount $account): array
+    {
+        $handles = [];
+        $excluded = $this->xExcludedHandles($account);
+        foreach ($account->agent_strategy['target_accounts'] ?? [] as $value) {
+            if (is_string($value) && preg_match('~^(?:https://(?:www\.)?(?:x|twitter)\.com/)?@?([a-z0-9_]{1,15})/?$~iD', trim($value), $match)) {
+                $handle = strtolower($match[1]);
+                if (! isset($excluded[$handle])) {
+                    $handles[] = $handle;
+                }
+            }
+        }
+
+        return array_values(array_unique($handles));
     }
 
     public function validate(Request $request): array

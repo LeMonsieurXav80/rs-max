@@ -84,6 +84,7 @@ def snapshot(client, now=None, lane=None):
     work = []
     explorations = []
     x_explorations = []
+    x_follows = []
     tiktok_explorations = []
     for account in catalog.get('accounts', []):
         platform = account.get('platform')
@@ -107,11 +108,14 @@ def snapshot(client, now=None, lane=None):
         threads_discovery = can_discover and platform == 'threads' and any(action_available(actions, k) for k in ('like', 'comment'))
         x_writes = [action for action in ('reply', 'like') if action_available(actions, action)]
         x_discovery = can_discover and platform == 'twitter' and bool(x_writes)
+        follow_candidate = account.get('follow_candidate')
+        x_follow = lane == 'x' and platform == 'twitter' and follow_candidate and all(
+            action_available(actions, action) for action in ('profile.read', 'follow'))
         tiktok_writes = [k for k in ('video.comment', 'video.like', 'comment.like') if action_available(actions, k)]
         if not action_available(actions, 'video.comments'):
             tiktok_writes = [k for k in tiktok_writes if k == 'video.like']
         tiktok_discovery = lane == 'tiktok' and account.get('persona') and action_available(actions, 'feed.read') and tiktok_writes
-        can_feed = threads_discovery or x_discovery or tiktok_discovery
+        can_feed = threads_discovery or x_discovery or tiktok_discovery or x_follow
         if (not can_reply and not can_feed) or cadence.get('blocked'):
             continue
         upcoming = account.get('next_publication_at')
@@ -125,7 +129,7 @@ def snapshot(client, now=None, lane=None):
             (cadence.get('remaining'), hourly_reserve),
             (cadence.get('daily', {}).get('remaining'), daily_reserve),
         ) if remaining is not None), default=float('inf'))
-        needed = steps if can_reply and not x_discovery else 1
+        needed = steps if can_reply and not (x_discovery or x_follow) else 1
         if available < needed:
             continue
         next_allowed = cadence.get('next_allowed_at')
@@ -168,15 +172,21 @@ def snapshot(client, now=None, lane=None):
                     tiktok_explorations.append({'account_id': account['id'], **source, 'write_actions': tiktok_writes})
         inbox = client.api('GET', f"accounts/{account['id']}/inbox?" + urlencode({'order':pending_inbox_order(platform),'limit':20 if platform in ('twitter', 'tiktok') else 5,'status':'unanswered','agent_queue':1})) if can_reply else {}
         items = [{'id':i['id'], 'content':i['content'], 'posted_at':i.get('posted_at'), 'post_url':i.get('post_url'), 'post_content':i.get('post_content')} for i in inbox.get('items', []) if i.get('can_reply')]
-        if x_discovery:
+        if x_discovery or x_follow:
             reserve = steps if items else 0
-            writes = [action for action in x_writes if actions[action]['left'] > int(bool(items))]
-            max_writes = min(len(writes), available - reserve)
-            source = discovery_source(client, account, now) if max_writes > 0 else None
-            can_feed = source is not None
-            if source:
-                x_explorations.append({'account_id': account['id'], **source, 'write_actions': writes,
-                                       'max_writes': max_writes, 'reserve_for_inbox': bool(items)})
+            can_feed = False
+            if x_discovery:
+                writes = [action for action in x_writes if actions[action]['left'] > int(bool(items))]
+                max_writes = min(len(writes), available - reserve)
+                source = discovery_source(client, account, now) if max_writes > 0 else None
+                if source:
+                    x_explorations.append({'account_id': account['id'], **source, 'write_actions': writes,
+                                           'max_writes': max_writes, 'reserve_for_inbox': bool(items)})
+                    can_feed = True
+                    reserve += max_writes
+            if x_follow and available - reserve >= 1:
+                x_follows.append({'account_id': account['id'], **follow_candidate})
+                can_feed = True
             if available < steps:
                 items = []
         if api and lane:
@@ -200,9 +210,9 @@ def snapshot(client, now=None, lane=None):
         offset=(int(now.timestamp())//300)%len(other);other=other[offset:]+other[:offset]
     work=discovery_first+browser_first+other
     if lane:
-        work = [a for a in work if a['items'] or a['discovery_plan'] or any(p['account_id'] == a['account_id'] for p in x_explorations + tiktok_explorations)]
+        work = [a for a in work if a['items'] or a['discovery_plan'] or any(p['account_id'] == a['account_id'] for p in x_explorations + x_follows + tiktok_explorations)]
     cycle_seconds = 120 if lane == 'x' else 300
-    return {'state':'work','cycle_key':int(now.timestamp())//cycle_seconds,'accounts':work,'priority_threads':explorations,'priority_x':x_explorations,'priority_tiktok':tiktok_explorations} if work or x_explorations or tiktok_explorations else {'state':'idle'}
+    return {'state':'work','cycle_key':int(now.timestamp())//cycle_seconds,'accounts':work,'priority_threads':explorations,'priority_x':x_explorations,'priority_x_follow':x_follows,'priority_tiktok':tiktok_explorations} if work or x_explorations or x_follows or tiktok_explorations else {'state':'idle'}
 
 
 def main(lane=None):

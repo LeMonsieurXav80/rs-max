@@ -131,6 +131,30 @@ class XWatchTest(unittest.TestCase):
                 else:
                     self.assertEqual(result['priority_x'][0]['max_writes'], expected)
 
+    def test_le_suivi_x_peut_etre_le_seul_geste_du_cycle(self):
+        account = self.account(1)
+        account['actions'] = {'follow': {'left': 1}, 'profile.read': {'left': 4}}
+        account['follow_candidate'] = {'handle': 'atelier', 'source': 'search'}
+        client = Mock()
+        client.api.return_value = {'daytime': True, 'accounts': [account]}
+        now = dt.datetime.fromisoformat('2026-11-07T12:30:00+00:00')
+        result = watch.snapshot(client, now, lane='x')
+        self.assertEqual(result['priority_x_follow'], [{'account_id': 11, 'handle': 'atelier', 'source': 'search'}])
+        self.assertEqual(result['accounts'][0]['items'], [])
+        client.api.assert_called_once()
+
+    def test_un_suivi_x_reserve_la_reponse_et_la_publication_prioritaires(self):
+        account = self.account(3, '2026-11-07T13:00:00+00:00')
+        account['actions'].update({'follow': {'left': 1}, 'profile.read': {'left': 4}})
+        account['follow_candidate'] = {'handle': 'atelier', 'source': 'configured'}
+        client = Mock()
+        client.api.side_effect = lambda method, path: (
+            {'daytime': True, 'accounts': [account]} if path == 'accounts' else {'items': [{'id': 17, 'content': 'Merci', 'can_reply': True}]})
+        now = dt.datetime.fromisoformat('2026-11-07T12:30:00+00:00')
+        self.assertEqual(watch.snapshot(client, now, lane='x')['priority_x_follow'], [])
+        account['cadence']['remaining'] = 4
+        self.assertEqual(len(watch.snapshot(client, now, lane='x')['priority_x_follow']), 1)
+
     def test_x_reprend_apres_la_derniere_recherche_effectuee(self):
         client = Mock()
         account = self.account()

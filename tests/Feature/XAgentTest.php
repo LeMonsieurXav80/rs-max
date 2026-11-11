@@ -473,6 +473,28 @@ class XAgentTest extends TestCase
         $this->postJson('/api/community-manager/x/engagements/'.$e->id.'/execute', ['dry_run' => false])->assertUnprocessable();
     }
 
+    public function test_catalogue_propose_un_profil_eligible_sans_oublier_les_suivis_et_lectures(): void
+    {
+        $this->a->update(['agent_strategy' => [
+            'target_accounts' => ['@owner', '@excluded', 'https://x.com/checked', '@reserved', '@configured'],
+            'exclusions' => ['@EXCLUDED'],
+        ]]);
+        BrowserTask::create(['social_account_id' => $this->a->id, 'profile' => 'nas-test', 'kind' => 'x.agent.read',
+            'payload' => ['action' => 'profile.read', 'handle' => 'checked']]);
+        XEngagement::create(['social_account_id' => $this->a->id, 'target_key' => hash('sha256', 'reserved'),
+            'action' => 'follow', 'status' => 'uncertain', 'payload' => []]);
+        SocialContact::create(['social_account_id' => $this->a->id, 'handle' => 'found', 'source' => 'search.read', 'last_read_at' => now()]);
+        $catalogue = '/api/community-manager/accounts';
+        $this->getJson($catalogue)->assertOk()->assertJsonPath('accounts.0.follow_candidate', ['handle' => 'configured', 'source' => 'configured']);
+        SocialContact::create(['social_account_id' => $this->a->id, 'handle' => 'configured', 'followed_at' => now(),
+            'metadata' => ['follow_source' => 'extension']]);
+        $this->getJson($catalogue)->assertOk()->assertJsonPath('accounts.0.follow_candidate', ['handle' => 'found', 'source' => 'search']);
+        app(AgentCatalog::class)->configure($this->a, 'follow', false, 3);
+        $this->getJson($catalogue)->assertOk()->assertJsonMissingPath('accounts.0.follow_candidate');
+        $this->assertDatabaseCount('account_action_events', 0);
+        $this->assertDatabaseCount('browser_tasks', 1);
+    }
+
     public function test_un_follow_deja_present_ninvente_pas_une_date_de_follow_agent(): void
     {
         $s = $this->snapshot();

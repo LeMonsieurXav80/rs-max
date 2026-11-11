@@ -46,15 +46,26 @@ class CommunityManagerController extends Controller
         }
 
         return response()->json(['daytime' => $this->window->isOpen(), 'window' => $this->window->specification(),
-            'accounts' => $accounts->map(fn ($a) => ['id' => $a->id, 'name' => $a->name, 'platform' => $a->platform->slug,
-                ...($a->platform->slug === 'twitter' ? ['discovery_queries' => $strategies->xDiscoveryQueries($a), 'search_language' => $strategies->xSearchLanguage($a)] : []),
-                'strategy' => $a->agent_strategy ?? (object) [], 'reply_language' => ReplyLanguage::code($a), 'cadence' => app(\App\Services\Agent\AccountActionBudget::class)->usage($a),
-                'next_publication_at' => $this->nextPublicationAt($a),
-                'api_ready' => filled($a->credentials['access_token'] ?? null) || filled($a->credentials['refresh_token'] ?? null),
-                'session' => $a->browser_session_status, 'driver' => $a->driver,
-                'followers_observation' => $a->browser_followers_observation, 'persona' => $a->persona?->is_active ? $a->persona->id : null,
-                'actions' => $this->catalog->forAccount($a)->where('enabled', true)->where('status', 'ready')
-                    ->map(fn ($s) => ['kind' => $s['kind'], 'channel' => $s['channel'], 'left' => $s['left']])])->values()]);
+            'accounts' => $accounts->map(function (SocialAccount $a) use ($strategies) {
+                $actions = $this->catalog->forAccount($a)->where('enabled', true)->where('status', 'ready')
+                    ->map(fn ($s) => ['kind' => $s['kind'], 'channel' => $s['channel'], 'left' => $s['left']]);
+                $x = [];
+                if ($a->platform->slug === 'twitter') {
+                    $x = ['discovery_queries' => $strategies->xDiscoveryQueries($a), 'search_language' => $strategies->xSearchLanguage($a)];
+                    if ($a->usesBrowser() && $a->browser_session_status === 'connected'
+                        && ($actions['follow']['left'] ?? 0) > 0 && ($actions['profile.read']['left'] ?? 0) > 0) {
+                        $x['follow_candidate'] = $strategies->xFollowCandidate($a);
+                    }
+                }
+
+                return ['id' => $a->id, 'name' => $a->name, 'platform' => $a->platform->slug, ...$x,
+                    'strategy' => $a->agent_strategy ?? (object) [], 'reply_language' => ReplyLanguage::code($a), 'cadence' => app(\App\Services\Agent\AccountActionBudget::class)->usage($a),
+                    'next_publication_at' => $this->nextPublicationAt($a),
+                    'api_ready' => filled($a->credentials['access_token'] ?? null) || filled($a->credentials['refresh_token'] ?? null),
+                    'session' => $a->browser_session_status, 'driver' => $a->driver,
+                    'followers_observation' => $a->browser_followers_observation, 'persona' => $a->persona?->is_active ? $a->persona->id : null,
+                    'actions' => $actions];
+            })->values()]);
     }
 
     private function nextPublicationAt(SocialAccount $account): ?string
