@@ -17,7 +17,6 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
-use Symfony\Component\HttpKernel\Exception\HttpExceptionInterface;
 
 class XAssistedController extends Controller
 {
@@ -56,19 +55,8 @@ class XAssistedController extends Controller
     {
         $account = $this->account($request);
         $data = $request->validate(['ids' => 'required|array|min:1|max:12', 'ids.*' => 'string|distinct|regex:/^[0-9]{1,25}$/']);
-        $blocked = [];
-        foreach ($data['ids'] as $id) {
-            try {
-                $engagements->assertReplyAvailable($account, $id);
-            } catch (HttpExceptionInterface $error) {
-                if ($error->getStatusCode() !== 409) {
-                    throw $error;
-                }
-                $blocked[] = $id;
-            }
-        }
 
-        return response()->json(['blocked' => $blocked]);
+        return response()->json(['blocked' => $engagements->blockedReplyIds($account, $data['ids'])]);
     }
 
     public function observations(Request $request, XBrowserStatsService $stats): JsonResponse

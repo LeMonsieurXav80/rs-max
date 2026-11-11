@@ -100,19 +100,42 @@ class XEngagementService
 
     public function assertReplyAvailable(SocialAccount $account, string $tweetId, ?int $ignoreEngagement = null, ?int $ignoreInbox = null): void
     {
-        $old = DB::table('extension_x_replies')->where('social_account_id', $account->id)->where('tweet_id', $tweetId)->where('status', '!=', 'prepared')->exists();
-        $inbox = \App\Models\InboxItem::where('social_account_id', $account->id)->where('external_id', $tweetId)
-            ->when($ignoreInbox, fn ($q) => $q->where('id', '!=', $ignoreInbox))
-            ->where(fn ($q) => $q->whereNotNull('replied_at')->orWhereNotNull('reply_external_id')->orWhereNotNull('reply_scheduled_at')->orWhere('reply_attempts', '>', 0)->orWhereIn('status', ['replied', 'reply_failed']))->exists();
-        $reserved = XEngagement::where('social_account_id', $account->id)->where('action', 'reply')->where('target_key', hash('sha256', $tweetId))
-            ->when($ignoreEngagement, fn ($q) => $q->where('id', '!=', $ignoreEngagement))->where('status', '!=', 'prepared')->exists();
-        $pending = BrowserTask::where('social_account_id', $account->id)->where('kind', 'x.post')->whereIn('status', ['pending', 'running'])
-            ->get()->contains(function ($t) use ($tweetId) {
-                parse_str(parse_url($t->payload['url'] ?? '', PHP_URL_QUERY) ?? '', $query);
+        abort_if($this->blockedReplyIds($account, [$tweetId], $ignoreEngagement, $ignoreInbox), 409,
+            'Une réponse est déjà traitée, réservée ou incertaine pour ce post. Aucun nouvel envoi.');
+    }
 
-                return (string) ($query['in_reply_to'] ?? '') === $tweetId;
-            });
-        abort_if($old || $inbox || $reserved || $pending, 409, 'Une réponse est déjà traitée, réservée ou incertaine pour ce post. Aucun nouvel envoi.');
+    /**
+     * @param  list<string>  $tweetIds
+     * @return list<string>
+     */
+    public function blockedReplyIds(SocialAccount $account, array $tweetIds, ?int $ignoreEngagement = null, ?int $ignoreInbox = null): array
+    {
+        if ($tweetIds === []) {
+            return [];
+        }
+
+        $keys = [];
+        foreach ($tweetIds as $id) {
+            $keys[hash('sha256', $id)] = $id;
+        }
+        $extension = DB::table('extension_x_replies')->where('social_account_id', $account->id)
+            ->whereIn('tweet_id', $tweetIds)->where('status', '!=', 'prepared')->pluck('tweet_id')->all();
+        $inbox = InboxItem::where('social_account_id', $account->id)->whereIn('external_id', $tweetIds)
+            ->when($ignoreInbox, fn ($q) => $q->where('id', '!=', $ignoreInbox))
+            ->where(fn ($q) => $q->whereNotNull('replied_at')->orWhereNotNull('reply_external_id')->orWhereNotNull('reply_scheduled_at')
+                ->orWhere('reply_attempts', '>', 0)->orWhereIn('status', ['replied', 'reply_failed']))
+            ->pluck('external_id')->all();
+        $reservations = XEngagement::where('social_account_id', $account->id)->where('action', 'reply')->whereIn('target_key', array_keys($keys))
+            ->when($ignoreEngagement, fn ($q) => $q->where('id', '!=', $ignoreEngagement))->where('status', '!=', 'prepared')
+            ->pluck('target_key')->map(fn ($key) => $keys[$key])->all();
+        $pending = BrowserTask::where('social_account_id', $account->id)->where('kind', 'x.post')->whereIn('status', ['pending', 'running'])
+            ->get(['payload'])->map(function (BrowserTask $task) {
+                parse_str(parse_url($task->payload['url'] ?? '', PHP_URL_QUERY) ?? '', $query);
+
+                return $query['in_reply_to'] ?? null;
+            })->filter(fn ($id) => is_string($id))->all();
+
+        return array_values(array_intersect($tweetIds, [...$extension, ...$inbox, ...$reservations, ...$pending]));
     }
 
     private function assertAccount(XEngagement $row, SocialAccount $account): void

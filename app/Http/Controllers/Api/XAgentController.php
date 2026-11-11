@@ -53,7 +53,7 @@ class XAgentController extends Controller
         return $s;
     }
 
-    public function read(Request $r, int $id, BrowserTaskQueue $browser)
+    public function read(Request $r, int $id, BrowserTaskQueue $browser, XEngagementService $engagements)
     {
         $a = $this->account($r, $id);
         abort_unless(app(CommunityManagerWindow::class)->isOpen(), 423, 'Community Manager travaille de 06 h à 22 h à Lisbonne.');
@@ -117,9 +117,18 @@ class XAgentController extends Controller
             }
             $c->save();
         }
+        $metadata = [];
+        if (isset($result['items'])) {
+            $ids = array_values(array_unique(array_filter(array_column($result['items'], 'id'), fn ($id) => is_string($id) && ctype_digit($id))));
+            $result['reply_blocked_ids'] = $engagements->blockedReplyIds($a, $ids);
+            $metadata = ['steps' => [[
+                'id' => (string) Str::uuid(), 'stage' => 'agent.x.reply_prefilter',
+                'details' => ['count' => count($result['reply_blocked_ids'])],
+            ]]];
+        }
         \App\Models\BotActionLog::create(['social_account_id' => $a->id, 'action_type' => 'agent.'.$data['action'],
             'source' => AgentCatalog::SOURCE, 'target_uri' => $url, 'target_text' => $data['action'] === 'search.read' ? $data['query'] : null,
-            'success' => true, 'performed_at' => now()]);
+            'success' => true, 'metadata' => $metadata, 'performed_at' => now()]);
 
         return response()->json(['snapshot_id' => $snapshot] + $result);
     }
@@ -157,7 +166,6 @@ class XAgentController extends Controller
             'visible_replies' => array_slice($result['visible_replies'] ?? [], 0, 10), 'replies_complete' => $result['replies_complete'] ?? false,
             'max_length' => min(XReplyDraft::LIMIT, $a->charLimit(XReplyDraft::LIMIT))];
         if ($action === 'reply') {
-            app(XEngagementService::class)->assertReplyAvailable($a, $result['target']['id']);
             $body['persona'] = ['instructions' => $a->persona->system_prompt];
             $body['reply_language'] = ReplyLanguage::code($a);
             if ($evidence = app(\App\Services\Agent\XReplyVault::class)->search($a, filled($targetText) ? $targetText : ($quote ?? ''), $originText)) {

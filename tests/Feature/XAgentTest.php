@@ -5,6 +5,7 @@ namespace Tests\Feature;
 use App\Jobs\VerifyXEngagementReply;
 use App\Models\AccountActionEvent;
 use App\Models\BrowserTask;
+use App\Models\InboxItem;
 use App\Models\Persona;
 use App\Models\Platform;
 use App\Models\SocialAccount;
@@ -16,6 +17,7 @@ use App\Services\Agent\AgentCatalog;
 use App\Services\Browser\BrowserTaskQueue;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Queue;
 use Laravel\Sanctum\Sanctum;
@@ -92,6 +94,49 @@ class XAgentTest extends TestCase
         $this->getJson($this->url('contacts'))->assertOk();
         $this->getJson('/api/community-manager/logs?account_id='.$this->a->id.'&action=agent.search.read')
             ->assertOk()->assertJsonPath('logs.0.text', '#mode');
+        Http::assertNothingSent();
+    }
+
+    public function test_recherche_signale_les_reponses_connues_avant_ouverture_du_fil(): void
+    {
+        $other = SocialAccount::create(['name' => 'Autre compte', 'platform_id' => $this->a->platform_id]);
+        $local = ['social_account_id' => $this->a->id, 'author' => 'visitor',
+            'context_json' => '[]', 'persona_hash' => str_repeat('a', 64), 'reply_text' => 'Merci !'];
+        DB::table('extension_x_replies')->insert([
+            ['tweet_id' => '991', 'status' => 'uncertain'] + $local,
+            ['tweet_id' => '996', 'status' => 'prepared'] + $local,
+            ['tweet_id' => '997', 'status' => 'published', 'social_account_id' => $other->id] + $local,
+        ]);
+        InboxItem::create(['social_account_id' => $this->a->id, 'platform_id' => $this->a->platform_id,
+            'external_id' => '992', 'type' => 'comment', 'status' => 'reply_failed', 'reply_attempts' => 1]);
+        foreach (['993' => ['reply', 'queued'], '995' => ['reply', 'prepared'], '998' => ['like', 'confirmed']] as $id => [$action, $status]) {
+            XEngagement::create(['social_account_id' => $this->a->id, 'target_key' => hash('sha256', (string) $id),
+                'action' => $action, 'status' => $status, 'payload' => []]);
+        }
+        BrowserTask::create(['social_account_id' => $this->a->id, 'profile' => 'nas-test', 'kind' => 'x.post',
+            'payload' => ['url' => 'https://x.com/compose/post?in_reply_to=994']]);
+        BrowserTask::create(['social_account_id' => $this->a->id, 'profile' => 'nas-test', 'kind' => 'x.post',
+            'payload' => ['url' => 'https://x.com/compose/post?quote_tweet_id=999']]);
+
+        $ids = ['994', '991', '992', '993', '995', '996', '997', '998', '999'];
+        $items = array_map(fn ($id) => array_replace($this->target(), [
+            'id' => $id, 'url' => 'https://x.com/visitor/status/'.$id,
+        ]), $ids);
+        $blocked = ['994', '991', '992', '993'];
+        $this->mock(BrowserTaskQueue::class)->shouldReceive('run')->once()->andReturn([
+            'items' => $items, 'observed' => count($items), 'complete' => false,
+        ]);
+        $snapshot = $this->postJson($this->url('read'), ['action' => 'search.read', 'query' => '#mode'])
+            ->assertOk()->assertJsonPath('reply_blocked_ids', $blocked)
+            ->assertJsonCount(count($ids), 'items')->json('snapshot_id');
+        $this->postJson('/api/extension/x/assisted/check', ['ids' => $ids, 'platform_account_id' => '12345', 'username' => 'owner'])
+            ->assertOk()->assertJsonPath('blocked', $blocked);
+        $this->getJson('/api/community-manager/logs?account_id='.$this->a->id.'&action=agent.search.read')
+            ->assertOk()->assertJsonPath('logs.0.steps.0.details.count', count($blocked));
+        $this->postJson($this->url('prepare'), ['action' => 'like', 'snapshot_id' => $snapshot, 'target_id' => '991'])
+            ->assertCreated()->assertJsonPath('status', 'prepared');
+        $this->assertDatabaseCount('account_action_events', 0);
+        $this->assertDatabaseCount('browser_tasks', 2);
         Http::assertNothingSent();
     }
 
