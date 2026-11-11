@@ -214,6 +214,32 @@ class XAgentTest extends TestCase
         $this->assertSame(0, XEngagement::count());
     }
 
+    public function test_x_en_decouverte_utilise_la_citation_de_la_cible_et_non_celle_du_parent(): void
+    {
+        $snapshot = $this->snapshot(true);
+        $key = 'x-agent-snapshot:'.$snapshot;
+        $data = Cache::get($key);
+        $target = array_replace($data['result']['target'], ['text' => '', 'quote' => 'La citation lisible.']);
+        $data['result']['target'] = $target;
+        $data['result']['conversation'] = [
+            ['id' => '900', 'author' => 'owner', 'text' => '', 'quote' => 'Publication citée à l’origine.'],
+            ['id' => '986', 'author' => 'visitor', 'text' => 'Un échange précédent.'],
+            $target,
+        ];
+        Cache::put($key, $data, now()->addHour());
+        $url = $this->url('context').'?snapshot_id='.$snapshot;
+        $this->getJson($url)->assertOk()->assertJsonPath('target.quote', 'La citation lisible.')
+            ->assertJsonPath('conversation.0.quote', 'Publication citée à l’origine.');
+
+        $data['result']['target']['text'] = 'Une réaction.';
+        $data['result']['conversation'][2]['text'] = 'Une réaction.';
+        $data['result']['conversation'][2]['quote'] = null;
+        Cache::put($key, $data, now()->addHour());
+
+        $this->getJson($url)->assertConflict();
+        $this->assertSame(0, XEngagement::count());
+    }
+
     public function test_pas_de_generation_api_ni_reponse_sans_contexte(): void
     {
         $this->postJson($this->url('prepare'), ['action' => 'reply', 'snapshot_id' => $this->snapshot(true), 'target_id' => '987', 'text' => 'Merci'])->assertConflict();

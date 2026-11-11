@@ -185,15 +185,16 @@ class InboxApiTest extends TestCase
         Setting::setEncrypted('openai_api_key', 'fake-key');
         Setting::set('inbox_use_persona', '0');
         Setting::set('inbox_reply_prompt', 'Réponds brièvement.');
+        $this->account->update(['languages' => ['en'], 'agent_strategy' => ['reply_language' => 'fr']]);
         $previous = $this->item(['content' => 'Hello from London', 'reply_content' => 'Welcome!', 'status' => 'replied']);
         $item = $this->item(['parent_id' => $previous->external_id, 'content' => 'Where is this?']);
-        Http::fake(['api.openai.com/*' => Http::response(['choices' => [['message' => ['content' => 'It is in Faro.']]]])]);
+        Http::fake(['api.openai.com/*' => Http::response(['choices' => [['message' => ['content' => 'C’est à Faro.']]]])]);
         $this->postJson('/api/inbox/'.$item->id.'/ai-suggest')->assertOk()
-            ->assertJsonPath('reply_text', 'It is in Faro.')->assertJsonPath('persona.name', 'Caroline');
+            ->assertJsonPath('reply_text', 'C’est à Faro.')->assertJsonPath('persona.name', 'Caroline');
         Http::assertSent(fn ($r) => str_contains($r['messages'][0]['content'], 'Tu es Caroline')
             && str_contains($r['messages'][0]['content'], 'Réponds brièvement.')
             && str_contains($r['messages'][1]['content'], 'Welcome!')
-            && str_contains($r['messages'][1]['content'], 'same language'));
+            && str_contains($r['messages'][0]['content'], 'Rédige en français'));
         $this->assertNull($item->fresh()->reply_content);
     }
 

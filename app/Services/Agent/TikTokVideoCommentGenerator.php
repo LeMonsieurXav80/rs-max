@@ -4,6 +4,7 @@ namespace App\Services\Agent;
 
 use App\Models\Setting;
 use App\Models\SocialAccount;
+use App\Services\Inbox\ReplyLanguage;
 use Illuminate\Support\Facades\Http;
 
 class TikTokVideoCommentGenerator
@@ -17,7 +18,8 @@ class TikTokVideoCommentGenerator
 
         $system = $account->persona->system_prompt."\n\n"
             ."Rédige un commentaire original sous la vidéo d'un autre créateur TikTok, avec la voix de ce persona. "
-            ."Lis la légende et l'ensemble de la discussion fournie ; inspire-toi de ses thèmes et de sa langue sans copier les participants. "
+            ."Lis la légende et l'ensemble de la discussion fournie. Inspire-toi de ses thèmes sans copier les participants. "
+            .ReplyLanguage::instruction($account).' '
             ."La discussion peut couvrir seulement les commentaires accessibles : ne prétends jamais avoir lu ceux que TikTok n'a pas chargés. "
             .'Reste bienveillant, précis et naturel. Ne reprends pas les moqueries, insinuations ou attaques même majoritaires. '
             ."N'invente ni vécu, ni observation visuelle, ni fait absent du contexte. Pas de promotion, pas de réponse à un participant. "

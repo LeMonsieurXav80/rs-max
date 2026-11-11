@@ -79,6 +79,20 @@
                     @enderror
                 </div>
 
+                <div class="mb-5">
+                    <label for="reply-language" class="block text-sm font-medium text-gray-700 mb-1.5">Langue des réponses et commentaires</label>
+                    <select id="reply-language" name="agent_strategy[reply_language]"
+                        class="w-full rounded-lg border-gray-300 text-sm">
+                        <option value="">Première langue du compte (français par défaut)</option>
+                        @foreach(\App\Services\Inbox\ReplyLanguage::LABELS as $code => $label)
+                            <option value="{{ $code }}" @selected(old('agent_strategy.reply_language', $account->agent_strategy['reply_language'] ?? null) === $code)>{{ ucfirst($label) }}</option>
+                        @endforeach
+                    </select>
+                    @error('agent_strategy.reply_language')
+                        <p class="mt-1 text-sm text-red-600">{{ $message }}</p>
+                    @enderror
+                </div>
+
                 @if($account->platform->slug === 'tiktok')
                     <p class="mt-5 text-xs {{ $account->browser_session_status === 'connected' ? 'text-green-600' : 'text-amber-600' }}">
                         @if($account->browser_session_status === 'connected')

@@ -312,7 +312,7 @@ class BlueskyInboxService implements PlatformInboxInterface
             '$type' => 'app.bsky.feed.post',
             'text' => $replyText,
             'createdAt' => now()->toIso8601ZuluString(),
-            'langs' => [$account->languages[0] ?? 'fr'],
+            'langs' => [ReplyLanguage::code($account)],
             'reply' => [
                 'root' => ['uri' => $rootUri, 'cid' => $rootCid],
                 'parent' => ['uri' => $replyUri, 'cid' => $replyCid],

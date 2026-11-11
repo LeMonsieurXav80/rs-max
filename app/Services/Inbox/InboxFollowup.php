@@ -29,6 +29,18 @@ class InboxFollowup
         return filled($item->parent_id) && $item->type !== 'dm';
     }
 
+    public function verifiedXQuote(array $target, array $last): ?string
+    {
+        $quote = $target['quote'] ?? null;
+        if (! is_string($quote) || blank($quote) || ! isset($target['id'], $target['author'])
+            || ($last['id'] ?? null) !== $target['id'] || ($last['author'] ?? null) !== $target['author']
+            || ($last['quote'] ?? null) !== $quote) {
+            return null;
+        }
+
+        return $quote;
+    }
+
     public function isQuestion(?string $content): bool
     {
         $text = preg_replace('~https?://\S+~i', '', trim((string) $content));

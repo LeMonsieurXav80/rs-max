@@ -30,6 +30,10 @@ class AccountStrategyTest extends TestCase
         $path = '/api/community-manager/accounts/'.$a->id.'/strategy';
         $this->withToken($token)->patchJson($path, ['agent_strategy' => ['audience' => 'Public francophone', 'hashtags' => ['#mode'], 'target_accounts' => ['@exemple']], 'agent_hourly_limit' => 2, 'agent_min_interval_seconds' => 60])->assertOk()->assertJsonPath('cadence.limit', 2);
         $this->withToken($token)->patchJson($path, ['agent_strategy' => ['search_queries' => ['tenue du jour']]])->assertOk()->assertJsonPath('strategy.hashtags.0', '#mode');
+        $this->withToken($token)->patchJson($path, ['agent_strategy' => ['reply_language' => 'es']])->assertOk()
+            ->assertJsonPath('reply_language', 'es')->assertJsonPath('strategy.hashtags.0', '#mode');
+        $this->withToken($token)->patchJson($path, ['agent_strategy' => ['reply_language' => 'xx']])->assertUnprocessable();
+        $this->withToken($token)->patchJson($path, ['agent_strategy' => ['reply_language' => null]])->assertOk()->assertJsonPath('reply_language', 'fr');
         $this->withToken($token)->getJson('/api/community-manager/accounts/'.$this->account()->id.'/strategy')->assertNotFound();
         $this->withToken($token)->patchJson($path, ['agent_strategy' => ['credentials' => ['secret']]])->assertUnprocessable();
         $this->withToken($token)->patchJson($path, ['agent_hourly_limit' => -1])->assertUnprocessable();

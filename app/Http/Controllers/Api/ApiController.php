@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Models\SocialAccount;
+use App\Services\Inbox\ReplyLanguage;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 
@@ -45,6 +46,7 @@ class ApiController extends Controller
                 // consultée au bon compte, sans que l'utilisateur ait à le choisir.
                 'platform_account_id' => $a->platform_account_id,
                 'languages' => $a->languages ?? ['fr'],
+                'reply_language' => ReplyLanguage::code($a),
                 'followers_count' => $a->followers_count,
                 'browser_followers_observation' => $a->browser_followers_observation,
             ]);

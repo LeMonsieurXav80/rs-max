@@ -65,3 +65,7 @@ Si un plan `finish_like` apparaît : relire son target_url, terminer uniquement 
 TikTok NAS natif :`input_mode:native` dans le journal. HTTP 200 ou visibilité au seul auteur ne prouvent pas une publication. `verify-reply` exige le reçu public dans un contexte anonyme (`visibility:public`, `verification_source:anonymous_browser`) ; rapprochement exact du CID puis like seul. Service natif indisponible : signaler, aucun repli simulé, aucune remise à zéro d’une tentative. API et persona inchangés, autres réseaux poursuivis.
 
 Avant toute réponse ou commentaire, lire la publication d’origine, sa légende ou sa description et le fil disponible. Si la publication manque ou qu’un média inaccessible est indispensable à la compréhension, passer au suivant. Pour une relance imbriquée, répondre seulement à une question. Ne jamais répondre à un message du compte lui-même.
+
+Rédiger les réponses et les commentaires dans la langue de réponse indiquée par RS-Max, même si la cible écrit dans une autre langue.
+
+Sur X, une relance avec une publication citée lisible dans le contexte serveur peut recevoir une réponse même sans question. Lire le fil et la citation dans `quote`. Répondre à l’auteur de la mention qui cite et utiliser le persona du compte.

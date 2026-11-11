@@ -7,6 +7,7 @@ use App\Models\SocialAccount;
 use App\Services\Agent\AccountActionBudget;
 use App\Services\Agent\AccountStrategy;
 use App\Services\Agent\AgentCatalog;
+use App\Services\Inbox\ReplyLanguage;
 use Illuminate\Http\Request;
 
 class AccountStrategyController extends Controller
@@ -22,7 +23,7 @@ class AccountStrategyController extends Controller
     {
         $a = $this->account($request, $id);
 
-        return response()->json(['account_id' => $a->id, 'platform' => $a->platform->slug, 'strategy' => $a->agent_strategy ?? (object) [],
+        return response()->json(['account_id' => $a->id, 'platform' => $a->platform->slug, 'strategy' => $a->agent_strategy ?? (object) [], 'reply_language' => ReplyLanguage::code($a),
             'cadence' => app(AccountActionBudget::class)->usage($a),
             'hourly_history' => app(AccountActionBudget::class)->history($a),
             'actions' => app(AgentCatalog::class)->forAccount($a)->map(fn ($s) => array_intersect_key($s, array_flip(['label', 'kind', 'channel', 'status', 'enabled', 'daily_limit', 'left'])))]);

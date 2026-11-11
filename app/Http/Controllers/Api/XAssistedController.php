@@ -9,6 +9,7 @@ use App\Services\Agent\AutomationJournal;
 use App\Services\Agent\XEngagementService;
 use App\Services\Agent\XReplyVault;
 use App\Services\Inbox\InboxReplyGenerator;
+use App\Services\Inbox\ReplyLanguage;
 use App\Services\Stats\XBrowserStatsService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -44,6 +45,7 @@ class XAssistedController extends Controller
 
         return response()->json([
             'search_language' => count($languages) === 1 ? $languages[0] : null,
+            'reply_language' => ReplyLanguage::code($account),
             'queries' => array_values($strategy['search_queries'] ?? []),
             'exclusions' => array_values($strategy['exclusions'] ?? []),
         ])->header('Cache-Control', 'no-store, private');
@@ -128,7 +130,7 @@ class XAssistedController extends Controller
             'author' => 'required|string|regex:/^[a-zA-Z0-9_]{1,15}$/',
         ]);
         abort_if(strcasecmp($target['author'], $request->input('username')) === 0, 409, 'Publication du compte lui-même.');
-        $data = $preview->preview($request, $account, $vault, $generator, requireVault: false)->getData(true);
+        $data = $preview->preview($request, $account, $vault, $generator, requireVault: false, filterByStrategy: true)->getData(true);
         $key = Str::uuid()->toString();
         Cache::put('x-assisted-draft:'.$key, [
             'account_id' => $account->id,
@@ -136,6 +138,7 @@ class XAssistedController extends Controller
             'target_id' => $target['target_id'],
             'author' => strtolower($target['author']),
             'persona_hash' => TikTokEngagement::personaHash($account),
+            'reply_language' => ReplyLanguage::code($account),
             'reply_text' => $data['reply_text'],
         ], now()->addMinutes(15));
 
@@ -154,6 +157,8 @@ class XAssistedController extends Controller
             $locked = SocialAccount::with('persona')->lockForUpdate()->findOrFail($account->id);
             abort_unless($locked->persona?->is_active && $draft['persona_hash'] === TikTokEngagement::personaHash($locked),
                 409, 'Persona modifié depuis la préparation du brouillon.');
+            abort_unless(($draft['reply_language'] ?? null) === ReplyLanguage::code($locked),
+                409, 'Langue de réponse modifiée depuis la préparation du brouillon.');
             $engagements->assertReplyAvailable($locked, $draft['target_id']);
             $existing = DB::table('extension_x_replies')->where('social_account_id', $locked->id)->where('tweet_id', $draft['target_id']);
             $attributes = [

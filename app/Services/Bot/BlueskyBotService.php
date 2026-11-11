@@ -8,6 +8,7 @@ use App\Models\Setting;
 use App\Models\SocialAccount;
 use App\Services\Agent\CommentFreshness;
 use App\Services\AiAssistService;
+use App\Services\Inbox\ReplyLanguage;
 use Carbon\Carbon;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Http;
@@ -1032,7 +1033,6 @@ class BlueskyBotService
 
             $postText = $record['text'] ?? '';
             $authorHandle = $post['author']['handle'] ?? null;
-            $postLang = $record['langs'][0] ?? null;
 
             $comment = $this->ai->generateBotComment(
                 $persona,
@@ -1040,7 +1040,7 @@ class BlueskyBotService
                 $postText,
                 $imageUrl,
                 $authorHandle,
-                $postLang
+                ReplyLanguage::code($account)
             );
 
             if (! $comment) {

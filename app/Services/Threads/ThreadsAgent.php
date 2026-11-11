@@ -7,6 +7,7 @@ use App\Models\SocialAccount;
 use App\Services\Agent\AgentCatalog;
 use App\Services\Agent\ApiInboxActions;
 use App\Services\Agent\CommentFreshness;
+use App\Services\Inbox\ReplyLanguage;
 use App\Services\Agent\CommunityManagerWindow;
 use App\Services\Browser\BrowserTaskQueue;
 use Illuminate\Support\Facades\Cache;
@@ -68,7 +69,8 @@ class ThreadsAgent
         Cache::put('threads-context:'.$ctx, ['account_id' => $a->id, 'snapshot_id' => $id, 'persona_hash' => \App\Models\TikTokEngagement::personaHash($a)], now()->addMinutes(15));
 
         return ['context_id' => $ctx, 'target' => $s['result']['target'], 'conversation' => $s['result']['conversation'] ?? [], 'persona' => ['instructions' => $a->persona->system_prompt], 'context_complete' => true, 'discussion_complete' => $s['result']['complete'] ?? false,
-            'instruction' => 'Lire la publication et le fil avant de rédiger. Si un média non consulté est nécessaire à la compréhension, passer au suivant.'];
+            'reply_language' => ReplyLanguage::code($a),
+            'instruction' => 'Lire la publication et le fil avant de rédiger. Si un média non consulté est nécessaire à la compréhension, passer au suivant. '.ReplyLanguage::instruction($a)];
     }
 
     public function submit(SocialAccount $a, array $d): array

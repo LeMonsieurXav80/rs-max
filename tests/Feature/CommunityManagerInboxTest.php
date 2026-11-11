@@ -278,6 +278,52 @@ class CommunityManagerInboxTest extends TestCase
         Http::assertNothingSent();
     }
 
+    public function test_x_une_relance_avec_citation_lisible_peut_etre_envoyee_par_le_worker(): void
+    {
+        $this->travelTo(now()->setDate(2026, 11, 11)->setTime(12, 0));
+        \Illuminate\Support\Facades\Queue::fake();
+        Http::preventStrayRequests();
+        $user = User::factory()->create(['role' => 'manager']);
+        $persona = Persona::create(['name' => 'Persona X', 'system_prompt' => 'Réponse sobre', 'is_active' => true]);
+        $account = SocialAccount::create(['name' => 'Compte X',
+            'platform_id' => Platform::firstOrCreate(['slug' => 'twitter'], ['name' => 'X'])->id, 'driver' => 'browser',
+            'browser_username' => 'owner', 'browser_profile' => 'nas-test', 'persona_id' => $persona->id]);
+        $account->users()->attach($user, ['is_active' => true]);
+        Sanctum::actingAs($user);
+
+        $item = InboxItem::create(['social_account_id' => $account->id, 'platform_id' => $account->platform_id,
+            'type' => 'reply', 'external_id' => '987', 'parent_id' => '986', 'author_username' => 'visitor',
+            'content' => 'Un autre exemple.', 'status' => 'unread', 'posted_at' => now()->subMinute()]);
+        $target = ['id' => '987', 'author' => 'visitor', 'text' => 'Un autre exemple.', 'quote' => 'Le dessin a été publié hier.'];
+        $this->mock(\App\Services\Browser\BrowserTaskQueue::class)->shouldReceive('run')->once()->andReturn([
+            'context_complete' => true, 'target' => $target, 'conversation' => [
+                ['id' => '985', 'author' => 'owner', 'text' => 'Voici la publication.'],
+                ['id' => '986', 'author' => 'visitor', 'text' => 'Voici ma première idée.'],
+                $target,
+            ],
+        ]);
+
+        $path = "/api/community-manager/inbox/{$item->id}";
+        $context = $this->getJson($path.'/context')->assertOk()
+            ->assertJsonPath('followup', true)->assertJsonPath('content', 'Un autre exemple.')
+            ->assertJsonPath('conversation.2.quote', $target['quote'])->assertJsonPath('persona.instructions', 'Réponse sobre')
+            ->json('context_id');
+        $this->postJson($path.'/reply', ['context_id' => $context, 'reply_text' => 'Merci pour cet exemple.', 'dry_run' => false])->assertAccepted();
+
+        $network = \Mockery::mock(\App\Services\Inbox\PlatformInboxInterface::class);
+        $network->shouldReceive('sendReply')->once()->withArgs(fn ($a, $i, $text) =>
+            $a->is($account) && $i->is($item) && $text === 'Merci pour cet exemple.')
+            ->andReturn(['success' => true, 'external_id' => '988']);
+        $this->mock(\App\Services\Inbox\InboxSyncService::class)->shouldReceive('getServiceForAccount')->once()->andReturn($network);
+
+        (new \App\Jobs\SendAutonomousInboxReply($item->id))->handle(app(\App\Services\Inbox\InboxReplyService::class));
+
+        $this->assertSame('replied', $item->fresh()->status);
+        $this->assertSame('988', $item->fresh()->reply_external_id);
+        \Illuminate\Support\Facades\Queue::assertPushed(\App\Jobs\LikeInboxItem::class, fn ($job) => $job->itemId === $item->id);
+        Http::assertNothingSent();
+    }
+
     public function test_x_accepte_uniquement_les_destinataires_de_reponse_avant_le_texte_exact(): void
     {
         $this->travelTo(\Illuminate\Support\Carbon::parse('2026-11-08T14:00:00Z')->setTimezone(config('app.timezone')));

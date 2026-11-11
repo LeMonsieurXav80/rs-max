@@ -58,9 +58,11 @@ class InboxReplyService
 
             $account = $item->socialAccount()->with('platform')->first();
             $policy = app(InboxFollowup::class);
+            $quotedXFollowup = $account->platform->slug === 'twitter' && $account->usesBrowser()
+                && ($item->reply_activity_window['x_quote_verified'] ?? false) === true;
             if ($policy->isOwn($item, $account)
                 || ($item->status === 'ignored' && in_array($item->agent_review_reason, ['x_account_suspended', 'x_post_deleted'], true))
-                || (filled($item->reply_activity_window) && $policy->isNestedReply($item) && ! $policy->isQuestion($item->content))) {
+                || (filled($item->reply_activity_window) && $policy->isNestedReply($item) && ! $quotedXFollowup && ! $policy->isQuestion($item->content))) {
                 if ($scheduled) {
                     $item->update(['reply_scheduled_at' => null, 'reply_content' => null, 'reply_activity_window' => null]);
                 }
@@ -205,12 +207,18 @@ class InboxReplyService
                 return $this->conflict(CommentFreshness::REJECTION);
             }
 
+            $activityWindow = request()->attributes->get('community_manager') ? app(\App\Services\Agent\CommunityManagerWindow::class)->specification() : null;
+            if ($activityWindow && request()->attributes->get('x_quote_verified')) {
+                // Cette preuve vient du contexte serveur, pas du texte de la demande de réponse.
+                $activityWindow['x_quote_verified'] = true;
+            }
+
             $item->update([
                 'reply_content' => $text,
                 'reply_draft' => null,
                 'reply_scheduled_at' => $at,
                 'reply_attempts' => 0,
-                'reply_activity_window' => request()->attributes->get('community_manager') ? app(\App\Services\Agent\CommunityManagerWindow::class)->specification() : null,
+                'reply_activity_window' => $activityWindow,
                 'status' => $item->status === 'reply_failed' ? 'read' : $item->status,
             ]);
 

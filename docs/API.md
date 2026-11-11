@@ -1404,7 +1404,12 @@ CLI : `strategy --account ID [--update-file JSON]`, `inbox --account ID`, `reply
 
 Pour une mission inbox sur un compte API précis, `GET /api/community-manager/accounts/{id}/inbox/contexts?limit=5` renvoie les cibles éligibles avec un seul persona, la publication, les messages précédents et un `context_id` par cible. `limit` accepte 1 à 5. Comptes Facebook, Instagram, Threads et YouTube traités via API. `skipped` indique les cibles écartées et leur motif. La lecture prépare les contextes. Hermès peut rédiger le lot dans une seule passe puis envoyer et vérifier chaque réponse avec les routes individuelles. En CLI, utiliser `reply-contexts --account ID --limit 5`. X et TikTok gardent la lecture individuelle vérifiée par Companion.
 
+La langue des réponses et commentaires se règle sur la fiche du compte ou via `PATCH /api/accounts/{id}/strategy` avec `agent_strategy.reply_language`. La valeur `null` utilise la première langue du compte puis le français. Les contextes Hermès et le catalogue exposent la valeur effective `reply_language`. La langue du message reçu ne change pas ce choix.
+
 ### X — Community Manager par Companion sur le NAS
+
+Une relance X sans question est éligible si le fil vérifié contient une citation lisible sur la cible elle-même. La citation reste dans `quote`. Companion assisté écarte les publications hors ciblage avant de réserver une réponse.
+
 Les routes suivantes existent sous `/api/agent` et `/api/community-manager` (ce dernier exige le jeton dédié et le compte attribué). Aucune API X ni génération IA RS-Max n’est appelée.
 
 | Méthode et chemin après le préfixe | Usage |

@@ -49,11 +49,11 @@ class XAssistedTest extends TestCase
     public function test_assiste_reserve_une_reponse_sans_creer_de_tache_et_bloque_les_doublons(): void
     {
         $platform = Platform::firstOrCreate(['slug' => 'twitter'], ['name' => 'X', 'auth_type' => 'oauth2']);
-        $persona = Persona::create(['name' => 'Réponses', 'system_prompt' => 'Aide sans promotion.', 'is_active' => true]);
+        $persona = Persona::create(['name' => 'Réponses', 'system_prompt' => 'Aide sans promotion. Réponds dans la langue du message.', 'is_active' => true]);
         $owner = User::factory()->create();
         $account = SocialAccount::create(['name' => 'X', 'platform_id' => $platform->id, 'platform_account_id' => '1000',
             'persona_id' => $persona->id, 'driver' => 'api', 'browser_username' => 'owner', 'languages' => ['fr'],
-            'agent_strategy' => ['search_queries' => ['whey lang:fr'], 'exclusions' => ['concours']]]);
+            'agent_strategy' => ['audience' => 'Pratiquants de musculation', 'search_queries' => ['whey lang:fr'], 'exclusions' => ['concours']]]);
         $account->users()->attach($owner, ['is_active' => true]);
         $this->withToken($owner->createToken('extension')->plainTextToken);
         $identity = ['platform_account_id' => '1000', 'username' => 'owner'];
@@ -66,9 +66,19 @@ class XAssistedTest extends TestCase
 
         Setting::setEncrypted('openai_api_key', 'test-key');
         Http::preventStrayRequests();
-        Http::fake(['api.openai.com/*' => Http::response(['choices' => [['message' => ['content' => 'Belle progression !']]]])]);
-        $target = ['target_id' => '4100', 'author' => 'visitor', 'text' => 'Mon record', 'origin' => 'Mon record'] + $identity;
+        Http::fake(['api.openai.com/*' => fn ($request) => Http::response(['choices' => [['message' => [
+            'content' => str_contains($request['messages'][1]['content'], 'parfum')
+                ? '{"pertinent":false}' : '{"pertinent":true,"texte":"Belle progression !"}',
+        ]]]])]);
+        $this->postJson($url.'preview', ['target_id' => '4102', 'author' => 'visitor', 'text' => 'Mon nouveau parfum'] + $identity)
+            ->assertUnprocessable()->assertJsonMissingPath('draft_key');
+        $target = ['target_id' => '4100', 'author' => 'visitor', 'text' => 'New deadlift record', 'origin' => 'Training log'] + $identity;
         $key = $this->postJson($url.'preview', $target)->assertOk()->assertJsonPath('reply_text', 'Belle progression !')->json('draft_key');
+        Http::assertSent(fn ($request) => $request['response_format']['type'] === 'json_object'
+            && str_contains($request['messages'][0]['content'], 'Rédige en français')
+            && str_contains($request['messages'][0]['content'], 'Le ton vient du persona du compte')
+            && ! str_contains($request['messages'][1]['content'], 'proportions similaires')
+            && str_contains($request['messages'][1]['content'], 'Pratiquants de musculation'));
         $this->assertDatabaseCount('extension_x_replies', 0);
         $this->assertDatabaseCount('browser_tasks', 0);
 
