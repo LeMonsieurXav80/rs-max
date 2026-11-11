@@ -5,6 +5,8 @@ Pour le routage des tâches actuelles sur le NAS, le VPS et Chrome local, voir
 
 Depuis Companion 0.18.33, le composeur commun vérifie l’auteur, le texte et le parent immédiat de la réponse dans son fil. Si le fil n’affiche pas encore le parent, Companion relit le permalien dans un nouvel onglet. Une cible qui apparaît seulement comme ancêtre ne suffit pas à confirmer le reçu. Le clic de réponse est unique. Le [patch](../companion/patches/0.18.33-x-parent-immediat.patch) s’applique à Companion 0.18.32.
 
+Companion 0.18.34 attend le rendu de l’onglet Abonnements sur Accueil. Au changement d’onglet, il vérifie la sélection et attend de nouvelles publications avant de lire. Le même parcours sert à Hermès et à la source **Accueil · Abonnements** du lot local. Le [patch](../companion/patches/0.18.34-x-fil-abonnements.patch) s’applique à Companion 0.18.33.
+
 Depuis `https://x.com/notifications/mentions`, choisir l’action X, le compte RS-Max
 si nécessaire, le mode aperçu ou publication, et un seul maximum (10 par défaut,
 1–100). Cadence : 3–8 s avant like, 8–20 s entre like et réponse, 25–75 s entre

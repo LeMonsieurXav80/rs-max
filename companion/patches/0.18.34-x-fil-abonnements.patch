@@ -1,0 +1,409 @@
+diff --git a/manifest.json b/manifest.json
+--- a/manifest.json
++++ b/manifest.json
+@@ -1,7 +1,7 @@
+ {
+   "manifest_version": 3,
+   "name": "RS-Max Companion",
+-  "version": "0.18.33",
++  "version": "0.18.34",
+   "description": "Actions assistees sur les reseaux sociaux (engagement, publication) avec remontee vers l'API RS-Max.",
+   "permissions": [
+     "storage",
+diff --git a/x/dom.js b/x/dom.js
+--- a/x/dom.js
++++ b/x/dom.js
+@@ -17,6 +17,51 @@
+   };
+   const main=()=>document.querySelector('[data-testid="primaryColumn"],main')||document;
+   const articles=()=>[...main().querySelectorAll('article')].filter(a=>visible(a)&&!a.parentElement?.closest('article')&&!a.closest('[role="dialog"]'));
++  const feedLabels = {
++    following: /^(following|abonnements|abonnés?)$/i,
++    foryou: /^(for you|pour vous)$/i
++  };
++  function feedTab(feed) {
++    const label = feedLabels[feed];
++    const tabs = [...document.querySelectorAll('[role="tab"]')].filter(tab =>
++      visible(tab) && !tab.closest('[role="dialog"]') &&
++      (label.test(text(tab)) || label.test(tab.getAttribute('aria-label') || '')));
++    return tabs.length === 1 ? tabs[0] : null;
++  }
++  const feedSelected = feed => feedTab(feed)?.getAttribute('aria-selected') === 'true';
++  async function waitForFeed(check, guard) {
++    const deadline = Date.now() + 12000;
++    do {
++      guard();
++      const value = check();
++      if (value) return value;
++      await new Promise(resolve => setTimeout(resolve, 200));
++    } while (Date.now() < deadline);
++    guard();
++    return check();
++  }
++  async function openFeed(feed, guard) {
++    const label = feed === 'following' ? 'Abonnements' : 'Pour vous';
++    const checkPage = () => {
++      guard();
++      if (location.origin !== 'https://x.com' || location.pathname !== '/home') {
++        throw Error('La page du fil X a changé.');
++      }
++    };
++    const tab = await waitForFeed(() => feedTab(feed), checkPage);
++    if (!tab) throw Error(`Onglet ${label} introuvable.`);
++    checkPage();
++    if (tab.getAttribute('aria-selected') === 'true') return;
++    const previous = new Set(articles().map(article => primary(article)?.id).filter(Boolean));
++    tab.click();
++    const loaded = await waitForFeed(() => feedSelected(feed) && (
++      !previous.size || articles().some(article => {
++        const id = primary(article)?.id;
++        return id && !previous.has(id);
++      })
++    ), checkPage);
++    if (!loaded) throw Error(`Le fil ${label} ne s’est pas chargé.`);
++  }
+   const bodies=a=>[...a.querySelectorAll('[data-testid="tweetText"],div[dir="auto"].whitespace-pre-wrap')].filter(n=>own(n,a));
+   function canonical(href){
+     try{const u=new URL(href,location.origin),m=u.pathname.match(/^\/([a-zA-Z0-9_]{1,15})\/status\/(\d+)$/);return u.hostname==='x.com'&&m?{id:m[2],author:m[1].toLowerCase(),url:u.origin+u.pathname}:null;}catch{return null;}
+@@ -140,5 +185,5 @@
+     const nodes=[...document.querySelectorAll('[role="menuitem"]')].filter(n=>visible(n)&&labels[action]?.test(text(n)));
+     return nodes.length===1?nodes[0]:null;
+   }
+-  window.RSXDom={visible,text,own,main,articles,bodies,primary,canonical,control,state,metric,snapshot,fields,fill,submit,profile,followControl,unfollowConfirm,menuControl};
++  window.RSXDom={visible,text,own,main,articles,bodies,primary,canonical,control,state,metric,snapshot,openFeed,feedSelected,fields,fill,submit,profile,followControl,unfollowConfirm,menuControl};
+ })();
+diff --git a/x/agent.js b/x/agent.js
+--- a/x/agent.js
++++ b/x/agent.js
+@@ -94,11 +94,18 @@
+   async function read(p) {
+     await wait(()=>M()?.identity(),20000);guard(p);window.RSXLimits?.assert();
+     if(p.action==='profile.read') { await wait(()=>{try{return window.RSXDom ? window.RSXDom.profile(p.handle) : document.querySelector('[data-testid="UserName"]');}catch{return null;}});return result({profile:profile(p)}); }
+-    if(p.feed==='following') {
+-      const tab=q(document,'[role="tab"]').find(n=>/^(Following|Abonnements|Abonné)$/i.test(text(n)));
+-      if(!tab) throw Error('Onglet Abonnements introuvable.');
+-      if(tab.getAttribute('aria-selected')!=='true') {tab.click();await sleep(1500);}
+-    }
++    const feed = p.action === 'feed.read' ? p.feed || 'foryou' : null;
++    const guardFeed = () => {
++      guard(p);
++      window.RSXLimits?.assert();
++      if (feed && (location.pathname !== '/home' || !window.RSXDom.feedSelected(feed))) {
++        throw Error('Le fil X a changé pendant la lecture.');
++      }
++    };
++    if (feed) await window.RSXDom.openFeed(feed, () => {
++      guard(p);
++      window.RSXLimits?.assert();
++    });
+     if(p.action==='thread.read') {
+       const id=String(p.target_id);
+       const ready = await wait(() => {
+@@ -121,14 +128,14 @@
+         }
+       }}));
+     }
+-    await wait(()=>articles().length,20000);guard(p);
++    await wait(()=>articles().length,20000);guardFeed();
+     const found=new Map(),limit=Math.min(30,Math.max(1,Number(p.limit)||10));
+     for(let screen=0;screen<Math.min(5,Number(p.screens)||2);screen++){
+       for(const a of articles()){const s=snapshot(a);if(s)found.set(s.id,s);}
+       if(found.size>=limit) break;
+-      window.scrollBy(0,innerHeight*1.4);await sleep(1000);guard(p);
+-    }
+-    return result({items:[...found.values()].slice(0,limit),complete:false,observed:Math.min(found.size,limit)});
++      window.scrollBy(0,innerHeight*1.4);await sleep(1000);guardFeed();
++    }
++    return result({items:[...found.values()].slice(0,limit),complete:false,observed:Math.min(found.size,limit),...(feed ? {feed} : {})});
+   }
+   function composerTargets(p,field) {
+     const dialog=field?.closest('[role="dialog"]');
+diff --git a/x/batch-plan.js b/x/batch-plan.js
+--- a/x/batch-plan.js
++++ b/x/batch-plan.js
+@@ -28,7 +28,7 @@
+     };
+   }
+   function source(value, current, context) {
+-    if (value === 'home') return new URL('https://x.com/home');
++    if (value === 'home' || value === 'following') return new URL('https://x.com/home');
+     if (value === 'current' && current.pathname === '/search' && current.searchParams.get('q')) {
+       return new URL(latest(current.searchParams.get('q')));
+     }
+diff --git a/x/batch.js b/x/batch.js
+--- a/x/batch.js
++++ b/x/batch.js
+@@ -22,7 +22,7 @@
+   async function sources() {
+     const owner = await identity(R);
+     const context = await contextFor(owner);
+-    const options = [{value:'home', label:'Accueil · Pour vous'}];
++    const options = [{value:'home', label:'Accueil · Pour vous'}, {value:'following', label:'Accueil · Abonnements'}];
+     if (new URL(location.href).pathname === '/search') options.unshift({value:'current', label:'Recherche X ouverte · Derniers'});
+     return options.concat(context.queries.map(query => ({value:'query:'+query, label:query})));
+   }
+@@ -37,44 +37,27 @@
+     return {reason};
+   }
+ 
+-  const forYou = () => [...document.querySelectorAll('[role="tab"]')]
+-    .find(tab => /^(pour vous|for you)$/i.test(D.text(tab).trim()));
+-
+-  function ensure(ctx, owner, page, requireFeed = false) {
++  function ensure(ctx, owner, page, feed = null) {
+     if (ctx.stopped) throw Object.assign(Error('Arrêt demandé.'), {name:'AbortError'});
+     if (M.identity()?.username !== owner.username || !P.sameList(new URL(location.href), page)) {
+       throw Error('Compte X ou source du lot modifié.');
+     }
+-    if (requireFeed && page.pathname === '/home' && forYou()?.getAttribute('aria-selected') !== 'true') {
+-      throw Error('Le flux Pour vous a changé.');
++    if (feed && page.pathname === '/home' && !D.feedSelected(feed)) {
++      throw Error('Le fil X a changé pendant le lot.');
+     }
+     window.RSXLimits?.assert();
+   }
+ 
+-  async function selectFeed(ctx, owner, page) {
+-    if (page.pathname !== '/home') return;
+-    const tab = await ctx.waitFor(forYou, {timeout:12000});
+-    ensure(ctx, owner, page);
+-    if (!tab) throw Error('Onglet Pour vous introuvable.');
+-    if (tab.getAttribute('aria-selected') === 'true') return;
+-    const previous = new Set(D.articles());
+-    tab.click();
+-    if (!await ctx.waitFor(() => ctx.stopped || (forYou()?.getAttribute('aria-selected') === 'true' &&
+-        (!previous.size || D.articles().some(article => !previous.has(article)))), {timeout:10000})) {
+-      throw Error('Le flux Pour vous ne s’est pas ouvert.');
+-    }
+-  }
+-
+-  async function collect(ctx, owner, page, context, plan) {
++  async function collect(ctx, owner, page, context, plan, feed) {
+     const found = new Map();
+     const read = () => D.articles().map(D.snapshot).filter(Boolean);
+     const targetCount = Math.min(300, Math.max(24, plan.params.limitMax * 3));
+-    await selectFeed(ctx, owner, page);
++    if (page.pathname === '/home') await D.openFeed(feed, () => ensure(ctx, owner, page));
+     window.scrollTo({top:0, behavior:'instant'});
+     await ctx.waitFor(() => ctx.stopped || read().length, {timeout:12000});
+     let quiet = 0;
+     for (let screen = 0; screen < 25 && quiet < 3; screen++) {
+-      ensure(ctx, owner, page, true);
++      ensure(ctx, owner, page, feed);
+       const size = found.size;
+       const posts = read();
+       for (const post of posts) {
+@@ -113,7 +96,8 @@
+         return {reason:'Le lot reprend après le chargement de la source.'};
+       }
+       ctx.log(`@${owner.username} · ${plan.params.limitMax} publications et ${plan.actionLimit} actions maximum.`);
+-      const candidates = await collect(ctx, owner, page, context, plan);
++      const feed = plan.params.source === 'following' ? 'following' : 'foryou';
++      const candidates = await collect(ctx, owner, page, context, plan, feed);
+       ctx.log(`${candidates.length} publication(s) retenue(s), de la plus récente à la plus ancienne.`);
+       if (plan.params.stats && !ctx.stopped) {
+         try { await syncStats(ctx, owner); }
+@@ -123,7 +107,7 @@
+       const counts = {like:0, reply:0, repost:0};
+       for (const target of candidates) {
+         if (posts >= plan.params.limitMax || used >= plan.actionLimit) break;
+-        ensure(ctx, owner, page, true);
++        ensure(ctx, owner, page, feed);
+         if (plan.actions.every(action => (action === 'like' && target.liked === true) ||
+           (action === 'repost' && target.reposted === true))) continue;
+         ctx.log(`Lecture de @${target.author} · ${target.id}`);
+diff --git a/tests/x-batch.test.cjs b/tests/x-batch.test.cjs
+--- a/tests/x-batch.test.cjs
++++ b/tests/x-batch.test.cjs
+@@ -181,9 +181,12 @@
+   assert.deepEqual(data.acts, []);
+ });
+ 
+-test('le panneau part des plus récentes et s’arrête au nombre de publications', async () => {
++for (const [label, url, selection, feed] of [
++  ['recherche', 'https://x.com/search?q=whey%20lang%3Afr&f=live', 'current', null],
++  ['abonnements', 'https://x.com/home', 'following', 'following'],
++]) test(`le panneau traite les publications récentes de la source ${label}`, async () => {
+   const calls = [];
+-  const url = 'https://x.com/search?q=whey%20lang%3Afr&f=live';
++  const openedFeeds = [];
+   const post = (id, days, text) => ({...target, id, text, published_at:new Date(Date.now() - days * 86400000).toISOString()});
+   const posts = [post('1', 3, 'Ancien'), post('2', 0, 'Récent'), post('3', 1, 'Hier'), post('4', 0, 'Code promo')];
+   let recipe;
+@@ -198,18 +201,23 @@
+       calls.push({id:msg.target.id, remaining:msg.remaining});
+       return {ok:true, data:{used:1, events:[{action:'like', confirmed:true}], abort:false}};
+     }}},
+-    RSMAX:{register:module => { recipe = module.recipes[0]; }},
+-    RSXDom:{articles:() => posts, snapshot:post => post},
++    RSMAX:{register:module => { recipe = module.recipes[0]; }, waitFor:async read => read()},
++    RSXDom:{articles:() => posts, snapshot:post => post,
++      openFeed:async (selected, guard) => { guard(); openedFeeds.push(selected); },
++      feedSelected:selected => openedFeeds.includes(selected)},
+     RSXMentions:{identity:() => ({username:'cyril'})},
+     scrollTo() {}, scrollBy() {}, innerHeight:800
+   };
+   sandbox.window = sandbox;
+   vm.runInNewContext(source('batch-plan')+'\n'+source('batch'), sandbox);
++  const options = await recipe.params.find(param => param.key === 'source').load();
++  assert.ok(options.some(option => option.value === 'following'));
+   const result = await recipe.run({
+-    params:{...params, source:'current', reply:false, repost:false},
++    params:{...params, source:selection, reply:false, repost:false},
+     signal:new AbortController().signal, speed:'fast', stopped:false,
+     waitFor:async read => read(), log() {}, report() {}
+   });
+   assert.deepEqual(calls, [{id:'2', remaining:2}, {id:'3', remaining:1}]);
+   assert.equal(result.incomplete, false);
+-});
++  assert.deepEqual(openedFeeds, feed ? [feed] : []);
++});
+diff --git a/tests/e2e/x-reply-proof.cjs b/tests/e2e/x-reply-proof.cjs
+--- a/tests/e2e/x-reply-proof.cjs
++++ b/tests/e2e/x-reply-proof.cjs
+@@ -12,12 +12,30 @@
+   throw Error('Copie sans configuration privée et dossier de test requis.');
+ }
+ 
++const version = JSON.parse(fs.readFileSync(path.join(root, 'manifest.json'))).version;
+ const profileLink = '<a data-testid="AppTabBar_Profile_Link" href="/account">Profil</a>';
+ const replyText = 'Merci pour la précision !';
+ const post = (id, author, text, parent = '') =>
+   `<article data-testid="tweet"><a href="/${author}/status/${id}"><time>11 h</time></a>
+   ${parent ? `<div data-testid="replyingTo">En réponse à <a href="${parent}">@parent</a></div>` : ''}
+   <div data-testid="tweetText">${text}</div></article>`;
++
++const home = `<!doctype html><html lang="fr"><meta charset="utf-8">${profileLink}<main>
++  <nav></nav>${post('101', 'visitor', 'Pour vous')}</main><script>
++  setTimeout(() => {
++    document.querySelector('nav').innerHTML =
++      '<div role="tab" aria-selected="true">Pour vous</div><div role="tab" aria-selected="false">Abonné</div>';
++    const [forYou, following] = document.querySelectorAll('[role="tab"]');
++    following.onclick = () => {
++      forYou.setAttribute('aria-selected','false');
++      following.setAttribute('aria-selected','true');
++      setTimeout(() => {
++        document.querySelector('article a').href = '/visitor/status/102';
++        document.querySelector('[data-testid="tweetText"]').textContent = 'Abonnements';
++      }, 1800);
++    };
++  }, 600);
++  </script></html>`;
+ 
+ const composer = `<!doctype html><html lang="fr"><meta charset="utf-8">${profileLink}<main>
+   <textarea aria-label="Postez votre réponse"></textarea>
+@@ -48,6 +66,10 @@
+       return;
+     }
+     response.setHeader('Content-Type', 'text/html; charset=utf-8');
++    if (url.pathname === '/home') {
++      response.end(home);
++      return;
++    }
+     if (url.pathname === '/compose/post') {
+       response.end(composer);
+       return;
+@@ -77,7 +99,7 @@
+         '--no-proxy-server', '--ignore-certificate-errors', '--disable-quic']
+     });
+     const worker = ctx.serviceWorkers()[0] || await ctx.waitForEvent('serviceworker');
+-    assert.equal(await worker.evaluate(() => chrome.runtime.getManifest().version), '0.18.33');
++    assert.equal(await worker.evaluate(() => chrome.runtime.getManifest().version), version);
+     const page = ctx.pages()[0] || await ctx.newPage();
+ 
+     async function verify(parent, lateParent) {
+@@ -116,6 +138,20 @@
+     assert.equal(reads, 1);
+     assert.equal(clicks, 1);
+     console.log('Chromium : parent tardif confirmé, ancêtre incorrect refusé, un clic simulé par réponse.');
++
++    await page.goto('https://x.com/home');
++    await page.bringToFront();
++    const feed = await worker.evaluate(async () => {
++      const tab = (await chrome.tabs.query({active:true})).find(tab => tab.url === 'https://x.com/home');
++      return askPage(tab.id, {kind:'x.agent.read', payload:{action:'feed.read', feed:'following',
++        username:'account', limit:1, screens:1}});
++    });
++    assert.equal(feed.status, 'done', JSON.stringify(feed));
++    assert.equal(feed.result.feed, 'following');
++    assert.deepEqual(feed.result.items.map(item => item.id), ['102']);
++    assert.equal(clicks, 1);
++    console.log('Chromium : onglet Abonnements tardif et ancien fil écarté malgré le DOM réutilisé.');
++
+   } finally {
+     await ctx?.close();
+     await new Promise(resolve => server.close(resolve));
+diff --git a/tests/x-feed.test.cjs b/tests/x-feed.test.cjs
+new file mode 100644
+--- /dev/null
++++ b/tests/x-feed.test.cjs
+@@ -0,0 +1,69 @@
++const assert = require('node:assert/strict');
++const {readFileSync} = require('node:fs');
++const {join} = require('node:path');
++const {test} = require('node:test');
++const {JSDOM} = require('jsdom');
++
++const article = id => `<article><a href="/visitor/status/${id}"><time datetime="2026-11-11T10:00:00Z">1 h</time></a>
++  <div data-testid="tweetText">Une publication</div></article>`;
++
++function fixture() {
++  const dom = new JSDOM(`<main><nav></nav>${article('101')}</main>`, {
++    url:'https://x.com/home', runScripts:'outside-only', pretendToBeVisual:true
++  });
++  const w = dom.window;
++  w.HTMLElement.prototype.getClientRects = () => [{}];
++  w.scrollTo = () => {};
++  w.scrollBy = () => {};
++  w.RSXMentions = {identity:() => ({username:'owner'})};
++  w.RSXLimits = {assert() {}};
++  w.RSMAX = {};
++  for (const name of ['dom', 'agent']) {
++    w.eval(readFileSync(join(__dirname, '../x', name+'.js'), 'utf8'));
++  }
++  return {dom, w, nav:w.document.querySelector('nav'), read:feed =>
++    w.RSXAgent.run('x.agent.read', {action:'feed.read', feed, username:'owner', limit:1, screens:1})};
++}
++
++test('X attend que l’onglet Abonnements soit monté après l’identité', async () => {
++  const f = fixture();
++  try {
++    f.w.setTimeout(() => { f.nav.innerHTML = '<div role="tab" aria-selected="true">Abonné</div>'; }, 300);
++    const result = await f.read('following');
++    assert.equal(result.status, 'done', JSON.stringify(result));
++    assert.equal(result.result.feed, 'following');
++    assert.equal(result.result.items[0].id, '101');
++  } finally { f.dom.window.close(); }
++});
++
++test('X attend les nouvelles publications même si l’onglet change avant le fil', async () => {
++  const f = fixture();
++  try {
++    f.nav.innerHTML = '<div role="tab" aria-selected="true">Pour vous</div><div role="tab" aria-selected="false">Abonnements</div>';
++    const [forYou, following] = f.nav.children;
++    let clicks = 0;
++    following.onclick = () => {
++      clicks++;
++      forYou.setAttribute('aria-selected', 'false');
++      following.setAttribute('aria-selected', 'true');
++      f.w.setTimeout(() => {
++        f.w.document.querySelector('article a').href = '/visitor/status/102';
++      }, 1600);
++    };
++    const result = await f.read('following');
++    assert.equal(result.status, 'done', JSON.stringify(result));
++    assert.equal(result.result.items[0].id, '102');
++    assert.equal(clicks, 1);
++  } finally { f.dom.window.close(); }
++});
++
++test('X abandonne une lecture si la page quitte Accueil pendant le chargement', async () => {
++  const f = fixture();
++  try {
++    f.w.setTimeout(() => f.w.history.replaceState({}, '', '/search?q=exemple'), 50);
++    const result = await f.read('following');
++    assert.equal(result.status, 'failed');
++    assert.match(result.error, /page du fil X a changé/);
++    assert.equal(result.result.items, undefined);
++  } finally { f.dom.window.close(); }
++});
