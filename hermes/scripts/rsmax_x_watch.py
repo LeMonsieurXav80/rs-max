@@ -109,14 +109,19 @@ def snapshot(client, now=None, lane=None):
         can_feed = threads_discovery or x_discovery or tiktok_discovery
         if (not can_reply and not can_feed) or cadence.get('blocked'):
             continue
-        required = steps if can_reply else 1  # réponse et like, ou geste de flux
         upcoming = account.get('next_publication_at')
-        if (not api or threads_discovery) and upcoming and now - dt.timedelta(minutes=5) <= dt.datetime.fromisoformat(upcoming).astimezone(dt.timezone.utc) <= now + dt.timedelta(minutes=5):
+        scheduled = dt.datetime.fromisoformat(upcoming) if upcoming else None
+        if (not api or threads_discovery) and scheduled and abs(scheduled - now) <= dt.timedelta(minutes=5):
             continue  # laisser le navigateur libre autour de la publication
-        if upcoming and dt.datetime.fromisoformat(upcoming).astimezone(dt.timezone.utc) <= now.astimezone(dt.timezone.utc) + dt.timedelta(hours=1):
-            required += 1  # laisser une place à la publication planifiée
-        daily_required = (steps if can_reply else 1) + (1 if upcoming else 0)
-        if (cadence.get('remaining') is not None and cadence['remaining'] < required) or (cadence.get('daily', {}).get('remaining') is not None and cadence['daily']['remaining'] < daily_required):
+
+        hourly_reserve = int(bool(scheduled and scheduled <= now + dt.timedelta(hours=1)))
+        daily_reserve = int(bool(scheduled))
+        available = min((remaining - reserve for remaining, reserve in (
+            (cadence.get('remaining'), hourly_reserve),
+            (cadence.get('daily', {}).get('remaining'), daily_reserve),
+        ) if remaining is not None), default=float('inf'))
+        needed = steps if can_reply and not x_discovery else 1
+        if available < needed:
             continue
         next_allowed = cadence.get('next_allowed_at')
         if next_allowed and dt.datetime.fromisoformat(next_allowed).astimezone(dt.timezone.utc) > now.astimezone(dt.timezone.utc):
@@ -149,14 +154,6 @@ def snapshot(client, now=None, lane=None):
             can_feed = threads_discovery
             if not can_reply and not can_feed:
                 continue
-        if x_discovery:
-            reserve = (steps if can_reply else 0) + int(bool(upcoming))
-            enough = all(value is None or value >= 1 + reserve for value in (cadence.get('remaining'), cadence.get('daily', {}).get('remaining')))
-            source = discovery_source(client, account, now) if enough else None
-            can_feed = source is not None
-            if source:
-                x_explorations.append({'account_id': account['id'], **source, 'write_actions': x_writes,
-                                       'reserve_for_inbox': can_reply})
         if tiktok_discovery:
             reserve = (steps if can_reply else 0) + int(bool(upcoming))
             enough = all(value is None or value >= 1 + reserve for value in (cadence.get('remaining'), cadence.get('daily', {}).get('remaining')))
@@ -166,6 +163,17 @@ def snapshot(client, now=None, lane=None):
                     tiktok_explorations.append({'account_id': account['id'], **source, 'write_actions': tiktok_writes})
         inbox = client.api('GET', f"accounts/{account['id']}/inbox?" + urlencode({'order':pending_inbox_order(platform),'limit':20 if platform in ('twitter', 'tiktok') else 5,'status':'unanswered','agent_queue':1})) if can_reply else {}
         items = [{'id':i['id'], 'content':i['content'], 'posted_at':i.get('posted_at'), 'post_url':i.get('post_url'), 'post_content':i.get('post_content')} for i in inbox.get('items', []) if i.get('can_reply')]
+        if x_discovery:
+            reserve = steps if items else 0
+            writes = [action for action in x_writes if actions[action]['left'] > int(bool(items))]
+            max_writes = min(len(writes), available - reserve)
+            source = discovery_source(client, account, now) if max_writes > 0 else None
+            can_feed = source is not None
+            if source:
+                x_explorations.append({'account_id': account['id'], **source, 'write_actions': writes,
+                                       'max_writes': max_writes, 'reserve_for_inbox': bool(items)})
+            if available < steps:
+                items = []
         if api and lane:
             items = [{'id': item['id']} for item in items]
         if items or can_feed:
@@ -177,7 +185,7 @@ def snapshot(client, now=None, lane=None):
             if tiktok and lane:
                 reply_limit = min(TIKTOK_MAX_REPLIES, len(items), actions.get('reply', {}).get('left', 0))
             work.append({'platform':account['platform'], 'account_id':account['id'], 'strategy':account.get('strategy', {}), 'items':items,
-                         'persona':account.get('persona'),'auto_like':auto_like,'executor':'api' if api else 'browser', 'threads_discovery':threads_discovery, 'discovery_plan':discovery_plan, 'remaining':cadence.get('remaining'), 'daily_remaining':cadence.get('daily', {}).get('remaining'), 'batch_max':min(reply_limit, max(1, ((cadence.get('remaining') if cadence.get('remaining') is not None else 11) - (required - (steps if can_reply else 1)))//steps), max(1, ((cadence.get('daily', {}).get('remaining') if cadence.get('daily', {}).get('remaining') is not None else 11) - (1 if upcoming else 0))//steps)), 'next_publication_at':upcoming})
+                         'persona':account.get('persona'),'auto_like':auto_like,'executor':'api' if api else 'browser', 'threads_discovery':threads_discovery, 'discovery_plan':discovery_plan, 'remaining':cadence.get('remaining'), 'daily_remaining':cadence.get('daily', {}).get('remaining'), 'batch_max':min(reply_limit, max(1, ((cadence.get('remaining') if cadence.get('remaining') is not None else 11) - hourly_reserve)//steps), max(1, ((cadence.get('daily', {}).get('remaining') if cadence.get('daily', {}).get('remaining') is not None else 11) - daily_reserve)//steps)), 'next_publication_at':upcoming})
             if discovery_plan:
                 explorations.append(discovery_plan)
     discovery_first=[a for a in work if a['threads_discovery']]

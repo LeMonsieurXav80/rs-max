@@ -85,6 +85,52 @@ class XWatchTest(unittest.TestCase):
         self.assertEqual(result['priority_x'][0]['write_actions'], ['like'])
         self.assertEqual(client.api.call_count, 3)
 
+    def test_x_reserve_des_gestes_uniquement_pour_les_mentions_eligibles(self):
+        now = dt.datetime.fromisoformat('2026-11-07T12:30:00+00:00')
+        for remaining, inbox_eligible, daily_remaining, expected in [
+            (1, False, 1, (1, ['reply', 'like'], False)),
+            (1, True, 1, None),
+            (3, True, 3, (1, ['like'], True)),
+            (4, True, 3, (1, ['like'], True)),
+        ]:
+            with self.subTest(remaining=remaining, inbox_eligible=inbox_eligible, daily_remaining=daily_remaining):
+                account = self.account(remaining)
+                account.update(persona=5, discovery_queries=['mode'])
+                account['cadence']['daily'] = {'remaining': daily_remaining}
+                account['actions'].update({'reply': {'left': 1}, 'search.read': {'left': 4}, 'thread.read': {'left': 4}})
+                # A source may have more rows than there are replyable mentions.
+                items = [{'id': 17, 'content': 'Question', 'can_reply': inbox_eligible}]
+                client = Mock()
+                client.api.side_effect = lambda method, path: (
+                    {'daytime': True, 'accounts': [account]} if path == 'accounts'
+                    else {'items': items} if '/inbox?' in path else {'logs': []})
+
+                result = watch.snapshot(client, now, lane='x')
+                if expected is None:
+                    self.assertEqual(result['state'], 'idle')
+                    self.assertEqual(client.api.call_count, 2)
+                    continue
+                plan = result['priority_x'][0]
+                self.assertEqual((plan['max_writes'], plan['write_actions'], plan['reserve_for_inbox']), expected)
+
+    def test_x_decouverte_respecte_la_reserve_publication_horaire_et_quotidienne(self):
+        now = dt.datetime.fromisoformat('2026-11-07T12:30:00+00:00')
+        for hour, day, expected in [(1, 4, None), (4, 1, None), (2, 2, 1), (3, 3, 2)]:
+            with self.subTest(hour=hour, day=day):
+                account = self.account(hour, '2026-11-07T13:00:00+00:00')
+                account['persona'] = 5
+                account['cadence']['daily'] = {'remaining': day}
+                account['actions'].update({'feed.read': {'left': 4}, 'thread.read': {'left': 4}})
+                client = Mock()
+                client.api.side_effect = lambda method, path: (
+                    {'daytime': True, 'accounts': [account]} if path == 'accounts' else {})
+                result = watch.snapshot(client, now, lane='x')
+                if expected is None:
+                    self.assertEqual(result['state'], 'idle')
+                    client.api.assert_called_once()
+                else:
+                    self.assertEqual(result['priority_x'][0]['max_writes'], expected)
+
     def test_x_reprend_apres_la_derniere_recherche_effectuee(self):
         client = Mock()
         account = self.account()
@@ -227,9 +273,9 @@ class XWatchTest(unittest.TestCase):
         client = Mock()
         client.api.side_effect = [
             {'daytime': True, 'accounts': [account]},
+            {'items': []},
             {'logs': [{'at': '2026-11-08T11:44:00+00:00'}]},
             {'logs': []},
-            {'items': []},
         ]
         plan = watch.snapshot(client, now, lane='x')['priority_x'][0]
         self.assertEqual(plan['read_action'], 'search.read')
