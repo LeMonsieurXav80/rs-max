@@ -1,0 +1,179 @@
+diff --git a/background.js b/background.js
+index 736abd8..7c416cb 100644
+--- a/background.js
++++ b/background.js
+@@ -343,6 +343,7 @@ async function executeXAgentTask(task) {
+   const tabId=await taskTab(task.payload.url);
+   try {
+     if(task.kind==='x.agent.read')return await askPage(tabId,task);
++    if(task.payload.action==='reply')return await executeXAgentReply(task,tabId);
+     await askPage(tabId,{kind:'x.agent.ready',payload:{}});
+     let action;
+     try {action=await chrome.tabs.sendMessage(tabId,{type:'x.task',task});}
+@@ -361,28 +362,58 @@ async function executeXAgentTask(task) {
+   finally {await chrome.tabs.remove(tabId).catch(()=>{});}
+ }
+ 
++async function executeXAgentReply(task,tabId) {
++  const {target,username}=task.payload;
++  if(!/^[0-9]+$/.test(String(target?.id||''))||!username||!target.author||target.author.toLowerCase()===username.toLowerCase()){
++    return {status:'failed',result:{gesture:false},error:'Destinataire X invalide.'};
++  }
++  const read=await askPage(tabId,{kind:'x.agent.read',payload:{...task.payload,action:'thread.read',target_id:target.id}});
++  const current=read?.result?.target;
++  if(read?.status!=='done'||read.result?.context_complete!==true||current?.id!==target.id
++    ||current.author!==target.author||current.text!==target.text){
++    return {status:'failed',result:{gesture:false},error:read?.error||'Publication ciblée modifiée ou non vérifiée.'};
++  }
++  if(read.result.visible_replies?.some(post=>post.author===username.toLowerCase())){
++    return {status:'failed',result:{gesture:false},error:'Le compte a déjà répondu à la publication.'};
++  }
++
++  const url='https://x.com/compose/post?in_reply_to='+target.id;
++  await reloadTaskTab(tabId,url);
++  const proof=await postXInTab({...task,kind:'x.post',payload:{...task.payload,url,media:[]}},tabId);
++  if(proof?.status!=='done'||proof.result?.confirmed!==true)return proof;
++  const replyId=proof.result.id;
++  if(proof.result.parent_id!==target.id||!/^[0-9]+$/.test(String(replyId||''))){
++    return {status:'uncertain',result:proof.result,error:'La réponse X et sa cible ne sont pas prouvées : aucun renvoi.'};
++  }
++  const replyUrl='https://x.com/'+username+'/status/'+replyId;
++  return {...proof,result:{...proof.result,reply_id:replyId,reply_url:replyUrl,post_id:replyId,post_url:replyUrl}};
++}
++
++async function postXInTab(task,tabId) {
++  await askPage(tabId,{kind:'x.ready',payload:{}});
++  // Une écriture ne passe jamais dans askPage, dont la reprise est réservée aux lectures.
++  let outcome;
++  try {outcome=await chrome.tabs.sendMessage(tabId,{type:'x.task',task});}
++  catch(e){return {status:'uncertain',error:'Résultat de publication perdu : aucun renvoi. '+e.message};}
++  if(outcome?.status!=='done'||task.payload.dry)return outcome||{status:'uncertain',error:'Résultat de publication absent.'};
++  let p={...task.payload,...outcome.result};
++  if(!p.id){
++    await reloadTaskTab(tabId,'https://x.com/'+p.username);
++    const found=await askPage(tabId,{kind:'x.post.locate',payload:p});
++    p.id=found?.result?.id;if(found?.result?.platform_limit)p.platform_limit=found.result.platform_limit;
++  }
++  if(!/^[0-9]+$/.test(String(p.id||'')))return {status:'uncertain',result:{...outcome.result,...p.platform_limit?{platform_limit:p.platform_limit}:{}},error:'Post non retrouvé : vérifier sans renvoyer.'};
++  await reloadTaskTab(tabId,'https://x.com/'+p.username+'/status/'+p.id);
++  globalThis.RSTaskJournal?.mark('proof.after_reload');
++  const proof=await askPage(tabId,{kind:'x.post.verify',payload:p});
++  return proof?.result?.confirmed===true?proof:{status:'uncertain',result:{id:p.id,started_at:p.started_at,verification:proof?.result||null,...(proof?.result?.platform_limit?{platform_limit:proof.result.platform_limit}:{})},error:'Publication non prouvée après rechargement : aucun renvoi.'};
++}
++
+ async function executeXPostTask(task) {
+   await ensureXAccount(task);
+   const tabId=await taskTab(task.payload.url);
+-  try {
+-    await askPage(tabId,{kind:'x.ready',payload:{}});
+-    // Une écriture ne passe jamais dans askPage, dont la reprise est réservée aux lectures.
+-    let outcome;
+-    try {outcome=await chrome.tabs.sendMessage(tabId,{type:'x.task',task});}
+-    catch(e){return {status:'uncertain',error:'Résultat de publication perdu : aucun renvoi. '+e.message};}
+-    if(outcome?.status!=='done'||task.payload.dry)return outcome||{status:'uncertain',error:'Résultat de publication absent.'};
+-    let p={...task.payload,...outcome.result};
+-    if(!p.id){
+-      await reloadTaskTab(tabId,'https://x.com/'+p.username);
+-      const found=await askPage(tabId,{kind:'x.post.locate',payload:p});
+-      p.id=found?.result?.id;if(found?.result?.platform_limit)p.platform_limit=found.result.platform_limit;
+-    }
+-    if(!/^[0-9]+$/.test(String(p.id||'')))return {status:'uncertain',result:{...outcome.result,...p.platform_limit?{platform_limit:p.platform_limit}:{}},error:'Post non retrouvé : vérifier sans renvoyer.'};
+-    await reloadTaskTab(tabId,'https://x.com/'+p.username+'/status/'+p.id);
+-    globalThis.RSTaskJournal?.mark('proof.after_reload');
+-    const proof=await askPage(tabId,{kind:'x.post.verify',payload:p});
+-    return proof?.result?.confirmed===true?proof:{status:'uncertain',result:{id:p.id,started_at:p.started_at,verification:proof?.result||null,...(proof?.result?.platform_limit?{platform_limit:proof.result.platform_limit}:{})},error:'Publication non prouvée après rechargement : aucun renvoi.'};
+-  }catch(e){return {status:'uncertain',error:'Contrôle de publication interrompu : '+e.message};}
++  try {return await postXInTab(task,tabId);}
++  catch(e){return {status:'uncertain',error:'Contrôle de publication interrompu : '+e.message};}
+   finally {taskMedia=null;await chrome.tabs.remove(tabId).catch(()=>{});}
+ }
+ 
+diff --git a/manifest.json b/manifest.json
+index c3b4252..3c9b1db 100644
+--- a/manifest.json
++++ b/manifest.json
+@@ -1,7 +1,7 @@
+ {
+   "manifest_version": 3,
+   "name": "RS-Max Companion",
+-  "version": "0.18.21",
++  "version": "0.18.22",
+   "description": "Actions assistees sur les reseaux sociaux (engagement, publication) avec remontee vers l'API RS-Max.",
+   "permissions": [
+     "storage",
+diff --git a/tests/x-agent-reply-task.test.cjs b/tests/x-agent-reply-task.test.cjs
+new file mode 100644
+index 0000000..9a1de33
+--- /dev/null
++++ b/tests/x-agent-reply-task.test.cjs
+@@ -0,0 +1,70 @@
++const test = require('node:test');
++const assert = require('node:assert/strict');
++const {readFileSync} = require('node:fs');
++const {join} = require('node:path');
++const {runInNewContext} = require('node:vm');
++
++const source = readFileSync(join(__dirname, '../background.js'), 'utf8');
++const replyPath = source.slice(source.indexOf('async function executeXAgentReply('), source.indexOf('async function askPage('));
++const target = {id:'123', author:'auteur', text:'Une publication', url:'https://x.com/auteur/status/123'};
++const task = {id:8, kind:'x.agent.act', payload:{action:'reply', username:'compte', target, url:target.url, text:'Une réponse'}};
++
++function fixture({current=target, replies=[], failToReceive=false}={}) {
++  const navigation = [];
++  const sends = [];
++  const requests = [];
++  const sandbox = {
++    reloadTaskTab: async (tabId,url) => navigation.push({tabId,url}),
++    askPage: async (tabId, request) => {
++      requests.push({tabId, request});
++      if (request.kind === 'x.agent.read') {
++        return {status:'done',result:{context_complete:true,target:current,visible_replies:replies}};
++      }
++      if (request.kind === 'x.post.verify') {
++        return {status:'done',result:{id:'789',confirmed:true,proof:'after_reload',parent_id:'123'}};
++      }
++      assert.equal(request.kind, 'x.ready');
++    },
++    chrome:{tabs:{sendMessage:async (tabId, message) => {
++      sends.push({tabId, message});
++      if (failToReceive) throw Error('Réponse perdue');
++      return {status:'done',result:{id:'789',sent_once:true}};
++    }}},
++  };
++  runInNewContext(replyPath, sandbox);
++  return {run:()=>sandbox.executeXAgentReply(task,42),navigation,sends,requests};
++}
++
++test('X transmet une seule réponse au compositeur existant et confirme son parent', async () => {
++  const f = fixture();
++  const result = await f.run();
++  assert.equal(f.requests[0].request.payload.target_id, target.id);
++  assert.deepEqual(f.navigation.map(item=>item.url), [
++    'https://x.com/compose/post?in_reply_to=123',
++    'https://x.com/compte/status/789',
++  ]);
++  assert.equal(f.sends.length, 1);
++  assert.equal(f.sends[0].message.task.id, task.id);
++  assert.equal(f.sends[0].message.task.kind, 'x.post');
++  assert.equal(f.sends[0].message.task.payload.text, task.payload.text);
++  assert.equal(result.result.reply_url, 'https://x.com/compte/status/789');
++  assert.equal(result.result.parent_id, target.id);
++  assert.equal(result.result.proof, 'after_reload');
++});
++
++test('X refuse un post changé ou déjà commenté avant toute écriture', async () => {
++  for (const options of [{current:{...target,text:'Texte modifié'}},{replies:[{author:'compte'}]}]) {
++    const f = fixture(options);
++    const result = await f.run();
++    assert.equal(result.status, 'failed');
++    assert.equal(result.result.gesture, false);
++    assert.equal(f.sends.length, 0);
++    assert.equal(f.navigation.length, 0);
++  }
++});
++
++test('X conserve un résultat incertain sans renvoyer la publication', async () => {
++  const f = fixture({failToReceive:true});
++  assert.equal((await f.run()).status, 'uncertain');
++  assert.equal(f.sends.length, 1);
++});
