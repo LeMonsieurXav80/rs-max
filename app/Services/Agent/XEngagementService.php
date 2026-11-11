@@ -17,24 +17,26 @@ class XEngagementService
 {
     public function reserveCompanionReaction(SocialAccount $account, string $username, array $target, string $action): XEngagement
     {
-        $key = hash('sha256', $target['id']);
+        $key = hash('sha256', $target['handle'] ?? $target['id']);
 
         return Cache::lock('x-prepare:'.$account->id.':'.$action.':'.$key, 30)->block(2, function () use ($account, $username, $target, $action, $key) {
             return DB::transaction(function () use ($account, $username, $target, $action, $key) {
                 SocialAccount::whereKey($account->id)->lockForUpdate()->firstOrFail();
                 $row = XEngagement::where('social_account_id', $account->id)->where('action', $action)->where('target_key', $key)->first();
-                abort_if($row && $row->status !== 'prepared', 409, 'Ce geste est déjà enregistré ou réservé sur cette publication.');
+                abort_if($row && $row->status !== 'prepared', 409, 'Ce geste est déjà enregistré ou réservé pour cette cible.');
                 if ($action === 'like') {
                     $liked = InboxItem::where('social_account_id', $account->id)->where('external_id', $target['id'])->whereNotNull('liked_at')->exists();
                     $pending = BrowserTask::where('social_account_id', $account->id)->where('kind', 'x.like')
                         ->whereIn('status', ['pending', 'running', 'uncertain'])->where('payload->target->id', $target['id'])->exists();
                     abort_if($liked || $pending, 409, 'J’aime déjà relevé, réservé ou incertain dans la messagerie.');
                 }
+                $destination = $action === 'follow'
+                    ? ['url' => 'https://x.com/'.$target['handle'], 'handle' => $target['handle']]
+                    : ['url' => 'https://x.com/'.$target['author'].'/status/'.$target['id'], 'target' => $target];
                 $row ??= new XEngagement;
                 $row->fill(['social_account_id' => $account->id, 'action' => $action, 'target_key' => $key,
                     'status' => 'running', 'requested_at' => now(),
-                    'payload' => ['source' => 'companion', 'action' => $action, 'username' => strtolower($username),
-                        'url' => 'https://x.com/'.$target['author'].'/status/'.$target['id'], 'target' => $target]])->save();
+                    'payload' => ['source' => 'companion', 'action' => $action, 'username' => strtolower($username)] + $destination])->save();
                 app(AutomationJournal::class)->xCompanionReaction($row);
 
                 return $row;
@@ -49,11 +51,20 @@ class XEngagementService
             $row = XEngagement::where('social_account_id', $account->id)->lockForUpdate()->findOrFail($id);
             abort_unless(($row->payload['source'] ?? null) === 'companion' && $row->payload['username'] === strtolower($username), 404);
             $confirmed = in_array($outcome['status'], ['confirmed', 'unchanged'], true);
-            abort_if($confirmed && ($outcome['target_id'] ?? null) !== $row->payload['target']['id'], 422, 'Preuve portant sur une autre publication.');
-            abort_if($row->action === 'bookmark' && $outcome['status'] === 'confirmed'
-                && ($outcome['proof'] ?? null) !== 'after_reload', 422, 'Recharger la publication pour confirmer le signet.');
-            $result = ['confirmed' => $confirmed, 'unchanged' => $outcome['status'] === 'unchanged',
-                'proof' => $outcome['proof'] ?? null, 'target_id' => $row->payload['target']['id']];
+            $proof = $outcome['proof'] ?? null;
+            $follow = $row->action === 'follow';
+            if ($follow) {
+                $handle = $row->payload['handle'];
+                abort_if($confirmed && (($outcome['handle'] ?? null) !== $handle || ($outcome['following'] ?? null) !== true || ! $proof),
+                    422, 'Preuve d’abonnement absente ou portant sur un autre profil.');
+                $target = ['profile' => ['handle' => $handle, 'following' => $confirmed ? true : null]];
+            } else {
+                $target = ['target_id' => $row->payload['target']['id']];
+                abort_if($confirmed && ($outcome['target_id'] ?? null) !== $target['target_id'], 422, 'Preuve portant sur une autre publication.');
+            }
+            abort_if(in_array($row->action, ['bookmark', 'follow'], true) && $outcome['status'] === 'confirmed'
+                && $proof !== 'after_reload', 422, 'Recharger la cible pour confirmer le geste.');
+            $result = ['confirmed' => $confirmed, 'unchanged' => $outcome['status'] === 'unchanged', 'proof' => $proof] + $target;
             if ($row->status !== 'running') {
                 abort_unless($row->result == $result, 409, 'Geste déjà clôturé.');
 
@@ -64,6 +75,9 @@ class XEngagementService
             if ($confirmed && $row->action === 'like') {
                 InboxItem::where('social_account_id', $account->id)->where('external_id', $result['target_id'])
                     ->whereNull('liked_at')->update(['liked_at' => now()]);
+            }
+            if ($follow && $outcome['status'] === 'confirmed') {
+                $this->recordFollow($row, 'extension');
             }
             app(AutomationJournal::class)->xCompanionReaction($row);
 
@@ -157,6 +171,7 @@ class XEngagementService
             $days = (int) ($account->agent_strategy['unfollow_after_days'] ?? 7);
             abort_unless($contact?->followed_at && $contact->followed_at->copy()->addDays($days)->isPast()
                 && ! $contact->unfollowed_at && $contact->follow_back === 'no'
+                && ($contact->metadata['follow_source'] ?? 'agent') === 'agent'
                 && $contact->follow_back_checked_at?->greaterThan(now()->subDay()), 409,
                 'Désabonnement refusé : délai et absence de retour récente doivent être prouvés.');
         }
@@ -219,14 +234,20 @@ class XEngagementService
                 ->update(['liked_at' => $row->action === 'like' ? now() : null]);
         }
         if ($confirmed && ! ($proof['unchanged'] ?? false) && in_array($row->action, ['follow', 'unfollow'], true)) {
-            $contact = SocialContact::firstOrCreate(['social_account_id' => $row->social_account_id, 'handle' => $row->payload['handle']]);
-            if ($row->action === 'follow') {
-                $contact->update(['followed_at' => now(), 'unfollowed_at' => null]);
-            } else {
-                $contact->update(['unfollowed_at' => now()]);
-            }
+            $this->recordFollow($row, 'agent');
         }
 
+    }
+
+    private function recordFollow(XEngagement $row, string $source): void
+    {
+        $contact = SocialContact::firstOrCreate(['social_account_id' => $row->social_account_id, 'handle' => $row->payload['handle']]);
+        if ($row->action === 'follow') {
+            $contact->update(['followed_at' => now(), 'unfollowed_at' => null, 'last_read_at' => now(),
+                'metadata' => array_replace($contact->metadata ?? [], ['follow_source' => $source])]);
+        } else {
+            $contact->update(['unfollowed_at' => now()]);
+        }
     }
 
     public function result(XEngagement $row): XEngagement

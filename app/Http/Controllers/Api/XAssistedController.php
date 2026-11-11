@@ -84,13 +84,16 @@ class XAssistedController extends Controller
     {
         $account = $this->account($request);
         $data = $request->validate([
-            'action' => 'required|in:like,repost,bookmark',
-            'target_id' => 'required|string|regex:/^[0-9]{1,25}$/',
-            'author' => 'required|string|regex:/^[a-zA-Z0-9_]{1,15}$/',
+            'action' => 'required|in:like,repost,bookmark,follow',
+            'target_id' => 'exclude_if:action,follow|required|string|regex:/^[0-9]{1,25}$/',
+            'author' => 'exclude_if:action,follow|required|string|regex:/^[a-zA-Z0-9_]{1,15}$/',
+            'handle' => 'exclude_unless:action,follow|required|string|regex:/^[a-zA-Z0-9_]{1,15}$/',
         ]);
-        $author = strtolower($data['author']);
-        abort_if($author === strtolower($request->input('username')), 409, 'Publication du compte lui-même.');
-        $row = $engagements->reserveCompanionReaction($account, $request->input('username'), ['id' => $data['target_id'], 'author' => $author], $data['action']);
+        $username = strtolower($request->input('username'));
+        $author = strtolower($data['handle'] ?? $data['author']);
+        abort_if($author === $username, 409, 'Le compte connecté ne peut pas se cibler lui-même.');
+        $target = $data['action'] === 'follow' ? ['handle' => $author] : ['id' => $data['target_id'], 'author' => $author];
+        $row = $engagements->reserveCompanionReaction($account, $username, $target, $data['action']);
 
         return response()->json(['id' => $row->id, 'status' => $row->status], 201);
     }
@@ -100,7 +103,9 @@ class XAssistedController extends Controller
         $account = $this->account($request);
         $data = $request->validate([
             'status' => 'required|in:confirmed,unchanged,failed,uncertain',
-            'target_id' => 'required_if:status,confirmed,unchanged|nullable|string|regex:/^[0-9]{1,25}$/',
+            'target_id' => 'nullable|string|regex:/^[0-9]{1,25}$/',
+            'handle' => 'nullable|string|regex:/^[a-zA-Z0-9_]{1,15}$/',
+            'following' => 'nullable|boolean',
             'proof' => 'required_if:status,confirmed,unchanged|nullable|in:visible,after_reload',
             'error' => 'nullable|string|max:1000',
         ]);

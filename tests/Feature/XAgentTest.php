@@ -204,6 +204,46 @@ class XAgentTest extends TestCase
         $this->assertDatabaseCount('browser_tasks', 0);
     }
 
+    public function test_suivi_local_partage_la_reservation_et_conserve_son_origine(): void
+    {
+        $snapshot = $this->snapshot();
+        $data = Cache::get('x-agent-snapshot:'.$snapshot);
+        $data['result'] = ['profile' => ['handle' => 'visitor', 'following' => false]];
+        Cache::put('x-agent-snapshot:'.$snapshot, $data, now()->addHour());
+        $draft = $this->prepare($snapshot, 'follow');
+        $base = '/api/extension/x/assisted/reactions/';
+        $identity = ['platform_account_id' => '12345', 'username' => 'owner'];
+        $target = ['action' => 'follow', 'handle' => 'Visitor'] + $identity;
+        $this->postJson($base.'reserve', ['handle' => 'owner'] + $target)->assertConflict();
+        $id = $this->postJson($base.'reserve', $target)->assertCreated()->assertJsonPath('status', 'running')->json('id');
+        $this->assertSame($draft->id, $id);
+        $this->postJson($base.'reserve', $target)->assertConflict();
+        $this->postJson($this->url('prepare'), ['snapshot_id' => $snapshot, 'action' => 'follow'])
+            ->assertOk()->assertJsonPath('id', $id)->assertJsonPath('status', 'running');
+        $finish = $base.$id.'/finish';
+        $proof = ['status' => 'confirmed', 'handle' => 'visitor', 'following' => true, 'proof' => 'after_reload'] + $identity;
+        $this->postJson($finish, ['handle' => 'other'] + $proof)->assertUnprocessable();
+        $this->postJson($finish, ['following' => false] + $proof)->assertUnprocessable();
+        $this->postJson($finish, ['proof' => 'visible'] + $proof)->assertUnprocessable();
+        $this->assertDatabaseCount('social_contacts', 0);
+        $this->postJson($finish, $proof)->assertOk()->assertJsonPath('status', 'confirmed');
+        $this->postJson($finish, $proof)->assertOk();
+        $contact = SocialContact::sole();
+        $this->assertNotNull($contact->followed_at);
+        $this->assertSame('extension', $contact->metadata['follow_source']);
+        $this->assertDatabaseHas('bot_action_logs', ['source' => 'extension', 'action_type' => 'x.follow', 'target_author' => 'visitor', 'success' => true]);
+
+        $other = $this->postJson($base.'reserve', ['handle' => 'already'] + $target)->assertCreated()->json('id');
+        $this->postJson($base.$other.'/finish', ['status' => 'unchanged', 'handle' => 'already', 'proof' => 'visible'] + $proof)->assertOk();
+        $this->assertDatabaseCount('social_contacts', 1);
+
+        app(AgentCatalog::class)->configure($this->a, 'unfollow', true, 3);
+        $contact->update(['followed_at' => now()->subDays(8), 'follow_back' => 'no', 'follow_back_checked_at' => now()]);
+        $unfollow = $this->prepare($snapshot, 'unfollow');
+        $this->postJson('/api/community-manager/x/engagements/'.$unfollow->id.'/execute', ['dry_run' => false])->assertConflict();
+        $this->assertDatabaseCount('browser_tasks', 0);
+    }
+
     public function test_compteur_reserve_au_claim_et_confirmation_identifiee_apres_reload(): void
     {
         $e = $this->prepare($this->snapshot());

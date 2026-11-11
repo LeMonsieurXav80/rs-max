@@ -1,0 +1,316 @@
+diff --git a/manifest.json b/manifest.json
+index c6f210f..8f3193b 100644
+--- a/manifest.json
++++ b/manifest.json
+@@ -1,7 +1,7 @@
+ {
+   "manifest_version": 3,
+   "name": "RS-Max Companion",
+-  "version": "0.18.35",
++  "version": "0.18.36",
+   "description": "Actions assistees sur les reseaux sociaux (engagement, publication) avec remontee vers l'API RS-Max.",
+   "permissions": [
+     "storage",
+diff --git a/x/assisted.js b/x/assisted.js
+index dac3414..5813ce0 100644
+--- a/x/assisted.js
++++ b/x/assisted.js
+@@ -218,6 +218,33 @@
+     return {reason: 'Réponse non vérifiée. La réservation est conservée pour éviter un doublon.'};
+   }
+ 
++  function currentProfile(url) {
++    const handle = url.pathname.match(/^\/([a-zA-Z0-9_]{1,15})\/?$/)?.[1].toLowerCase();
++    if (!handle || M.identity()?.username === handle) return null;
++    return D.profile(handle);
++  }
++
++  async function followProfile(ctx) {
++    const owner = await ownerFor(ctx);
++    const profile = currentProfile(new URL(location.href));
++    if (!profile || typeof profile.following !== 'boolean') throw Error('Profil X ou état d’abonnement non vérifiable.');
++    if (profile.following) return {reason:'Abonnement déjà présent.'};
++    if (ctx.stopped) return;
++    const run = crypto.randomUUID();
++    const stop = () => { void chrome.runtime.sendMessage({type:'x.batch', operation:'stop', run}).catch(() => {}); };
++    ctx.signal.addEventListener('abort', stop, {once:true});
++    try {
++      const reply = await chrome.runtime.sendMessage({type:'x.batch', operation:'follow-profile', username:owner.username, speed:ctx.speed, run});
++      if (!reply?.ok) throw Error(reply?.error || 'Companion ne répond pas.');
++      const outcome = reply.data;
++      if (outcome?.result?.unchanged) return {reason:outcome.error || 'Abonnement déjà présent.'};
++      if (outcome?.status === 'done' && outcome.result?.confirmed) return {reason:'Abonnement confirmé après rechargement et enregistré dans RS-Max.'};
++      return {incomplete:true, reason:outcome?.error || 'Abonnement non vérifié dans X.'};
++    } finally {
++      ctx.signal.removeEventListener('abort', stop);
++    }
++  }
++
+   async function react(ctx) {
+     const owner = await ownerFor(ctx);
+     const target = D.canonical(location.href);
+@@ -240,6 +267,10 @@
+         id: 'x.assisted-list', localOnly: true, available: listPage,
+         label: 'X — Examiner les publications récentes', startLabel: 'Lister les publications', run: showPosts
+       },
++      {
++        id: 'x.assisted-follow', localOnly: true, available: url => Boolean(currentProfile(url)),
++        label: 'X — Suivre ce profil', startLabel: 'Suivre ce profil', run: followProfile
++      },
+       {
+         id: 'x.assisted-react', localOnly: true, available: url => Boolean(D.canonical(url.href)),
+         label: 'X — Réagir à cette publication', startLabel: 'Préparer',
+diff --git a/x/agent.js b/x/agent.js
+index c741d11..dca9601 100644
+--- a/x/agent.js
++++ b/x/agent.js
+@@ -162,7 +162,7 @@
+     // React peut remplacer le bouton pendant la pause : reprendre le contrôle sémantique de la cible relue.
+     if (['follow','unfollow'].includes(p.action)) {
+       const current=profile(p),wanted=p.action==='follow';
+-      if(current.following===wanted)return {unchanged:true};
++      if(current.following===wanted)return {unchanged:true,profile:current};
+       button=window.RSXDom ? (confirmation?window.RSXDom.unfollowConfirm(p.handle):window.RSXDom.followControl(p.handle))
+         :document.querySelector(confirmation?'[data-testid="confirmationSheetConfirm"]':'[data-testid$="-'+(wanted?'follow':'unfollow')+'"]');
+     } else if (['reply','quote'].includes(p.action)) {
+@@ -199,7 +199,7 @@
+       await wait(()=>{try{return profile(p)}catch{return null}},20000);
+       const currentProfile=profile(p),wanted=p.action==='follow';
+       if (!wanted && p.require_non_followback && (currentProfile.follow_back==='yes' || currentProfile.absence_observed!==true)) throw Error('Retour d’abonnement constaté ou indéterminé : aucun désabonnement.');
+-      if(currentProfile.following===wanted) return result({unchanged:true});
++      if(currentProfile.following===wanted) return result({unchanged:true,profile:currentProfile});
+       if(currentProfile.following===null || handle(p.handle)===handle(p.username)) throw Error('État d’abonnement inconnu ou compte propre.');
+       const selector=wanted?'[data-testid$="-follow"]':'[data-testid$="-unfollow"]';
+       const buttons=window.RSXDom ? [window.RSXDom.followControl(p.handle)].filter(Boolean) : q(document.querySelector('[data-testid="primaryColumn"]'),selector);
+diff --git a/x/batch-worker.js b/x/batch-worker.js
+index 7ca8e56..516d646 100644
+--- a/x/batch-worker.js
++++ b/x/batch-worker.js
+@@ -6,6 +6,7 @@ const xBatchPlan = globalThis.RSXBatchPlan;
+ const xBatchKey = tabId => 'rsmaxXBatch:' + tabId;
+ const xBatchId = value => typeof value === 'string' && /^\d{1,25}$/.test(value);
+ const xBatchUser = value => typeof value === 'string' && /^[a-zA-Z0-9_]{1,15}$/.test(value);
++const xProfileHandle = page => page.origin === 'https://x.com' ? page.pathname.match(/^\/([a-zA-Z0-9_]{1,15})\/?$/)?.[1].toLowerCase() : null;
+ 
+ async function cancelXBatch(tabId, run) {
+   const state = runningXBatches.get(tabId);
+@@ -29,8 +30,12 @@ async function handleXBatch(msg, sender) {
+   const tabId = sender.tab?.id;
+   const page = new URL(sender.tab?.url || sender.url || 'about:blank');
+   const stats = msg.operation === 'stats';
++  const follow = msg.operation === 'follow-profile';
++  const handle = xProfileHandle(page);
++  const profileOperation = follow || msg.operation === 'stop';
++  const allowed = stats || (profileOperation && handle) || (!follow && xBatchPlan.list(page));
+   if (sender.id !== chrome.runtime.id || sender.frameId !== 0 || !Number.isInteger(tabId) ||
+-      sender.tab.incognito || (stats ? page.origin !== 'https://x.com' : !xBatchPlan.list(page))) throw Error('Onglet X non reconnu.');
++      sender.tab.incognito || page.origin !== 'https://x.com' || !allowed) throw Error('Onglet X non reconnu.');
+   const key = xBatchKey(tabId);
+   if (msg.operation === 'stop') {
+     await cancelXBatch(tabId, msg.run);
+@@ -49,8 +54,12 @@ async function handleXBatch(msg, sender) {
+   if (!accountId || !xBatchUser(msg.username)) throw Error('Compte X connecté introuvable.');
+   const identity = {platform_account_id:accountId, username:msg.username.toLowerCase()};
+   if (stats) return await collectXBatchStats(tabId, identity);
+-  const {params, actions, actionLimit} = xBatchPlan.validate(msg.params || {});
+   if (typeof msg.run !== 'string' || !/^[a-f0-9-]{36}$/.test(msg.run)) throw Error('Identifiant du lot X invalide.');
++  if (follow) {
++    if (handle === identity.username || !['fast','natural','slow'].includes(msg.speed)) throw Error('Profil ou cadence X invalide.');
++    return await withXBatch(tabId, page, msg.run, state => followFromXProfile(tabId, state, identity, handle, msg.speed));
++  }
++  const {params, actions, actionLimit} = xBatchPlan.validate(msg.params || {});
+   if (msg.operation === 'navigate') {
+     const context = await apiFetch({path:'/extension/x/assisted/context', query:identity});
+     const destination = xBatchPlan.source(params.source, page, context);
+@@ -69,17 +78,47 @@ async function handleXBatch(msg, sender) {
+       (page.pathname === '/search' && (page.searchParams.get('f') !== 'live' || !page.searchParams.get('q')))) {
+     throw Error('Cible ou budget d’actions invalide.');
+   }
++  return await withXBatch(tabId, page, msg.run, state =>
++    processXBatchTarget(tabId, state, identity, target, actions, remaining, params.speed, msg.exclusions));
++}
++
++async function withXBatch(tabId, page, run, action) {
+   if (runningXBatches.has(tabId)) throw Error('Un traitement X est déjà en cours dans cet onglet.');
+-  const state = {page, run:msg.run, stopped:false, child:null};
++  const state = {page, run, stopped:false, child:null};
+   runningXBatches.set(tabId, state);
+   try {
+-    return await processXBatchTarget(tabId, state, identity, target, actions, remaining, params.speed, msg.exclusions);
++    return await action(state);
+   } finally {
+     if (state.child) await chrome.tabs.remove(state.child).catch(() => {});
+     runningXBatches.delete(tabId);
+   }
+ }
+ 
++async function followFromXProfile(tabId, state, identity, handle, speed) {
++  const before = async () => {
++    const origin = await chrome.tabs.get(tabId);
++    if (state.stopped || xProfileHandle(new URL(origin.url)) !== handle ||
++        await connectedXAccount() !== identity.platform_account_id || state.stopped) {
++      throw Error('Le compte X ou le profil cible a changé.');
++    }
++    return origin;
++  };
++  const {windowId} = await before();
++  const url = 'https://x.com/' + handle;
++  const child = await chrome.tabs.create({url, active:false, openerTabId:tabId, windowId});
++  state.child = child.id;
++  await waitTaskTab(child.id);
++  await before();
++  const payload = {username:identity.username, handle, url, companion_speed:speed};
++  const read = await askPage(child.id, {kind:'x.agent.read', payload:{...payload, action:'profile.read'}});
++  const profile = read?.result?.profile;
++  if (read?.status !== 'done' || profile?.handle !== handle || typeof profile.following !== 'boolean') {
++    return {status:'failed', error:read?.error || 'Profil ou état d’abonnement non vérifiable.'};
++  }
++  if (profile.following) return {status:'done', result:{unchanged:true}};
++  return await reactFromXBatch(child.id, payload, identity, 'follow', before);
++}
++
+ async function collectXBatchStats(tabId, identity) {
+   await apiFetch({path:'/extension/x/assisted/context', query:identity});
+   const url = 'https://x.com/' + identity.username;
+@@ -170,14 +209,14 @@ async function inActiveXTab(tabId, windowId, before, action) {
+ }
+ 
+ async function reactFromXBatch(tabId, payload, identity, action, before) {
+-  const {target} = payload;
++  const destination = action === 'follow' ? {handle:payload.handle} : {target_id:payload.target.id, author:payload.target.author};
+   const post = (route, body) => apiFetch({
+     path:'/extension/x/assisted/reactions/'+route, method:'POST', body:{...identity, ...body}
+   });
+   let reservation;
+   try {
+     await before();
+-    reservation = await post('reserve', {action, target_id:target.id, author:target.author});
++    reservation = await post('reserve', {action, ...destination});
+   } catch (error) {
+     if (error.status === 409) return {status:'done', result:{unchanged:true}, error:error.message};
+     throw error;
+@@ -189,15 +228,17 @@ async function reactFromXBatch(tabId, payload, identity, action, before) {
+     outcome = {status:'uncertain', error:error.message};
+   }
+   const result = outcome.result;
+-  const verified = outcome.status === 'done' && result?.confirmed === true && result.proof === 'after_reload';
+-  const status = outcome.status === 'done' && result?.unchanged ? 'unchanged'
++  const exact = action !== 'follow' || (result?.profile?.handle === payload.handle && result.profile.following === true);
++  const verified = outcome.status === 'done' && result?.confirmed === true && result.proof === 'after_reload' && exact;
++  const status = outcome.status === 'done' && result?.unchanged && exact ? 'unchanged'
+     : verified ? 'confirmed'
+     : outcome.status === 'failed' ? 'failed' : 'uncertain';
+   if (status === 'uncertain' && !outcome.error) {
+     outcome = {...outcome, error:'Geste non prouvé après rechargement.'};
+   }
+   try {
+-    await post(`${reservation.id}/finish`, {status, target_id:target.id,
++    await post(`${reservation.id}/finish`, {status, ...destination,
++      ...(action === 'follow' ? {following:exact ? true : null} : {}),
+       proof:status === 'unchanged' ? 'visible' : verified ? result.proof : null,
+       error:outcome.error?.slice(0, 1000)});
+   } catch (error) {
+diff --git a/tests/x-batch.test.cjs b/tests/x-batch.test.cjs
+index da928ed..7edd720 100644
+--- a/tests/x-batch.test.cjs
++++ b/tests/x-batch.test.cjs
+@@ -56,6 +56,7 @@ function workerFixture(url = 'https://x.com/home') {
+         tweets:[{...target, author:'cyril', reply:false, reposted:false, classification_known:true, stats:'12 vues'}],
+         followers_observation:{value:1200, precision:'rounded', display:'1,2 k abonnés'}
+       }};
++      if (request.payload.action === 'profile.read') return {status:'done', result:{profile:data.profile}};
+       assert.equal(data.activeTab, 12, 'X doit charger le fil dans l’onglet actif');
+       if (data.switchTab) {
+         data.activeTab = 99;
+@@ -188,6 +189,32 @@ test('une preuve absente interrompt la suite et ne relance aucun geste', async (
+   assert.deepEqual(data.acts, ['like']);
+ });
+ 
++test('le suivi du profil ouvert réserve son handle et contrôle la preuve exacte', async () => {
++  for (const [handle, wanted] of [['athlete','confirmed'], ['other','uncertain']]) {
++    const {data, send} = workerFixture('https://x.com/athlete');
++    data.profile = {handle:'athlete', following:false};
++    data.results = {follow:{status:'done', result:{confirmed:true, proof:'after_reload', profile:{handle,following:true}}}};
++    const result = await send('follow-profile', {speed:'fast'});
++    assert.equal(data.opens[0].url, 'https://x.com/athlete');
++    assert.deepEqual(data.acts, ['follow']);
++    assert.equal(data.calls[0].body.handle, 'athlete');
++    assert.equal(data.calls[1].body.status, wanted);
++    assert.equal(data.calls[1].body.proof, wanted === 'confirmed' ? 'after_reload' : null);
++    assert.equal(result.status, wanted === 'confirmed' ? 'done' : 'uncertain');
++  }
++});
++
++test('un profil déjà suivi ou ambigu ne réserve aucun geste', async () => {
++  for (const following of [true, null]) {
++    const {data, send} = workerFixture('https://x.com/athlete');
++    data.profile = {handle:'athlete', following};
++    const result = await send('follow-profile', {speed:'fast'});
++    assert.equal(result.status, following ? 'done' : 'failed');
++    assert.deepEqual(data.acts, []);
++    assert.deepEqual(data.calls, []);
++  }
++});
++
+ test('le relevé ouvre le profil connecté et remonte ses statistiques sans lancer de geste', async () => {
+   const {data, send} = workerFixture('https://x.com/cyril');
+   await send('stats');
+diff --git a/tests/x-assisted.test.cjs b/tests/x-assisted.test.cjs
+index 91ca8c7..ab54720 100644
+--- a/tests/x-assisted.test.cjs
++++ b/tests/x-assisted.test.cjs
+@@ -16,7 +16,7 @@ function fixture(href, tab = 'Pour vous') {
+     confirmation: true, paused: () => {}, choices: [], state: false
+   };
+   const ctx = {
+-    params: {}, log() {}, get stopped() { return data.stopped; },
++    params: {}, speed:'fast', signal:new AbortController().signal, log() {}, get stopped() { return data.stopped; },
+     report: value => data.reports.push(value.action_type),
+     waitFor: async check => check(),
+     pause: async () => data.paused(),
+@@ -27,7 +27,7 @@ function fixture(href, tab = 'Pour vous') {
+     }
+   };
+   vm.runInNewContext(script, {
+-    URL,
++    URL, crypto:{randomUUID:()=> 'bda405c0-e3d2-4348-875a-ace3c0d324c4'},
+     location: {get href() { return data.href; }, assign: url => { data.href = url; }},
+     document: {querySelectorAll: () => [tab]},
+     navigator: {clipboard: {writeText: async value => { data.copied = value; }}},
+@@ -39,7 +39,8 @@ function fixture(href, tab = 'Pour vous') {
+         preview: {draft_key: 'draft-key', reply_text: 'Bravo pour ta progression !', thread_root_id: data.posts[0]?.id,
+           sources: [{pmid: '1', title: 'Étude'}]},
+         reserve: {id: 7},
+-        finish: {status: message.data.reply_id ? 'published' : 'uncertain'}
++        'follow-profile': {status:'done',result:{confirmed:true,proof:'after_reload'}},
++        finish: {status: message.data?.reply_id ? 'published' : 'uncertain'}
+       };
+       return {ok: true, data: body[message.operation]};
+     }}},
+@@ -48,7 +49,7 @@ function fixture(href, tab = 'Pour vous') {
+       RSXDom: {
+         text: value => value, articles: () => data.posts, snapshot: value => value, primary: value => value,
+         canonical: url => data.posts.find(value => value.url === url),
+-        state: () => data.state,
++        state: () => data.state, profile: () => data.profile,
+         control: () => ({focus: () => data.focus++, click: () => assert.fail('Le clic X doit rester manuel')})
+       },
+       RSXMentions: {identity: () => data.owner},
+@@ -115,3 +116,17 @@ test('le brouillon attend la validation, puis relève seulement la réponse visi
+   assert.equal(data.messages.at(-1).data.reply_id, '42');
+   assert.deepEqual(data.reports, ['reply']);
+ });
++
++
++test('la recette de profil envoie le suivi au worker du compte connecté', async () => {
++  const {data, run} = fixture('https://x.com/athlete');
++  data.profile = {handle:'athlete', following:false};
++  const result = await run('follow');
++  assert.match(result.reason, /Abonnement confirmé/);
++  assert.equal(data.messages[0].type, 'x.batch');
++  assert.equal(data.messages[0].operation, 'follow-profile');
++  assert.equal(data.messages[0].username, 'cyril');
++  data.profile.following = true;
++  assert.match((await run('follow')).reason, /déjà présent/);
++  assert.equal(data.messages.length, 1);
++});

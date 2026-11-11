@@ -83,7 +83,7 @@ class AutomationJournal
             'target_uri' => $reaction->payload['url'],
         ]);
         $log->fill([
-            'target_author' => $reaction->payload['target']['author'],
+            'target_author' => $reaction->payload['handle'] ?? $reaction->payload['target']['author'],
             'success' => $reaction->status === 'confirmed',
             'error' => $reaction->error,
             'metadata' => ['engagement_id' => $reaction->id, 'status' => $reaction->status, 'proof' => $reaction->result],
