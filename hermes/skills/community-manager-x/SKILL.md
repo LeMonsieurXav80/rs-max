@@ -1,7 +1,17 @@
 ---
 name: community-manager-x
-description: Lire et traiter les commentaires reçus X, TikTok, Facebook, Instagram, Threads et YouTube et rechercher des échanges pertinents avec le persona et les limites des comptes RS-Max attribués, via Companion sur le NAS.
+description: Lire et traiter les commentaires reçus X, TikTok, Facebook, Instagram, Threads et YouTube et rechercher des échanges pertinents avec le persona et les limites des comptes RS-Max attribués, via le profil Companion attribué.
 ---
+
+## Exécution avec RS-Max Companion
+
+Utiliser la configuration RS-Max du profil Hermès courant. Lister les comptes attribués avec `accounts` et lire `strategy --account ID` avant de choisir une action. Le compte, son persona, sa langue, `driver`, `session`, le canal de l’action et la cadence viennent de cette instance. Un identifiant est propre à son instance.
+
+Pour un compte X en mode navigateur, RS-Max route les tâches vers son profil Companion configuré sur le VPS ou le NAS. Le Chrome local utilise la même API de préparation avec le profil du compte connecté et le jeton de son instance. Ne change pas le mode du compte, le profil, la session ou les quotas pour exécuter une mission. Si l’identité ou la session ne concorde pas, passe au compte suivant et relève le motif.
+
+Pour X, utiliser `x-read` avec `thread.read`, puis `x-context` avant de rédiger. Lire la publication d’origine, les échanges jusqu’à la cible et les citations utiles. Rédiger dans la langue et le persona renvoyés, avec une phrase complète et une cible de 220 caractères. Certains caractères comptent double. Si `x-action` refuse la longueur pendant la préparation, reformuler plus court et réutiliser le même contexte. Si la demande d’exécution a déjà été acceptée, lire `x-status` et chercher la preuve après rechargement. Traiter la cible suivante si le contexte ou la pertinence manque. Sur X, une action terminale uncertain, failed ou cancelled concerne sa cible. Conserver son reçu et poursuivre sur les autres cibles éligibles si la cadence du compte le permet. Seules les tâches queued ou running demandent d’attendre avant la prochaine écriture du même compte.
+
+Respecter `blocked` et `next_allowed_at` fournis par RS-Max. Une erreur technique sur une cible est à diagnostiquer et ne déclenche plus de pause générale. Les limites horaires et quotidiennes, les limitations explicites du réseau et l’anti-doublon restent applicables. Consulter `logs --account ID --limit 20` pour identifier le canal, la version de Companion et le résultat.
 
 ### Conduite à tenir si la lecture bloque
 
@@ -31,7 +41,7 @@ Lire `x-status ID` après une coupure : l’intention locale et RS-Max interdise
 
 `x-contacts --account ID` conserve découvertes, dates de suivi et retours. Ne désuivre que les personnes suivies par l’agent, après le délai réglé et deux observations espacées d’au moins 15 minutes, sans indicateur de retour. Une absence ambiguë reste inconnue. Ne pas inventer la date d’un suivi déjà présent.
 
-Les publications planifiées restent pilotées par RS-Max ; Companion les envoie sur le NAS, médias avant texte. Ne pas les recopier dans `x-action`. Aucun repli API X pour un compte en mode navigateur. Les articles attendent un parcours pris en charge. Le compteur d’abonnés arrondi est exposé comme tel, sans remplacer un relevé exact.
+Les publications planifiées restent pilotées par RS-Max ; Companion les envoie sur le profil configuré, médias avant texte. Ne pas les recopier dans `x-action`. Aucun repli API X pour un compte en mode navigateur. Les articles attendent un parcours pris en charge. Le compteur d’abonnés arrondi est exposé comme tel, sans remplacer un relevé exact.
 
 Les bilans Telegram sont envoyés uniquement à 08 h et 20 h, heure de Lisbonne, par le script dédié, sans modèle. Ne pas envoyer de bilan pendant les cycles de travail. Conserver le constat via `note --text "BILAN"` (600 caractères). Chaque bilan couvre les douze dernières heures ; sa clé est propre au jour et au créneau pour éviter les doublons. Seules les sessions expirées et les limites explicites du réseau déclenchent une alerte immédiate. Aucun secret dans les notes. Une alerte de session indique le compte, le réseau et le site ; ne pas multiplier les tentatives de connexion.
 
