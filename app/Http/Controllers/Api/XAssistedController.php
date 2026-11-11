@@ -9,6 +9,7 @@ use App\Services\Agent\AutomationJournal;
 use App\Services\Agent\XEngagementService;
 use App\Services\Agent\XReplyVault;
 use App\Services\Inbox\InboxReplyGenerator;
+use App\Services\Stats\XBrowserStatsService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Cache;
@@ -65,6 +66,29 @@ class XAssistedController extends Controller
         }
 
         return response()->json(['blocked' => $blocked]);
+    }
+
+    public function observations(Request $request, XBrowserStatsService $stats): JsonResponse
+    {
+        $account = $this->account($request);
+        $data = $request->validate([
+            'followers_observation' => 'nullable|array:value,precision,display',
+            'followers_observation.value' => 'required_with:followers_observation|integer|min:0',
+            'followers_observation.precision' => 'required_with:followers_observation|in:exact,rounded',
+            'followers_observation.display' => 'required_with:followers_observation|string|max:100',
+            'tweets' => 'present|array|max:100',
+            'tweets.*' => 'array:id,author,text,published_at,reply,reposted,classification_known,stats',
+            'tweets.*.id' => 'required|string|regex:/^[0-9]{1,25}$/',
+            'tweets.*.author' => 'required|string|regex:/^[a-zA-Z0-9_]{1,15}$/',
+            'tweets.*.text' => 'present|nullable|string|max:30000',
+            'tweets.*.published_at' => 'nullable|date',
+            'tweets.*.reply' => 'required|boolean',
+            'tweets.*.reposted' => 'required|boolean',
+            'tweets.*.classification_known' => 'required|boolean',
+            'tweets.*.stats' => 'present|nullable|string|max:2000',
+        ]);
+
+        return response()->json($stats->recordPage($account, $request->input('username'), $data));
     }
 
     public function preview(Request $request, XReplyPreviewController $preview, XReplyVault $vault, InboxReplyGenerator $generator): JsonResponse

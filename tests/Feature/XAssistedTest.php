@@ -15,6 +15,37 @@ class XAssistedTest extends TestCase
 {
     use RefreshDatabase;
 
+    public function test_companion_releve_audience_et_publications_du_compte_sans_effacer_les_metriques_masquees(): void
+    {
+        $platform = Platform::firstOrCreate(['slug' => 'twitter'], ['name' => 'X', 'auth_type' => 'oauth2']);
+        $owner = User::factory()->create();
+        $account = SocialAccount::create(['name' => 'X', 'platform_id' => $platform->id, 'platform_account_id' => '1000',
+            'browser_username' => 'owner', 'followers_count' => 22598]);
+        $account->users()->attach($owner, ['is_active' => true]);
+        $this->withToken($owner->createToken('extension')->plainTextToken);
+        $identity = ['platform_account_id' => '1000', 'username' => 'owner'];
+        $url = '/api/extension/x/assisted/observations';
+        $tweet = ['id' => '4100', 'author' => 'owner', 'text' => 'Un post', 'published_at' => now()->toIso8601String(),
+            'reply' => false, 'reposted' => false, 'classification_known' => true, 'stats' => "10 J'aime, 18 vues"];
+        $other = ['id' => '4101', 'author' => 'other'] + $tweet;
+        $this->postJson($url, [
+            'followers_observation' => ['value' => 22600, 'precision' => 'rounded', 'display' => '22,6 k Abonnés'],
+            'tweets' => [$tweet, $other],
+        ] + $identity)->assertOk()->assertJsonPath('followers', false)->assertJsonPath('external_created', 1);
+        $this->assertSame(22598, $account->fresh()->followers_count);
+        $this->assertDatabaseMissing('external_posts', ['external_id' => '4101']);
+        $this->postJson($url, [
+            'followers_observation' => ['value' => 22610, 'precision' => 'exact', 'display' => '22 610 Abonnés'],
+            'tweets' => [['stats' => '20 vues'] + $tweet],
+        ] + $identity)->assertOk()->assertJsonPath('followers', true)->assertJsonPath('external_updated', 1);
+        $this->assertSame(22610, $account->fresh()->followers_count);
+        $post = \App\Models\ExternalPost::where('external_id', '4100')->firstOrFail();
+        $this->assertSame(10, $post->metrics['likes']);
+        $this->assertSame(20, $post->metrics['views']);
+        $this->postJson($url, ['tweets' => [], 'username' => 'other'] + $identity)->assertConflict();
+        $this->assertDatabaseCount('browser_tasks', 0);
+    }
+
     public function test_assiste_reserve_une_reponse_sans_creer_de_tache_et_bloque_les_doublons(): void
     {
         $platform = Platform::firstOrCreate(['slug' => 'twitter'], ['name' => 'X', 'auth_type' => 'oauth2']);

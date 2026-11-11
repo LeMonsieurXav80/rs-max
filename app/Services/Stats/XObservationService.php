@@ -35,9 +35,9 @@ class XObservationService
         foreach ($tweets as $tweet) {
             $metrics = [
                 'views' => $tweet['views'] ?? null,
-                'likes' => (int) ($tweet['likes'] ?? 0),
-                'comments' => (int) ($tweet['replies'] ?? 0),
-                'shares' => (int) ($tweet['reposts'] ?? 0),
+                'likes' => isset($tweet['likes']) ? (int) $tweet['likes'] : null,
+                'comments' => isset($tweet['replies']) ? (int) $tweet['replies'] : null,
+                'shares' => isset($tweet['reposts']) ? (int) $tweet['reposts'] : null,
                 'bookmarks' => isset($tweet['bookmarks']) ? (int) $tweet['bookmarks'] : null,
             ];
 

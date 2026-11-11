@@ -230,6 +230,7 @@ Route::middleware(['auth:sanctum', \App\Http\Middleware\CommunityManagerTokenSco
     Route::prefix('extension/x/assisted')->controller(\App\Http\Controllers\Api\XAssistedController::class)->middleware('throttle:30,1')->group(function () {
         Route::get('context', 'context');
         Route::post('check', 'check');
+        Route::post('observations', 'observations');
         Route::post('preview', 'preview');
         Route::post('reserve', 'reserve');
         Route::post('replies/{id}/finish', 'finish')->whereNumber('id');
