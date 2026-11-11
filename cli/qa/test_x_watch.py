@@ -70,11 +70,68 @@ class XWatchTest(unittest.TestCase):
         c=Mock();c.api.return_value={'daytime':True,'accounts':[self.account(120,'2026-11-07T12:33:00+00:00')]}
         self.assertEqual(watch.snapshot(c,dt.datetime.fromisoformat('2026-11-07T12:30:00+00:00'))['state'],'idle');self.assertEqual(c.api.call_count,1)
 
-    def test_le_flux_reste_possible_sans_quota_de_reponse(self):
-        c=Mock();a=self.account();a['actions']['reply']['left']=0;a['actions']['feed.read']={'left':2}
-        c.api.return_value={'daytime':True,'accounts':[a]}
-        r=watch.snapshot(c,dt.datetime.fromisoformat('2026-11-07T12:30:00+00:00'))
-        self.assertEqual(r['state'],'work');self.assertEqual(r['accounts'][0]['items'],[]);self.assertEqual(c.api.call_count,1)
+    def test_la_recherche_reste_possible_si_seul_le_like_est_autorise(self):
+        client = Mock()
+        account = self.account()
+        account.update(persona=5, strategy={'hashtags': ['#tenue']})
+        account['actions'] = {'like': {'left': 2}, 'search.read': {'left': 4}, 'thread.read': {'left': 4}}
+        client.api.side_effect = [{'daytime': True, 'accounts': [account]}, {'logs': []}, {'logs': []}]
+
+        result = watch.snapshot(client, dt.datetime.fromisoformat('2026-11-07T12:30:00+00:00'), lane='x')
+
+        self.assertEqual(result['state'], 'work')
+        self.assertEqual(result['accounts'][0]['items'], [])
+        self.assertEqual(result['priority_x'][0]['query'], '#tenue')
+        self.assertEqual(result['priority_x'][0]['write_actions'], ['like'])
+        self.assertEqual(client.api.call_count, 3)
+
+    def test_x_utilise_les_sources_configurees_sans_doublon_ni_compte_exclu(self):
+        strategy = {'search_queries': ['Mode durable', 'mode durable', '#Tenue'],
+                    'hashtags': ['tenue', '#élégance', '#123', '#deux mots'],
+                    'target_accounts': ['@ModePro', 'https://x.com/modepro', '@retirer',
+                                        'https://x.com/pro/status/123', 'https://ailleurs.test/autre'],
+                    'exclusions': ['@RETIRER', 'spam']}
+        self.assertEqual(watch.x_search_queries(strategy), ['Mode durable', '#Tenue', '#élégance', 'from:modepro'])
+
+    def test_x_reprend_apres_la_derniere_recherche_effectuee(self):
+        client = Mock()
+        account = self.account()
+        account['strategy'] = {'search_queries': ['mode', 'tenue'], 'hashtags': ['#style'],
+                               'target_accounts': ['@atelier']}
+        account['actions'].update({'feed.read': {'left': 4}, 'search.read': {'left': 4}})
+        now = dt.datetime.fromisoformat('2026-11-07T12:30:00+00:00')
+        for last_query, wanted in [('mode', 'tenue'), ('tenue', '#style'), ('#style', 'from:atelier'), ('from:atelier', 'mode')]:
+            client.api.side_effect = [{'logs': [{'at': '2026-11-07T12:10:00+00:00'}]},
+                                      {'logs': [{'at': '2026-11-07T11:50:00+00:00', 'text': last_query}]}]
+            plan = watch.discovery_source(client, account, now)
+            self.assertEqual(plan['read_action'], 'search.read')
+            self.assertEqual(plan['query'], wanted)
+            self.assertEqual(plan['fallback']['read_action'], 'feed.read')
+
+    def test_x_peut_essayer_une_autre_recherche_si_le_flux_est_desactive(self):
+        client = Mock()
+        client.api.return_value = {'logs': []}
+        account = self.account()
+        account['strategy'] = {'target_accounts': ['@atelier', '@membre']}
+        account['actions']['search.read'] = {'left': 4}
+        now = dt.datetime.fromisoformat('2026-11-07T12:30:00+00:00')
+        plan = watch.discovery_source(client, account, now)
+
+        self.assertEqual(plan['query'], 'from:atelier')
+        self.assertEqual(plan['fallback'], {'read_action': 'search.read', 'query': 'from:membre'})
+
+    def test_x_garde_les_recherches_et_actions_propres_a_chaque_compte(self):
+        first = self.account()
+        second = self.account()
+        for account, identifier, tag, action in [(first, 11, '#photo', 'reply'), (second, 12, '#sport', 'like')]:
+            account.update(id=identifier, persona=identifier, strategy={'hashtags': [tag]})
+            account['actions'] = {action: {'left': 4}, 'search.read': {'left': 4}, 'thread.read': {'left': 4}}
+        client = Mock()
+        client.api.side_effect = lambda method, path: (
+            {'daytime': True, 'accounts': [first, second]} if path == 'accounts' else {'logs': []})
+        result = watch.snapshot(client, dt.datetime.fromisoformat('2026-11-07T12:30:00+00:00'), lane='x')
+        self.assertEqual([(plan['account_id'], plan['query'], plan['write_actions']) for plan in result['priority_x']],
+                         [(11, '#photo', ['reply']), (12, '#sport', ['like'])])
 
     def test_reserve_quotidienne_pour_publication_lointaine_et_lot_borne(self):
         c=Mock();a=self.account(120,'2026-11-07T17:00:00+00:00');a['cadence']['daily']={'remaining':2};c.api.return_value={'daytime':True,'accounts':[a]}

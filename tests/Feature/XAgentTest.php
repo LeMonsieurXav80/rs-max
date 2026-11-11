@@ -90,6 +90,8 @@ class XAgentTest extends TestCase
         $this->postJson($this->url('read'), ['action' => 'search.read', 'query' => '#mode'])->assertOk()->assertJsonPath('observed', 1)->assertJsonStructure(['snapshot_id']);
         $this->assertDatabaseHas('social_contacts', ['social_account_id' => $this->a->id, 'handle' => 'visitor', 'source' => 'search.read', 'follow_back' => 'unknown']);
         $this->getJson($this->url('contacts'))->assertOk();
+        $this->getJson('/api/community-manager/logs?account_id='.$this->a->id.'&action=agent.search.read')
+            ->assertOk()->assertJsonPath('logs.0.text', '#mode');
         Http::assertNothingSent();
     }
 

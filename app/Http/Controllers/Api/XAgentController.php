@@ -118,7 +118,8 @@ class XAgentController extends Controller
             $c->save();
         }
         \App\Models\BotActionLog::create(['social_account_id' => $a->id, 'action_type' => 'agent.'.$data['action'],
-            'source' => AgentCatalog::SOURCE, 'target_uri' => $url, 'success' => true, 'performed_at' => now()]);
+            'source' => AgentCatalog::SOURCE, 'target_uri' => $url, 'target_text' => $data['action'] === 'search.read' ? $data['query'] : null,
+            'success' => true, 'performed_at' => now()]);
 
         return response()->json(['snapshot_id' => $snapshot] + $result);
     }

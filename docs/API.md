@@ -1425,6 +1425,8 @@ Actions d’écriture : `like`, `unlike`, `bookmark`, `unbookmark`, `reply`, `qu
 
 Une réponse hors inbox incertaine qui a un identifiant X relevé pendant la tentative peut être vérifiée automatiquement après 45 secondes. Companion relit le permalien avec le profil du compte. L’auteur, le texte, l’heure de la tentative et le parent immédiat doivent correspondre. Le même reçu passe alors à `confirmed` avec `verification_source:fresh_thread_read`, sans geste supplémentaire. Consulter `x-status` pour voir le rapprochement.
 
+La découverte X suit la stratégie du compte. Elle alterne Abonnements et recherches, en reprenant après la dernière requête du journal `agent.search.read` (champ `text`). Elle inclut les hashtags et les comptes cibles (`from:pseudo`). Le plan indique `write_actions`, dont un like seul si la réponse est désactivée. Le filtrage et la lecture du fil précèdent tout geste.
+
 Client Hermès : `x-read`, `x-context`, `x-action [--commit]`, `x-status`, `x-contacts`. Mémoire SQLite `x_attempts` distincte de TikTok et inbox ; intention enregistrée avant HTTP. Le skill est livré dans `hermes/skills/community-manager-x/SKILL.md`.
 
 Publications X en mode navigateur : publications planifiées/manuelles et segments de fil portent une clé de livraison dans `browser_tasks`, réutilisée après reprise. Un résultat incertain ne crée aucun deuxième ordre. Médias avant texte, un seul clic final, ID et preuve après rechargement exigés. Les articles non pris en charge échouent explicitement, sans API. Le délai de redistribution de queue est au moins 1 200 s, au-dessus du timeout du job vidéo (1 080 s).

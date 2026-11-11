@@ -3,6 +3,7 @@
 import datetime as dt
 import json
 import os
+import re
 from pathlib import Path
 from urllib.parse import urlencode
 from community_manager import Client, daytime, pending_inbox_order
@@ -23,34 +24,70 @@ def action_available(actions, name):
     return action.get('enabled', True) and action.get('left', 0) > 0
 
 
+def x_search_queries(strategy):
+    queries = [q.strip() for q in strategy.get('search_queries', [])
+               if isinstance(q, str) and 0 < len(q.strip()) <= 150]
+    for value in strategy.get('hashtags', []):
+        tag = value.strip().removeprefix('#') if isinstance(value, str) else ''
+        if re.fullmatch(r'\w{1,149}', tag) and not tag.isdecimal():
+            queries.append('#' + tag)
+    excluded = {entry.strip()[1:].casefold() for entry in strategy.get('exclusions', [])
+                if isinstance(entry, str) and re.fullmatch(r'@[A-Za-z0-9_]{1,15}', entry.strip())}
+    for value in strategy.get('target_accounts', []):
+        match = re.fullmatch(r'(?:https://(?:www\.)?(?:x|twitter)\.com/)?@?([A-Za-z0-9_]{1,15})/?',
+                             value.strip(), re.IGNORECASE) if isinstance(value, str) else None
+        if match and match[1].casefold() not in excluded:
+            queries.append('from:' + match[1].lower())
+    distinct = {}
+    for query in queries:
+        distinct.setdefault(query.casefold(), query)
+    return list(distinct.values())
+
+
 def discovery_source(client, account, now):
     actions = account['actions']
     strategy = account.get('strategy') or {}
-    queries = [q.strip() for q in strategy.get('search_queries', []) if isinstance(q, str) and 0 < len(q.strip()) <= 150]
+    is_x = account['platform'] == 'twitter'
+    queries = (x_search_queries(strategy) if is_x else
+               [q.strip() for q in strategy.get('search_queries', [])
+                if isinstance(q, str) and 0 < len(q.strip()) <= 150])
     sources = {}
     if action_available(actions, 'feed.read'):
         sources['feed.read'] = {}
     if queries and action_available(actions, 'search.read'):
-        sources['search.read'] = {'query': queries[(int(now.timestamp()) // (DISCOVERY_MINUTES * 60)) % len(queries)]}
+        sources['search.read'] = {}
     if not sources:
         return None
-    recent = []
+
+    history = {}
     for action in ('feed.read', 'search.read'):
-        history = client.api('GET', 'logs?' + urlencode({'account_id': account['id'], 'action': 'agent.' + action, 'limit': 1}))
-        last = next(iter(history.get('logs', [])), {}).get('at')
-        if last:
-            recent.append((dt.datetime.fromisoformat(last).astimezone(dt.timezone.utc), action))
-    if recent:
-        at, previous = max(recent)
-        if now.astimezone(dt.timezone.utc) - at < dt.timedelta(minutes=DISCOVERY_MINUTES):
+        response = client.api('GET', 'logs?' + urlencode({
+            'account_id': account['id'], 'action': 'agent.' + action, 'limit': 1
+        }))
+        entry = next(iter(response.get('logs', [])), {})
+        if entry.get('at'):
+            history[action] = entry
+    if history:
+        previous = max(history, key=lambda action: dt.datetime.fromisoformat(history[action]['at']))
+        if now - dt.datetime.fromisoformat(history[previous]['at']) < dt.timedelta(minutes=DISCOVERY_MINUTES):
             return None
         choice = next((action for action in sources if action != previous), previous)
     else:
         choice = next(iter(sources))
+
+    if 'search.read' in sources:
+        if is_x:
+            last_query = (history.get('search.read', {}).get('text') or '').strip().casefold()
+            index = next((i + 1 for i, query in enumerate(queries) if query.casefold() == last_query), 0)
+        else:
+            index = int(now.timestamp()) // (DISCOVERY_MINUTES * 60)
+        sources['search.read'] = {'query': queries[index % len(queries)]}
     plan = {'read_action': choice, **sources[choice]}
     alternative = next((action for action in sources if action != choice), None)
     if alternative:
         plan['fallback'] = {'read_action': alternative, **sources[alternative]}
+    elif is_x and choice == 'search.read' and len(queries) > 1:
+        plan['fallback'] = {'read_action': 'search.read', 'query': queries[(index + 1) % len(queries)]}
     return plan
 
 
@@ -82,16 +119,16 @@ def snapshot(client, now=None, lane=None):
         can_reply = actions.get('reply', {}).get('enabled', True) and actions.get('reply', {}).get('left', 0) > 0 and (api or tiktok or (actions.get('like', {}).get('enabled', True) and actions.get('like', {}).get('left', 0) > 0))
         if facebook_like and not action_available(actions, 'comment.like'):
             can_reply = False  # conserver une place au like demandé après la réponse
-        can_feed = platform == 'twitter' and actions.get('feed.read', {}).get('left', 0) > 0 and any(actions.get(k, {}).get('enabled', True) and actions.get(k, {}).get('left', 0) > 0 for k in ('like', 'bookmark'))
         can_discover = (platform in ('twitter', 'threads') and account.get('session') == 'connected'
                         and account.get('persona') and action_available(actions, 'thread.read'))
         threads_discovery = can_discover and platform == 'threads' and any(action_available(actions, k) for k in ('like', 'comment'))
-        x_discovery = can_discover and platform == 'twitter' and action_available(actions, 'reply')
+        x_writes = [action for action in ('reply', 'like') if action_available(actions, action)]
+        x_discovery = can_discover and platform == 'twitter' and bool(x_writes)
         tiktok_writes = [k for k in ('video.comment', 'video.like', 'comment.like') if action_available(actions, k)]
         if not action_available(actions, 'video.comments'):
             tiktok_writes = [k for k in tiktok_writes if k == 'video.like']
         tiktok_discovery = lane == 'tiktok' and account.get('persona') and action_available(actions, 'feed.read') and tiktok_writes
-        can_feed = can_feed or threads_discovery or x_discovery or tiktok_discovery
+        can_feed = threads_discovery or x_discovery or tiktok_discovery
         if (not can_reply and not can_feed) or cadence.get('blocked'):
             continue
         required = steps if can_reply else 1  # réponse et like, ou geste de flux
@@ -138,8 +175,10 @@ def snapshot(client, now=None, lane=None):
             reserve = (steps if can_reply else 0) + int(bool(upcoming))
             enough = all(value is None or value >= 1 + reserve for value in (cadence.get('remaining'), cadence.get('daily', {}).get('remaining')))
             source = discovery_source(client, account, now) if enough else None
+            can_feed = source is not None
             if source:
-                x_explorations.append({'account_id': account['id'], **source, 'reserve_for_inbox': can_reply})
+                x_explorations.append({'account_id': account['id'], **source, 'write_actions': x_writes,
+                                       'reserve_for_inbox': can_reply})
         if tiktok_discovery:
             reserve = (steps if can_reply else 0) + int(bool(upcoming))
             enough = all(value is None or value >= 1 + reserve for value in (cadence.get('remaining'), cadence.get('daily', {}).get('remaining')))
@@ -171,7 +210,8 @@ def snapshot(client, now=None, lane=None):
     work=discovery_first+browser_first+other
     if lane:
         work = [a for a in work if a['items'] or a['discovery_plan'] or any(p['account_id'] == a['account_id'] for p in x_explorations + tiktok_explorations)]
-    return {'state':'work','cycle_key':int(now.timestamp())//300,'accounts':work,'priority_threads':explorations,'priority_x':x_explorations,'priority_tiktok':tiktok_explorations} if work or x_explorations or tiktok_explorations else {'state':'idle'}
+    cycle_seconds = 120 if lane == 'x' else 300
+    return {'state':'work','cycle_key':int(now.timestamp())//cycle_seconds,'accounts':work,'priority_threads':explorations,'priority_x':x_explorations,'priority_tiktok':tiktok_explorations} if work or x_explorations or tiktok_explorations else {'state':'idle'}
 
 
 def main(lane=None):
