@@ -21,6 +21,7 @@ class AdaptiveAccountLimits
                 return null;
             }
             $state = $account->agent_adaptation_state ?? [];
+            $cooldown = $this->cooldownUntil($account);
             $started = Carbon::parse($state['enabled_at'] ?? now()->toIso8601String());
             $since = Carbon::parse($state['window_started_at'] ?? $started);
             $handled = $state['handled_problem_ids'] ?? [];
@@ -35,17 +36,14 @@ class AdaptiveAccountLimits
                     && in_array($limit['scope'] ?? null, ['daily', 'temporary'], true);
                 $state['handled_problem_ids'] = [...$handled, $problem->id];
                 $state['window_started_at'] = now()->toIso8601String();
-                $until = now()->addMinutes($platform ? (($limit['scope'] === 'daily') ? 1440 : 60) : 15);
-                $state['cooldown_until'] = max($until, $this->cooldownUntil($account) ?? $until)->toIso8601String();
-                // Un incident de commentaire ne doit pas écourter une pause
-                // de publication déjà imposée pour une autre raison.
-                $publicationUntil = $this->cooldownUntil($account, manualPublication: true);
-                $commentFailure = ! $platform && preg_match('/\.(comment|reply)$/', $problem->action);
-                if (! $commentFailure && (! $publicationUntil || $until->gt($publicationUntil))) {
-                    $publicationUntil = $until;
+                if ($platform) {
+                    $until = now()->addMinutes($limit['scope'] === 'daily' ? 1440 : 60);
+                    $cooldown = $cooldown && $cooldown->gt($until) ? $cooldown : $until;
                 }
-                $state['publication_cooldown_until'] = $publicationUntil?->toIso8601String();
-                $state['reason'] = $platform ? 'Limitation explicite du réseau : cadence réduite et pause.' : 'Échec ou résultat incertain : hausse suspendue, contrôle nécessaire.';
+                $state['cooldown_until'] = $cooldown?->toIso8601String();
+                $state['cooldown_source'] = $cooldown ? 'platform_ui' : null;
+                unset($state['publication_cooldown_until']);
+                $state['reason'] = $platform ? 'Limitation explicite du réseau : cadence réduite et pause.' : 'Incident technique enregistré. Nouvelle fenêtre de mesure de la cadence.';
                 $old = $this->values($account);
                 if ($platform) {
                     $account->agent_hourly_limit = max(1, (int) floor($account->agent_hourly_limit / 2));
@@ -58,7 +56,7 @@ class AdaptiveAccountLimits
 
                 return $this->record($account, $old, $state['reason'], ['event_id' => $problem->id, 'source' => $platform ? 'platform_ui' : 'technical', 'cooldown_until' => $state['cooldown_until'], 'platform_message' => $platform ? mb_substr((string) ($limit['message'] ?? ''), 0, 500) : null]);
             }
-            if (isset($state['cooldown_until']) && Carbon::parse($state['cooldown_until'])->isFuture()) {
+            if ($cooldown !== null) {
                 return null;
             }
             $events = AccountActionEvent::where('social_account_id', $account->id)->where('created_at', '>=', $since)->whereNotIn('id', $handled)->get();
@@ -73,7 +71,8 @@ class AdaptiveAccountLimits
             if ($old === $this->values($account)) {
                 return null;
             }
-            $account->agent_adaptation_state = array_replace($state, ['window_started_at' => now()->toIso8601String(), 'cooldown_until' => null, 'publication_cooldown_until' => null, 'reason' => 'Au moins 10 gestes confirmés sur une fenêtre stable de 30 minutes.']);
+            unset($state['publication_cooldown_until']);
+            $account->agent_adaptation_state = array_replace($state, ['window_started_at' => now()->toIso8601String(), 'cooldown_until' => null, 'cooldown_source' => null, 'reason' => 'Au moins 10 gestes confirmés sur une fenêtre stable de 30 minutes.']);
             $account->save();
             $this->scaleActions($account);
 
@@ -81,18 +80,35 @@ class AdaptiveAccountLimits
         });
     }
 
-    public function cooldownUntil(SocialAccount $account, bool $manualPublication = false): ?Carbon
+    public function cooldownUntil(SocialAccount $account): ?Carbon
     {
         if (! ($account->agent_adaptation['enabled'] ?? false)) {
             return null;
         }
 
         $state = $account->agent_adaptation_state ?? [];
-        $key = $manualPublication && array_key_exists('publication_cooldown_until', $state)
-            ? 'publication_cooldown_until'
-            : 'cooldown_until';
+        if (empty($state['cooldown_until'])) {
+            return null;
+        }
+        if (array_key_exists('cooldown_source', $state)) {
+            $until = Carbon::parse($state['cooldown_until']);
 
-        return isset($state[$key]) ? Carbon::parse($state[$key]) : null;
+            return $state['cooldown_source'] === 'platform_ui' && $until->isFuture() ? $until : null;
+        }
+
+        // Dans l’ancien état, une pause technique pouvait masquer une limite réseau plus longue.
+        $cutoff = now()->subDay();
+        if (! empty($state['enabled_at'])) {
+            $enabledAt = Carbon::parse($state['enabled_at']);
+            if ($enabledAt->gt($cutoff)) {
+                $cutoff = $enabledAt;
+            }
+        }
+
+        return AgentLimitAdjustment::where('social_account_id', $account->id)
+            ->where('created_at', '>=', $cutoff)->where('context->source', 'platform_ui')->get()
+            ->map(fn ($row) => isset($row->context['cooldown_until']) ? Carbon::parse($row->context['cooldown_until']) : null)
+            ->filter(fn ($until) => $until?->isFuture())->max();
     }
 
     public function interval(int $hourly): int
@@ -121,7 +137,10 @@ class AdaptiveAccountLimits
 
     public function describe(SocialAccount $account): array
     {
-        return ['policy' => $account->agent_adaptation ?? ['enabled' => false], 'state' => $account->agent_adaptation_state ?? [],
+        $state = $account->agent_adaptation_state ?? [];
+        $state['cooldown_until'] = $this->cooldownUntil($account)?->toIso8601String();
+
+        return ['policy' => $account->agent_adaptation ?? ['enabled' => false], 'state' => $state,
             'history' => AgentLimitAdjustment::where('social_account_id', $account->id)->latest('id')->limit(10)->get()->map(fn ($row) => $row->only(['id', 'old_hourly', 'new_hourly', 'old_daily', 'new_daily', 'old_interval', 'new_interval', 'reason', 'context', 'created_at']))];
     }
 }

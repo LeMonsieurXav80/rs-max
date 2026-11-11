@@ -13,9 +13,11 @@ class AccountActionBudget
 {
     public const ADAPTIVE_PAUSE = 'Pause adaptative RS-Max : aucun geste effectué.';
 
-    public function reserve(SocialAccount $account, string $action, string $executor, ?string $target = null, ?int $taskId = null, bool $manualPublication = false): AccountActionEvent
+    public const PLATFORM_PAUSE = 'Limite signalée par le réseau : aucun geste effectué.';
+
+    public function reserve(SocialAccount $account, string $action, string $executor, ?string $target = null, ?int $taskId = null): AccountActionEvent
     {
-        return DB::transaction(function () use ($account, $action, $executor, $target, $taskId, $manualPublication) {
+        return DB::transaction(function () use ($account, $action, $executor, $target, $taskId) {
             $account = SocialAccount::whereKey($account->id)->lockForUpdate()->firstOrFail();
             $events = AccountActionEvent::where('social_account_id', $account->id);
             if ($account->platform->slug === 'twitter' && str_starts_with($action, 'x.')) {
@@ -40,8 +42,8 @@ class AccountActionBudget
                 }
             }
             $usage = $this->usage($account);
-            if (app(AdaptiveAccountLimits::class)->cooldownUntil($account, $manualPublication)?->isFuture()) {
-                throw new BrowserException(self::ADAPTIVE_PAUSE);
+            if ($usage['adaptation']['state']['cooldown_until'] !== null) {
+                throw new BrowserException(self::PLATFORM_PAUSE);
             }
             if ($account->agent_daily_limit !== null && $usage['daily']['attempted'] >= $account->agent_daily_limit) {
                 throw new BrowserException('Plafond quotidien RS-Max atteint : aucun geste effectué.');
@@ -79,9 +81,7 @@ class AccountActionBudget
             return;
         }
         $action = $task->kind === 'x.post' && str_contains($task->payload['url'] ?? '', 'in_reply_to=') ? 'x.reply' : $task->kind;
-        $manualPublication = in_array($task->kind, ['tiktok.publish', 'x.post'], true)
-            && ($task->payload['manual_publication'] ?? false) === true;
-        $this->reserve($task->socialAccount, $action, 'browser', $task->payload['url'] ?? null, $task->id, $manualPublication);
+        $this->reserve($task->socialAccount, $action, 'browser', $task->payload['url'] ?? null, $task->id);
     }
 
     public function finish(BrowserTask $task): void
@@ -115,14 +115,15 @@ class AccountActionBudget
                 $next = $reset;
             }
         }
-        $cooldown = ($account->agent_adaptation['enabled'] ?? false) ? ($account->agent_adaptation_state['cooldown_until'] ?? null) : null;
-        if ($cooldown && \Illuminate\Support\Carbon::parse($cooldown)->isFuture() && (! $next || \Illuminate\Support\Carbon::parse($cooldown)->greaterThan($next))) {
+        $adaptation = app(AdaptiveAccountLimits::class)->describe($account);
+        $cooldown = $adaptation['state']['cooldown_until'];
+        if ($cooldown && (! $next || \Illuminate\Support\Carbon::parse($cooldown)->greaterThan($next))) {
             $next = \Illuminate\Support\Carbon::parse($cooldown);
         }
 
         return ['daily' => ['timezone' => 'Europe/Lisbon', 'limit' => $account->agent_daily_limit, 'attempted' => $daily,
             'remaining' => $account->agent_daily_limit === null ? null : max(0, $account->agent_daily_limit - $daily)],
-            'adaptation' => app(AdaptiveAccountLimits::class)->describe($account), 'next_allowed_at' => $next?->isFuture() ? $next->toIso8601String() : null, 'blocked' => $account->agent_hourly_limit === 0 || $account->agent_daily_limit === 0 || ($cooldown && \Illuminate\Support\Carbon::parse($cooldown)->isFuture()),
+            'adaptation' => $adaptation, 'next_allowed_at' => $next?->isFuture() ? $next->toIso8601String() : null, 'blocked' => $account->agent_hourly_limit === 0 || $account->agent_daily_limit === 0 || $cooldown !== null,
             'window' => 'rolling_60_minutes', 'limit' => $account->agent_hourly_limit, 'min_interval_seconds' => $account->agent_min_interval_seconds,
             'attempted' => $events->count(), 'confirmed' => $events->where('status', 'confirmed')->count(),
             'remaining' => $account->agent_hourly_limit === null ? null : max(0, $account->agent_hourly_limit - $events->count())];

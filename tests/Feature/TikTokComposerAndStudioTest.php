@@ -12,7 +12,6 @@ use App\Models\Post;
 use App\Models\SocialAccount;
 use App\Models\SocialAccountSnapshot;
 use App\Models\User;
-use App\Services\Agent\AccountActionBudget;
 use App\Services\Agent\AdaptiveAccountLimits;
 use App\Services\Browser\BrowserTaskQueue;
 use App\Services\PublishingService;
@@ -122,7 +121,7 @@ class TikTokComposerAndStudioTest extends TestCase
         $this->assertTrue($post->scheduled_at->equalTo($post->fresh()->scheduled_at));
     }
 
-    public function test_le_bouton_publier_franchit_la_pause_due_a_un_commentaire(): void
+    public function test_un_incident_de_commentaire_ne_bloque_ni_la_file_ni_le_bouton_publier(): void
     {
         Queue::fake();
         $this->actingAs($this->manager);
@@ -147,8 +146,8 @@ class TikTokComposerAndStudioTest extends TestCase
             $queue = app(BrowserTaskQueue::class);
             $automatic = BrowserTask::create(['social_account_id' => $this->account->id, 'profile' => 'nas-test',
                 'kind' => 'tiktok.publish', 'payload' => []]);
-            $this->assertNull($queue->claim('nas-test'));
-            $this->assertSame(AccountActionBudget::ADAPTIVE_PAUSE, $automatic->fresh()->error);
+            $this->assertSame($automatic->id, $queue->claim('nas-test')?->id);
+            $automatic->refresh()->update(['status' => BrowserTask::DONE]);
 
             $id = '7705777869812731158';
             BrowserTask::created(function (BrowserTask $task) use ($queue, $id) {

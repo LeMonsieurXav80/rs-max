@@ -68,12 +68,15 @@ class XAssistedTest extends TestCase
         Http::preventStrayRequests();
         Http::fake(['api.openai.com/*' => fn ($request) => Http::response(['choices' => [['message' => [
             'content' => str_contains($request['messages'][1]['content'], 'parfum')
-                ? '{"pertinent":false}' : '{"pertinent":true,"texte":"Belle progression !"}',
+                ? '{"pertinent":false}'
+                : json_encode(['pertinent' => true, 'texte' => str_contains($request['messages'][0]['content'], 'Le premier brouillon dépassait')
+                    ? 'Belle progression !' : str_repeat('進', 141)]),
         ]]]])]);
         $this->postJson($url.'preview', ['target_id' => '4102', 'author' => 'visitor', 'text' => 'Mon nouveau parfum'] + $identity)
             ->assertUnprocessable()->assertJsonMissingPath('draft_key');
         $target = ['target_id' => '4100', 'author' => 'visitor', 'text' => 'New deadlift record', 'origin' => 'Training log'] + $identity;
         $key = $this->postJson($url.'preview', $target)->assertOk()->assertJsonPath('reply_text', 'Belle progression !')->json('draft_key');
+        Http::assertSentCount(3);
         Http::assertSent(fn ($request) => $request['response_format']['type'] === 'json_object'
             && str_contains($request['messages'][0]['content'], 'Rédige en français')
             && str_contains($request['messages'][0]['content'], 'Le ton vient du persona du compte')

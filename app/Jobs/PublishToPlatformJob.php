@@ -26,14 +26,9 @@ class PublishToPlatformJob implements ShouldQueue
 
     public int $timeout = 1080;
 
-    public bool $manualPublication = false;
-
     public function __construct(
         public PostPlatform $postPlatform,
-        bool $manualPublication = false,
-    ) {
-        $this->manualPublication = $manualPublication;
-    }
+    ) {}
 
     public function handle(PublishingService $publishingService): void
     {
@@ -81,7 +76,6 @@ class PublishToPlatformJob implements ShouldQueue
         $result = $adapter->publish($account, $content, $media, [
             'article_title' => $post->article_title,
             'publication_key' => 'post-platform:'.$postPlatform->id,
-            'manual_publication' => $this->manualPublication,
         ]);
 
         if ($result['success']) {

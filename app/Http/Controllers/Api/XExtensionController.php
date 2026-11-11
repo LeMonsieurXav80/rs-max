@@ -7,10 +7,10 @@ use App\Models\BotActionLog;
 use App\Models\InboxItem;
 use App\Models\SocialAccount;
 use App\Services\Agent\AutomationJournal;
+use App\Services\Agent\XReplyDraft;
 use App\Services\Browser\BrowserException;
 use App\Services\Browser\XSessionService;
 use App\Services\Inbox\CompanionInboxReply;
-use App\Services\Inbox\InboxReplyGenerator;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Cache;
@@ -177,7 +177,7 @@ class XExtensionController extends Controller
         return response()->json(['status' => 'confirmed']);
     }
 
-    public function suggest(Request $r, InboxReplyGenerator $generator): JsonResponse
+    public function suggest(Request $r, XReplyDraft $generator): JsonResponse
     {
         $a = $this->profileAccount($r);
         $v = $r->validate(['tweet_id' => ['required', 'string', 'regex:/^[0-9]{1,25}$/'],
@@ -194,18 +194,25 @@ class XExtensionController extends Controller
         abort_unless(filled($first['text']) || filled($first['quote'] ?? null), 422, 'Tweet d’origine sans texte lisible : pas de réponse sans contexte.');
         $context = json_encode($v['conversation'], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
 
-        return Cache::lock('x-suggest:'.$a->id.':'.$v['tweet_id'], 60)->block(2, function () use ($a, $v, $context, $generator) {
+        return Cache::lock('x-suggest:'.$a->id.':'.$v['tweet_id'], 90)->block(2, function () use ($a, $v, $context, $generator) {
             $old = DB::table('extension_x_replies')->where('social_account_id', $a->id)->where('tweet_id', $v['tweet_id'])->first();
             if ($old) {
                 abort_unless($old->status === 'prepared', 409, 'Réponse déjà tentée : aucun nouvel envoi automatique.');
                 abort_unless($old->persona_hash === $this->personaHash($a) && $old->context_json === $context, 409, 'Persona ou contexte changé depuis le brouillon : vérifier avant reprise.');
 
-                return response()->json(['id' => $old->id, 'reply_text' => $old->reply_text, 'status' => 'prepared']);
+                if (XReplyDraft::fits($old->reply_text)) {
+                    return response()->json(['id' => $old->id, 'reply_text' => $old->reply_text, 'status' => 'prepared']);
+                }
             }
             $item = new InboxItem(['type' => 'comment', 'author_name' => $v['author'], 'content' => $v['content']]);
-            $reply = $generator->generate($item, $a, true, 280, $context, 'X', 'du fil X, du tweet d’origine à la mention');
-            abort_unless(filled($reply), 503, 'Génération indisponible : aucun envoi.');
-            abort_if(strlen(mb_convert_encoding($reply, 'UTF-16LE', 'UTF-8')) / 2 > 280, 422, 'Réponse trop longue pour X : aucun envoi.');
+            $reply = $generator->generate($item, $a, $context, 'du fil X, du tweet d’origine à la mention');
+            if ($old) {
+                $updated = DB::table('extension_x_replies')->where('id', $old->id)->where('status', 'prepared')
+                    ->where('reply_text', $old->reply_text)->update(['reply_text' => $reply, 'updated_at' => now()]);
+                abort_unless($updated, 409, 'Brouillon déjà réservé ou modifié.');
+
+                return response()->json(['id' => $old->id, 'reply_text' => $reply, 'status' => 'prepared']);
+            }
             $id = DB::table('extension_x_replies')->insertGetId(['social_account_id' => $a->id, 'tweet_id' => $v['tweet_id'],
                 'author' => $v['author'], 'context_json' => $context, 'persona_hash' => $this->personaHash($a),
                 'reply_text' => $reply, 'status' => 'prepared', 'created_at' => now(), 'updated_at' => now()]);
@@ -218,6 +225,7 @@ class XExtensionController extends Controller
     {
         $a = $this->profileAccount($r);
         $v = $r->validate(['reply_text' => 'required|string|max:280']);
+        abort_unless(XReplyDraft::fits($v['reply_text']), 422, 'Réponse trop longue pour X. Reformule le brouillon.');
 
         return DB::transaction(function () use ($a, $v, $id, $journal) {
             SocialAccount::whereKey($a->id)->lockForUpdate()->firstOrFail();

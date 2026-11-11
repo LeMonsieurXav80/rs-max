@@ -40,12 +40,12 @@ class TwitterBrowserAdapter implements PlatformAdapterInterface, ResharingAdapte
             return ['success' => false, 'external_id' => null, 'error' => 'Les articles X ne sont pas encore pris en charge par Companion. Aucun appel API effectué.'];
         }
 
-        return $this->post($account, isset($options['quote_to_id']) ? self::COMPOSE_URL.'?quote_tweet_id='.$options['quote_to_id'] : self::COMPOSE_URL, $content, $media, key: $options['publication_key'] ?? null, manualPublication: ($options['manual_publication'] ?? false) === true);
+        return $this->post($account, isset($options['quote_to_id']) ? self::COMPOSE_URL.'?quote_tweet_id='.$options['quote_to_id'] : self::COMPOSE_URL, $content, $media, key: $options['publication_key'] ?? null);
     }
 
     public function publishReply(SocialAccount $account, string $content, string $replyToId, ?array $media = null, ?array $options = null): array
     {
-        return $this->post($account, 'https://x.com/compose/post?in_reply_to='.$replyToId, $content, $media, key: $options['publication_key'] ?? null, window: $options['activity_window'] ?? null, manualPublication: ($options['manual_publication'] ?? false) === true);
+        return $this->post($account, 'https://x.com/compose/post?in_reply_to='.$replyToId, $content, $media, key: $options['publication_key'] ?? null, window: $options['activity_window'] ?? null);
     }
 
     public function nativeQuote(SocialAccount $account, string $text, string $sourceExternalId, ?array $media = null): array
@@ -81,11 +81,10 @@ class TwitterBrowserAdapter implements PlatformAdapterInterface, ResharingAdapte
         return $this->post($account, self::COMPOSE_URL, $content, $media, dry: true);
     }
 
-    private function post(SocialAccount $account, string $url, string $content, ?array $media, bool $dry = false, ?string $key = null, ?array $window = null, bool $manualPublication = false): array
+    private function post(SocialAccount $account, string $url, string $content, ?array $media, bool $dry = false, ?string $key = null, ?array $window = null): array
     {
         $payload = ['url' => $url, 'text' => $content, 'username' => $account->browser_username,
-            'media' => $this->selectMedia($media ?? []), 'dry' => $dry, 'publication_key' => $dry ? null : ($key ?? $this->deliveryKey),
-            'manual_publication' => $manualPublication];
+            'media' => $this->selectMedia($media ?? []), 'dry' => $dry, 'publication_key' => $dry ? null : ($key ?? $this->deliveryKey)];
 
         if ($window !== null) {
             $payload['activity_window'] = $window;

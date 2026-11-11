@@ -5,14 +5,14 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Models\InboxItem;
 use App\Models\SocialAccount;
+use App\Services\Agent\XReplyDraft;
 use App\Services\Agent\XReplyVault;
-use App\Services\Inbox\InboxReplyGenerator;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 
 class XReplyPreviewController extends Controller
 {
-    public function forAgent(Request $request, int $id, XReplyVault $vault, InboxReplyGenerator $generator): JsonResponse
+    public function forAgent(Request $request, int $id, XReplyVault $vault, XReplyDraft $generator): JsonResponse
     {
         abort_unless($request->user()->isManager(), 403);
         $account = $request->user()->connectedSocialAccounts()->with('persona')
@@ -21,7 +21,7 @@ class XReplyPreviewController extends Controller
         return $this->preview($request, $account, $vault, $generator);
     }
 
-    public function forCompanion(Request $request, XReplyVault $vault, InboxReplyGenerator $generator): JsonResponse
+    public function forCompanion(Request $request, XReplyVault $vault, XReplyDraft $generator): JsonResponse
     {
         $identity = $request->validate([
             'platform_account_id' => 'required|string|regex:/^[0-9]{1,25}$/',
@@ -36,7 +36,7 @@ class XReplyPreviewController extends Controller
         return $this->preview($request, $account, $vault, $generator);
     }
 
-    public function preview(Request $request, SocialAccount $account, XReplyVault $vault, InboxReplyGenerator $generator, bool $requireVault = true, bool $filterByStrategy = false): JsonResponse
+    public function preview(Request $request, SocialAccount $account, XReplyVault $vault, XReplyDraft $generator, bool $requireVault = true, bool $filterByStrategy = false): JsonResponse
     {
         abort_unless($account->persona?->is_active && filled($account->persona->system_prompt), 422, 'Persona actif requis.');
         $data = $request->validate([
@@ -111,16 +111,7 @@ class XReplyPreviewController extends Controller
                 .'Sinon renvoie uniquement le JSON {"pertinent":true,"texte":"réponse publique"} dans la langue de réponse du compte.';
         }
 
-        $reply = $generator->generate($item, $account, true, 280, $input, 'X', 'du fil X et des sources du Vault', extraInstructions: $rules, jsonOutput: $filterByStrategy);
-        abort_unless(filled($reply), 503, 'Brouillon indisponible.');
-        if ($filterByStrategy) {
-            $draft = json_decode($reply, true);
-            $text = $draft['texte'] ?? null;
-            abort_unless(($draft['pertinent'] ?? false) === true && is_string($text) && filled($text),
-                422, 'Publication hors ciblage ou contexte insuffisant. Passer à la suivante.');
-            $reply = trim($text);
-        }
-        abort_if(strlen(mb_convert_encoding($reply, 'UTF-16LE', 'UTF-8')) / 2 > 280, 422, 'Brouillon trop long.');
+        $reply = $generator->generate($item, $account, $input, 'du fil X et des sources du Vault', $rules, $filterByStrategy);
         abort_if(preg_match('~(?:https?://|www\.|code promo|lien (?:en|dans la) bio|achète|commande (?:le|sur))~iu', $reply),
             422, 'Brouillon écarté par le filtre de relecture.');
         foreach ($vault->brandsFor($account) as $brand) {

@@ -179,6 +179,8 @@ class XAgentTest extends TestCase
     {
         $s = $this->snapshot(true);
         $ctx = $this->getJson($this->url('context').'?snapshot_id='.$s)->assertOk()->assertJsonPath('persona.instructions', 'Voix chaleureuse et sobre')->json('context_id');
+        $this->postJson($this->url('prepare'), ['action' => 'reply', 'snapshot_id' => $s, 'context_id' => $ctx, 'text' => str_repeat('進', 141)])
+            ->assertUnprocessable();
         $e = $this->prepare($s, 'reply', ['context_id' => $ctx, 'text' => 'Merci pour ce gentil mot 🖤']);
         $this->execute($e);
         $this->a->persona->update(['system_prompt' => 'Autre voix']);

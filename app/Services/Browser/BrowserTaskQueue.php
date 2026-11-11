@@ -44,7 +44,7 @@ class BrowserTaskQueue
                         throw new BrowserException('Cette livraison possède déjà une intention différente : vérifier avant toute nouvelle publication.');
                     }
 
-                    if (! $this->canRetryPausedTikTokPublication($existing, $lockedAccount, ($payload['manual_publication'] ?? false) === true)) {
+                    if (! $this->canRetryPausedTikTokPublication($existing, $lockedAccount)) {
                         return $existing;
                     }
 
@@ -83,14 +83,15 @@ class BrowserTaskQueue
         return $this->expire($task);
     }
 
-    private function canRetryPausedTikTokPublication(BrowserTask $task, SocialAccount $account, bool $manualPublication): bool
+    private function canRetryPausedTikTokPublication(BrowserTask $task, SocialAccount $account): bool
     {
         if ($task->kind !== 'tiktok.publish' || $task->status !== BrowserTask::CANCELLED
-            || $task->error !== AccountActionBudget::ADAPTIVE_PAUSE || $task->claimed_at !== null || $task->result !== null) {
+            || ! in_array($task->error, [AccountActionBudget::ADAPTIVE_PAUSE, AccountActionBudget::PLATFORM_PAUSE], true)
+            || $task->claimed_at !== null || $task->result !== null) {
             return false;
         }
 
-        return ! app(AdaptiveAccountLimits::class)->cooldownUntil($account, $manualPublication)?->isFuture()
+        return app(AdaptiveAccountLimits::class)->cooldownUntil($account) === null
             && ! AccountActionEvent::where('browser_task_id', $task->id)->exists();
     }
 

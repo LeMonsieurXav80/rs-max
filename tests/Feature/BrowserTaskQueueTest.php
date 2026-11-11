@@ -161,25 +161,13 @@ class BrowserTaskQueueTest extends TestCase
         ]);
         $payload = ['url' => 'https://www.tiktok.com/tiktokstudio/upload', 'text' => 'Bonjour',
             'publication_key' => 'post-platform:9', 'deadline' => now()->addMinutes(15)->toIso8601String()];
-        $this->task()->updateOrFail([
+        $cancelled = $this->task(BrowserTask::CANCELLED);
+        $cancelled->updateOrFail([
             'kind' => 'tiktok.publish', 'idempotency_key' => $payload['publication_key'], 'payload' => $payload,
+            'error' => AccountActionBudget::ADAPTIVE_PAUSE, 'finished_at' => now(),
         ]);
         $queue = app(BrowserTaskQueue::class);
-        $this->assertNull($queue->claim('wildycaro'));
-        $cancelled = BrowserTask::sole();
-        $this->assertSame(AccountActionBudget::ADAPTIVE_PAUSE, $cancelled->error);
-        $this->assertNull($cancelled->claimed_at);
-
-        try {
-            $queue->run($this->account, 'tiktok.publish', $payload);
-            $this->fail('La pause doit encore empêcher toute nouvelle tâche.');
-        } catch (BrowserException $e) {
-            $this->assertSame(AccountActionBudget::ADAPTIVE_PAUSE, $e->getMessage());
-        }
-        $this->assertSame(1, BrowserTask::count());
-
-        $this->travel(16)->minutes();
-        $payload['deadline'] = now()->addMinutes(15)->toIso8601String();
+        $payload['deadline'] = now()->addMinutes(16)->toIso8601String();
         BrowserTask::created(function (BrowserTask $task) use ($queue) {
             $claimed = $queue->claim($task->profile);
             $this->assertSame($task->id, $claimed?->id);

@@ -99,16 +99,17 @@ class AdaptiveAccountLimitsTest extends TestCase
     {
         $this->freezeTime();
         $a = $this->account();
-        AccountActionEvent::create(['social_account_id' => $a->id, 'action' => 'x.like', 'executor' => 'browser', 'status' => 'failed', 'error' => 'HTTP 429 interne RS-Max']);
+        AccountActionEvent::create(['social_account_id' => $a->id, 'action' => 'x.like', 'executor' => 'browser',
+            'status' => 'failed', 'error' => 'HTTP 429 interne RS-Max', 'created_at' => now()->subMinute()]);
         $row = app(AdaptiveAccountLimits::class)->evaluate($a);
         $this->assertSame('technical', $row->context['source']);
         $this->assertSame(120, $a->fresh()->agent_hourly_limit);
         $this->assertNull(app(AdaptiveAccountLimits::class)->evaluate($a));
-        $this->travel(16)->minutes();
         $this->assertFalse(app(AccountActionBudget::class)->usage($a->fresh())['blocked']);
+        $this->assertSame('x.like', app(AccountActionBudget::class)->reserve($a, 'x.like', 'browser')->action);
     }
 
-    public function test_un_echec_de_commentaire_ne_leve_pas_une_limite_explicite_pour_la_publication_manuelle(): void
+    public function test_un_echec_de_commentaire_ne_leve_pas_une_limite_explicite_du_reseau(): void
     {
         $this->freezeTime();
         $a = $this->account();
@@ -126,8 +127,8 @@ class AdaptiveAccountLimitsTest extends TestCase
 
         $this->travel(16)->minutes();
         $this->expectException(BrowserException::class);
-        $this->expectExceptionMessage(AccountActionBudget::ADAPTIVE_PAUSE);
-        app(AccountActionBudget::class)->reserve($a, 'x.post', 'browser', manualPublication: true);
+        $this->expectExceptionMessage(AccountActionBudget::PLATFORM_PAUSE);
+        app(AccountActionBudget::class)->reserve($a, 'x.post', 'browser');
     }
 
     public function test_quota_local_sans_evenement_ne_declenche_aucune_adaptation(): void

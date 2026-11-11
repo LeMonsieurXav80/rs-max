@@ -211,8 +211,8 @@
                 <input type="hidden" name="agent_adaptation[enabled]" value="0">
                 <label class="flex items-center gap-2 text-sm mb-2"><input type="checkbox" name="agent_adaptation[enabled]" value="1" @checked(old('agent_adaptation.enabled', $account->agent_adaptation['enabled'] ?? false)) class="rounded border-gray-300"> Adapter progressivement la cadence de ce compte</label>
                 <p class="text-xs text-gray-500 mb-4">Paliers de 25 % dans les plafonds autorisés, après 10 gestes confirmés et 30 minutes stables. Le délai minimal suit la cadence. Les quotas des réponses et likes activés suivent le plafond quotidien actuel ; les autres actions gardent leur réglage. Aucun volume à remplir.</p>
-                @if($account->agent_adaptation_state['cooldown_until'] ?? null)
-                    <p class="text-sm text-amber-700 mb-3">Pause jusqu’au {{ $account->agent_adaptation_state['cooldown_until'] }} · {{ $account->agent_adaptation_state['reason'] ?? '' }}</p>
+                @if($pauseUntil = app(\App\Services\Agent\AdaptiveAccountLimits::class)->cooldownUntil($account))
+                    <p class="text-sm text-amber-700 mb-3">Limite signalée par le réseau jusqu’au {{ $pauseUntil->timezone('Europe/Lisbon')->format('d/m à H:i') }} (Lisbonne)</p>
                 @endif
                 <details class="mb-5 text-sm"><summary class="cursor-pointer">Historique des ajustements de ce compte</summary>
                     @forelse($agentCadence['adaptation']['history'] as $adjustment)

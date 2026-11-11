@@ -7,8 +7,8 @@ use App\Models\SocialAccount;
 use App\Models\TikTokEngagement;
 use App\Services\Agent\AutomationJournal;
 use App\Services\Agent\XEngagementService;
+use App\Services\Agent\XReplyDraft;
 use App\Services\Agent\XReplyVault;
-use App\Services\Inbox\InboxReplyGenerator;
 use App\Services\Inbox\ReplyLanguage;
 use App\Services\Stats\XBrowserStatsService;
 use Illuminate\Http\JsonResponse;
@@ -122,7 +122,7 @@ class XAssistedController extends Controller
         return response()->json(['id' => $row->id, 'status' => $row->status]);
     }
 
-    public function preview(Request $request, XReplyPreviewController $preview, XReplyVault $vault, InboxReplyGenerator $generator): JsonResponse
+    public function preview(Request $request, XReplyPreviewController $preview, XReplyVault $vault, XReplyDraft $generator): JsonResponse
     {
         $account = $this->account($request);
         $target = $request->validate([
@@ -152,6 +152,7 @@ class XAssistedController extends Controller
         $draft = Cache::get('x-assisted-draft:'.$data['draft_key']);
         abort_unless($draft && $draft['account_id'] === $account->id && $draft['username'] === strtolower($request->input('username')),
             409, 'Brouillon expiré ou rattaché à un autre compte.');
+        abort_unless(XReplyDraft::fits($draft['reply_text']), 422, 'Brouillon trop long pour X. Demande un nouvel aperçu.');
 
         $id = DB::transaction(function () use ($account, $draft, $engagements, $journal) {
             $locked = SocialAccount::with('persona')->lockForUpdate()->findOrFail($account->id);
