@@ -46,6 +46,28 @@ class XAssistedTest extends TestCase
         $this->assertDatabaseCount('browser_tasks', 0);
     }
 
+    public function test_companion_local_et_hermes_partagent_les_recherches_du_compte(): void
+    {
+        $platform = Platform::firstOrCreate(['slug' => 'twitter'], ['name' => 'X', 'auth_type' => 'oauth2']);
+        $owner = User::factory()->create(['role' => 'manager']);
+        $account = SocialAccount::create(['name' => 'X', 'platform_id' => $platform->id, 'platform_account_id' => '1000',
+            'browser_username' => 'owner', 'agent_strategy' => [
+                'search_queries' => ['Mode durable', 'mode durable', '#Tenue'],
+                'hashtags' => ['tenue', '#élégance', '#123', '#deux mots'],
+                'target_accounts' => ['@ModePro', 'https://x.com/modepro', '@retirer', 'https://x.com/pro/status/123'],
+                'exclusions' => ['@RETIRER', 'spam'],
+            ]]);
+        $account->users()->attach($owner, ['is_active' => true]);
+        $this->withToken($owner->createToken('extension')->plainTextToken);
+        $identity = ['platform_account_id' => '1000', 'username' => 'owner'];
+        $queries = ['Mode durable', '#Tenue', '#élégance', 'from:modepro'];
+
+        $this->getJson('/api/extension/x/assisted/context?'.http_build_query($identity))
+            ->assertOk()->assertJsonPath('queries', $queries);
+        $this->getJson('/api/community-manager/accounts')
+            ->assertOk()->assertJsonPath('accounts.0.discovery_queries', $queries);
+    }
+
     public function test_assiste_reserve_une_reponse_sans_creer_de_tache_et_bloque_les_doublons(): void
     {
         $platform = Platform::firstOrCreate(['slug' => 'twitter'], ['name' => 'X', 'auth_type' => 'oauth2']);

@@ -73,7 +73,7 @@ class XWatchTest(unittest.TestCase):
     def test_la_recherche_reste_possible_si_seul_le_like_est_autorise(self):
         client = Mock()
         account = self.account()
-        account.update(persona=5, strategy={'hashtags': ['#tenue']})
+        account.update(persona=5, strategy={'hashtags': ['#tenue']}, discovery_queries=['#tenue'])
         account['actions'] = {'like': {'left': 2}, 'search.read': {'left': 4}, 'thread.read': {'left': 4}}
         client.api.side_effect = [{'daytime': True, 'accounts': [account]}, {'logs': []}, {'logs': []}]
 
@@ -85,19 +85,10 @@ class XWatchTest(unittest.TestCase):
         self.assertEqual(result['priority_x'][0]['write_actions'], ['like'])
         self.assertEqual(client.api.call_count, 3)
 
-    def test_x_utilise_les_sources_configurees_sans_doublon_ni_compte_exclu(self):
-        strategy = {'search_queries': ['Mode durable', 'mode durable', '#Tenue'],
-                    'hashtags': ['tenue', '#élégance', '#123', '#deux mots'],
-                    'target_accounts': ['@ModePro', 'https://x.com/modepro', '@retirer',
-                                        'https://x.com/pro/status/123', 'https://ailleurs.test/autre'],
-                    'exclusions': ['@RETIRER', 'spam']}
-        self.assertEqual(watch.x_search_queries(strategy), ['Mode durable', '#Tenue', '#élégance', 'from:modepro'])
-
     def test_x_reprend_apres_la_derniere_recherche_effectuee(self):
         client = Mock()
         account = self.account()
-        account['strategy'] = {'search_queries': ['mode', 'tenue'], 'hashtags': ['#style'],
-                               'target_accounts': ['@atelier']}
+        account['discovery_queries'] = ['mode', 'tenue', '#style', 'from:atelier']
         account['actions'].update({'feed.read': {'left': 4}, 'search.read': {'left': 4}})
         now = dt.datetime.fromisoformat('2026-11-07T12:30:00+00:00')
         for last_query, wanted in [('mode', 'tenue'), ('tenue', '#style'), ('#style', 'from:atelier'), ('from:atelier', 'mode')]:
@@ -112,7 +103,7 @@ class XWatchTest(unittest.TestCase):
         client = Mock()
         client.api.return_value = {'logs': []}
         account = self.account()
-        account['strategy'] = {'target_accounts': ['@atelier', '@membre']}
+        account['discovery_queries'] = ['from:atelier', 'from:membre']
         account['actions']['search.read'] = {'left': 4}
         now = dt.datetime.fromisoformat('2026-11-07T12:30:00+00:00')
         plan = watch.discovery_source(client, account, now)
@@ -124,7 +115,7 @@ class XWatchTest(unittest.TestCase):
         first = self.account()
         second = self.account()
         for account, identifier, tag, action in [(first, 11, '#photo', 'reply'), (second, 12, '#sport', 'like')]:
-            account.update(id=identifier, persona=identifier, strategy={'hashtags': [tag]})
+            account.update(id=identifier, persona=identifier, discovery_queries=[tag])
             account['actions'] = {action: {'left': 4}, 'search.read': {'left': 4}, 'thread.read': {'left': 4}}
         client = Mock()
         client.api.side_effect = lambda method, path: (

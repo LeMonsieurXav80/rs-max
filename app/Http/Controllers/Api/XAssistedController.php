@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Models\SocialAccount;
 use App\Models\TikTokEngagement;
+use App\Services\Agent\AccountStrategy;
 use App\Services\Agent\AutomationJournal;
 use App\Services\Agent\XEngagementService;
 use App\Services\Agent\XReplyDraft;
@@ -36,7 +37,7 @@ class XAssistedController extends Controller
         return $account;
     }
 
-    public function context(Request $request): JsonResponse
+    public function context(Request $request, AccountStrategy $strategies): JsonResponse
     {
         $account = $this->account($request);
         $strategy = $account->agent_strategy ?? [];
@@ -46,7 +47,7 @@ class XAssistedController extends Controller
         return response()->json([
             'search_language' => count($languages) === 1 ? $languages[0] : null,
             'reply_language' => ReplyLanguage::code($account),
-            'queries' => array_values($strategy['search_queries'] ?? []),
+            'queries' => $strategies->xDiscoveryQueries($account),
             'exclusions' => array_values($strategy['exclusions'] ?? []),
         ])->header('Cache-Control', 'no-store, private');
     }

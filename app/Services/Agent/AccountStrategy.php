@@ -12,6 +12,47 @@ class AccountStrategy
 {
     public const LISTS = ['hashtags' => 'Hashtags à rechercher', 'target_accounts' => 'Comptes à suivre / explorer', 'search_queries' => 'Recherches spécifiques', 'exclusions' => 'Mots et comptes à exclure'];
 
+    /** @return list<string> Requêtes X issues des réglages du compte. */
+    public function xDiscoveryQueries(SocialAccount $account): array
+    {
+        $strategy = $account->agent_strategy ?? [];
+        $queries = [];
+        foreach ($strategy['search_queries'] ?? [] as $value) {
+            $query = is_string($value) ? trim($value) : '';
+            if ($query !== '' && mb_strlen($query) <= 255) {
+                $queries[] = $query;
+            }
+        }
+        foreach ($strategy['hashtags'] ?? [] as $value) {
+            $tag = is_string($value) ? ltrim(trim($value), '#') : '';
+            if (preg_match('/^[\p{L}\p{N}_]{1,254}$/uD', $tag) && ! preg_match('/^\p{Nd}+$/uD', $tag)) {
+                $queries[] = '#'.$tag;
+            }
+        }
+
+        $excluded = [];
+        foreach ($strategy['exclusions'] ?? [] as $value) {
+            if (is_string($value) && preg_match('/^@([a-z0-9_]{1,15})$/iD', trim($value), $match)) {
+                $excluded[strtolower($match[1])] = true;
+            }
+        }
+        foreach ($strategy['target_accounts'] ?? [] as $value) {
+            if (is_string($value) && preg_match('~^(?:https://(?:www\.)?(?:x|twitter)\.com/)?@?([a-z0-9_]{1,15})/?$~iD', trim($value), $match)) {
+                $handle = strtolower($match[1]);
+                if (! isset($excluded[$handle])) {
+                    $queries[] = 'from:'.$handle;
+                }
+            }
+        }
+
+        $distinct = [];
+        foreach ($queries as $query) {
+            $distinct[mb_convert_case($query, MB_CASE_FOLD)] ??= $query;
+        }
+
+        return array_values($distinct);
+    }
+
     public function validate(Request $request): array
     {
         // Les formulaires emploient une ligne par entrée ; l’API accepte des tableaux.

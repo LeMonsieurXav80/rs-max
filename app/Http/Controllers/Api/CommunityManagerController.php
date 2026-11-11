@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Models\SocialAccount;
 use App\Models\TikTokEngagement;
+use App\Services\Agent\AccountStrategy;
 use App\Services\Agent\AgentCatalog;
 use App\Services\Agent\CommentFreshness;
 use App\Services\Agent\CommunityManagerWindow;
@@ -36,7 +37,7 @@ class CommunityManagerController extends Controller
         $request->attributes->set('community_manager', true);
     }
 
-    public function accounts(Request $request): JsonResponse
+    public function accounts(Request $request, AccountStrategy $strategies): JsonResponse
     {
         abort_unless($request->user()->isManager(), 403);
         $accounts = $request->user()->connectedSocialAccounts()->with(['platform', 'persona'])->get();
@@ -46,6 +47,7 @@ class CommunityManagerController extends Controller
 
         return response()->json(['daytime' => $this->window->isOpen(), 'window' => $this->window->specification(),
             'accounts' => $accounts->map(fn ($a) => ['id' => $a->id, 'name' => $a->name, 'platform' => $a->platform->slug,
+                ...($a->platform->slug === 'twitter' ? ['discovery_queries' => $strategies->xDiscoveryQueries($a)] : []),
                 'strategy' => $a->agent_strategy ?? (object) [], 'reply_language' => ReplyLanguage::code($a), 'cadence' => app(\App\Services\Agent\AccountActionBudget::class)->usage($a),
                 'next_publication_at' => $this->nextPublicationAt($a),
                 'api_ready' => filled($a->credentials['access_token'] ?? null) || filled($a->credentials['refresh_token'] ?? null),

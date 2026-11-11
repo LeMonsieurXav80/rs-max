@@ -3,7 +3,6 @@
 import datetime as dt
 import json
 import os
-import re
 from pathlib import Path
 from urllib.parse import urlencode
 from community_manager import Client, daytime, pending_inbox_order
@@ -24,33 +23,12 @@ def action_available(actions, name):
     return action.get('enabled', True) and action.get('left', 0) > 0
 
 
-def x_search_queries(strategy):
-    queries = [q.strip() for q in strategy.get('search_queries', [])
-               if isinstance(q, str) and 0 < len(q.strip()) <= 150]
-    for value in strategy.get('hashtags', []):
-        tag = value.strip().removeprefix('#') if isinstance(value, str) else ''
-        if re.fullmatch(r'\w{1,149}', tag) and not tag.isdecimal():
-            queries.append('#' + tag)
-    excluded = {entry.strip()[1:].casefold() for entry in strategy.get('exclusions', [])
-                if isinstance(entry, str) and re.fullmatch(r'@[A-Za-z0-9_]{1,15}', entry.strip())}
-    for value in strategy.get('target_accounts', []):
-        match = re.fullmatch(r'(?:https://(?:www\.)?(?:x|twitter)\.com/)?@?([A-Za-z0-9_]{1,15})/?',
-                             value.strip(), re.IGNORECASE) if isinstance(value, str) else None
-        if match and match[1].casefold() not in excluded:
-            queries.append('from:' + match[1].lower())
-    distinct = {}
-    for query in queries:
-        distinct.setdefault(query.casefold(), query)
-    return list(distinct.values())
-
-
 def discovery_source(client, account, now):
     actions = account['actions']
     strategy = account.get('strategy') or {}
     is_x = account['platform'] == 'twitter'
-    queries = (x_search_queries(strategy) if is_x else
-               [q.strip() for q in strategy.get('search_queries', [])
-                if isinstance(q, str) and 0 < len(q.strip()) <= 150])
+    configured = account.get('discovery_queries', strategy.get('search_queries', [])) if is_x else strategy.get('search_queries', [])
+    queries = [q.strip() for q in configured if isinstance(q, str) and 0 < len(q.strip()) <= (255 if is_x else 150)]
     sources = {}
     if action_available(actions, 'feed.read'):
         sources['feed.read'] = {}
