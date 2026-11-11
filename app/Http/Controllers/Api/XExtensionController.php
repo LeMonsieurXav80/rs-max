@@ -214,12 +214,12 @@ class XExtensionController extends Controller
         });
     }
 
-    public function begin(Request $r, int $id): JsonResponse
+    public function begin(Request $r, int $id, AutomationJournal $journal): JsonResponse
     {
         $a = $this->profileAccount($r);
         $v = $r->validate(['reply_text' => 'required|string|max:280']);
 
-        return DB::transaction(function () use ($a, $v, $id) {
+        return DB::transaction(function () use ($a, $v, $id, $journal) {
             SocialAccount::whereKey($a->id)->lockForUpdate()->firstOrFail();
             $draft = DB::table('extension_x_replies')->where('id', $id)->where('social_account_id', $a->id)->first();
             abort_unless($draft, 404);
@@ -227,6 +227,7 @@ class XExtensionController extends Controller
             $ok = DB::table('extension_x_replies')->where('id', $id)->where('social_account_id', $a->id)->where('status', 'prepared')
                 ->where('reply_text', $v['reply_text'])->where('persona_hash', $this->personaHash($a))->update(['status' => 'publishing', 'updated_at' => now()]);
             abort_unless($ok, 409, 'Envoi déjà réservé, persona ou texte modifié.');
+            $journal->xCompanionReply(DB::table('extension_x_replies')->find($id));
 
             return response()->json(['status' => 'publishing']);
         });

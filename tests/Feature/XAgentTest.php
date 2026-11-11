@@ -111,6 +111,35 @@ class XAgentTest extends TestCase
         $this->assertSame(1, app(AgentCatalog::class)->usedToday($this->a, 'like'));
     }
 
+    public function test_companion_et_hermes_partagent_la_reservation_et_le_journal_des_reactions(): void
+    {
+        app(AgentCatalog::class)->configure($this->a, 'repost', true, 3);
+        $snapshot = $this->snapshot();
+        $identity = ['platform_account_id' => '12345', 'username' => 'owner'];
+        $base = '/api/extension/x/assisted/reactions/';
+        foreach (['like' => 'confirmed', 'repost' => 'uncertain'] as $action => $status) {
+            $draft = $this->prepare($snapshot, $action);
+            $target = ['action' => $action, 'target_id' => '987', 'author' => 'visitor'] + $identity;
+            $id = $this->postJson($base.'reserve', $target)->assertCreated()->assertJsonPath('status', 'running')->json('id');
+            $this->assertSame($draft->id, $id);
+            $this->postJson($base.'reserve', $target)->assertConflict();
+            $this->postJson($this->url('prepare'), ['snapshot_id' => $snapshot, 'action' => $action, 'target_id' => '987'])
+                ->assertOk()->assertJsonPath('id', $id)->assertJsonPath('status', 'running');
+            $execute = '/api/community-manager/x/engagements/'.$id.'/execute';
+            $this->postJson($execute, ['dry_run' => false])->assertConflict();
+            $finish = $base.$id.'/finish';
+            $this->postJson($finish, ['status' => 'confirmed', 'target_id' => '988', 'proof' => 'visible'] + $identity)->assertUnprocessable();
+            $outcome = ['status' => $status, 'target_id' => '987', 'proof' => 'after_reload'] + $identity;
+            $this->postJson($finish, $outcome)->assertOk()->assertJsonPath('status', $status);
+            $this->postJson($finish, $outcome)->assertOk();
+            $this->postJson($execute, ['dry_run' => false])->assertConflict();
+            $this->assertDatabaseHas('bot_action_logs', ['social_account_id' => $this->a->id, 'source' => 'extension',
+                'action_type' => 'x.'.$action, 'success' => $status === 'confirmed']);
+        }
+        $this->assertDatabaseCount('bot_action_logs', 2);
+        $this->assertDatabaseCount('browser_tasks', 0);
+    }
+
     public function test_compteur_reserve_au_claim_et_confirmation_identifiee_apres_reload(): void
     {
         $e = $this->prepare($this->snapshot());

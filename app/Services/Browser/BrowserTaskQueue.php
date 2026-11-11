@@ -44,6 +44,14 @@ class BrowserTaskQueue
                     return $existing;
                 }
             }
+            if ($kind === 'x.like' && isset($payload['target']['id'])) {
+                if ($key === null) {
+                    SocialAccount::whereKey($account->id)->lockForUpdate()->firstOrFail();
+                }
+                if (app(\App\Services\Agent\XEngagementService::class)->recordedCompanionLike($account, (string) $payload['target']['id'])) {
+                    throw new BrowserException('J’aime déjà réservé ou enregistré par Companion.');
+                }
+            }
 
             return BrowserTask::create([
                 'social_account_id' => $account->id, 'idempotency_key' => $key,

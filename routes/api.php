@@ -231,6 +231,8 @@ Route::middleware(['auth:sanctum', \App\Http\Middleware\CommunityManagerTokenSco
         Route::get('context', 'context');
         Route::post('check', 'check');
         Route::post('observations', 'observations');
+        Route::post('reactions/reserve', 'reserveReaction');
+        Route::post('reactions/{id}/finish', 'finishReaction')->whereNumber('id');
         Route::post('preview', 'preview');
         Route::post('reserve', 'reserve');
         Route::post('replies/{id}/finish', 'finish')->whereNumber('id');

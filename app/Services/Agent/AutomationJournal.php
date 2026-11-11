@@ -74,6 +74,23 @@ class AutomationJournal
         ]), $receipt);
     }
 
+    public function xCompanionReaction(\App\Models\XEngagement $reaction): void
+    {
+        $log = BotActionLog::where('metadata->engagement_id', $reaction->id)->firstOrNew([
+            'social_account_id' => $reaction->social_account_id,
+            'action_type' => 'x.'.$reaction->action,
+            'source' => 'extension',
+            'target_uri' => $reaction->payload['url'],
+        ]);
+        $log->fill([
+            'target_author' => $reaction->payload['target']['author'],
+            'success' => $reaction->status === 'confirmed',
+            'error' => $reaction->error,
+            'metadata' => ['engagement_id' => $reaction->id, 'status' => $reaction->status, 'proof' => $reaction->result],
+            'performed_at' => $reaction->requested_at,
+        ])->save();
+    }
+
     /** L'appelant verrouille le compte pour éviter un doublon de remise du même like. */
     public function xCompanionLike(int $accountId, string $author, string $tweetId, Carbon $at, bool $observed = false): void
     {
@@ -143,7 +160,7 @@ class AutomationJournal
     private function writeCompanionReply(BotActionLog $log, object $receipt): void
     {
         $at = Carbon::parse($receipt->updated_at);
-        if (! in_array($receipt->status, ['published', 'uncertain'], true) || $at->lt(now()->subDays(7))) {
+        if (! in_array($receipt->status, ['publishing', 'published', 'uncertain'], true) || $at->lt(now()->subDays(7))) {
             return;
         }
 
@@ -153,7 +170,11 @@ class AutomationJournal
             'target_text' => $this->text($receipt->reply_text, 2000),
             'success' => $confirmed,
             'metadata' => [
-                'status' => $confirmed ? 'confirmed' : 'uncertain',
+                'status' => match ($receipt->status) {
+                    'publishing' => 'running',
+                    'published' => 'confirmed',
+                    default => 'uncertain',
+                },
                 'proof' => $this->proof(['confirmed' => $confirmed, 'liked' => (bool) $receipt->liked, 'proof' => $receipt->proof]),
             ],
             'performed_at' => $at,

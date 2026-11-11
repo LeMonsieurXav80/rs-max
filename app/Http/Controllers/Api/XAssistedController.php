@@ -91,6 +91,35 @@ class XAssistedController extends Controller
         return response()->json($stats->recordPage($account, $request->input('username'), $data));
     }
 
+    public function reserveReaction(Request $request, XEngagementService $engagements): JsonResponse
+    {
+        $account = $this->account($request);
+        $data = $request->validate([
+            'action' => 'required|in:like,repost',
+            'target_id' => 'required|string|regex:/^[0-9]{1,25}$/',
+            'author' => 'required|string|regex:/^[a-zA-Z0-9_]{1,15}$/',
+        ]);
+        $author = strtolower($data['author']);
+        abort_if($author === strtolower($request->input('username')), 409, 'Publication du compte lui-même.');
+        $row = $engagements->reserveCompanionReaction($account, $request->input('username'), ['id' => $data['target_id'], 'author' => $author], $data['action']);
+
+        return response()->json(['id' => $row->id, 'status' => $row->status], 201);
+    }
+
+    public function finishReaction(Request $request, int $id, XEngagementService $engagements): JsonResponse
+    {
+        $account = $this->account($request);
+        $data = $request->validate([
+            'status' => 'required|in:confirmed,unchanged,failed,uncertain',
+            'target_id' => 'required_if:status,confirmed,unchanged|nullable|string|regex:/^[0-9]{1,25}$/',
+            'proof' => 'required_if:status,confirmed,unchanged|nullable|in:visible,after_reload',
+            'error' => 'nullable|string|max:1000',
+        ]);
+        $row = $engagements->finishCompanionReaction($account, $request->input('username'), $id, $data);
+
+        return response()->json(['id' => $row->id, 'status' => $row->status]);
+    }
+
     public function preview(Request $request, XReplyPreviewController $preview, XReplyVault $vault, InboxReplyGenerator $generator): JsonResponse
     {
         $account = $this->account($request);
@@ -113,7 +142,7 @@ class XAssistedController extends Controller
         return response()->json($data + ['draft_key' => $key])->header('Cache-Control', 'no-store, private');
     }
 
-    public function reserve(Request $request, XEngagementService $engagements): JsonResponse
+    public function reserve(Request $request, XEngagementService $engagements, AutomationJournal $journal): JsonResponse
     {
         $account = $this->account($request);
         $data = $request->validate(['draft_key' => 'required|uuid']);
@@ -121,7 +150,7 @@ class XAssistedController extends Controller
         abort_unless($draft && $draft['account_id'] === $account->id && $draft['username'] === strtolower($request->input('username')),
             409, 'Brouillon expiré ou rattaché à un autre compte.');
 
-        $id = DB::transaction(function () use ($account, $draft, $engagements) {
+        $id = DB::transaction(function () use ($account, $draft, $engagements, $journal) {
             $locked = SocialAccount::with('persona')->lockForUpdate()->findOrFail($account->id);
             abort_unless($locked->persona?->is_active && $draft['persona_hash'] === TikTokEngagement::personaHash($locked),
                 409, 'Persona modifié depuis la préparation du brouillon.');
@@ -138,13 +167,15 @@ class XAssistedController extends Controller
             ];
             if ($row = $existing->first()) {
                 $existing->update($attributes);
-
-                return $row->id;
+                $id = $row->id;
+            } else {
+                $id = DB::table('extension_x_replies')->insertGetId($attributes + [
+                    'social_account_id' => $locked->id, 'tweet_id' => $draft['target_id'], 'created_at' => now(),
+                ]);
             }
+            $journal->xCompanionReply(DB::table('extension_x_replies')->find($id));
 
-            return DB::table('extension_x_replies')->insertGetId($attributes + [
-                'social_account_id' => $locked->id, 'tweet_id' => $draft['target_id'], 'created_at' => now(),
-            ]);
+            return $id;
         });
 
         return response()->json(['id' => $id, 'status' => 'reserved']);

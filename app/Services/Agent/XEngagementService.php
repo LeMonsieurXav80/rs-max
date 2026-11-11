@@ -3,15 +3,78 @@
 namespace App\Services\Agent;
 
 use App\Models\BrowserTask;
+use App\Models\InboxItem;
 use App\Models\SocialAccount;
 use App\Models\SocialContact;
 use App\Models\TikTokEngagement;
 use App\Models\XEngagement;
 use App\Services\Browser\BrowserException;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 
 class XEngagementService
 {
+    public function reserveCompanionReaction(SocialAccount $account, string $username, array $target, string $action): XEngagement
+    {
+        $key = hash('sha256', $target['id']);
+
+        return Cache::lock('x-prepare:'.$account->id.':'.$action.':'.$key, 30)->block(2, function () use ($account, $username, $target, $action, $key) {
+            return DB::transaction(function () use ($account, $username, $target, $action, $key) {
+                SocialAccount::whereKey($account->id)->lockForUpdate()->firstOrFail();
+                $row = XEngagement::where('social_account_id', $account->id)->where('action', $action)->where('target_key', $key)->first();
+                abort_if($row && $row->status !== 'prepared', 409, 'Ce geste est déjà enregistré ou réservé sur cette publication.');
+                if ($action === 'like') {
+                    $liked = InboxItem::where('social_account_id', $account->id)->where('external_id', $target['id'])->whereNotNull('liked_at')->exists();
+                    $pending = BrowserTask::where('social_account_id', $account->id)->where('kind', 'x.like')
+                        ->whereIn('status', ['pending', 'running', 'uncertain'])->where('payload->target->id', $target['id'])->exists();
+                    abort_if($liked || $pending, 409, 'J’aime déjà relevé, réservé ou incertain dans la messagerie.');
+                }
+                $row ??= new XEngagement;
+                $row->fill(['social_account_id' => $account->id, 'action' => $action, 'target_key' => $key,
+                    'status' => 'running', 'requested_at' => now(),
+                    'payload' => ['source' => 'companion', 'action' => $action, 'username' => strtolower($username),
+                        'url' => 'https://x.com/'.$target['author'].'/status/'.$target['id'], 'target' => $target]])->save();
+                app(AutomationJournal::class)->xCompanionReaction($row);
+
+                return $row;
+            });
+        });
+    }
+
+    public function finishCompanionReaction(SocialAccount $account, string $username, int $id, array $outcome): XEngagement
+    {
+        return DB::transaction(function () use ($account, $username, $id, $outcome) {
+            SocialAccount::whereKey($account->id)->lockForUpdate()->firstOrFail();
+            $row = XEngagement::where('social_account_id', $account->id)->lockForUpdate()->findOrFail($id);
+            abort_unless(($row->payload['source'] ?? null) === 'companion' && $row->payload['username'] === strtolower($username), 404);
+            $confirmed = in_array($outcome['status'], ['confirmed', 'unchanged'], true);
+            abort_if($confirmed && ($outcome['target_id'] ?? null) !== $row->payload['target']['id'], 422, 'Preuve portant sur une autre publication.');
+            $result = ['confirmed' => $confirmed, 'unchanged' => $outcome['status'] === 'unchanged',
+                'proof' => $outcome['proof'] ?? null, 'target_id' => $row->payload['target']['id']];
+            if ($row->status !== 'running') {
+                abort_unless($row->result == $result, 409, 'Geste déjà clôturé.');
+
+                return $row;
+            }
+            $row->update(['status' => $confirmed ? 'confirmed' : $outcome['status'], 'result' => $result,
+                'error' => $outcome['error'] ?? null]);
+            if ($confirmed && $row->action === 'like') {
+                InboxItem::where('social_account_id', $account->id)->where('external_id', $result['target_id'])
+                    ->whereNull('liked_at')->update(['liked_at' => now()]);
+            }
+            app(AutomationJournal::class)->xCompanionReaction($row);
+
+            return $row;
+        });
+    }
+
+    public function recordedCompanionLike(SocialAccount $account, string $tweetId): ?XEngagement
+    {
+        return XEngagement::where('social_account_id', $account->id)->where('action', 'like')
+            ->where('target_key', hash('sha256', $tweetId))->where('payload->source', 'companion')
+            ->whereIn('status', ['running', 'confirmed', 'uncertain'])->first();
+    }
+
     public function execute(XEngagement $row): XEngagement
     {
         return DB::transaction(function () use ($row) {
