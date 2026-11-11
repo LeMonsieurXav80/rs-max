@@ -95,19 +95,23 @@
                     {{-- Mode de connexion --}}
                     <div class="mt-5">
                         <label for="driver" class="block text-sm font-medium text-gray-700 mb-1.5">Mode de connexion</label>
+                        @php
+                            $connectionMode = old('driver', $account->usesBrowser() ? $account::companionMode($account->browser_profile) : 'api');
+                        @endphp
                         <select name="driver" id="driver"
                                 class="w-full rounded-xl border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 text-sm">
-                            <option value="api" {{ old('driver', $account->driver) === 'api' ? 'selected' : '' }}>API X (payante)</option>
-                            <option value="browser" {{ old('driver', $account->driver) === 'browser' ? 'selected' : '' }}>Companion sur le NAS</option>
+                            <option value="api" @selected($connectionMode === 'api')>API X (payante)</option>
+                            <option value="browser_vps" @selected($connectionMode === 'browser_vps')>Companion sur le VPS</option>
+                            <option value="browser_nas" @selected($connectionMode === 'browser_nas')>Companion sur le NAS</option>
                         </select>
                         <label for="browser_profile" class="block text-sm font-medium text-gray-700 mt-3 mb-1.5">Profil navigateur</label>
-                        <input type="text" name="browser_profile" id="browser_profile" value="{{ old('browser_profile', $account->browser_profile) }}" placeholder="profil-nas"
+                        <input type="text" name="browser_profile" id="browser_profile" value="{{ old('browser_profile', $account->browser_profile) }}" placeholder="vps-… ou nas-…"
                                class="w-full rounded-xl border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 text-sm">
                         @error('browser_profile')
                             <p class="mt-1 text-sm text-red-600">{{ $message }}</p>
                         @enderror
                         <p class="mt-1 text-xs text-gray-400">
-                            En mode navigateur, les publications, réponses, stats et abonnés passent par le navigateur du NAS.
+                            Le profil navigateur indique quel Companion traite les publications, les réponses et les statistiques. Les profils VPS commencent par vps-.
                             Les publications planifiées utilisent aussi Companion. Les articles attendent un parcours navigateur ; aucun repli vers l’API.
                             Les comptes qui ont le même profil passent chacun leur tour dans le même navigateur.
                         </p>

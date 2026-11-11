@@ -304,4 +304,31 @@ class XBrowserTest extends TestCase
         $this->assertSame('post-platform:'.$pp->id, collect($this->queue->calls)->firstWhere(0, 'x.post')[1]['publication_key']);
         \Illuminate\Support\Facades\Http::assertNothingSent();
     }
+
+    public function test_le_menu_choisit_le_serveur_par_profil_sans_changer_le_driver_interne(): void
+    {
+        $url = route('accounts.edit', $this->account);
+        $update = route('accounts.update', $this->account);
+        $form = ['name' => 'Mon compte', 'languages' => ['fr']];
+        $this->account->update(['driver' => 'api', 'browser_profile' => 'vps-test']);
+
+        $this->actingAs($this->user)->get($url)->assertOk()
+            ->assertSee('value="api" selected', false)
+            ->assertSee('Companion sur le VPS')
+            ->assertSee('Companion sur le NAS');
+
+        $this->put($update, ['driver' => 'browser_vps', 'browser_profile' => 'vps-test'] + $form)
+            ->assertSessionHasNoErrors()->assertRedirect($url);
+        $this->assertSame('browser', $this->account->refresh()->driver);
+        $this->get($url)->assertSee('value="browser_vps" selected', false);
+
+        $this->from($url)->put($update, ['driver' => 'browser_nas', 'browser_profile' => 'vps-test'] + $form)
+            ->assertSessionHasErrors('browser_profile');
+        $this->assertSame('vps-test', $this->account->refresh()->browser_profile);
+
+        $this->put($update, ['driver' => 'browser_nas', 'browser_profile' => 'nas-test'] + $form)
+            ->assertSessionHasNoErrors()->assertRedirect($url);
+        $this->assertSame('browser', $this->account->refresh()->driver);
+        $this->get($url)->assertSee('value="browser_nas" selected', false);
+    }
 }

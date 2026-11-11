@@ -8,6 +8,7 @@ use App\Models\SocialAccount;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Validation\ValidationException;
 use Illuminate\View\View;
 
 class SocialAccountController extends Controller
@@ -166,11 +167,24 @@ class SocialAccountController extends Controller
             'languages' => 'required|array|min:1',
             'languages.*' => 'in:fr,en,pt,es,de,it',
             'persona_id' => 'nullable|exists:personas,id',
-            'driver' => 'nullable|in:api,browser',
+            'driver' => 'nullable|in:api,browser,browser_vps,browser_nas',
             'browser_profile' => ['nullable', 'string', 'regex:/^[a-z0-9_-]{1,40}$/'],
             'credentials' => 'nullable|array',
             'credentials.*' => 'nullable|string|max:2000',
         ]);
+
+        $driver = $validated['driver'] ?? $account->driver;
+        $browserProfile = $validated['browser_profile'] ?? $account->browser_profile;
+        if (in_array($driver, ['browser_vps', 'browser_nas'], true)) {
+            if ($account->platform->slug !== 'twitter' || blank($browserProfile) || SocialAccount::companionMode($browserProfile) !== $driver) {
+                throw ValidationException::withMessages([
+                    'browser_profile' => $driver === 'browser_vps'
+                        ? 'Indiquez le profil Companion du VPS. Son nom commence par vps-.'
+                        : 'Indiquez le profil Companion du NAS. Un profil vps- est réservé au VPS.',
+                ]);
+            }
+            $driver = 'browser';
+        }
 
         $strategy = app(\App\Services\Agent\AccountStrategy::class);
         $strategy->validate($request);
@@ -196,8 +210,8 @@ class SocialAccountController extends Controller
             'name' => $validated['name'],
             'languages' => $validated['languages'],
             'persona_id' => $validated['persona_id'] ?? null,
-            'driver' => $validated['driver'] ?? $account->driver,
-            'browser_profile' => $validated['browser_profile'] ?? $account->browser_profile,
+            'driver' => $driver,
+            'browser_profile' => $browserProfile,
             'credentials' => $account->credentials,
         ]);
 

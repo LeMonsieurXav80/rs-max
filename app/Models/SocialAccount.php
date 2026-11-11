@@ -124,7 +124,13 @@ class SocialAccount extends Model
         return $this->hasMany(ExternalPost::class);
     }
 
-    /** Vrai quand le compte passe par le navigateur du VPS, pas par l'API du réseau. */
+    /** Les anciens noms sans préfixe sont ceux du NAS. */
+    public static function companionMode(?string $profile): string
+    {
+        return preg_match('/^vps(?:[-_]|$)/', $profile ?? '') ? 'browser_vps' : 'browser_nas';
+    }
+
+    /** Vrai quand le compte passe par un profil Companion. */
     public function usesBrowser(): bool
     {
         return $this->driver === 'browser';
