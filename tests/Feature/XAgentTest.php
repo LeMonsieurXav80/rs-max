@@ -2,6 +2,7 @@
 
 namespace Tests\Feature;
 
+use App\Jobs\VerifyXEngagementReply;
 use App\Models\AccountActionEvent;
 use App\Models\BrowserTask;
 use App\Models\Persona;
@@ -10,11 +11,13 @@ use App\Models\SocialAccount;
 use App\Models\SocialContact;
 use App\Models\User;
 use App\Models\XEngagement;
+use App\Services\Agent\AccountActionBudget;
 use App\Services\Agent\AgentCatalog;
 use App\Services\Browser\BrowserTaskQueue;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Queue;
 use Laravel\Sanctum\Sanctum;
 use Tests\TestCase;
 
@@ -29,7 +32,7 @@ class XAgentTest extends TestCase
     protected function setUp(): void
     {
         parent::setUp();
-        $this->travelTo(\Illuminate\Support\Carbon::parse('2026-11-07T12:00:00Z'));
+        $this->travelTo(\Illuminate\Support\Carbon::parse('2026-11-07T12:00:00Z')->setTimezone(config('app.timezone')));
         Http::preventStrayRequests();
         $this->user = User::factory()->create(['role' => 'manager']);
         $persona = Persona::create(['name' => 'Persona associé', 'system_prompt' => 'Voix chaleureuse et sobre', 'is_active' => true]);
@@ -74,10 +77,10 @@ class XAgentTest extends TestCase
         $this->postJson('/api/community-manager/x/engagements/'.$e->id.'/execute', ['dry_run' => false])->assertAccepted();
     }
 
-    private function finish(BrowserTask $task, array $result): void
+    private function finish(BrowserTask $task, array $result, string $status = 'done'): void
     {
         Sanctum::actingAs(User::factory()->create(['role' => 'admin']));
-        $this->postJson('/api/extension/tasks/'.$task->id.'/finish', ['status' => 'done', 'result' => $result])->assertOk();
+        $this->postJson('/api/extension/tasks/'.$task->id.'/finish', ['status' => $status, 'result' => $result])->assertOk();
         Sanctum::actingAs($this->user);
     }
 
@@ -173,6 +176,85 @@ class XAgentTest extends TestCase
             $this->assertSame('uncertain', $task->fresh()->status);
             $this->postJson('/api/community-manager/x/engagements/'.$id.'/execute', ['dry_run' => false])->assertConflict();
         }
+    }
+
+    private function uncertainReply(?string $candidateId): XEngagement
+    {
+        $snapshot = $this->snapshot(true);
+        $context = $this->getJson($this->url('context').'?snapshot_id='.$snapshot)->assertOk()->json('context_id');
+        $engagement = $this->prepare($snapshot, 'reply', ['context_id' => $context, 'text' => 'Merci pour ce gentil mot 🖤']);
+        $this->execute($engagement);
+        $task = (new BrowserTaskQueue)->claim('nas-test');
+        $this->finish($task, ['id' => $candidateId], 'uncertain');
+        $this->assertSame('uncertain', $engagement->fresh()->status);
+
+        return $engagement->fresh();
+    }
+
+    public function test_reponse_incertaine_rapprochee_par_lecture_differee_sans_second_geste(): void
+    {
+        Queue::fake([VerifyXEngagementReply::class]);
+        $replyId = (string) ((now()->getTimestampMs() - 1288834974657) << 22);
+        $engagement = $this->uncertainReply($replyId);
+        $this->assertSame($replyId, VerifyXEngagementReply::candidateId($engagement->browserTask));
+        $task = $engagement->browserTask;
+        $url = 'https://x.com/owner/status/'.$replyId;
+        $status = '/api/community-manager/x/engagements/'.$engagement->id;
+        $this->getJson($status)->assertOk()->assertJsonPath('status', 'uncertain');
+        Queue::assertPushed(VerifyXEngagementReply::class, fn ($job) => $job->engagementId === $engagement->id
+            && $job->delay->equalTo(now()->addSeconds(45)));
+        Queue::assertPushed(VerifyXEngagementReply::class, 1);
+        $this->travel(46)->seconds();
+        $reply = ['id' => $replyId, 'author' => 'owner', 'url' => $url, 'text' => "Merci pour ce gentil mot\n🖤"];
+        $browser = $this->mock(BrowserTaskQueue::class);
+        $browser->shouldReceive('run')->once()
+            ->withArgs(fn ($account, $kind, $payload, $timeout) => $account->id === $this->a->id && $kind === 'x.agent.read'
+                && $payload['url'] === $url && $payload['target_id'] === $replyId
+                && $payload['action'] === 'thread.read' && $payload['target']['reply_parent_id'] === '987' && $timeout === 100)
+            ->andReturn(['context_complete' => true, 'target' => $reply, 'conversation' => [$this->target(), $reply]]);
+
+        $job = new VerifyXEngagementReply($engagement->id);
+        $job->handle($browser, app(AccountActionBudget::class));
+        $job->handle($browser, app(AccountActionBudget::class));
+
+        $this->getJson($status)->assertOk()->assertJsonPath('confirmed', true)
+            ->assertJsonPath('result.reply_id', $replyId)->assertJsonPath('result.parent_id', '987');
+        $this->postJson($status.'/execute', ['dry_run' => false])->assertConflict();
+        $this->assertSame(BrowserTask::DONE, $task->fresh()->status);
+        $this->assertTrue($task->finished_at->equalTo($task->fresh()->finished_at));
+        $this->assertDatabaseHas('bot_action_logs', ['browser_task_id' => $task->id, 'success' => true]);
+        $this->assertDatabaseCount('browser_tasks', 1);
+        $this->assertDatabaseCount('account_action_events', 1);
+        $this->assertSame('confirmed', AccountActionEvent::first()->status);
+    }
+
+    public function test_relecture_ne_confirme_pas_si_le_parent_immediat_est_different(): void
+    {
+        Queue::fake([VerifyXEngagementReply::class]);
+        $replyId = (string) ((now()->getTimestampMs() - 1288834974657) << 22);
+        $engagement = $this->uncertainReply($replyId);
+        $this->assertSame($replyId, VerifyXEngagementReply::candidateId($engagement->browserTask));
+        $reply = ['id' => $replyId, 'author' => 'owner', 'url' => 'https://x.com/owner/status/'.$replyId, 'text' => 'Merci pour ce gentil mot 🖤'];
+        $browser = $this->mock(BrowserTaskQueue::class);
+        $browser->shouldReceive('run')->once()->andReturn(['context_complete' => true, 'target' => $reply,
+            'conversation' => [$this->target(), ['id' => '988', 'author' => 'visitor', 'text' => 'Autre parent'], $reply]]);
+
+        (new VerifyXEngagementReply($engagement->id))->handle($browser, app(AccountActionBudget::class));
+
+        $this->assertSame('uncertain', $engagement->fresh()->status);
+        $this->assertSame(BrowserTask::UNCERTAIN, $engagement->browserTask->fresh()->status);
+        $this->assertSame('uncertain', AccountActionEvent::first()->status);
+        $this->assertDatabaseCount('browser_tasks', 1);
+    }
+
+    public function test_identifiant_anterieur_a_la_tentative_ne_planifie_pas_de_relecture(): void
+    {
+        Queue::fake([VerifyXEngagementReply::class]);
+        $oldId = (string) ((now()->subHour()->getTimestampMs() - 1288834974657) << 22);
+        $this->uncertainReply($oldId);
+
+        Queue::assertNotPushed(VerifyXEngagementReply::class);
+        $this->assertSame('uncertain', AccountActionEvent::first()->status);
     }
 
     public function test_reponse_persona_contexte_et_modification_avant_claim(): void

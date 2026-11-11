@@ -2,6 +2,7 @@
 
 namespace App\Services\Agent;
 
+use App\Jobs\VerifyXEngagementReply;
 use App\Models\BrowserTask;
 use App\Models\InboxItem;
 use App\Models\SocialAccount;
@@ -185,6 +186,9 @@ class XEngagementService
         }
         $status = $confirmed ? 'confirmed' : (in_array($task->status, [BrowserTask::CANCELLED, BrowserTask::FAILED], true) ? 'failed' : 'uncertain');
         $row->update(['status' => $status, 'result' => $task->result, 'error' => $confirmed ? null : ($task->error ?? 'Absence de preuve après rechargement.')]);
+        if ($status === 'uncertain' && VerifyXEngagementReply::candidateId($task) !== null) {
+            VerifyXEngagementReply::dispatch($row->id)->delay(now()->addSeconds(45))->afterCommit();
+        }
         if ($confirmed && in_array($row->action, ['like', 'unlike'], true)) {
             \App\Models\InboxItem::where('social_account_id', $row->social_account_id)->where('external_id', $expected['id'])
                 ->update(['liked_at' => $row->action === 'like' ? now() : null]);
