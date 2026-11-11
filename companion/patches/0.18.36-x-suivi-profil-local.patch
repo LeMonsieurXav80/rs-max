@@ -18,7 +18,7 @@ index dac3414..5813ce0 100644
 @@ -218,6 +218,33 @@
      return {reason: 'Réponse non vérifiée. La réservation est conservée pour éviter un doublon.'};
    }
- 
+
 +  function currentProfile(url) {
 +    const handle = url.pathname.match(/^\/([a-zA-Z0-9_]{1,15})\/?$/)?.[1].toLowerCase();
 +    if (!handle || M.identity()?.username === handle) return null;
@@ -91,7 +91,7 @@ index 7ca8e56..516d646 100644
  const xBatchId = value => typeof value === 'string' && /^\d{1,25}$/.test(value);
  const xBatchUser = value => typeof value === 'string' && /^[a-zA-Z0-9_]{1,15}$/.test(value);
 +const xProfileHandle = page => page.origin === 'https://x.com' ? page.pathname.match(/^\/([a-zA-Z0-9_]{1,15})\/?$/)?.[1].toLowerCase() : null;
- 
+
  async function cancelXBatch(tabId, run) {
    const state = runningXBatches.get(tabId);
 @@ -29,8 +30,12 @@ async function handleXBatch(msg, sender) {
@@ -143,7 +143,7 @@ index 7ca8e56..516d646 100644
      runningXBatches.delete(tabId);
    }
  }
- 
+
 +async function followFromXProfile(tabId, state, identity, handle, speed) {
 +  const before = async () => {
 +    const origin = await chrome.tabs.get(tabId);
@@ -174,7 +174,7 @@ index 7ca8e56..516d646 100644
    const url = 'https://x.com/' + identity.username;
 @@ -170,14 +209,14 @@ async function inActiveXTab(tabId, windowId, before, action) {
  }
- 
+
  async function reactFromXBatch(tabId, payload, identity, action, before) {
 -  const {target} = payload;
 +  const destination = action === 'follow' ? {handle:payload.handle} : {target_id:payload.target.id, author:payload.target.author};
@@ -225,7 +225,7 @@ index da928ed..7edd720 100644
 @@ -188,6 +189,32 @@ test('une preuve absente interrompt la suite et ne relance aucun geste', async (
    assert.deepEqual(data.acts, ['like']);
  });
- 
+
 +test('le suivi du profil ouvert réserve son handle et contrôle la preuve exacte', async () => {
 +  for (const [handle, wanted] of [['athlete','confirmed'], ['other','uncertain']]) {
 +    const {data, send} = workerFixture('https://x.com/athlete');
