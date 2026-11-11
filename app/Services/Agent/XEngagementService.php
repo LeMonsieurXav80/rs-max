@@ -50,6 +50,8 @@ class XEngagementService
             abort_unless(($row->payload['source'] ?? null) === 'companion' && $row->payload['username'] === strtolower($username), 404);
             $confirmed = in_array($outcome['status'], ['confirmed', 'unchanged'], true);
             abort_if($confirmed && ($outcome['target_id'] ?? null) !== $row->payload['target']['id'], 422, 'Preuve portant sur une autre publication.');
+            abort_if($row->action === 'bookmark' && $outcome['status'] === 'confirmed'
+                && ($outcome['proof'] ?? null) !== 'after_reload', 422, 'Recharger la publication pour confirmer le signet.');
             $result = ['confirmed' => $confirmed, 'unchanged' => $outcome['status'] === 'unchanged',
                 'proof' => $outcome['proof'] ?? null, 'target_id' => $row->payload['target']['id']];
             if ($row->status !== 'running') {

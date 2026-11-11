@@ -1,0 +1,138 @@
+diff --git a/manifest.json b/manifest.json
+index 085595c..c6f210f 100644
+--- a/manifest.json
++++ b/manifest.json
+@@ -1,7 +1,7 @@
+ {
+   "manifest_version": 3,
+   "name": "RS-Max Companion",
+-  "version": "0.18.34",
++  "version": "0.18.35",
+   "description": "Actions assistees sur les reseaux sociaux (engagement, publication) avec remontee vers l'API RS-Max.",
+   "permissions": [
+     "storage",
+diff --git a/x/batch-plan.js b/x/batch-plan.js
+index 69b5855..b282d06 100644
+--- a/x/batch-plan.js
++++ b/x/batch-plan.js
+@@ -2,7 +2,7 @@
+ (() => {
+   'use strict';
+   const maxPosts = 100;
+-  const operations = ['like', 'repost', 'reply'];
++  const operations = ['like', 'bookmark', 'repost', 'reply'];
+   const list = url => url.origin === 'https://x.com' && ['/home', '/search'].includes(url.pathname);
+   const latest = query => 'https://x.com/search?q=' + encodeURIComponent(query) + '&src=typed_query&f=live';
+   const sameList = (a, b) => list(a) && list(b) && a.pathname === b.pathname && (a.pathname === '/home' ||
+diff --git a/x/batch.js b/x/batch.js
+index a2ecc88..c491b86 100644
+--- a/x/batch.js
++++ b/x/batch.js
+@@ -4,7 +4,8 @@
+   const R = window.RSMAX, D = window.RSXDom, M = window.RSXMentions, P = window.RSXBatchPlan;
+   if (!R || !D || !M || !P) return;
+   const recipeId = 'x.recent-batch';
+-  const labels = {like:'J’aime', reply:'Réponse', repost:'Republication'};
++  const labels = {like:'J’aime', bookmark:'Signet', reply:'Réponse', repost:'Republication'};
++  const reactionStates = {like:'liked', bookmark:'bookmarked', repost:'reposted'};
+ 
+   async function send(type, payload) {
+     const reply = await chrome.runtime.sendMessage({type, ...payload});
+@@ -104,12 +105,11 @@
+         catch (error) { ctx.log('Relevé des statistiques interrompu. '+error.message, 'warn'); }
+       }
+       let posts = 0, used = 0, confirmed = 0;
+-      const counts = {like:0, reply:0, repost:0};
++      const counts = {like:0, bookmark:0, reply:0, repost:0};
+       for (const target of candidates) {
+         if (posts >= plan.params.limitMax || used >= plan.actionLimit) break;
+         ensure(ctx, owner, page, feed);
+-        if (plan.actions.every(action => (action === 'like' && target.liked === true) ||
+-          (action === 'repost' && target.reposted === true))) continue;
++        if (plan.actions.every(action => target[reactionStates[action]] === true)) continue;
+         ctx.log(`Lecture de @${target.author} · ${target.id}`);
+         const result = await worker('target', {username:owner.username, params:plan.params, run,
+           target, remaining:plan.actionLimit - used, exclusions:context.exclusions});
+@@ -130,7 +130,7 @@
+           `Lot interrompu après ${confirmed} action(s) confirmée(s). Vérifie le résultat sur X avant toute reprise.`};
+       }
+       const reached = posts >= plan.params.limitMax || used >= plan.actionLimit;
+-      const summary = `${posts} publication(s) · ${counts.like} J’aime · ${counts.reply} réponse(s) · ${counts.repost} republication(s).`;
++      const summary = `${posts} publication(s) · ${counts.like} J’aime · ${counts.bookmark} signet(s) · ${counts.reply} réponse(s) · ${counts.repost} republication(s).`;
+       return {incomplete:!reached, reason:summary};
+     } finally {
+       ctx.signal.removeEventListener('abort', stop);
+@@ -151,10 +151,11 @@
+     params:[
+       {key:'source', type:'select', label:'Source', load:sources},
+       {key:'like', type:'checkbox', label:'Aimer'},
++      {key:'bookmark', type:'checkbox', label:'Ajouter aux signets'},
+       {key:'reply', type:'checkbox', label:'Commenter'},
+       {key:'repost', type:'checkbox', label:'Republier'},
+       {key:'limitMax', type:'number', label:'Publications maximum', default:5, min:1, max:P.maxPosts},
+-      {key:'maxActions', type:'number', label:'Actions maximum', default:0, min:0, max:P.maxPosts*3,
++      {key:'maxActions', type:'number', label:'Actions maximum', default:0, min:0, max:P.maxPosts*P.operations.length,
+         hint:'0 utilise la limite de publications et les cases cochées.'},
+       {key:'stats', type:'checkbox', label:'Actualiser mes abonnés et publications', default:true}
+     ], run
+diff --git a/x/batch-worker.js b/x/batch-worker.js
+index 5781544..7ca8e56 100644
+--- a/x/batch-worker.js
++++ b/x/batch-worker.js
+@@ -189,12 +189,16 @@ async function reactFromXBatch(tabId, payload, identity, action, before) {
+     outcome = {status:'uncertain', error:error.message};
+   }
+   const result = outcome.result;
++  const verified = outcome.status === 'done' && result?.confirmed === true && result.proof === 'after_reload';
+   const status = outcome.status === 'done' && result?.unchanged ? 'unchanged'
+-    : outcome.status === 'done' && result?.confirmed ? 'confirmed'
++    : verified ? 'confirmed'
+     : outcome.status === 'failed' ? 'failed' : 'uncertain';
++  if (status === 'uncertain' && !outcome.error) {
++    outcome = {...outcome, error:'Geste non prouvé après rechargement.'};
++  }
+   try {
+     await post(`${reservation.id}/finish`, {status, target_id:target.id,
+-      proof:status === 'unchanged' ? 'visible' : status === 'confirmed' ? 'after_reload' : null,
++      proof:status === 'unchanged' ? 'visible' : verified ? result.proof : null,
+       error:outcome.error?.slice(0, 1000)});
+   } catch (error) {
+     return {status:'uncertain', error:'Journal RS-Max indisponible. '+error.message};
+diff --git a/tests/x-batch.test.cjs b/tests/x-batch.test.cjs
+index c1445f5..da928ed 100644
+--- a/tests/x-batch.test.cjs
++++ b/tests/x-batch.test.cjs
+@@ -68,7 +68,7 @@ function workerFixture(url = 'https://x.com/home') {
+       await options.before();
+       data.acts.push(task.payload.action);
+       assert.equal(task.payload.companion_speed, 'fast');
+-      return data.results?.[task.payload.action] || {status:'done', result:{confirmed:true}};
++      return data.results?.[task.payload.action] || {status:'done', result:{confirmed:true, proof:'after_reload'}};
+     },
+     postXInTab:async (task, _, options) => {
+       await options.before();
+@@ -111,6 +111,24 @@ test('le budget restant limite les gestes sur chaque publication', async () => {
+   await assert.rejects(send('target', {params:{...params, limitMax:0}}), /Nombre de publications/);
+ });
+ 
++test('le signet réserve la cible et exige une preuve après rechargement', async () => {
++  for (const [proof, wanted] of [['after_reload', 'confirmed'], ['visible', 'uncertain']]) {
++    const {data, send} = workerFixture();
++    data.results = {bookmark:{status:'done', result:{confirmed:true, proof}}};
++    const result = await send('target', {
++      params:{...params, like:false, reply:false, repost:false, bookmark:true},
++      remaining:1
++    });
++    assert.deepEqual(data.acts, ['bookmark']);
++    assert.equal(data.calls[0].body.action, 'bookmark');
++    assert.equal(data.calls[1].body.target_id, target.id);
++    assert.equal(data.calls[1].body.status, wanted);
++    assert.equal(data.calls[1].body.proof, wanted === 'confirmed' ? 'after_reload' : null);
++    assert.equal(result.used, 1);
++    assert.equal(result.abort, wanted === 'uncertain');
++  }
++});
++
+ test('une réaction déjà réservée côté serveur est ignorée avant le clic', async () => {
+   const {data, send} = workerFixture();
+   data.conflicts = ['like', 'repost'];

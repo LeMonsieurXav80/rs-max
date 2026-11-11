@@ -72,3 +72,5 @@ Validation : XExtensionTest + TikTokExtensionTest + ExtensionApiTest + InboxApiT
 tests Node de l’extension ; Chromium jetable avec extension réelle, deux profils
 simulés, origine + réponse intermédiaire + mention, clic de like unique et réponse
 confirmée. Aucun envoi réel requis pour ces tests.
+
+Companion 0.18.35 propose **Ajouter aux signets** dans **X — Traiter les publications récentes**. Le signet déjà visible est ignoré. Pour un nouveau signet, le lot réserve la cible dans RS-Max, clique une fois et vérifie après rechargement. Le reçu `x.bookmark` source `extension` partage la réservation avec Hermès. Le [patch](../companion/patches/0.18.35-x-signets-locaux.patch) s’applique à Companion 0.18.34.

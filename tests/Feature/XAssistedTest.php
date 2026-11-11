@@ -68,6 +68,32 @@ class XAssistedTest extends TestCase
             ->assertOk()->assertJsonPath('accounts.0.discovery_queries', $queries);
     }
 
+    public function test_le_signet_local_partage_la_reservation_et_exige_une_preuve_apres_rechargement(): void
+    {
+        $platform = Platform::firstOrCreate(['slug' => 'twitter'], ['name' => 'X', 'auth_type' => 'oauth2']);
+        $owner = User::factory()->create(['role' => 'manager']);
+        $account = SocialAccount::create(['name' => 'X', 'platform_id' => $platform->id, 'platform_account_id' => '1000',
+            'driver' => 'browser', 'browser_profile' => 'test', 'browser_username' => 'owner', 'browser_session_status' => 'connected']);
+        $account->users()->attach($owner, ['is_active' => true]);
+        $this->withToken($owner->createToken('extension')->plainTextToken);
+        $identity = ['platform_account_id' => '1000', 'username' => 'owner'];
+        $target = ['target_id' => '4100', 'author' => 'visitor', 'action' => 'bookmark'] + $identity;
+        $url = '/api/extension/x/assisted/reactions/';
+        $receipt = $this->postJson($url.'reserve', $target)->assertCreated()->assertJsonPath('status', 'running')->json('id');
+        $this->postJson($url.'reserve', $target)->assertConflict();
+        $confirmation = ['status' => 'confirmed', 'target_id' => '4100'] + $identity;
+        $this->postJson($url.$receipt.'/finish', ['proof' => 'visible'] + $confirmation)->assertUnprocessable();
+        $this->postJson($url.$receipt.'/finish', ['proof' => 'after_reload', 'target_id' => '4101'] + $confirmation)->assertUnprocessable();
+        $this->postJson($url.$receipt.'/finish', ['proof' => 'after_reload'] + $confirmation)->assertOk()->assertJsonPath('status', 'confirmed');
+        $this->postJson($url.$receipt.'/finish', ['proof' => 'after_reload'] + $confirmation)->assertOk();
+        $this->getJson('/api/community-manager/x/engagements/'.$receipt)
+            ->assertOk()->assertJsonPath('confirmed', true)->assertJsonPath('result.proof', 'after_reload');
+        $this->assertDatabaseHas('bot_action_logs', ['social_account_id' => $account->id, 'action_type' => 'x.bookmark',
+            'source' => 'extension', 'success' => true]);
+        $this->assertDatabaseCount('x_engagements', 1);
+        $this->assertDatabaseCount('browser_tasks', 0);
+    }
+
     public function test_assiste_reserve_une_reponse_sans_creer_de_tache_et_bloque_les_doublons(): void
     {
         $platform = Platform::firstOrCreate(['slug' => 'twitter'], ['name' => 'X', 'auth_type' => 'oauth2']);

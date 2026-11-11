@@ -86,7 +86,7 @@ class XAssistedController extends Controller
     {
         $account = $this->account($request);
         $data = $request->validate([
-            'action' => 'required|in:like,repost',
+            'action' => 'required|in:like,repost,bookmark',
             'target_id' => 'required|string|regex:/^[0-9]{1,25}$/',
             'author' => 'required|string|regex:/^[a-zA-Z0-9_]{1,15}$/',
         ]);
