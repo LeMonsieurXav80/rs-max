@@ -203,6 +203,17 @@ class XWatchTest(unittest.TestCase):
         self.assertEqual(result['accounts'][0]['batch_max'], 5)
         self.assertEqual(result['accounts'][0]['items'], [{'id': i} for i in range(5)])
 
+    def test_la_file_x_reprend_apres_deux_minutes_avec_stock_identique(self):
+        now = dt.datetime.fromisoformat('2026-11-08T12:00:00+00:00')
+        catalog = {'daytime': True, 'accounts': [self.account()]}
+        inbox = {'items': [{'id': 99, 'content': 'Merci', 'can_reply': True}]}
+        client = Mock()
+        client.api.side_effect = [catalog, inbox, catalog, inbox]
+        first = watch.snapshot(client, now, lane='x')
+        next_run = watch.snapshot(client, now + dt.timedelta(minutes=2), lane='x')
+        self.assertNotEqual(first['cycle_key'], next_run['cycle_key'])
+        self.assertEqual(first['accounts'], next_run['accounts'])
+
 
 class ReportScheduleTest(unittest.TestCase):
     def test_les_creneaux_du_matin_et_du_soir_ont_des_cles_distinctes(self):

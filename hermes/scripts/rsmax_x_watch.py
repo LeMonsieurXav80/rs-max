@@ -171,7 +171,8 @@ def snapshot(client, now=None, lane=None):
     work=discovery_first+browser_first+other
     if lane:
         work = [a for a in work if a['items'] or a['discovery_plan'] or any(p['account_id'] == a['account_id'] for p in x_explorations + tiktok_explorations)]
-    return {'state':'work','cycle_key':int(now.timestamp())//300,'accounts':work,'priority_threads':explorations,'priority_x':x_explorations,'priority_tiktok':tiktok_explorations} if work or x_explorations or tiktok_explorations else {'state':'idle'}
+    cycle_seconds = 120 if lane == 'x' else 300
+    return {'state':'work','cycle_key':int(now.timestamp())//cycle_seconds,'accounts':work,'priority_threads':explorations,'priority_x':x_explorations,'priority_tiktok':tiktok_explorations} if work or x_explorations or tiktok_explorations else {'state':'idle'}
 
 
 def main(lane=None):
