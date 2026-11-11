@@ -1,0 +1,123 @@
+diff --git a/manifest.json b/manifest.json
+index bc57ac0..c3b4252 100644
+--- a/manifest.json
++++ b/manifest.json
+@@ -1,7 +1,7 @@
+ {
+   "manifest_version": 3,
+   "name": "RS-Max Companion",
+-  "version": "0.18.20",
++  "version": "0.18.21",
+   "description": "Actions assistees sur les reseaux sociaux (engagement, publication) avec remontee vers l'API RS-Max.",
+   "permissions": [
+     "storage",
+diff --git a/tests/x-agent-target.test.cjs b/tests/x-agent-target.test.cjs
+index c55530e..1f1f67e 100644
+--- a/tests/x-agent-target.test.cjs
++++ b/tests/x-agent-target.test.cjs
+@@ -14,3 +14,52 @@ test('X : retrouver la même cible après un démontage React pendant la pause,
+ test('X : auteur différent refusé et like déjà présent conservé',async()=>{
+  for(const options of [{author:'other'},{liked:true}]){const f=fixture(options);try{const r=await f.w.RSXAgent.run('x.agent.act',f.payload);assert.equal(f.clicks(),0);if(options.liked)assert.equal(r.result.unchanged,true);else assert.equal(r.status,'failed')}finally{f.dom.window.close()}}
+ });
++
++function nativeReply(f, {changedTarget=false}={}) {
++  const {w}=f;
++  let submissions=0;
++  const reply=w.document.createElement('a');
++  reply.href='/compose/post?in_reply_to=123';
++  reply.textContent='Répondre';
++  f.w.document.querySelector('article').append(reply);
++  reply.onclick=event=>{
++    event.preventDefault();
++    w.history.pushState({},'',reply.href);
++    const dialog=w.document.createElement('div');
++    dialog.setAttribute('role','dialog');
++    dialog.innerHTML='<textarea aria-label="Votre réponse"></textarea><button>Répondre</button>';
++    w.document.body.append(dialog);
++    if(changedTarget)dialog.querySelector('textarea').addEventListener('input',()=>{
++      w.history.replaceState({},'','/compose/post?in_reply_to=456');
++    });
++    dialog.querySelector('button').onclick=()=>{
++      submissions++;
++      dialog.remove();
++      const receipt=w.document.createElement('a');
++      receipt.href='/owner/status/999';
++      receipt.textContent='Voir';
++      w.document.body.append(receipt);
++    };
++  };
++  return {payload:{...f.payload,action:'reply',text:'J’aime ce détail !'},submissions:()=>submissions};
++}
++
++test('X : le compositeur natif prouve la cible par sa route et relève le lien du reçu',async()=>{
++  const f=fixture(),reply=nativeReply(f);
++  try{
++    const result=await f.w.RSXAgent.run('x.agent.act',reply.payload);
++    assert.equal(result.status,'done',JSON.stringify(result));
++    assert.equal(result.result.reply_id,'999');
++    assert.equal(reply.submissions(),1);
++  }finally{f.dom.window.close()}
++});
++
++test('X : une route de réponse modifiée après saisie interdit le clic',async()=>{
++  const f=fixture(),reply=nativeReply(f,{changedTarget:true});
++  try{
++    const result=await f.w.RSXAgent.run('x.agent.act',reply.payload);
++    assert.equal(result.status,'failed');
++    assert.equal(result.result.gesture,false);
++    assert.equal(reply.submissions(),0);
++  }finally{f.dom.window.close()}
++});
+diff --git a/x/agent.js b/x/agent.js
+index e41381d..9156958 100644
+--- a/x/agent.js
++++ b/x/agent.js
+@@ -131,6 +131,18 @@
+     }
+     return result({items:[...found.values()].slice(0,limit),complete:false,observed:Math.min(found.size,limit)});
+   }
++  function composerTargets(p,field) {
++    const dialog=field?.closest('[role="dialog"]');
++    if(!dialog)return false;
++    if(field.matches('textarea')){
++      const route=new URL(location.href),parameter=p.action==='quote'?'quote_tweet_id':'in_reply_to';
++      if(route.origin!=='https://x.com'||route.pathname!=='/compose/post'||route.searchParams.get(parameter)!==String(p.target.id))return false;
++      // Le compositeur natif de réponse désigne sa cible par le permalien de composition.
++      if(p.action==='reply')return true;
++    }
++    const previews=q(dialog,'[data-testid="tweetText"],div[dir="auto"].whitespace-pre-wrap').filter(n=>text(n)===p.target.text);
++    return previews.length===1;
++  }
+   async function publicClick(p,button,state={clicked:false}) {
+     window.RSTaskTrace?.mark('x.control.check',{action:p.action,control_count:button?1:0,control:button?.getAttribute('aria-label')||button?.tagName});
+     if(!visible(button) || button.disabled || button.getAttribute('aria-disabled')==='true') throw Error('Contrôle X indisponible.');
+@@ -146,9 +158,7 @@
+     } else if (['reply','quote'].includes(p.action)) {
+       const dialogs=q(document,'[role="dialog"]').filter(d=>{
+         const field=d.querySelector('[data-testid="tweetTextarea_0"],textarea[aria-label]');
+-        const previews=q(d,'[data-testid="tweetText"],div[dir="auto"].whitespace-pre-wrap').filter(n=>text(n)===p.target.text);
+-        const nativeTarget=field?.matches('textarea')?new URL(location.href).searchParams.get(p.action==='quote'?'quote_tweet_id':'in_reply_to')===String(p.target.id):true;
+-        return text(field)===p.text&&previews.length===1&&nativeTarget;
++        return text(field)===p.text&&composerTargets(p,field);
+       });
+       if(dialogs.length!==1)throw Error('Réponse ou destinataire changé avant envoi.');
+       button=window.RSXDom?window.RSXDom.submit(dialogs[0]):dialogs[0].querySelector('[data-testid="tweetButton"]');
+@@ -219,8 +229,8 @@
+       }
+       const field=await wait(()=>{const f=window.RSXDom ? window.RSXDom.fields().filter(n=>n.closest('[role="dialog"]')) : q(document,'[role="dialog"] [data-testid="tweetTextarea_0"][contenteditable="true"]');return f.length===1?f[0]:null;},35000);
+       if(!field) throw Error('Éditeur de réponse non chargé.');
+-      const dialog=field.closest('[role="dialog"]'),preview=q(dialog,'[data-testid="tweetText"],div[dir="auto"].whitespace-pre-wrap').filter(n=>text(n)===p.target.text);
+-      if(preview.length!==1 || text(preview[0])!==p.target.text || text(field)) throw Error('Destinataire ou brouillon de réponse non conforme.');
++      const dialog=field.closest('[role="dialog"]');
++      if(!composerTargets(p,field) || text(field)) throw Error('Destinataire ou brouillon de réponse non conforme.');
+       if(window.RSXDom) window.RSXDom.fill(field,p.text); else R().pasteInto(field,p.text);
+       if(!await wait(()=>text(field)===p.text,5000))throw Error('Texte de réponse différent.');
+       const submit=await wait(()=>{const b=window.RSXDom ? window.RSXDom.submit(dialog) : dialog.querySelector('[data-testid="tweetButton"]');return b&&!b.disabled&&b.getAttribute('aria-disabled')!=='true'?b:null;});
+@@ -230,7 +240,6 @@
+         if(visible(dialog))return null;
+         const exact=articles().map(snapshot).find(s=>s&&!before.has(s.id)&&s.author===handle(p.username)&&s.text===p.text);
+         if(exact)return exact;
+-        if(p.action!=='quote')return null;
+         const links=[...document.querySelectorAll('a[href]')].map(a=>window.RSXDom?.canonical(a.getAttribute('href'))).filter(s=>s&&s.author===handle(p.username)&&!controlsBefore.has(s.id));
+         const unique=[...new Map(links.map(v=>[v.id,v])).values()];return unique.length===1?unique[0]:null;
+       },15000);

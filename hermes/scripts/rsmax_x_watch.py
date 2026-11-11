@@ -8,14 +8,19 @@ from urllib.parse import urlencode
 from community_manager import Client, daytime, pending_inbox_order
 
 
+def action_available(actions, name):
+    action = actions.get(name, {})
+    return action.get('enabled', False) and action.get('left', 0) > 0
+
+
 def discovery_source(client, account, now):
     actions = account['actions']
     strategy = account.get('strategy') or {}
     queries = [q.strip() for q in strategy.get('search_queries', []) if isinstance(q, str) and 0 < len(q.strip()) <= 150]
     sources = {}
-    if actions.get('feed.read', {}).get('left', 0) > 0:
+    if action_available(actions, 'feed.read'):
         sources['feed.read'] = {}
-    if queries and actions.get('search.read', {}).get('left', 0) > 0:
+    if queries and action_available(actions, 'search.read'):
         sources['search.read'] = {'query': queries[(int(now.timestamp()) // 3600) % len(queries)]}
     if not sources:
         return None
@@ -65,9 +70,9 @@ def snapshot(client, now=None):
             can_reply = False  # conserver une place au like demandé après la réponse
         can_feed = platform == 'twitter' and actions.get('feed.read', {}).get('left', 0) > 0 and any(actions.get(k, {}).get('enabled', True) and actions.get(k, {}).get('left', 0) > 0 for k in ('like', 'bookmark'))
         can_discover = (platform in ('twitter', 'threads') and account.get('session') == 'connected'
-                        and account.get('persona') and actions.get('thread.read', {}).get('left', 0) > 0)
-        threads_discovery = can_discover and platform == 'threads' and any(actions.get(k, {}).get('left', 0) > 0 for k in ('like', 'comment'))
-        x_discovery = can_discover and platform == 'twitter' and actions.get('reply', {}).get('left', 0) > 0
+                        and account.get('persona') and action_available(actions, 'thread.read'))
+        threads_discovery = can_discover and platform == 'threads' and any(action_available(actions, k) for k in ('like', 'comment'))
+        x_discovery = can_discover and platform == 'twitter' and action_available(actions, 'reply')
         can_feed = can_feed or threads_discovery or x_discovery
         if (not can_reply and not can_feed) or cadence.get('blocked'):
             continue
@@ -85,7 +90,7 @@ def snapshot(client, now=None):
             continue
         discovery_plan = None
         if threads_discovery:
-            writes = [k for k in ('like', 'comment') if actions.get(k, {}).get('enabled', True) and actions.get(k, {}).get('left', 0) > 0]
+            writes = [k for k in ('like', 'comment') if action_available(actions, k)]
             reserve = (1 if can_reply else 0) + (1 if upcoming else 0)
             needed = len(writes) + reserve
             enough = bool(writes) and all(value is None or value >= needed for value in (cadence.get('remaining'), cadence.get('daily', {}).get('remaining')))
