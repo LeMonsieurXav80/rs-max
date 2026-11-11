@@ -32,7 +32,11 @@ def discovery_source(client, account, now):
         choice = next((action for action in sources if action != previous), previous)
     else:
         choice = next(iter(sources))
-    return {'read_action': choice, **sources[choice]}
+    plan = {'read_action': choice, **sources[choice]}
+    alternative = next((action for action in sources if action != choice), None)
+    if alternative:
+        plan['fallback'] = {'read_action': alternative, **sources[alternative]}
+    return plan
 
 
 def snapshot(client, now=None):
