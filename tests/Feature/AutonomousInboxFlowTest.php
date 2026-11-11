@@ -19,7 +19,7 @@ class AutonomousInboxFlowTest extends TestCase
 
     private function fixture(): array
     {
-        $this->travelTo(\Illuminate\Support\Carbon::parse('2026-11-07T12:00:00Z'));
+        $this->travelTo(\Illuminate\Support\Carbon::parse('2026-11-07T12:00:00Z')->setTimezone(config('app.timezone')));
         $u = User::factory()->create(['role' => 'manager']);
         $p = Platform::firstOrCreate(['slug' => 'twitter'], ['name' => 'X']);
         $persona = Persona::create(['name' => 'Voix', 'system_prompt' => 'Bienveillant', 'is_active' => true]);
@@ -51,6 +51,41 @@ class AutonomousInboxFlowTest extends TestCase
         $other = SocialAccount::create(['name' => 'Autre', 'platform_id' => $a->platform_id]);
         $foreign = $this->item($other, '999');
         $this->postJson('/api/community-manager/inbox/'.$foreign->id.'/review', ['reason' => 'not_relevant'])->assertNotFound();
+    }
+
+    public function test_un_fait_manquant_ecarte_la_cible_jusqua_la_mise_a_jour_du_persona(): void
+    {
+        [$account] = $this->fixture();
+        $item = $this->item($account, '123');
+        $temporary = $this->item($account, '124');
+        $inbox = '/api/community-manager/accounts/'.$account->id.'/inbox';
+        $target = '/api/community-manager/inbox/'.$item->id;
+
+        Queue::fake([SendAutonomousInboxReply::class]);
+        $this->mock(\App\Services\Browser\BrowserTaskQueue::class)->shouldReceive('run')->twice()
+            ->andReturn(['context_complete' => true,
+                'target' => ['id' => '123', 'author' => 'visitor', 'text' => $item->content],
+                'conversation' => [['author' => 'owner', 'text' => 'Original'], ['author' => 'visitor', 'text' => $item->content]],
+                'visible_replies' => [],
+            ]);
+        $context = $this->getJson($target.'/context')->assertOk()->json('context_id');
+        $this->postJson($target.'/review', ['reason' => 'missing_facts'])->assertOk()->assertJsonPath('review_reason', 'missing_facts');
+        $this->assertEquals(now()->addHours(6), $item->fresh()->agent_retry_at);
+        $this->postJson('/api/community-manager/inbox/'.$temporary->id.'/review', ['reason' => 'retry_later'])->assertOk();
+        $this->getJson($inbox.'?agent_queue=1')->assertOk()->assertJsonCount(0, 'items');
+        $this->getJson($inbox)->assertOk()->assertJsonCount(2, 'items');
+        $this->getJson($target.'/context')->assertConflict()->assertJsonPath('skip_item', true)->assertJsonPath('review_reason', 'missing_facts');
+        $this->postJson($target.'/reply', ['context_id' => $context, 'reply_text' => 'Bonjour', 'dry_run' => false])
+            ->assertConflict()->assertJsonPath('review_reason', 'missing_facts');
+
+        $this->travel(16)->minutes();
+        $this->getJson($inbox.'?agent_queue=1')->assertOk()->assertJsonCount(1, 'items')->assertJsonPath('items.0.id', $temporary->id);
+        $account->persona->update(['system_prompt' => 'Le produit vient de la collection de novembre.']);
+        $this->getJson($inbox.'?agent_queue=1')->assertOk()->assertJsonCount(2, 'items');
+        $this->getJson($target.'/context')->assertOk()->assertJsonPath('persona.instructions', 'Le produit vient de la collection de novembre.');
+        $this->assertSame('unread', $item->fresh()->status);
+        $this->assertSame(0, (int) $item->fresh()->reply_attempts);
+        Queue::assertNotPushed(SendAutonomousInboxReply::class);
     }
 
     public function test_une_reponse_deja_visible_est_ecartee_sans_renvoi_et_sans_bloquer_le_lot(): void

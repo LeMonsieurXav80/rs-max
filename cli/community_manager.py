@@ -176,7 +176,7 @@ def main(argv=None):
     p = subs.add_parser('reply-status'); p.add_argument('id',type=int); p.add_argument('--wait',type=int,choices=(0, 60, 120, 150),default=0)
     p = subs.add_parser('verify-reply'); p.add_argument('id',type=int)
     p = subs.add_parser('reconcile-reply'); p.add_argument('id',type=int); proof=p.add_mutually_exclusive_group(required=True); proof.add_argument('--snapshot'); proof.add_argument('--verification-task',type=int); p.add_argument('--commit',action='store_true')
-    p = subs.add_parser('review'); p.add_argument('id',type=int); p.add_argument('--reason',choices=['not_relevant','retry_later'],required=True)
+    p = subs.add_parser('review'); p.add_argument('id',type=int); p.add_argument('--reason',choices=['not_relevant','retry_later','missing_facts'],required=True)
     p = subs.add_parser('inbox-like'); p.add_argument('id', type=int); p.add_argument('--commit', action='store_true')
     p = subs.add_parser('reply-context'); p.add_argument('id', type=int)
     p = subs.add_parser('reply-contexts')

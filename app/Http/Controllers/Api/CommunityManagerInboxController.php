@@ -8,12 +8,14 @@ use App\Models\SocialAccount;
 use App\Services\Agent\ApiInboxActions;
 use App\Services\Agent\CommentFreshness;
 use App\Services\Agent\CommunityManagerWindow;
+use App\Services\Agent\InboxAgentReview;
 use App\Services\Inbox\InboxFollowup;
 use App\Services\Inbox\InboxReplyService;
 use App\Services\Inbox\ReplyLanguage;
 use Illuminate\Http\Exceptions\HttpResponseException;
 use Illuminate\Http\Request;
 use Illuminate\Support\Str;
+use Illuminate\Validation\Rule;
 
 class CommunityManagerInboxController extends Controller
 {
@@ -37,16 +39,20 @@ class CommunityManagerInboxController extends Controller
     public function review(Request $r, InboxItem $inboxItem)
     {
         $this->account($r, $inboxItem->social_account_id);
-        abort_if($inboxItem->replied_at || $inboxItem->reply_scheduled_at || $inboxItem->reply_attempts > 0, 409, 'Déjà traité ou en cours : vérifier le résultat.');
-        $v = $r->validate(['reason' => 'required|in:not_relevant,retry_later']);
-        app(\App\Services\Agent\InboxAgentReview::class)->defer($inboxItem, $v['reason']);
+        abort_if($inboxItem->replied_at || $inboxItem->reply_external_id || $inboxItem->reply_scheduled_at
+            || $inboxItem->reply_attempts > 0 || $inboxItem->status === 'replied', 409, 'Déjà traité ou en cours : vérifier le résultat.');
+        $v = $r->validate(['reason' => ['required', Rule::in(['not_relevant', 'retry_later', InboxAgentReview::MISSING_FACTS])]]);
+        $review = app(InboxAgentReview::class);
+        if (! $review->waitingForFacts($inboxItem)) {
+            $review->defer($inboxItem, $v['reason']);
+        }
 
         return response()->json(['id' => $inboxItem->id, 'review_reason' => $inboxItem->agent_review_reason, 'retry_at' => $inboxItem->agent_retry_at]);
     }
 
     private function deferContext(InboxItem $item, string $reason, string $message): never
     {
-        app(\App\Services\Agent\InboxAgentReview::class)->defer($item, $reason);
+        app(InboxAgentReview::class)->defer($item, $reason);
         $this->skipContext($item, $reason, $message);
     }
 
@@ -54,6 +60,13 @@ class CommunityManagerInboxController extends Controller
     {
         throw new HttpResponseException(response()->json(['message' => $message, 'skip_item' => true,
             'item_id' => $item->id, 'review_reason' => $reason, 'retry_at' => $item->agent_retry_at], 409));
+    }
+
+    private function checkMissingFacts(InboxItem $item): void
+    {
+        if (app(InboxAgentReview::class)->waitingForFacts($item)) {
+            $this->skipContext($item, InboxAgentReview::MISSING_FACTS, 'Un fait ou un détail indispensable manque. Passer au commentaire suivant.');
+        }
     }
 
     public function contexts(Request $r, int $id, InboxFollowup $policy)
@@ -116,6 +129,7 @@ class CommunityManagerInboxController extends Controller
         if (! CommentFreshness::allows($inboxItem->posted_at)) {
             $this->skipContext($inboxItem, 'target_date_outside_window', CommentFreshness::REJECTION);
         }
+        $this->checkMissingFacts($inboxItem);
         abort_unless($a->persona?->is_active && filled($a->persona->system_prompt), 422, 'Persona actif requis.');
 
         if ($policy->isOwn($inboxItem, $a)) {
@@ -292,8 +306,13 @@ class CommunityManagerInboxController extends Controller
     public function reply(Request $r, InboxItem $inboxItem, InboxReplyService $service)
     {
         $a = $this->account($r, $inboxItem->social_account_id);
-        if (! ($inboxItem->replied_at || $inboxItem->reply_external_id || $inboxItem->status === 'replied') && ! CommentFreshness::allows($inboxItem->posted_at)) {
-            $this->skipContext($inboxItem, 'target_date_outside_window', CommentFreshness::REJECTION);
+        if (! ($inboxItem->replied_at || $inboxItem->reply_external_id || $inboxItem->status === 'replied')) {
+            if (! CommentFreshness::allows($inboxItem->posted_at)) {
+                $this->skipContext($inboxItem, 'target_date_outside_window', CommentFreshness::REJECTION);
+            }
+            if (! $inboxItem->reply_scheduled_at && $inboxItem->reply_attempts == 0) {
+                $this->checkMissingFacts($inboxItem);
+            }
         }
         if (in_array($a->platform->slug, ApiInboxActions::PLATFORMS, true) && ! $inboxItem->replied_at && ! $inboxItem->reply_scheduled_at) {
             app(ApiInboxActions::class)->assertEnabled($a, 'reply');
