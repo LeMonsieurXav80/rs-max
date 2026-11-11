@@ -109,15 +109,16 @@ class XWatchTest(unittest.TestCase):
     def test_threads_recherche_sans_inbox_exige_session_et_strategie(self):
         for session,queries,wanted in [('connected',['style'],'work'),(None,['style'],'idle'),('connected',[],'idle')]:
             a=self.account();a.update(platform='threads',driver='api',api_ready=True,persona=5,session=session,strategy={'search_queries':queries})
-            a['actions']={'search.read':{'left':2},'thread.read':{'left':2},'comment':{'left':2}}
+            a['actions']={'search.read':{'enabled':True,'left':2},'thread.read':{'enabled':True,'left':2},'comment':{'enabled':True,'left':2}}
             c=Mock();c.api.return_value={'daytime':True,'accounts':[a]}
             r=watch.snapshot(c,dt.datetime.fromisoformat('2026-11-08T12:00:00+00:00'))
-            self.assertEqual(r['state'],wanted);self.assertEqual(c.api.call_count,4 if wanted=='work' else 1)
+            self.assertEqual(r['state'],wanted);self.assertEqual(c.api.call_count,5 if wanted=='work' else (3 if session=='connected' else 1))
             if wanted=='work':self.assertTrue(r['accounts'][0]['threads_discovery'])
 
     def test_threads_explore_avant_inbox_meme_si_son_stock_est_non_vide(self):
         a=self.account();a.update(platform='threads',driver='api',api_ready=True,persona=5,strategy={'search_queries':['style','robe']})
-        a['actions'].update({'search.read':{'left':2},'thread.read':{'left':2},'comment':{'left':2}})
+        a['actions']['like']['enabled']=True
+        a['actions'].update({'search.read':{'enabled':True,'left':2},'thread.read':{'enabled':True,'left':2},'comment':{'enabled':True,'left':2}})
         t=self.account();t.update(id=12,platform='tiktok')
         c=Mock()
         c.api.side_effect=lambda method,path: {'daytime':True,'accounts':[t,a]} if path=='accounts' else {'logs':[]} if path.startswith('logs?') else {'items':[{'id':99,'content':'Merci','can_reply':True}]}
@@ -130,24 +131,35 @@ class XWatchTest(unittest.TestCase):
 
     def test_threads_ne_recherche_pas_a_nouveau_avant_une_heure_et_garde_inbox(self):
         a=self.account();a.update(platform='threads',driver='api',api_ready=True,persona=5,strategy={'search_queries':['style']})
-        a['actions'].update({'search.read':{'left':2},'thread.read':{'left':2},'comment':{'left':2}})
-        c=Mock();c.api.side_effect=[{'daytime':True,'accounts':[a]},{'logs':[{'at':'2026-11-08T11:40:00+00:00'}]},{'logs':[]},{'logs':[]},{'items':[{'id':99,'content':'Merci','can_reply':True}]}]
+        a['actions']['like']['enabled']=True
+        a['actions'].update({'search.read':{'enabled':True,'left':2},'thread.read':{'enabled':True,'left':2},'comment':{'enabled':True,'left':2}})
+        c=Mock();c.api.side_effect=[{'daytime':True,'accounts':[a]},{'logs':[]},{'logs':[]},{'logs':[]},{'logs':[{'at':'2026-11-08T11:40:00+00:00'}]},{'items':[{'id':99,'content':'Merci','can_reply':True}]}]
         r=watch.snapshot(c,dt.datetime.fromisoformat('2026-11-08T12:00:00+00:00'))
         self.assertEqual(r['priority_threads'],[]);self.assertFalse(r['accounts'][0]['threads_discovery']);self.assertTrue(r['accounts'][0]['items'])
 
     def test_threads_garde_une_place_a_la_reponse_api(self):
         a=self.account(2);a.update(platform='threads',driver='api',api_ready=True,persona=5,strategy={'search_queries':['style']})
-        a['actions'].update({'search.read':{'left':2},'thread.read':{'left':2},'comment':{'left':2}})
-        c=Mock();c.api.side_effect=[{'daytime':True,'accounts':[a]},{'logs':[]},{'logs':[]},{'logs':[]},{'items':[{'id':99,'content':'Merci','can_reply':True}]}]
+        a['actions']['like']['enabled']=True
+        a['actions'].update({'search.read':{'enabled':True,'left':2},'thread.read':{'enabled':True,'left':2},'comment':{'enabled':True,'left':2}})
+        c=Mock();c.api.side_effect=[{'daytime':True,'accounts':[a]},{'logs':[]},{'logs':[]},{'items':[{'id':99,'content':'Merci','can_reply':True}]}]
         r=watch.snapshot(c,dt.datetime.fromisoformat('2026-11-08T12:00:00+00:00'))
-        self.assertEqual(r['priority_threads'],[]);self.assertEqual(c.api.call_count,5)
+        self.assertEqual(r['priority_threads'],[]);self.assertEqual(c.api.call_count,4)
 
     def test_threads_termine_le_like_sans_refaire_recherche_ni_commentaire(self):
         for previous_like,wanted in [(False,True),(True,False)]:
             a=self.account();a.update(platform='threads',driver='api',api_ready=True,persona=5,strategy={'search_queries':['style']})
-            a['actions'].update({'search.read':{'left':2},'thread.read':{'left':2},'comment':{'left':2}})
+            a['actions']['like']['enabled']=True
+            a['actions'].update({'search.read':{'enabled':True,'left':2},'thread.read':{'enabled':True,'left':2},'comment':{'enabled':True,'left':2}})
             url='https://www.threads.com/@visitor/post/ABC123'
-            c=Mock();c.api.side_effect=[{'daytime':True,'accounts':[a]},{'logs':[{'at':'2026-11-08T11:40:00+00:00'}]},{'logs':[{'target_url':url,'status':'uncertain'}] if previous_like else []},{'logs':[{'target_url':url,'status':'confirmed','proof':{'confirmed':True},'at':'2026-11-08T11:45:00+00:00'}]},{'items':[{'id':99,'content':'Merci','can_reply':True}]}]
+            c=Mock()
+            def api(method,path):
+                if path=='accounts': return {'daytime':True,'accounts':[a]}
+                if 'action=threads.like' in path: return {'logs':[{'target_url':url,'status':'uncertain'}] if previous_like else []}
+                if 'action=threads.comment' in path: return {'logs':[{'target_url':url,'status':'confirmed','proof':{'confirmed':True},'at':'2026-11-08T11:45:00+00:00'}]}
+                if 'action=agent.search.read' in path: return {'logs':[{'at':'2026-11-08T11:40:00+00:00'}]}
+                if path.startswith('logs?'): return {'logs':[]}
+                return {'items':[{'id':99,'content':'Merci','can_reply':True}]}
+            c.api.side_effect=api
             r=watch.snapshot(c,dt.datetime.fromisoformat('2026-11-08T12:00:00+00:00'))
             self.assertEqual(bool(r['priority_threads']),wanted)
             if wanted:
@@ -169,3 +181,6 @@ class ReportScheduleTest(unittest.TestCase):
         evening=module.report_arguments(dt.datetime.fromisoformat('2026-11-07T20:00:00+00:00'))
         self.assertEqual(morning,morning_retry);self.assertNotEqual(morning[-1],evening[-1])
         self.assertIn('--scheduled',morning);self.assertEqual(morning[morning.index('--hours')+1],'12')
+        self.assertIsNone(module.report_arguments(dt.datetime.fromisoformat('2026-11-07T07:00:00+00:00')))
+        self.assertIn('--scheduled',module.report_arguments(dt.datetime.fromisoformat('2026-07-07T07:00:00+00:00')))
+        self.assertIsNone(module.report_arguments(dt.datetime.fromisoformat('2026-07-07T08:00:00+00:00')))

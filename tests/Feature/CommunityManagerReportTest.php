@@ -2,7 +2,9 @@
 
 namespace Tests\Feature;
 
+use App\Jobs\NotifyAccountLimitAdjustment;
 use App\Models\AccountActionEvent;
+use App\Models\AgentLimitAdjustment;
 use App\Models\Platform;
 use App\Models\Setting;
 use App\Models\SocialAccount;
@@ -41,5 +43,49 @@ class CommunityManagerReportTest extends TestCase
         $this->postJson($url, $payload)->assertOk()->assertJsonPath('already_requested', true);
         Http::assertSentCount(1);
         Http::assertSent(fn ($r) => str_contains($r['text'], 'Compte attribué') && ! isset($r['parse_mode']));
+    }
+
+    public function test_le_bilan_ne_retient_que_la_periode_et_les_comptes_actifs(): void
+    {
+        $user = User::factory()->create(['role' => 'manager']);
+        $platform = Platform::firstOrCreate(['slug' => 'twitter'], ['name' => 'X', 'auth_type' => 'oauth2']);
+        $active = SocialAccount::create(['platform_id' => $platform->id, 'name' => 'Compte actif']);
+        $inactive = SocialAccount::create(['platform_id' => $platform->id, 'name' => 'Compte inactif']);
+        foreach ([$active, $inactive] as $account) {
+            $account->users()->attach($user, ['is_active' => true]);
+        }
+        $this->travel(-13)->hours();
+        AccountActionEvent::create(['social_account_id' => $inactive->id, 'action' => 'x.reply',
+            'executor' => 'browser', 'status' => 'failed', 'error' => 'Ancien incident']);
+        $this->travelBack();
+        AccountActionEvent::create(['social_account_id' => $active->id, 'action' => 'x.reply',
+            'executor' => 'browser', 'status' => 'uncertain', 'error' => 'Preuve manquante']);
+
+        Sanctum::actingAs($user);
+        $response = $this->getJson('/api/community-manager/report?hours=12')->assertOk()->assertJsonCount(2, 'accounts');
+        $text = $response->json('text');
+        $this->assertStringContainsString('Incertaines 1', $text);
+        $this->assertStringContainsString('Preuve manquante', $text);
+        $this->assertStringNotContainsString('Ancien incident', $text);
+        $this->assertStringNotContainsString('Compte inactif', $text);
+    }
+
+    public function test_seule_une_limitation_explicite_declenche_une_alerte_immediate(): void
+    {
+        Http::preventStrayRequests();
+        Http::fake(['api.telegram.org/*' => Http::response(['ok' => true, 'result' => ['message_id' => 1]])]);
+        Setting::setEncrypted('notify_telegram_bot_token', 'test-only');
+        Setting::set('notify_telegram_chat_id', 'test-chat');
+        $platform = Platform::firstOrCreate(['slug' => 'twitter'], ['name' => 'X', 'auth_type' => 'oauth2']);
+        $account = SocialAccount::create(['platform_id' => $platform->id, 'name' => 'Compte attribué']);
+        foreach (['technical', 'stable', 'platform_ui'] as $source) {
+            $adjustment = AgentLimitAdjustment::create(['social_account_id' => $account->id,
+                'old_hourly' => 20, 'new_hourly' => 10, 'old_daily' => 80, 'new_daily' => 40,
+                'old_interval' => 180, 'new_interval' => 360, 'reason' => $source, 'context' => ['source' => $source]]);
+            (new NotifyAccountLimitAdjustment($adjustment->id))->handle();
+        }
+
+        Http::assertSentCount(1);
+        Http::assertSent(fn ($request) => str_contains($request['text'], 'platform_ui'));
     }
 }

@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Models\AccountActionEvent;
 use App\Services\Agent\AccountActionBudget;
+use App\Services\Agent\AutomationJournal;
 use App\Services\TelegramNotificationService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Cache;
@@ -17,28 +18,39 @@ class CommunityManagerReportController extends Controller
         $v = $r->validate(['hours' => 'sometimes|integer|min:1|max:48', 'note' => 'nullable|string|max:600',
             'dry_run' => 'sometimes|boolean', 'report_key' => 'nullable|uuid']);
         $hours = $v['hours'] ?? 24;
+        $since = now()->subHours($hours);
         $accounts = $r->user()->connectedSocialAccounts()->with('platform')->get();
-        $rows = $accounts->map(function ($a) use ($hours) {
-            $events = AccountActionEvent::where('social_account_id', $a->id)->where('created_at', '>=', now()->subHours($hours))->get();
+        $rows = $accounts->map(function ($a) use ($since) {
+            $events = AccountActionEvent::where('social_account_id', $a->id)->where('created_at', '>=', $since)->latest('id')->get();
+            $lastIssue = $events->whereIn('status', ['failed', 'cancelled', 'uncertain'])->first();
 
             return ['account_id' => $a->id, 'name' => $a->name, 'platform' => $a->platform->name,
                 'session' => $a->browser_session_status, 'attempted' => $events->count(),
                 'confirmed' => $events->where('status', 'confirmed')->count(), 'completed' => $events->where('status', 'completed')->count(),
                 'unchanged' => $events->where('status', 'unchanged')->count(), 'failed' => $events->whereIn('status', ['failed', 'cancelled'])->count(),
                 'uncertain' => $events->where('status', 'uncertain')->count(), 'in_progress' => $events->where('status', 'attempted')->count(),
+                'last_issue' => app(AutomationJournal::class)->text($lastIssue?->error, 150),
                 'cadence' => app(AccountActionBudget::class)->usage($a)];
         })->values();
-        $text = 'RS-Max · bilan Community Manager ('.$hours.' h)';
-        foreach ($rows as $row) {
-            $text .= "\n\n{$row['name']} · {$row['platform']}\n{$row['attempted']} tentative(s), {$row['confirmed']} confirmée(s), {$row['completed']} terminée(s) sans preuve, {$row['unchanged']} déjà présente(s)."
-                ."\n{$row['failed']} échec(s), {$row['uncertain']} incertaine(s), {$row['in_progress']} en cours."
-                ."\nDernière heure : {$row['cadence']['attempted']}/".($row['cadence']['limit'] ?? 'sans plafond').'.';
+        $text = "RS-Max · bilan des {$hours} dernières heures";
+        $active = $rows->filter(fn ($row) => $row['attempted'] > 0 || $row['session'] === 'expired');
+        if ($active->isEmpty()) {
+            $text .= "\nAucune activité sur la période.";
+        }
+        foreach ($active as $row) {
+            $text .= "\n\n{$row['name']} · {$row['platform']} — Confirmées {$row['confirmed']} · Échecs {$row['failed']} · Incertaines {$row['uncertain']}";
+            if ($row['completed'] || $row['in_progress']) {
+                $text .= " {$row['completed']} sans preuve, {$row['in_progress']} en cours.";
+            }
+            if ($row['last_issue']) {
+                $text .= "\nDernier incident · {$row['last_issue']}";
+            }
             if ($row['session'] === 'expired') {
-                $text .= "\nSession expirée : renvoyer la session avec Companion.";
+                $text .= "\nSession expirée. Renvoyer la session avec Companion.";
             }
         }
         if (! empty($v['note'])) {
-            $text .= "\n\nAmélioration / constat : ".$v['note'];
+            $text .= "\n\nConstat · ".app(AutomationJournal::class)->text($v['note'], 300);
         }
         $data = ['hours' => $hours, 'accounts' => $rows, 'text' => $text];
         if ($r->isMethod('get') || $r->boolean('dry_run', true)) {
