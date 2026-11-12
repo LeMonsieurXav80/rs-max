@@ -1,0 +1,43 @@
+diff -ruN a/background.js b/background.js
+--- a/background.js	2026-11-12 17:29:21
++++ b/background.js	2026-11-12 17:29:21
+@@ -832,6 +832,19 @@
+   }
+ }
+ 
++/** Nouvelle version copiée sur le disque : se recharger entre deux tâches, jamais pendant l'une d'elles. */
++async function reloadIfUpdated() {
++  try {
++    const disk = (await (await fetch(chrome.runtime.getURL('manifest.json'), {cache: 'no-store'})).json()).version;
++    if (disk && disk !== chrome.runtime.getManifest().version && !nativeTask) {
++      console.info(`[rsmax] Companion ${chrome.runtime.getManifest().version} → ${disk} : rechargement entre deux tâches.`);
++      chrome.runtime.reload();
++      return true;
++    }
++  } catch {}
++  return false;
++}
++
+ async function runTasks() {
+   const profile = self.RSMAX_DEFAULTS?.taskProfile;
+   if (!profile || taskLoop) return;
+@@ -840,6 +853,7 @@
+   const keepAlive = setInterval(() => chrome.runtime.getPlatformInfo(() => {}), 20000);
+   try {
+     for (let idle = 0; idle < TASK_IDLE_POLLS; idle++) {
++      if (await reloadIfUpdated()) return;
+       const task = await apiFetch({ path: '/extension/tasks/next', query: { profile } });
+       if (!task?.id) { await pause(TASK_POLL_MS); continue; }
+       idle = -1;
+diff -ruN a/manifest.json b/manifest.json
+--- a/manifest.json	2026-11-12 17:29:21
++++ b/manifest.json	2026-11-12 17:29:21
+@@ -1,7 +1,7 @@
+ {
+   "manifest_version": 3,
+   "name": "RS-Max Companion",
+-  "version": "0.18.41",
++  "version": "0.18.42",
+   "description": "Actions assistees sur les reseaux sociaux (engagement, publication) avec remontee vers l'API RS-Max.",
+   "permissions": [
+     "storage",

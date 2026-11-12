@@ -33,10 +33,14 @@ Hermès répond seul aux commentaires reçus par le compte TikTok, du plus ancie
 
 **`comment_status` au reçu d’envoi.** 7 est le code normal. 2 n’a jamais été confirmé sur six jours (environ 30 cas, souvent des « Merci, c’est gentil 😊 » répétés) : TikTok retient la réponse. Elle reste verrouillée (`reply_failed`, 3 tentatives), sans relecture ni renvoi.
 
-**`reply_to_username`.** Companion 0.18.41 lit le second lien d’auteur d’une ligne Studio (« auteur ▸ destinataire »). Sans lui, un commentaire est considéré comme adressé au compte.
+**`reply_to_username`.** Companion 0.18.41 (actif en 0.18.42 partout depuis le 12/11 au soir) lit le second lien d’auteur d’une ligne Studio (« auteur ▸ destinataire »). Sans lui, un commentaire est considéré comme adressé au compte.
 
 ### Incident du 12 novembre : file TikTok arrêtée
 
 La gateway Hermès a été redémarrée par son watchdog à 11 h 21 (heure de Paris), le VPS étant en swap. Le cycle TikTok en cours est devenu « inconnu » et l’ordonnanceur l’a mis en pause (`Canonical cron unknown; no automatic re-execution`), sans alerte : aucune réponse de 11 h 27 à 17 h 45. RS-Max, la session et la file `nas-wildycaro` étaient sains (attente moyenne 7 s). Le moniteur X (`rsmax_x_watch.py`, toutes les 2 minutes) relance désormais une file `RS-Max — File …` en pause pour ce motif depuis plus de 5 minutes ; RS-Max reste juge des doublons (tentatives verrouillées, réservations).
 
 Diagnostic d’une file muette : `enabled`, `state` et `paused_reason` des jobs dans `cron/jobs.json` du profil Hermès, puis `docker logs … | grep "missed 3 consecutive liveness"`, avant de soupçonner RS-Max ou l’agent.
+
+### Réponses retenues : l’environnement d’envoi, pas le volume
+
+Du 4 au 6 novembre, toutes les réponses partaient du Chrome de l’utilisateur (Mac) : 85 publiées, aucune incertaine. Les incertaines (code 2) apparaissent le 7-8 novembre avec le NAS. Le Mac et le NAS sortent par la même box. Restent trois différences non départagées : session copiée sur un second appareil, Chromium Linux sous Docker/Xvfb, saisie native. Ni le rang dans la journée ni la répétition du texte n’expliquent clairement le code 2.
