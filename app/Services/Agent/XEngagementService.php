@@ -274,9 +274,10 @@ class XEngagementService
         $contact = SocialContact::firstOrCreate(['social_account_id' => $row->social_account_id, 'handle' => $row->payload['handle']]);
         if ($row->action === 'follow') {
             $contact->update(['followed_at' => now(), 'unfollowed_at' => null, 'last_read_at' => now(),
-                'metadata' => array_replace($contact->metadata ?? [], ['follow_source' => $source])]);
+                'metadata' => array_replace($contact->metadata ?? [], ['follow_source' => $source, 'x_following' => true])]);
         } else {
-            $contact->update(['unfollowed_at' => now()]);
+            $contact->update(['unfollowed_at' => now(),
+                'metadata' => array_replace($contact->metadata ?? [], ['x_following' => false])]);
         }
     }
 

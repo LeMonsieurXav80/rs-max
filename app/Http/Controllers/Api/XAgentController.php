@@ -92,6 +92,9 @@ class XAgentController extends Controller
             if (! $c->exists) {
                 $c->fill(['source' => $data['action'], 'source_url' => $url]);
             }
+            if ($data['action'] === 'profile.read' && $c->handle === $payload['handle'] && is_bool($profile['following'] ?? null)) {
+                $c->metadata = array_replace($c->metadata ?? [], ['x_following' => $profile['following']]);
+            }
             // L’absence d’indicateur dans l’interface ne prouve jamais un non-retour.
             if (($profile['follow_back'] ?? null) === 'yes') {
                 $c->fill(['follow_back' => 'yes', 'follow_back_checked_at' => now()]);
@@ -121,7 +124,10 @@ class XAgentController extends Controller
         $metadata = [];
         if (isset($result['items'])) {
             $ids = array_values(array_unique(array_filter(array_column($result['items'], 'id'), fn ($id) => is_string($id) && ctype_digit($id))));
-            $result['reply_blocked_ids'] = $engagements->blockedReplyIds($a, $ids);
+            $owner = strtolower($a->browser_username);
+            $ownPosts = array_filter($result['items'], fn ($item) => strtolower($item['author'] ?? '') === $owner);
+            $blockedReplies = $engagements->blockedReplyIds($a, $ids);
+            $result['reply_blocked_ids'] = array_values(array_intersect($ids, [...$blockedReplies, ...array_column($ownPosts, 'id')]));
             $result['like_blocked_ids'] = $engagements->blockedLikeIds($a, $ids);
             $metadata = ['steps' => [[
                 'id' => (string) Str::uuid(), 'stage' => 'agent.x.reply_prefilter',

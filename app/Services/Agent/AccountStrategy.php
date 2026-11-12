@@ -88,7 +88,9 @@ class AccountStrategy
         $reserved = XEngagement::where('social_account_id', $account->id)->where('action', 'follow')->where('status', '!=', 'prepared')
             ->whereIn('target_key', array_keys($keys))->pluck('target_key')->map(fn ($key) => $keys[$key])->all();
         $following = SocialContact::where('social_account_id', $account->id)->whereIn('handle', $handles)
-            ->whereNotNull('followed_at')->whereNull('unfollowed_at')->pluck('handle')->all();
+            ->where(fn ($query) => $query->where('metadata->x_following', true)
+                ->orWhere(fn ($history) => $history->whereNotNull('followed_at')->whereNull('unfollowed_at')))
+            ->pluck('handle')->all();
         $checked = BrowserTask::where('social_account_id', $account->id)->where('kind', 'x.agent.read')
             ->where('payload->action', 'profile.read')->whereIn('payload->handle', $handles)
             ->where('created_at', '>=', now()->subHour())->get(['payload'])->map(fn (BrowserTask $task) => $task->payload['handle'])->all();

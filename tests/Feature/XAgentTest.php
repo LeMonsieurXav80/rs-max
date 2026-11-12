@@ -136,17 +136,20 @@ class XAgentTest extends TestCase
         $items = array_map(fn ($id) => array_replace($this->target(), [
             'id' => $id, 'url' => 'https://x.com/visitor/status/'.$id,
         ]), $ids);
+        $ids[] = '1000';
+        $items[] = array_replace($this->target(), ['id' => '1000', 'author' => 'Owner', 'url' => 'https://x.com/Owner/status/1000']);
         $blocked = ['994', '991', '992', '993'];
+        $replyBlocked = [...$blocked, '1000'];
         $this->mock(BrowserTaskQueue::class)->shouldReceive('run')->once()->andReturn([
             'items' => $items, 'observed' => count($items), 'complete' => false,
         ]);
         $snapshot = $this->postJson($this->url('read'), ['action' => 'search.read', 'query' => '#mode'])
-            ->assertOk()->assertJsonPath('reply_blocked_ids', $blocked)
+            ->assertOk()->assertJsonPath('reply_blocked_ids', $replyBlocked)
             ->assertJsonCount(count($ids), 'items')->json('snapshot_id');
         $this->postJson('/api/extension/x/assisted/check', ['ids' => $ids, 'platform_account_id' => '12345', 'username' => 'owner'])
             ->assertOk()->assertJsonPath('blocked', $blocked);
         $this->getJson('/api/community-manager/logs?account_id='.$this->a->id.'&action=agent.search.read')
-            ->assertOk()->assertJsonPath('logs.0.steps.0.details.count', count($blocked));
+            ->assertOk()->assertJsonPath('logs.0.steps.0.details.count', count($replyBlocked));
         $this->postJson($this->url('prepare'), ['action' => 'like', 'snapshot_id' => $snapshot, 'target_id' => '991'])
             ->assertCreated()->assertJsonPath('status', 'prepared');
         $this->assertDatabaseCount('account_action_events', 0);
@@ -493,6 +496,34 @@ class XAgentTest extends TestCase
         $this->getJson($catalogue)->assertOk()->assertJsonMissingPath('accounts.0.follow_candidate');
         $this->assertDatabaseCount('account_action_events', 0);
         $this->assertDatabaseCount('browser_tasks', 1);
+    }
+
+    public function test_un_suivi_observe_ecarte_le_profil_sans_creer_un_abonnement_agent(): void
+    {
+        $this->a->update(['agent_strategy' => ['target_accounts' => ['@visitor', '@fallback']]]);
+        app(AgentCatalog::class)->configure($this->a, 'profile.read', true, 4);
+        $profile = ['handle' => 'visitor', 'name' => 'Visiteur'];
+        $this->mock(BrowserTaskQueue::class)->shouldReceive('run')->times(3)->andReturn(
+            ['profile' => $profile + ['following' => true]],
+            ['profile' => $profile],
+            ['profile' => $profile + ['following' => false]],
+        );
+        $data = ['action' => 'profile.read', 'handle' => 'visitor'];
+        $catalogue = '/api/community-manager/accounts';
+
+        $this->postJson($this->url('read'), $data)->assertOk();
+        $this->travel(2)->hours();
+        $this->getJson($catalogue)->assertOk()->assertJsonPath('accounts.0.follow_candidate.handle', 'fallback');
+        $contact = SocialContact::where('handle', 'visitor')->firstOrFail();
+        $this->assertNull($contact->followed_at);
+        $this->assertArrayNotHasKey('follow_source', $contact->metadata);
+
+        $this->postJson($this->url('read'), $data)->assertOk();
+        $this->getJson($catalogue)->assertOk()->assertJsonPath('accounts.0.follow_candidate.handle', 'fallback');
+
+        $this->postJson($this->url('read'), $data)->assertOk();
+        $this->getJson($catalogue)->assertOk()->assertJsonPath('accounts.0.follow_candidate.handle', 'visitor');
+        $this->assertDatabaseCount('account_action_events', 0);
     }
 
     public function test_un_follow_deja_present_ninvente_pas_une_date_de_follow_agent(): void
