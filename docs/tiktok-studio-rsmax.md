@@ -45,3 +45,5 @@ Diagnostic d’une file muette : `enabled`, `state` et `paused_reason` des jobs 
 ### Réponses retenues : l’environnement d’envoi, pas le volume
 
 Du 4 au 6 novembre, toutes les réponses partaient du Chrome de l’utilisateur (Mac) : 85 publiées, aucune incertaine. Les incertaines (code 2) apparaissent le 7-8 novembre avec le NAS. Le Mac et le NAS sortent par la même box. Restent trois différences non départagées : session copiée sur un second appareil, Chromium Linux sous Docker/Xvfb, saisie native. Ni le rang dans la journée ni la répétition du texte n’expliquent clairement le code 2.
+
+Companion 0.18.45 inscrit le code du reçu d’envoi dans la preuve d’une réponse locale (`extension_tiktok_comments.proof` : « … · code TikTok 7 »). Comparer local et NAS : `proof like '%code TikTok 2%'` côté local, `result->submission->comment_status` côté `browser_tasks`.
