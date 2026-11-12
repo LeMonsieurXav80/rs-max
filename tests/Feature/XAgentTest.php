@@ -112,6 +112,20 @@ class XAgentTest extends TestCase
         $this->postJson($this->url('read'), $read)->assertConflict()->assertJsonPath('skip_item', true);
     }
 
+    public function test_un_commentaire_lu_sous_le_fil_peut_etre_aime_mais_pas_repondu(): void
+    {
+        $id = (string) \Illuminate\Support\Str::uuid();
+        $t = $this->target();
+        $comment = ['id' => '990', 'author' => 'fan', 'url' => 'https://x.com/fan/status/990', 'text' => 'Superbe', 'published_at' => now()->toIso8601String()];
+        Cache::put('x-agent-snapshot:'.$id, ['account_id' => $this->a->id, 'result' => ['target' => $t, 'conversation' => [$t],
+            'context_complete' => true, 'visible_replies' => [$comment]], 'source' => []], now()->addHour());
+
+        $this->postJson($this->url('prepare'), ['snapshot_id' => $id, 'action' => 'like', 'target_id' => '990'])->assertCreated();
+        $this->assertSame('https://x.com/fan/status/990', XEngagement::latest('id')->first()->payload['url']);
+        $this->postJson($this->url('prepare'), ['snapshot_id' => $id, 'action' => 'reply', 'target_id' => '990', 'text' => 'Merci'])
+            ->assertUnprocessable();
+    }
+
     public function test_le_catalogue_n_est_journalise_qu_une_fois_par_demi_heure(): void
     {
         $this->getJson('/api/community-manager/accounts')->assertOk();

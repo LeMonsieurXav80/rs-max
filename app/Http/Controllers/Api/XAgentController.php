@@ -207,7 +207,14 @@ class XAgentController extends Controller
         $this->enabled($a, $data['action']);
         $s = $this->snapshot($a, $data['snapshot_id']);
         $profile = in_array($data['action'], ['follow', 'unfollow'], true);
-        $target = $profile ? ($s['result']['profile'] ?? null) : collect(isset($s['result']['target']) ? [$s['result']['target']] : ($s['result']['items'] ?? []))->firstWhere('id', $data['target_id'] ?? '');
+        $posts = isset($s['result']['target']) ? [$s['result']['target']] : ($s['result']['items'] ?? []);
+        if (isset($s['result']['target']) && in_array($data['action'], ['like', 'unlike', 'bookmark', 'unbookmark'], true)) {
+            // Un commentaire lu sous la publication peut être aimé ; on ne répond qu’à la cible dont le contexte est chargé.
+            $read = array_filter([...($s['result']['conversation'] ?? []), ...($s['result']['visible_replies'] ?? [])],
+                fn ($p) => ctype_digit((string) ($p['id'] ?? '')) && preg_match('/^[A-Za-z0-9_]{1,15}$/', (string) ($p['author'] ?? '')));
+            $posts = [...$posts, ...array_map(fn ($p) => $p + ['url' => 'https://x.com/'.$p['author'].'/status/'.$p['id']], $read)];
+        }
+        $target = $profile ? ($s['result']['profile'] ?? null) : collect($posts)->firstWhere('id', $data['target_id'] ?? '');
         abort_unless($target, 422, 'Cible absente de la lecture.');
         $key = hash('sha256', $profile ? strtolower($target['handle']) : $target['id']);
 
