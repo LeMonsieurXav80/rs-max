@@ -241,8 +241,37 @@ class XBrowserTest extends TestCase
 
         $this->artisan('inbox:sync --platform=twitter --driver=browser')->assertSuccessful();
 
-        $this->assertSame(['x.whoami', 'x.tweets'], $this->queue->kinds());
+        $this->assertSame(['x.whoami', 'x.tweets', 'x.tweets'], $this->queue->kinds());
         $this->assertSame($this->account->id, InboxItem::where('external_id', '601')->sole()->social_account_id);
+    }
+
+    public function test_les_reponses_absentes_de_l_onglet_mentions_viennent_de_la_recherche_recente(): void
+    {
+        $tweet = fn ($id) => ['id' => $id, 'author' => 'visiteur', 'name' => 'N', 'avatar' => null, 'text' => 'T', 'published_at' => now()->toIso8601String()];
+        $queue = new class extends FakeQueue
+        {
+            public function run(SocialAccount $account, string $kind, array $payload, int $timeout = 120): array
+            {
+                if ($kind === 'x.tweets' && str_contains($payload['url'], '/search?')) {
+                    $this->calls[] = [$kind, $payload];
+                    if ($this->failure) {
+                        throw new BrowserException($this->failure);
+                    }
+
+                    return $this->results['search'];
+                }
+
+                return parent::run($account, $kind, $payload, $timeout);
+            }
+        };
+        $this->app->instance(BrowserTaskQueue::class, $queue);
+        $queue->results['x.tweets'] = ['tweets' => [$tweet('601')]];
+        $queue->results['search'] = ['tweets' => [$tweet('601'), $tweet('602')]];
+
+        $items = app(TwitterBrowserInboxService::class)->fetchInbox($this->account);
+
+        $this->assertSame(['601', '602'], $items->pluck('external_id')->all());
+        $this->assertSame('https://x.com/search?q=to%3Awildycaro&src=typed_query&f=live', $queue->calls[2][1]['url']);
     }
 
     public function test_la_synchro_des_mentions_publiques_conserve_la_date_x_et_les_reponses_existantes(): void

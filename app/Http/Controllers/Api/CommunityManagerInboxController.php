@@ -230,7 +230,18 @@ class CommunityManagerInboxController extends Controller
             $followup = $followup || count($conversation) > 2;
         }
         if ($followup && $xQuote === null && ! $policy->isQuestion($inboxItem->content)) {
-            $this->deferContext($inboxItem, 'not_relevant', 'Réponse sans question : passer au commentaire suivant.');
+            // Un « merci » en fin d’échange n’appelle pas de réponse, mais un like le clôt comme le ferait le compte.
+            $liking = false;
+            if ($xThread && ! $inboxItem->liked_at) {
+                $like = app(\App\Services\Agent\AgentCatalog::class)->forAccount($a)->get('like');
+                if (($like['enabled'] ?? false) && ($like['left'] ?? 0) > 0) {
+                    $next = app(\App\Services\Agent\AccountActionBudget::class)->usage($a)['next_allowed_at'];
+                    \App\Jobs\LikeInboxItem::dispatch($inboxItem->id)
+                        ->delay($next ? \Illuminate\Support\Carbon::parse($next)->addSeconds(2) : now());
+                    $liking = true;
+                }
+            }
+            $this->deferContext($inboxItem, 'not_relevant', 'Réponse sans question : '.($liking ? 'like programmé par RS-Max, ' : '').'passer au commentaire suivant.');
         }
         $builder = app(\App\Services\Inbox\InboxConversationBuilder::class);
         $conversation = $xThread['conversation'] ?? $builder->build($a, collect([$inboxItem]), includeOriginal: ! $compact)[0]['thread'] ?? [];

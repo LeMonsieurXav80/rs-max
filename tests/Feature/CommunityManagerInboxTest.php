@@ -324,8 +324,7 @@ class CommunityManagerInboxTest extends TestCase
         $this->postJson($path.'/reply', ['context_id' => $context, 'reply_text' => 'Merci pour cet exemple.', 'dry_run' => false])->assertAccepted();
 
         $network = \Mockery::mock(\App\Services\Inbox\PlatformInboxInterface::class);
-        $network->shouldReceive('sendReply')->once()->withArgs(fn ($a, $i, $text) =>
-            $a->is($account) && $i->is($item) && $text === 'Merci pour cet exemple.')
+        $network->shouldReceive('sendReply')->once()->withArgs(fn ($a, $i, $text) => $a->is($account) && $i->is($item) && $text === 'Merci pour cet exemple.')
             ->andReturn(['success' => true, 'external_id' => '988']);
         $this->mock(\App\Services\Inbox\InboxSyncService::class)->shouldReceive('getServiceForAccount')->once()->andReturn($network);
 
@@ -335,6 +334,37 @@ class CommunityManagerInboxTest extends TestCase
         $this->assertSame('988', $item->fresh()->reply_external_id);
         \Illuminate\Support\Facades\Queue::assertPushed(\App\Jobs\LikeInboxItem::class, fn ($job) => $job->itemId === $item->id);
         Http::assertNothingSent();
+    }
+
+    public function test_x_un_merci_en_fin_d_echange_recoit_un_like_sans_reponse(): void
+    {
+        $this->travelTo(now()->setDate(2026, 11, 11)->setTime(12, 0));
+        \Illuminate\Support\Facades\Queue::fake();
+        $user = User::factory()->create(['role' => 'manager']);
+        $persona = Persona::create(['name' => 'Persona X', 'system_prompt' => 'Réponse sobre', 'is_active' => true]);
+        $account = SocialAccount::create(['name' => 'Compte X',
+            'platform_id' => Platform::firstOrCreate(['slug' => 'twitter'], ['name' => 'X'])->id, 'driver' => 'browser',
+            'browser_username' => 'owner', 'browser_profile' => 'nas-test', 'persona_id' => $persona->id]);
+        $account->users()->attach($user, ['is_active' => true]);
+        $account->agentActions()->create(['action' => 'like', 'enabled' => true, 'daily_limit' => 100]);
+        Sanctum::actingAs($user);
+        $item = InboxItem::create(['social_account_id' => $account->id, 'platform_id' => $account->platform_id,
+            'type' => 'comment', 'external_id' => '987', 'author_username' => 'visitor',
+            'content' => 'Merci chef 🙏', 'status' => 'unread', 'posted_at' => now()->subMinute()]);
+        $target = ['id' => '987', 'author' => 'visitor', 'text' => 'Merci chef 🙏'];
+        $this->mock(\App\Services\Browser\BrowserTaskQueue::class)->shouldReceive('run')->once()->andReturn([
+            'context_complete' => true, 'target' => $target, 'conversation' => [
+                ['id' => '985', 'author' => 'owner', 'text' => 'Mon conseil du jour.'],
+                ['id' => '986', 'author' => 'owner', 'text' => 'Avec plaisir !'],
+                $target,
+            ],
+        ]);
+
+        $this->getJson("/api/community-manager/inbox/{$item->id}/context")->assertConflict()
+            ->assertJsonPath('skip_item', true)->assertJsonPath('review_reason', 'not_relevant');
+
+        \Illuminate\Support\Facades\Queue::assertPushed(\App\Jobs\LikeInboxItem::class, fn ($job) => $job->itemId === $item->id);
+        $this->assertNull($item->fresh()->reply_scheduled_at);
     }
 
     public function test_x_accepte_uniquement_les_destinataires_de_reponse_avant_le_texte_exact(): void

@@ -23,6 +23,17 @@ class TwitterBrowserInboxService implements PlatformInboxInterface
         }
 
         $tweets = $this->queue->run($account, 'x.tweets', ['url' => 'https://x.com/notifications/mentions', 'screens' => 3])['tweets'] ?? [];
+        // L’onglet Mentions a cessé d’afficher les réponses récentes le 11/11/2026 (33 manquées en 18 h) :
+        // la recherche « Récent » to:compte les remonte toutes. Un échec de cette seconde lecture garde la première.
+        $username = ltrim((string) $account->browser_username, '@');
+        if (preg_match('/^[A-Za-z0-9_]{1,15}$/', $username)) {
+            try {
+                $replies = $this->queue->run($account, 'x.tweets', ['url' => 'https://x.com/search?q='.rawurlencode('to:'.$username).'&src=typed_query&f=live', 'screens' => 3])['tweets'] ?? [];
+                $tweets = collect($tweets)->concat($replies)->unique('id')->all();
+            } catch (\App\Services\Browser\BrowserException $e) {
+                report($e);
+            }
+        }
 
         return collect($tweets)
             ->reject(fn (array $t) => $t['author'] === strtolower((string) $account->browser_username))
