@@ -380,9 +380,6 @@ class CommunityManagerInboxController extends Controller
         abort_if(($context['emoji_only'] ?? false) && ! in_array(trim((string) $r->input('reply_text', '')), InboxFollowup::SMILES, true), 422,
             'Commentaire fait d’emojis, d’un autocollant ou d’un GIF : répondre seulement par 🙂, 😊 ou 😄.');
         abort_unless(\App\Services\Agent\XAddressing::fits($context['addressing'] ?? null, (string) $r->input('reply_text', '')), 422, \App\Services\Agent\XAddressing::REJECTION);
-        if ($a->platform->slug === 'twitter' && ($broken = \App\Services\Agent\XReplyStyle::violation((string) $r->input('reply_text', ''), $inboxItem->content)) !== null) {
-            abort(422, \App\Services\Agent\XReplyStyle::REJECTION.' '.$broken);
-        }
         abort_unless(app(CommunityManagerWindow::class)->isOpen(), 423, 'Actions autorisées de 06 h à 22 h à Lisbonne.');
 
         $r->attributes->set('community_manager', true);

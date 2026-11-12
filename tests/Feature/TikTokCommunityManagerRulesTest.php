@@ -103,7 +103,7 @@ class TikTokCommunityManagerRulesTest extends TestCase
         $this->postJson('/api/community-manager/inbox/'.$other->id.'/reply', ['context_id' => $context, 'reply_text' => 'Merci, c’est gentil'])
             ->assertStatus(422);
 
-        // Le style X ne s’applique pas à TikTok : cœur et question finale passent.
+        // Aucun filtre de style (retiré le 12/11/2026) : cœur et question finale passent.
         $context = $this->getJson('/api/community-manager/inbox/'.$direct->id.'/context')->json('context_id');
         foreach (['Merci, elle vient d’une friperie 🥰', 'Une friperie de Lisbonne, tu connais ?'] as $text) {
             $this->postJson('/api/community-manager/inbox/'.$direct->id.'/reply', ['context_id' => $context, 'reply_text' => $text])

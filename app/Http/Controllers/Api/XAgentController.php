@@ -251,8 +251,6 @@ class XAgentController extends Controller
                 if ($data['action'] === 'reply') {
                     abort_unless(XReplyDraft::fits($text, $limit), 422, 'Réponse vide ou trop longue pour X. Reformule plus court et réutilise le même contexte.');
                     abort_unless(\App\Services\Agent\XAddressing::fits($context['addressing'] ?? null, $text), 422, \App\Services\Agent\XAddressing::REJECTION);
-                    abort_if(\App\Services\Agent\XReplyStyle::violation($text, $target['text'] ?? null) !== null, 422,
-                        \App\Services\Agent\XReplyStyle::REJECTION.' '.\App\Services\Agent\XReplyStyle::violation($text, $target['text'] ?? null));
                 } else {
                     abort_unless($text !== '' && mb_strlen($text) <= $limit, 422, 'Texte vide ou trop long.');
                 }

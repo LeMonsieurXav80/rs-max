@@ -71,14 +71,10 @@ class XReplyDraft
 
                 continue;
             }
-            $broken = XReplyStyle::violation($reply, $item->content);
-            if ($broken === null) {
-                return $reply;
-            }
-            $feedback = 'Le brouillon précédent ne respectait pas cette règle : '.$broken.' Reformule.';
+
+            return $reply;
         }
 
-        abort(422, $feedback !== null && str_starts_with($feedback, 'Le premier brouillon dépassait')
-            ? 'Brouillon encore trop long après reformulation.' : XReplyStyle::REJECTION);
+        abort(422, 'Brouillon encore trop long après reformulation.');
     }
 }
