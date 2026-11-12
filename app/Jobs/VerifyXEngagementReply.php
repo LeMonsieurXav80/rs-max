@@ -32,19 +32,56 @@ class VerifyXEngagementReply implements ShouldBeUnique, ShouldQueue
         return (string) $this->engagementId;
     }
 
+    public static function verifiable(BrowserTask $task): bool
+    {
+        return $task->kind === 'x.agent.act' && ($task->payload['action'] ?? null) === 'reply'
+            && $task->status === BrowserTask::UNCERTAIN && $task->claimed_at && $task->finished_at
+            && ($task->result['platform_limit']['source'] ?? null) !== 'platform_ui';
+    }
+
     public static function candidateId(BrowserTask $task): ?string
     {
         $id = $task->result['id'] ?? $task->result['reply_id'] ?? null;
-        if ($task->kind !== 'x.agent.act' || ($task->payload['action'] ?? null) !== 'reply'
-            || $task->status !== BrowserTask::UNCERTAIN || ! $task->claimed_at || ! $task->finished_at
-            || ($task->result['platform_limit']['source'] ?? null) === 'platform_ui'
-            || ! is_string($id) || $id === ($task->payload['target']['id'] ?? null)) {
+        if (! self::verifiable($task) || ! is_string($id) || $id === ($task->payload['target']['id'] ?? null)) {
             return null;
         }
 
-        $postedAt = CommentFreshness::xStatusDate($id);
+        return self::duringAttempt($task, $id) ? $id : null;
+    }
 
-        return $postedAt?->betweenIncluded($task->claimed_at->copy()->subSeconds(5), $task->finished_at->copy()->addMinute()) ? $id : null;
+    private static function duringAttempt(BrowserTask $task, string $id): bool
+    {
+        return (bool) CommentFreshness::xStatusDate($id)?->betweenIncluded($task->claimed_at->copy()->subSeconds(5), $task->finished_at->copy()->addMinute());
+    }
+
+    /**
+     * L’identifiant capturé après le clic peut désigner un ancien post du compte apparu dans la page.
+     * On relit alors la cible : une seule réponse du compte, au texte exact et datée de la tentative, la désigne.
+     */
+    private function locateUnderParent(BrowserTaskQueue $browser, $account, BrowserTask $task, string $username, string $text, ?array $window): ?string
+    {
+        $parent = $task->payload['target'] ?? [];
+        if (! ctype_digit((string) ($parent['id'] ?? '')) || ! preg_match('~^https://x\.com/[A-Za-z0-9_]{1,15}/status/[0-9]+$~', (string) ($parent['url'] ?? ''))) {
+            return null;
+        }
+        $payload = ['url' => $parent['url'], 'action' => 'thread.read', 'username' => $username, 'target_id' => (string) $parent['id']];
+        if ($window !== null) {
+            $payload['activity_window'] = $window;
+        }
+        try {
+            $read = $browser->run($account, 'x.agent.read', $payload, 100);
+        } catch (BrowserException $e) {
+            Log::notice('X : relecture de la cible impossible', ['task_id' => $task->id, 'error' => $e->getMessage()]);
+
+            return null;
+        }
+        $ids = collect($read['visible_replies'] ?? [])
+            ->filter(fn ($p) => strtolower($p['author'] ?? '') === strtolower($username)
+                && $this->normalize($p['text'] ?? null) === $text && ctype_digit((string) ($p['id'] ?? ''))
+                && self::duringAttempt($task, (string) $p['id']))
+            ->pluck('id')->unique()->values();
+
+        return $ids->count() === 1 ? (string) $ids->first() : null;
     }
 
     public function handle(BrowserTaskQueue $browser, AccountActionBudget $budget): void
@@ -52,10 +89,10 @@ class VerifyXEngagementReply implements ShouldBeUnique, ShouldQueue
         $engagement = XEngagement::with(['browserTask', 'socialAccount.platform'])->find($this->engagementId);
         $task = $engagement?->browserTask;
         if (! $task || $engagement->status !== 'uncertain' || $engagement->action !== 'reply'
-            || $task->social_account_id !== $engagement->social_account_id
-            || ! ($id = self::candidateId($task))) {
+            || $task->social_account_id !== $engagement->social_account_id || ! self::verifiable($task)) {
             return;
         }
+        $id = self::candidateId($task);
 
         $account = $engagement->socialAccount;
         $username = $task->payload['username'] ?? '';
@@ -66,6 +103,10 @@ class VerifyXEngagementReply implements ShouldBeUnique, ShouldQueue
             || $account->browser_session_status !== 'connected' || $account->browser_username !== $username
             || ! preg_match('/^[a-zA-Z0-9_]{1,15}$/D', $username) || ! ctype_digit($parentId) || $text === ''
             || ($window !== null && ! app(CommunityManagerWindow::class)->isOpen($window))) {
+            return;
+        }
+        $id ??= $this->locateUnderParent($browser, $account, $task, $username, $text, $window);
+        if (! $id) {
             return;
         }
 

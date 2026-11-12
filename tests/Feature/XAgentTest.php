@@ -440,14 +440,29 @@ class XAgentTest extends TestCase
         $this->assertDatabaseCount('browser_tasks', 1);
     }
 
-    public function test_identifiant_anterieur_a_la_tentative_ne_planifie_pas_de_relecture(): void
+    public function test_identifiant_anterieur_a_la_tentative_retrouve_la_reponse_sous_la_cible(): void
     {
         Queue::fake([VerifyXEngagementReply::class]);
         $oldId = (string) ((now()->subHour()->getTimestampMs() - 1288834974657) << 22);
-        $this->uncertainReply($oldId);
+        $engagement = $this->uncertainReply($oldId);
+        $this->assertNull(VerifyXEngagementReply::candidateId($engagement->browserTask));
+        Queue::assertPushed(VerifyXEngagementReply::class, 1);
 
-        Queue::assertNotPushed(VerifyXEngagementReply::class);
-        $this->assertSame('uncertain', AccountActionEvent::first()->status);
+        $replyId = (string) ((now()->getTimestampMs() - 1288834974657) << 22);
+        $reply = ['id' => $replyId, 'author' => 'owner', 'url' => 'https://x.com/owner/status/'.$replyId, 'text' => 'Merci pour ce gentil mot 🖤'];
+        $old = ['id' => $oldId, 'author' => 'owner', 'url' => 'https://x.com/owner/status/'.$oldId, 'text' => 'Merci pour ce gentil mot 🖤'];
+        $browser = $this->mock(BrowserTaskQueue::class);
+        $browser->shouldReceive('run')->once()->withArgs(fn ($a, $kind, $p) => $p['url'] === 'https://x.com/visitor/status/987')
+            ->andReturn(['context_complete' => true, 'target' => $this->target(), 'conversation' => [$this->target()],
+                'visible_replies' => [$old, $reply, ['id' => '991', 'author' => 'fan', 'text' => 'Merci pour ce gentil mot 🖤']]]);
+        $browser->shouldReceive('run')->once()->withArgs(fn ($a, $kind, $p) => $p['url'] === $reply['url'])
+            ->andReturn(['context_complete' => true, 'target' => $reply, 'conversation' => [$this->target(), $reply]]);
+
+        (new VerifyXEngagementReply($engagement->id))->handle($browser, app(AccountActionBudget::class));
+
+        $this->assertSame('confirmed', $engagement->fresh()->status);
+        $this->assertSame($replyId, $engagement->fresh()->result['reply_id']);
+        $this->assertDatabaseCount('browser_tasks', 1);
     }
 
     public function test_reponse_persona_contexte_et_modification_avant_claim(): void

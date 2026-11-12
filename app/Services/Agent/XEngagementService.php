@@ -310,7 +310,7 @@ class XEngagementService
         }
         $status = $confirmed ? 'confirmed' : (in_array($task->status, [BrowserTask::CANCELLED, BrowserTask::FAILED], true) ? 'failed' : 'uncertain');
         $row->update(['status' => $status, 'result' => $task->result, 'error' => $confirmed ? null : ($task->error ?? 'Absence de preuve après rechargement.')]);
-        if ($status === 'uncertain' && VerifyXEngagementReply::candidateId($task) !== null) {
+        if ($status === 'uncertain' && VerifyXEngagementReply::verifiable($task)) {
             VerifyXEngagementReply::dispatch($row->id)->delay(now()->addSeconds(45))->afterCommit();
         }
         if ($confirmed && in_array($row->action, ['like', 'unlike'], true)) {
