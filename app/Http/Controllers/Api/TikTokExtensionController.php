@@ -165,12 +165,13 @@ class TikTokExtensionController extends Controller
             abort_unless($last['author'] === $data['author'] && (string) ($last['content'] ?? '') === $data['content'], 422, 'Dernier commentaire différent de la cible.');
         }
         if ($approvedReply === null && ($inbox = $this->inboxAccount($request, $profile->username))) {
-            // Déjà répondu, ou tentative en cours ou incertaine : passer au suivant sans appeler le modèle, jamais de renvoi.
+            // Réponse confirmée ou envoi en cours : passer au suivant sans appeler le modèle.
+            // Une réponse d’Hermès retenue par TikTok reste ouverte à une réponse humaine en local (choix de l’utilisateur, 12/11/2026).
             $handled = InboxItem::where('social_account_id', $inbox->id)
                 ->where('external_id', TikTokInboxService::commentId($inbox, $data['author'], $data['content'], $data['video_context']))
                 ->where(fn ($q) => $q->whereNotNull('replied_at')->orWhereNotNull('reply_external_id')->orWhere('status', 'replied')
-                    ->orWhere('reply_attempts', '>', 0)->orWhereNotNull('reply_scheduled_at'))->exists();
-            abort_if($handled, 409, 'Ce commentaire a déjà reçu une réponse ou une tentative.');
+                    ->orWhereNotNull('reply_scheduled_at'))->exists();
+            abort_if($handled, 409, 'Ce commentaire a déjà reçu une réponse.');
         }
         if ($approvedReply === null && app(InboxFollowup::class)->isThanks($data['content'])) {
             // Companion aime le commentaire si la recette l’y autorise, sans répondre.
