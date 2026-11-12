@@ -47,10 +47,11 @@ class XReplyDraft
 
     public function generate(InboxItem $item, SocialAccount $account, string $context, string $contextLabel, ?string $instructions = null, bool $filterByStrategy = false): string
     {
-        foreach ([220, 170] as $index => $target) {
+        $feedback = null;
+        foreach ([220, 170, 170] as $index => $target) {
             $style = "Vise {$target} caractères au maximum, dans une phrase complète. Certains caractères et emojis comptent double sur X.";
-            if ($index > 0) {
-                $style = 'Le premier brouillon dépassait la limite. Reformule en conservant seulement le point essentiel. '.$style;
+            if ($feedback !== null) {
+                $style = $feedback.' '.$style;
             }
             $reply = $this->generator->generate($item, $account, true, self::LIMIT, $context, 'X', $contextLabel,
                 extraInstructions: trim($instructions."\n".$style), jsonOutput: $filterByStrategy);
@@ -65,11 +66,19 @@ class XReplyDraft
                 $reply = $text;
             }
             $reply = trim($reply);
-            if (self::fits($reply)) {
+            if (! self::fits($reply)) {
+                $feedback = 'Le premier brouillon dépassait la limite. Reformule en conservant seulement le point essentiel.';
+
+                continue;
+            }
+            $broken = XReplyStyle::violation($reply, $item->content);
+            if ($broken === null) {
                 return $reply;
             }
+            $feedback = 'Le brouillon précédent ne respectait pas cette règle : '.$broken.' Reformule.';
         }
 
-        abort(422, 'Brouillon encore trop long après reformulation.');
+        abort(422, $feedback !== null && str_starts_with($feedback, 'Le premier brouillon dépassait')
+            ? 'Brouillon encore trop long après reformulation.' : XReplyStyle::REJECTION);
     }
 }

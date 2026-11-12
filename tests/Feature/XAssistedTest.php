@@ -220,7 +220,7 @@ class XAssistedTest extends TestCase
         Http::assertSent(fn ($request) => str_contains($request['messages'][1]['content'], '"role":"exterieur"')
             && str_contains($request['messages'][0]['content'], '@owner n’apparaît pas dans ce fil'));
 
-        $answer = 'La whey avant la séance, tu la prends combien de temps avant ?';
+        $answer = 'Une whey avant la séance, c’est souvent plus digeste en petite quantité.';
         $this->postJson('/api/extension/x/assisted/preview', $payload)->assertOk()->assertJsonPath('reply_text', $answer);
 
         // La même phrase reste permise quand la cible répond au compte.

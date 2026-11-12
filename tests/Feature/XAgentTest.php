@@ -375,7 +375,7 @@ class XAgentTest extends TestCase
     {
         $snapshot = $this->snapshot(true);
         $context = $this->getJson($this->url('context').'?snapshot_id='.$snapshot)->assertOk()->json('context_id');
-        $engagement = $this->prepare($snapshot, 'reply', ['context_id' => $context, 'text' => 'Merci pour ce gentil mot 🖤']);
+        $engagement = $this->prepare($snapshot, 'reply', ['context_id' => $context, 'text' => 'Merci pour ce gentil mot 😊']);
         $this->execute($engagement);
         $task = (new BrowserTaskQueue)->claim('nas-test');
         $this->finish($task, ['id' => $candidateId], 'uncertain');
@@ -398,7 +398,7 @@ class XAgentTest extends TestCase
             && $job->delay->equalTo(now()->addSeconds(45)));
         Queue::assertPushed(VerifyXEngagementReply::class, 1);
         $this->travel(46)->seconds();
-        $reply = ['id' => $replyId, 'author' => 'owner', 'url' => $url, 'text' => "Merci pour ce gentil mot\n🖤"];
+        $reply = ['id' => $replyId, 'author' => 'owner', 'url' => $url, 'text' => "Merci pour ce gentil mot\n😊"];
         $browser = $this->mock(BrowserTaskQueue::class);
         $browser->shouldReceive('run')->once()
             ->withArgs(fn ($account, $kind, $payload, $timeout) => $account->id === $this->a->id && $kind === 'x.agent.read'
@@ -427,7 +427,7 @@ class XAgentTest extends TestCase
         $replyId = (string) ((now()->getTimestampMs() - 1288834974657) << 22);
         $engagement = $this->uncertainReply($replyId);
         $this->assertSame($replyId, VerifyXEngagementReply::candidateId($engagement->browserTask));
-        $reply = ['id' => $replyId, 'author' => 'owner', 'url' => 'https://x.com/owner/status/'.$replyId, 'text' => 'Merci pour ce gentil mot 🖤'];
+        $reply = ['id' => $replyId, 'author' => 'owner', 'url' => 'https://x.com/owner/status/'.$replyId, 'text' => 'Merci pour ce gentil mot 😊'];
         $browser = $this->mock(BrowserTaskQueue::class);
         $browser->shouldReceive('run')->once()->andReturn(['context_complete' => true, 'target' => $reply,
             'conversation' => [$this->target(), ['id' => '988', 'author' => 'visitor', 'text' => 'Autre parent'], $reply]]);
@@ -449,12 +449,12 @@ class XAgentTest extends TestCase
         Queue::assertPushed(VerifyXEngagementReply::class, 1);
 
         $replyId = (string) ((now()->getTimestampMs() - 1288834974657) << 22);
-        $reply = ['id' => $replyId, 'author' => 'owner', 'url' => 'https://x.com/owner/status/'.$replyId, 'text' => 'Merci pour ce gentil mot 🖤'];
-        $old = ['id' => $oldId, 'author' => 'owner', 'url' => 'https://x.com/owner/status/'.$oldId, 'text' => 'Merci pour ce gentil mot 🖤'];
+        $reply = ['id' => $replyId, 'author' => 'owner', 'url' => 'https://x.com/owner/status/'.$replyId, 'text' => 'Merci pour ce gentil mot 😊'];
+        $old = ['id' => $oldId, 'author' => 'owner', 'url' => 'https://x.com/owner/status/'.$oldId, 'text' => 'Merci pour ce gentil mot 😊'];
         $browser = $this->mock(BrowserTaskQueue::class);
         $browser->shouldReceive('run')->once()->withArgs(fn ($a, $kind, $p) => $p['url'] === 'https://x.com/visitor/status/987')
             ->andReturn(['context_complete' => true, 'target' => $this->target(), 'conversation' => [$this->target()],
-                'visible_replies' => [$old, $reply, ['id' => '991', 'author' => 'fan', 'text' => 'Merci pour ce gentil mot 🖤']]]);
+                'visible_replies' => [$old, $reply, ['id' => '991', 'author' => 'fan', 'text' => 'Merci pour ce gentil mot 😊']]]);
         $browser->shouldReceive('run')->once()->withArgs(fn ($a, $kind, $p) => $p['url'] === $reply['url'])
             ->andReturn(['context_complete' => true, 'target' => $reply, 'conversation' => [$this->target(), $reply]]);
 
@@ -471,7 +471,7 @@ class XAgentTest extends TestCase
         $ctx = $this->getJson($this->url('context').'?snapshot_id='.$s)->assertOk()->assertJsonPath('persona.instructions', 'Voix chaleureuse et sobre')->json('context_id');
         $this->postJson($this->url('prepare'), ['action' => 'reply', 'snapshot_id' => $s, 'context_id' => $ctx, 'text' => str_repeat('進', 141)])
             ->assertUnprocessable();
-        $e = $this->prepare($s, 'reply', ['context_id' => $ctx, 'text' => 'Merci pour ce gentil mot 🖤']);
+        $e = $this->prepare($s, 'reply', ['context_id' => $ctx, 'text' => 'Merci pour ce gentil mot 😊']);
         $this->execute($e);
         $this->a->persona->update(['system_prompt' => 'Autre voix']);
         $this->assertNull((new BrowserTaskQueue)->claim('nas-test'));

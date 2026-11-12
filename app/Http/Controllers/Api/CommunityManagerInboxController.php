@@ -342,6 +342,9 @@ class CommunityManagerInboxController extends Controller
             $r->validate(['reply_text' => 'required|string|max:150']);
         }
         abort_unless(\App\Services\Agent\XAddressing::fits($context['addressing'] ?? null, (string) $r->input('reply_text', '')), 422, \App\Services\Agent\XAddressing::REJECTION);
+        if ($a->platform->slug === 'twitter' && ($broken = \App\Services\Agent\XReplyStyle::violation((string) $r->input('reply_text', ''), $inboxItem->content)) !== null) {
+            abort(422, \App\Services\Agent\XReplyStyle::REJECTION.' '.$broken);
+        }
         abort_unless(app(CommunityManagerWindow::class)->isOpen(), 423, 'Actions autorisées de 06 h à 22 h à Lisbonne.');
 
         $r->attributes->set('community_manager', true);

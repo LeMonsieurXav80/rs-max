@@ -109,9 +109,9 @@ class AutonomousInboxFlowTest extends TestCase
         $this->mock(\App\Services\Browser\BrowserTaskQueue::class)->shouldReceive('run')->once()->andReturn(['context_complete' => true, 'target' => ['id' => '123', 'author' => 'visitor', 'text' => $i->content],
             'conversation' => [['author' => 'owner', 'text' => 'Original'], ['author' => 'visitor', 'text' => $i->content]], 'visible_replies' => []]);
         $context = $this->getJson('/api/community-manager/inbox/'.$i->id.'/context')->json('context_id');
-        $data = ['context_id' => $context, 'reply_text' => 'Merci beaucoup 🖤', 'dry_run' => false];
+        $data = ['context_id' => $context, 'reply_text' => 'Merci beaucoup 😊', 'dry_run' => false];
         $this->postJson('/api/community-manager/inbox/'.$i->id.'/reply', $data)->assertAccepted()->assertJsonPath('queued', true)->assertJsonPath('validation_required', false);
-        $this->assertSame('Merci beaucoup 🖤', $i->fresh()->reply_content);
+        $this->assertSame('Merci beaucoup 😊', $i->fresh()->reply_content);
         $this->assertNull($i->fresh()->reply_draft);
         Queue::assertPushed(SendAutonomousInboxReply::class, fn ($job) => $job->itemId === $i->id);
         Queue::assertPushed(SendAutonomousInboxReply::class, 1);
