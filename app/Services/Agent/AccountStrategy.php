@@ -159,7 +159,8 @@ class AccountStrategy
             'agent_adaptation.max_hourly' => 'sometimes|integer|min:1|max:1000',
             'agent_adaptation.max_daily' => 'sometimes|integer|min:2|max:100000',
             'agent_min_interval_seconds' => 'sometimes|integer|min:0|max:86400',
-            'agent_strategy' => 'sometimes|array:audience,objective,hashtags,target_accounts,search_queries,exclusions,unfollow_after_days,editorial_topics,reply_language',
+            'agent_strategy' => 'sometimes|array:audience,objective,hashtags,target_accounts,search_queries,exclusions,unfollow_after_days,editorial_topics,reply_language,discovery_interval_minutes',
+            'agent_strategy.discovery_interval_minutes' => 'sometimes|nullable|integer|min:1|max:1440',
             'agent_strategy.reply_language' => ['sometimes', 'nullable', Rule::in(array_keys(ReplyLanguage::LABELS))],
             'agent_strategy.editorial_topics' => 'sometimes|array',
             'agent_strategy.editorial_topics.*' => ['string', 'distinct', Rule::in(array_keys(config('editorial_calendar.topics')))],
@@ -170,7 +171,12 @@ class AccountStrategy
             $rules['agent_strategy.'.$key.'.*'] = 'string|max:255|distinct';
         }
 
-        return $request->validate($rules);
+        $data = $request->validate($rules);
+        if (isset($data['agent_strategy']['discovery_interval_minutes'])) {
+            $data['agent_strategy']['discovery_interval_minutes'] = (int) $data['agent_strategy']['discovery_interval_minutes'];
+        }
+
+        return $data;
     }
 
     public function save(Request $request, SocialAccount $account): void

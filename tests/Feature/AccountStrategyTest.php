@@ -40,6 +40,27 @@ class AccountStrategyTest extends TestCase
         $this->assertSame(['#mode'], $a->fresh()->agent_strategy['hashtags']);
     }
 
+    public function test_delai_de_decouverte_reglable_par_compte_dans_la_fiche_et_l_api(): void
+    {
+        $platform = Platform::firstOrCreate(['slug' => 'twitter'], ['name' => 'X']);
+        $first = SocialAccount::create(['platform_id' => $platform->id, 'name' => 'Compte X A', 'driver' => 'browser']);
+        $second = SocialAccount::create(['platform_id' => $platform->id, 'name' => 'Compte X B', 'driver' => 'browser']);
+        $manager = User::factory()->create(['role' => 'manager']);
+        $manager->socialAccounts()->attach([$first->id => ['is_active' => true], $second->id => ['is_active' => true]]);
+        $token = $manager->createToken('CM', ['community-manager'])->plainTextToken;
+        $path = '/api/community-manager/accounts/'.$first->id.'/strategy';
+        $this->withToken($token)->patchJson($path, ['agent_strategy' => ['discovery_interval_minutes' => 5]])
+            ->assertOk()->assertJsonPath('strategy.discovery_interval_minutes', 5);
+        $this->withToken($token)->patchJson($path, ['agent_strategy' => ['discovery_interval_minutes' => 0]])->assertUnprocessable();
+        $this->assertNull($second->fresh()->agent_strategy);
+        $this->actingAs($manager)->get('/accounts/'.$first->id.'/edit')->assertOk()->assertSee('Intervalle entre explorations');
+        $this->actingAs($manager)->put('/accounts/'.$first->id, ['name' => 'Compte X A', 'languages' => ['fr'],
+            'agent_strategy' => ['discovery_interval_minutes' => '8']])->assertRedirect('/accounts/'.$first->id.'/edit');
+        $this->assertSame(8, $first->fresh()->agent_strategy['discovery_interval_minutes']);
+        $this->withToken($token)->patchJson($path, ['agent_strategy' => ['discovery_interval_minutes' => null]])
+            ->assertOk()->assertJsonPath('strategy.discovery_interval_minutes', null);
+    }
+
     public function test_limite_glissante_et_delai_avant_prise_de_tache(): void
     {
         $this->freezeTime();

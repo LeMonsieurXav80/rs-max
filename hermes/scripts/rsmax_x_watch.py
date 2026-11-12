@@ -27,6 +27,7 @@ def action_available(actions, name):
 def discovery_source(client, account, now):
     actions = account['actions']
     strategy = account.get('strategy') or {}
+    interval = strategy.get('discovery_interval_minutes') or DISCOVERY_MINUTES
     is_x = account['platform'] == 'twitter'
     configured = account.get('discovery_queries', strategy.get('search_queries', [])) if is_x else strategy.get('search_queries', [])
     queries = [q.strip() for q in configured if isinstance(q, str) and 0 < len(q.strip()) <= (X_SEARCH_QUERY_LIMIT if is_x else 150)]
@@ -48,7 +49,7 @@ def discovery_source(client, account, now):
             history[action] = entry
     if history:
         previous = max(history, key=lambda action: dt.datetime.fromisoformat(history[action]['at']))
-        if now - dt.datetime.fromisoformat(history[previous]['at']) < dt.timedelta(minutes=DISCOVERY_MINUTES):
+        if now - dt.datetime.fromisoformat(history[previous]['at']) < dt.timedelta(minutes=interval):
             return None
         choice = next((action for action in sources if action != previous), previous)
     else:
@@ -63,7 +64,7 @@ def discovery_source(client, account, now):
                 aliases.add(f"{last_query} lang:{account['search_language']}")
             index = next((i + 1 for i, query in enumerate(queries) if query.casefold() in aliases), 0)
         else:
-            index = int(now.timestamp()) // (DISCOVERY_MINUTES * 60)
+            index = int(now.timestamp()) // (interval * 60)
         sources['search.read'] = {'query': queries[index % len(queries)]}
     plan = {'read_action': choice, **sources[choice]}
     alternative = next((action for action in sources if action != choice), None)

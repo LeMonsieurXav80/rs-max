@@ -219,6 +219,18 @@
                         <p class="mt-2">{{ $adjustment['created_at'] }} · {{ $adjustment['old_hourly'] ?? '—' }} → {{ $adjustment['new_hourly'] ?? '—' }}/h · {{ $adjustment['old_daily'] ?? '—' }} → {{ $adjustment['new_daily'] ?? '—' }}/jour · {{ $adjustment['reason'] }}</p>
                     @empty<p class="mt-2 text-gray-500">Aucun ajustement.</p>@endforelse
                 </details>
+                @if(in_array($account->platform->slug, ['twitter', 'threads', 'tiktok'], true))
+                    <div class="mb-5">
+                        <label for="agent_discovery_interval_minutes" class="block text-sm font-medium mb-1">Intervalle entre explorations (minutes)</label>
+                        <input id="agent_discovery_interval_minutes" name="agent_strategy[discovery_interval_minutes]" type="number" min="1" max="1440"
+                               value="{{ old('agent_strategy.discovery_interval_minutes', $account->agent_strategy['discovery_interval_minutes'] ?? null) }}"
+                               placeholder="15" class="w-28 rounded-xl border-gray-300 text-sm">
+                        <p class="mt-1 text-xs text-gray-500">Flux et recherches. Par défaut, 15 minutes. Les réponses reçues suivent leur propre cycle.</p>
+                        @error('agent_strategy.discovery_interval_minutes')
+                            <p class="mt-1 text-sm text-red-600">{{ $message }}</p>
+                        @enderror
+                    </div>
+                @endif
                 @foreach(['audience' => 'Audience cible', 'objective' => 'Objectif du compte'] as $field => $label)
                     <label for="agent_{{ $field }}" class="block text-sm font-medium mb-1">{{ $label }}</label>
                     <textarea id="agent_{{ $field }}" name="agent_strategy[{{ $field }}]" rows="2" maxlength="{{ $field === 'audience' ? 4000 : 2000 }}" class="w-full rounded-xl border-gray-300 text-sm mb-4">{{ old('agent_strategy.'.$field, $account->agent_strategy[$field] ?? '') }}</textarea>

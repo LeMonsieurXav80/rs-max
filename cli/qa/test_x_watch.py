@@ -196,6 +196,27 @@ class XWatchTest(unittest.TestCase):
         self.assertEqual(plan['query'], 'from:atelier')
         self.assertEqual(plan['fallback'], {'read_action': 'search.read', 'query': 'from:membre'})
 
+    def test_x_intervalle_de_decouverte_independant_par_compte(self):
+        now = dt.datetime.fromisoformat('2026-11-07T12:30:00+00:00')
+        fast = self.account()
+        slow = self.account()
+        fast.update(id=11, strategy={'discovery_interval_minutes': 5})
+        slow.update(id=12)
+        for account in (fast, slow):
+            account.update(persona=5, discovery_queries=['mode'])
+            account['actions'].update({'feed.read': {'left': 3}, 'search.read': {'left': 3}, 'thread.read': {'left': 3}})
+        client = Mock()
+        client.api.side_effect = lambda method, path: (
+            {'daytime': True, 'accounts': [fast, slow]} if path == 'accounts'
+            else {'items': []} if '/inbox?' in path
+            else {'logs': [{'at': '2026-11-07T12:25:00+00:00'}]} if 'feed.read' in path else {'logs': []})
+
+        before = watch.snapshot(client, now - dt.timedelta(seconds=1), lane='x')
+        self.assertEqual(before, {'state': 'idle'})
+        result = watch.snapshot(client, now, lane='x')
+        self.assertEqual([(p['account_id'], p['read_action'], p['max_writes']) for p in result['priority_x']],
+                         [(11, 'search.read', 2)])
+
     def test_x_garde_les_recherches_et_actions_propres_a_chaque_compte(self):
         first = self.account()
         second = self.account()

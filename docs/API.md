@@ -1406,6 +1406,8 @@ Pour une mission inbox sur un compte API précis, `GET /api/community-manager/ac
 
 La langue des réponses et commentaires se règle sur la fiche du compte ou via `PATCH /api/accounts/{id}/strategy` avec `agent_strategy.reply_language`. La valeur `null` utilise la première langue du compte puis le français. Les contextes Hermès et le catalogue exposent la valeur effective `reply_language`. La langue du message reçu ne change pas ce choix.
 
+`agent_strategy.discovery_interval_minutes` règle l’intervalle de lecture du flux et des recherches de ce compte X, Threads ou TikTok. La fiche du compte et `PATCH /api/accounts/{id}/strategy` acceptent un entier de 1 à 1 440 ou `null` pour les 15 minutes par défaut. Le passage démarre au premier cycle disponible après le délai. Les plafonds d’écriture et la priorité des commentaires reçus continuent de s’appliquer.
+
 ### X — Community Manager par Companion sur le NAS
 
 Les comptes X en mode Companion avec `mentions.read` activé reçoivent leurs mentions publiques toutes les quinze minutes, y compris si l’inbox X de l’instance est désactivée. Le jeton Community Manager retrouve ces mentions dans `GET /api/community-manager/accounts/{id}/inbox?agent_queue=1`. Dans ce cas, seuls les commentaires et réponses publics sont accessibles. Activer `reply` sur le compte pour autoriser une réponse. Les comptes X configurés en API restent régis par le réglage général.
