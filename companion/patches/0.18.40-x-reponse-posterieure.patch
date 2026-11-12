@@ -1,0 +1,26 @@
+diff --git a/manifest.json b/manifest.json
+index d043367..b44076c 100644
+--- a/manifest.json
++++ b/manifest.json
+@@ -1,7 +1,7 @@
+ {
+   "manifest_version": 3,
+   "name": "RS-Max Companion",
+-  "version": "0.18.39",
++  "version": "0.18.40",
+   "description": "Actions assistees sur les reseaux sociaux (engagement, publication) avec remontee vers l'API RS-Max.",
+   "permissions": [
+     "storage",
+diff --git a/x/publisher.js b/x/publisher.js
+index a1ad770..33fd8ab 100644
+--- a/x/publisher.js
++++ b/x/publisher.js
+@@ -75,7 +75,7 @@
+       window.RSXLimits?.assert();const started_at=Date.now();clicked=true;c.button.click();window.RSTaskTrace?.mark('x.post.clicked',{gesture:true});
+       const id=await until(()=>{
+         window.RSXLimits?.assert();
+-        const candidates=[...document.querySelectorAll('a[href]')].map(n=>D.canonical(n.getAttribute('href'))).filter(n=>n&&n.author===p.username.toLowerCase()&&!prior.has(n.id));
++        const candidates=[...document.querySelectorAll('a[href]')].map(n=>D.canonical(n.getAttribute('href'))).filter(n=>n&&n.author===p.username.toLowerCase()&&!prior.has(n.id)&&recent(n.id,started_at));
+         const unique=[...new Set(candidates.map(n=>n.id))];return unique.length===1?unique[0]:null;
+       },25);
+       window.RSTaskTrace?.mark('x.post.candidate',{target_id:id||''});
