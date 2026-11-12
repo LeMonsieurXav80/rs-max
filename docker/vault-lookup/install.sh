@@ -11,7 +11,7 @@ install -d -m 750 -o 1000 -g "$gid" "$sockets"
 docker build -q -t "rsmax-vault-lookup:local" "$here" >/dev/null
 docker rm -f "rsmax-vault-$corpus" >/dev/null 2>&1 || true
 docker run -d --name "rsmax-vault-$corpus" --restart unless-stopped --network none --read-only \
-    --user 1000:1000 -e VAULT_SOCKET_GID="$gid" \
+    --user 1000:1000 --group-add "$gid" -e VAULT_SOCKET_GID="$gid" \
     -v "$vault:/vault:ro" -v "$sockets:/socket" \
     rsmax-vault-lookup:local /vault --socket "/socket/$corpus.sock" >/dev/null
 sleep 2
