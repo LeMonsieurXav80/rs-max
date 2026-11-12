@@ -7,6 +7,7 @@ use App\Models\BotActionLog;
 use App\Models\InboxItem;
 use App\Models\SocialAccount;
 use App\Services\Agent\AutomationJournal;
+use App\Services\Agent\CommentFreshness;
 use App\Services\Agent\XReplyDraft;
 use App\Services\Browser\BrowserException;
 use App\Services\Browser\XSessionService;
@@ -194,6 +195,7 @@ class XExtensionController extends Controller
             && strtolower($last['author']) === strtolower($v['author']), 422, 'Tweet d’origine ou mention incohérents dans le contexte.');
         abort_if(collect($v['conversation'])->contains(fn ($post) => blank($post['text']) && blank($post['quote'] ?? null)),
             422, 'Un message du fil X est illisible.');
+        abort_unless(CommentFreshness::allows(CommentFreshness::xStatusDate($v['tweet_id'])), 409, CommentFreshness::REJECTION);
         $quote = $last['quote'] ?? null;
         abort_unless(app(InboxFollowup::class)->allowsXBranchReply(count($v['conversation']), $v['content'], $quote), 409, 'Réponse sans question ni citation lisible.');
         $context = json_encode($v['conversation'], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
@@ -237,6 +239,7 @@ class XExtensionController extends Controller
             SocialAccount::whereKey($a->id)->lockForUpdate()->firstOrFail();
             $draft = DB::table('extension_x_replies')->where('id', $id)->where('social_account_id', $a->id)->first();
             abort_unless($draft, 404);
+            abort_unless(CommentFreshness::allows(CommentFreshness::xStatusDate($draft->tweet_id)), 409, CommentFreshness::REJECTION);
             app(\App\Services\Agent\XEngagementService::class)->assertReplyAvailable($a, $draft->tweet_id);
             $ok = DB::table('extension_x_replies')->where('id', $id)->where('social_account_id', $a->id)->where('status', 'prepared')
                 ->where('reply_text', $v['reply_text'])->where('persona_hash', $this->personaHash($a))->update(['status' => 'publishing', 'updated_at' => now()]);

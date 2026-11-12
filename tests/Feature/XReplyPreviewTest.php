@@ -62,12 +62,13 @@ class XReplyPreviewTest extends TestCase
         $this->withToken($extension)->postJson($extensionPath, ['text' => 'Record perso au squat !'] + $identity)->assertOk()
             ->assertJsonCount(0, 'sources');
 
+        $targetId = (string) ((now()->subHour()->getTimestampMs() - 1288834974657) << 22);
         $thread = [
             ['id' => '100', 'author' => 'coach', 'text' => 'Est-ce que la créatine change la force ?'],
             ['id' => '200', 'author' => 'athlete', 'text' => 'Pour moi la question concerne les cheveux.', 'quote' => 'Une étude ancienne.'],
-            ['id' => '300', 'author' => 'visitor', 'text' => 'C’était à quelle dose ?'],
+            ['id' => $targetId, 'author' => 'visitor', 'text' => 'C’était à quelle dose ?'],
         ];
-        $branch = ['text' => $thread[2]['text'], 'target_id' => '300', 'author' => 'visitor', 'thread' => $thread] + $identity;
+        $branch = ['text' => $thread[2]['text'], 'target_id' => $targetId, 'author' => 'visitor', 'thread' => $thread] + $identity;
         $this->withToken($extension)->postJson($extensionPath, $branch)->assertOk()->assertJsonPath('thread_root_id', '100');
         $this->withToken($extension)->postJson($extensionPath, ['target_id' => '100'] + $branch)->assertUnprocessable();
         $this->withToken($extension)->postJson($extensionPath, ['author' => 'coach'] + $branch)->assertUnprocessable();
@@ -76,7 +77,7 @@ class XReplyPreviewTest extends TestCase
         Http::assertSent(fn (Request $request) => str_starts_with($request->url(), 'https://api.openai.com/')
             && str_contains($request['messages'][1]['content'], '"publication_origine":{"id":"100","author":"coach"')
             && str_contains($request['messages'][1]['content'], 'Une étude ancienne')
-            && str_contains($request['messages'][1]['content'], '"publication_cible":{"id":"300","author":"visitor"'));
+            && str_contains($request['messages'][1]['content'], '"publication_cible":{"id":"'.$targetId.'","author":"visitor"'));
 
         $this->withToken($extension)->postJson($extensionPath, ['text' => 'Brouillon volontairement hors sujet.'] + $identity)
             ->assertUnprocessable()->assertJsonPath('message', 'Mention de marque écartée par le filtre de relecture.');

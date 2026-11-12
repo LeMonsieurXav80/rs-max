@@ -7,6 +7,7 @@ use App\Models\SocialAccount;
 use App\Models\TikTokEngagement;
 use App\Services\Agent\AccountStrategy;
 use App\Services\Agent\AutomationJournal;
+use App\Services\Agent\CommentFreshness;
 use App\Services\Agent\XEngagementService;
 use App\Services\Agent\XReplyDraft;
 use App\Services\Agent\XReplyVault;
@@ -152,6 +153,7 @@ class XAssistedController extends Controller
                 409, 'Persona modifié depuis la préparation du brouillon.');
             abort_unless(($draft['reply_language'] ?? null) === ReplyLanguage::code($locked),
                 409, 'Langue de réponse modifiée depuis la préparation du brouillon.');
+            abort_unless(CommentFreshness::allows(CommentFreshness::xStatusDate($draft['target_id'])), 409, CommentFreshness::REJECTION);
             $engagements->assertReplyAvailable($locked, $draft['target_id']);
             $existing = DB::table('extension_x_replies')->where('social_account_id', $locked->id)->where('tweet_id', $draft['target_id']);
             $attributes = [

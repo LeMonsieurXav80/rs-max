@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Models\InboxItem;
 use App\Models\SocialAccount;
+use App\Services\Agent\CommentFreshness;
 use App\Services\Agent\XReplyDraft;
 use App\Services\Agent\XReplyVault;
 use App\Services\Inbox\InboxFollowup;
@@ -68,6 +69,7 @@ class XReplyPreviewController extends Controller
             abort_unless(app(InboxFollowup::class)->allowsXBranchReply(count($thread), $data['text'], $target['quote'] ?? null), 409, 'Réponse sans question ni citation lisible.');
         }
         if (isset($data['target_id'])) {
+            abort_unless(CommentFreshness::allows(CommentFreshness::xStatusDate($data['target_id'])), 409, CommentFreshness::REJECTION);
             app(\App\Services\Agent\XEngagementService::class)->assertReplyAvailable($account, $data['target_id']);
         }
         $origin = $data['origin'] ?? null;

@@ -5,13 +5,13 @@ namespace App\Jobs;
 use App\Models\BrowserTask;
 use App\Models\XEngagement;
 use App\Services\Agent\AccountActionBudget;
+use App\Services\Agent\CommentFreshness;
 use App\Services\Agent\CommunityManagerWindow;
 use App\Services\Browser\BrowserException;
 use App\Services\Browser\BrowserTaskQueue;
 use Illuminate\Contracts\Queue\ShouldBeUnique;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Queue\Queueable;
-use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 
@@ -38,14 +38,13 @@ class VerifyXEngagementReply implements ShouldBeUnique, ShouldQueue
         if ($task->kind !== 'x.agent.act' || ($task->payload['action'] ?? null) !== 'reply'
             || $task->status !== BrowserTask::UNCERTAIN || ! $task->claimed_at || ! $task->finished_at
             || ($task->result['platform_limit']['source'] ?? null) === 'platform_ui'
-            || ! is_string($id) || filter_var($id, FILTER_VALIDATE_INT, ['options' => ['min_range' => 1]]) === false
-            || ! ctype_digit($id) || $id === ($task->payload['target']['id'] ?? null)) {
+            || ! is_string($id) || $id === ($task->payload['target']['id'] ?? null)) {
             return null;
         }
 
-        $postedAt = Carbon::createFromTimestampMs(((int) $id >> 22) + 1288834974657, 'UTC');
+        $postedAt = CommentFreshness::xStatusDate($id);
 
-        return $postedAt->betweenIncluded($task->claimed_at->copy()->subSeconds(5), $task->finished_at->copy()->addMinute()) ? $id : null;
+        return $postedAt?->betweenIncluded($task->claimed_at->copy()->subSeconds(5), $task->finished_at->copy()->addMinute()) ? $id : null;
     }
 
     public function handle(BrowserTaskQueue $browser, AccountActionBudget $budget): void

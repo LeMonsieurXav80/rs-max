@@ -26,6 +26,7 @@ class XExtensionTest extends TestCase
     protected function setUp(): void
     {
         parent::setUp();
+        $this->freezeSecond();
         Http::preventStrayRequests();
         $this->user = User::factory()->create();
         Sanctum::actingAs($this->user);
@@ -43,12 +44,19 @@ class XExtensionTest extends TestCase
         $this->putJson('/api/extension/x/context', ['username' => 'test_xav', 'platform_account_id' => '77', 'social_account_id' => $this->account->id])->assertOk();
     }
 
-    private function data(): array
+    private function xId(\Carbon\CarbonInterface $date): string
     {
-        return ['username' => 'test_xav', 'platform_account_id' => '77', 'tweet_id' => '300', 'author' => 'visiteur', 'content' => 'Où trouver cette tenue ?', 'root_id' => '100', 'context_complete' => true,
+        return (string) (($date->getTimestampMs() - 1288834974657) << 22);
+    }
+
+    private function data(?string $target = null): array
+    {
+        $target ??= $this->xId(now()->subHour());
+
+        return ['username' => 'test_xav', 'platform_account_id' => '77', 'tweet_id' => $target, 'author' => 'visiteur', 'content' => 'Où trouver cette tenue ?', 'root_id' => '100', 'context_complete' => true,
             'conversation' => [['id' => '100', 'author' => 'original', 'text' => 'Un sujet précis qui donne le contexte.'],
                 ['id' => '200', 'author' => 'test_xav', 'text' => 'Ma réponse intermédiaire.'],
-                ['id' => '300', 'author' => 'visiteur', 'text' => 'Où trouver cette tenue ?']]];
+                ['id' => $target, 'author' => 'visiteur', 'text' => 'Où trouver cette tenue ?']]];
     }
 
     public function test_native_identity_resolves_only_an_authorized_x_account_without_writing(): void
@@ -110,6 +118,25 @@ class XExtensionTest extends TestCase
         Http::assertNothingSent();
     }
 
+    public function test_la_date_de_la_mention_bloque_la_generation_et_la_reservation_apres_le_delai(): void
+    {
+        $this->bind();
+        $suggest = '/api/extension/x/suggest';
+        foreach ([$this->xId(now()->subRealDays(14)->subSecond()), $this->xId(now()->addMinute()), '99999999999999999999999'] as $outsideWindow) {
+            $this->postJson($suggest, $this->data($outsideWindow))->assertConflict();
+        }
+        Http::assertNothingSent();
+
+        $target = $this->xId(now()->subRealDays(14));
+        $draft = $this->postJson($suggest, $this->data($target))->assertOk()->json();
+        $this->travel(1)->second();
+        $this->postJson('/api/extension/x/'.$draft['id'].'/begin', [
+            'username' => 'test_xav', 'reply_text' => $draft['reply_text'],
+        ])->assertConflict();
+        $this->assertDatabaseHas('extension_x_replies', ['id' => $draft['id'], 'status' => 'prepared']);
+        $this->assertDatabaseCount('bot_action_logs', 0);
+    }
+
     public function test_draft_reuse_and_single_claim_survive_a_different_handle_alias(): void
     {
         $this->bind();
@@ -136,9 +163,10 @@ class XExtensionTest extends TestCase
         $this->bind();
         $draft = $this->postJson('/api/extension/x/suggest', $this->data())->assertOk()->json();
         $this->postJson('/api/extension/x/'.$draft['id'].'/begin', ['username' => 'test_xav', 'reply_text' => $draft['reply_text']])->assertOk();
+        $target = $this->data()['tweet_id'];
         $item = \App\Models\InboxItem::create([
             'social_account_id' => $this->account->id, 'platform_id' => $this->account->platform_id,
-            'external_id' => '300', 'type' => 'comment', 'status' => 'unread',
+            'external_id' => $target, 'type' => 'comment', 'status' => 'unread',
             'reply_scheduled_at' => now()->addMinute(), 'reply_content' => 'Ancien texte programmé',
         ]);
         $this->postJson('/api/extension/x/'.$draft['id'].'/finish', [
@@ -153,7 +181,7 @@ class XExtensionTest extends TestCase
         $this->assertSame('confirmed', $log->metadata['status']);
         $this->assertSame($receipt->updated_at, $log->performed_at->toDateTimeString());
         $this->actingAs($this->user)->get('/agent/twitter?source=extension')->assertOk()
-            ->assertSee('Companion · local')->assertSee('https://x.com/visiteur/status/300')
+            ->assertSee('Companion · local')->assertSee('https://x.com/visiteur/status/'.$target)
             ->assertSee($draft['reply_text'])->assertSee('&quot;liked&quot;: true', false);
 
         $item->refresh();

@@ -7,6 +7,7 @@ use App\Models\BotActionLog;
 use App\Models\BrowserTask;
 use App\Models\InboxItem;
 use App\Services\Agent\AccountActionBudget;
+use App\Services\Agent\CommentFreshness;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
@@ -37,9 +38,9 @@ class XReplyReconciler
                 && strtolower($target['author'] ?? '') === strtolower($account->browser_username)
                 && ($target['text'] ?? '') === ($task->payload['text'] ?? null)
                 && $target['text'] === $item->reply_content, 409, 'La lecture ne prouve pas cette réponse exacte du compte.');
-            $postedAt = Carbon::createFromTimestampMs(((int) $id >> 22) + 1288834974657, 'UTC');
-            abort_unless($postedAt->greaterThanOrEqualTo($task->claimed_at->copy()->subSeconds(5))
-                && $postedAt->lessThanOrEqualTo($task->finished_at->copy()->addMinute()), 409, 'La réponse retrouvée ne correspond pas à l’heure de cette tentative.');
+            $postedAt = CommentFreshness::xStatusDate($id);
+            abort_unless($postedAt?->betweenIncluded($task->claimed_at->copy()->subSeconds(5), $task->finished_at->copy()->addMinute()),
+                409, 'La réponse retrouvée ne correspond pas à l’heure de cette tentative.');
             parse_str(parse_url($task->payload['url'], PHP_URL_QUERY) ?? '', $query);
             $chain = collect($result['conversation'] ?? []);
             $targetIndex = $chain->search(fn ($p) => (string) $p['id'] === $id);

@@ -115,11 +115,16 @@ class XAssistedTest extends TestCase
         $this->withToken($owner->createToken('extension')->plainTextToken);
         $identity = ['platform_account_id' => '1000', 'username' => 'owner'];
         $url = '/api/extension/x/assisted/';
+        $this->freezeSecond();
+        $freshId = (now()->subHour()->getTimestampMs() - 1288834974657) << 22;
+        $targetId = (string) ($freshId + 1);
+        $branchTargetId = (string) ($freshId + 2);
+        $offTopicId = (string) ($freshId + 3);
         $this->getJson($url.'context?'.http_build_query($identity))->assertOk()
             ->assertJsonPath('queries.0', 'whey lang:fr')->assertJsonPath('search_language', 'fr');
-        $this->postJson($url.'check', ['ids' => ['4100']] + $identity)->assertOk()->assertJsonPath('blocked', []);
-        $this->postJson($url.'check', ['ids' => ['4100'], 'username' => 'wrong'] + $identity)->assertConflict();
-        $this->postJson($url.'check', ['ids' => ['4100'], 'platform_account_id' => '999'] + $identity)->assertForbidden();
+        $this->postJson($url.'check', ['ids' => [$targetId]] + $identity)->assertOk()->assertJsonPath('blocked', []);
+        $this->postJson($url.'check', ['ids' => [$targetId], 'username' => 'wrong'] + $identity)->assertConflict();
+        $this->postJson($url.'check', ['ids' => [$targetId], 'platform_account_id' => '999'] + $identity)->assertForbidden();
 
         Setting::setEncrypted('openai_api_key', 'test-key');
         Http::preventStrayRequests();
@@ -130,19 +135,22 @@ class XAssistedTest extends TestCase
                     ? 'Belle progression !' : str_repeat('進', 141)]),
         ]]]])]);
         $branch = [
-            'target_id' => '4103', 'author' => 'visitor', 'text' => 'Merci pour la précision',
+            'target_id' => $branchTargetId, 'author' => 'visitor', 'text' => 'Merci pour la précision',
             'thread' => [
                 ['id' => '4101', 'author' => 'visitor', 'text' => 'Une question sur le squat.'],
                 ['id' => '4102', 'author' => 'owner', 'text' => 'Ma réponse.'],
-                ['id' => '4103', 'author' => 'visitor', 'text' => 'Merci pour la précision'],
+                ['id' => $branchTargetId, 'author' => 'visitor', 'text' => 'Merci pour la précision'],
             ],
         ] + $identity;
         $this->postJson($url.'preview', $branch)->assertConflict();
+        $tooOld = (string) ((now()->subRealDays(14)->subSecond()->getTimestampMs() - 1288834974657) << 22);
+        $this->postJson($url.'preview', ['target_id' => $tooOld, 'author' => 'visitor', 'text' => 'Quelle charge choisir ?'] + $identity)
+            ->assertConflict()->assertJsonPath('message', \App\Services\Agent\CommentFreshness::REJECTION);
         Http::assertNothingSent();
 
-        $this->postJson($url.'preview', ['target_id' => '4102', 'author' => 'visitor', 'text' => 'Mon nouveau parfum'] + $identity)
+        $this->postJson($url.'preview', ['target_id' => $offTopicId, 'author' => 'visitor', 'text' => 'Mon nouveau parfum'] + $identity)
             ->assertUnprocessable()->assertJsonMissingPath('draft_key');
-        $target = ['target_id' => '4100', 'author' => 'visitor', 'text' => 'New deadlift record', 'origin' => 'Training log'] + $identity;
+        $target = ['target_id' => $targetId, 'author' => 'visitor', 'text' => 'New deadlift record', 'origin' => 'Training log'] + $identity;
         $key = $this->postJson($url.'preview', $target)->assertOk()->assertJsonPath('reply_text', 'Belle progression !')->json('draft_key');
         Http::assertSentCount(3);
         Http::assertSent(fn ($request) => $request['response_format']['type'] === 'json_object'
@@ -161,11 +169,18 @@ class XAssistedTest extends TestCase
         $receipt = $this->postJson($url.'reserve', ['draft_key' => $key] + $identity)->assertOk()->json('id');
         $this->postJson($url.'reserve', ['draft_key' => $key] + $identity)->assertConflict();
         $this->postJson($url.'preview', $target)->assertConflict();
-        $this->postJson($url.'check', ['ids' => ['4100']] + $identity)->assertOk()->assertJsonPath('blocked', ['4100']);
-        $this->postJson($url."replies/{$receipt}/finish", ['reply_id' => '4100'] + $identity)->assertUnprocessable();
+        $this->postJson($url.'check', ['ids' => [$targetId]] + $identity)->assertOk()->assertJsonPath('blocked', [$targetId]);
+        $this->postJson($url."replies/{$receipt}/finish", ['reply_id' => $targetId] + $identity)->assertUnprocessable();
         $this->postJson($url."replies/{$receipt}/finish", ['reply_id' => '4101'] + $identity)->assertOk()->assertJsonPath('status', 'published');
         $this->postJson($url."replies/{$receipt}/finish", ['reply_id' => '4101'] + $identity)->assertOk();
         $this->assertDatabaseHas('extension_x_replies', ['id' => $receipt, 'proof' => 'manual:visible:4101']);
+
+        $edge = (string) ((now()->subRealDays(14)->getTimestampMs() - 1288834974657) << 22);
+        $key = $this->postJson($url.'preview', ['target_id' => $edge] + $target)->assertOk()->json('draft_key');
+        $this->travel(1)->second();
+        $this->postJson($url.'reserve', ['draft_key' => $key] + $identity)->assertConflict()
+            ->assertJsonPath('message', \App\Services\Agent\CommentFreshness::REJECTION);
+        $this->assertDatabaseCount('extension_x_replies', 1);
         $this->assertDatabaseCount('browser_tasks', 0);
     }
 }

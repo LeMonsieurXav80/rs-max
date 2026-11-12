@@ -34,6 +34,16 @@ class CommentFreshness
         }
     }
 
+    public static function xStatusDate(string $id): ?CarbonImmutable
+    {
+        if (! preg_match('/^[1-9][0-9]{0,18}$/D', $id) || filter_var($id, FILTER_VALIDATE_INT) === false) {
+            return null;
+        }
+
+        // X encode le nombre de millisecondes depuis son époque dans les bits de poids fort.
+        return CarbonImmutable::createFromTimestampMs(((int) $id >> 22) + 1288834974657, 'UTC');
+    }
+
     public static function tikTokVideoDate(string $url): ?CarbonImmutable
     {
         if (! preg_match('~^https://www\.tiktok\.com/@[a-zA-Z0-9_.]+/video/([1-9][0-9]{18})$~D', $url, $match)) {
