@@ -74,12 +74,14 @@ class XAgentController extends Controller
             'limit' => $data['limit'] ?? 10, 'screens' => $data['screens'] ?? 2, 'feed' => $data['feed'] ?? 'foryou',
             'handle' => strtolower(ltrim($data['handle'] ?? '', '@')), 'target_id' => $data['action'] === 'thread.read' ? basename($url) : null,
             'activity_window' => app(CommunityManagerWindow::class)->specification()];
+        $engagements->assertThreadWorthReading($a, $payload['target_id']);
         try {
             $result = $browser->run($a, 'x.agent.read', $payload, 110);
         } catch (BrowserException $e) {
             return response()->json(['message' => $e->getMessage()], 502);
         }
         abort_unless(is_array($result) && strlen(json_encode($result, JSON_THROW_ON_ERROR)) < 150000, 502, 'Lecture X invalide ou trop volumineuse.');
+        $engagements->rememberOwnReply($a, $result);
         $snapshot = (string) Str::uuid();
         Cache::put('x-agent-snapshot:'.$snapshot, ['account_id' => $a->id, 'result' => $result, 'source' => $payload, 'read_at' => now()->toIso8601String()], now()->addHour());
         $profiles = isset($result['profile']) ? [$result['profile']] : array_map(fn ($p) => ['handle' => $p['author'], 'name' => $p['name'] ?? null], $result['items'] ?? []);

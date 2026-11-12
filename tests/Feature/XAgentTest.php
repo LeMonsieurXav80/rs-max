@@ -97,6 +97,31 @@ class XAgentTest extends TestCase
         Http::assertNothingSent();
     }
 
+    public function test_un_fil_deja_commente_et_aime_n_est_pas_relu_et_sort_du_prefiltre(): void
+    {
+        $t = $this->target();
+        $thread = ['target' => $t, 'conversation' => [$t], 'context_complete' => true,
+            'visible_replies' => [['id' => '988', 'author' => 'Owner', 'text' => 'Merci !']]];
+        $this->mock(BrowserTaskQueue::class)->shouldReceive('run')->once()->andReturn($thread);
+        $read = ['action' => 'thread.read', 'url' => 'https://x.com/visitor/status/987'];
+        $this->postJson($this->url('read'), $read)->assertOk();
+
+        $this->assertSame(['987'], app(\App\Services\Agent\XEngagementService::class)->replyPrefilterIds($this->a, ['987', '555']));
+        InboxItem::create(['social_account_id' => $this->a->id, 'platform_id' => $this->a->platform_id, 'external_id' => '987',
+            'type' => 'comment', 'status' => 'replied', 'liked_at' => now()]);
+        $this->postJson($this->url('read'), $read)->assertConflict()->assertJsonPath('skip_item', true);
+    }
+
+    public function test_le_catalogue_n_est_journalise_qu_une_fois_par_demi_heure(): void
+    {
+        $this->getJson('/api/community-manager/accounts')->assertOk();
+        $this->getJson('/api/community-manager/accounts')->assertOk();
+        $this->assertSame(1, \App\Models\BotActionLog::where('action_type', 'agent.catalog.read')->count());
+        $this->travel(31)->minutes();
+        $this->getJson('/api/community-manager/accounts')->assertOk();
+        $this->assertSame(2, \App\Models\BotActionLog::where('action_type', 'agent.catalog.read')->count());
+    }
+
     public function test_la_recherche_qualifiee_garde_le_texte_exact_jusquau_navigateur(): void
     {
         $query = str_repeat('x', 255).' lang:fr';

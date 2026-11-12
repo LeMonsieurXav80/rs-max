@@ -196,7 +196,43 @@ class XEngagementService
                 ->orWhereNot(fn ($eligible) => $review->eligible($eligible, now())))
             ->pluck('external_id')->all();
 
-        return array_values(array_intersect($tweetIds, [...$this->blockedReplyIds($account, $tweetIds), ...$reviewed]));
+        $seen = array_keys(array_filter(\Illuminate\Support\Facades\Cache::many(
+            array_map(fn ($id) => $this->ownReplyKey($account, $id), $tweetIds))));
+        $seen = array_map(fn ($key) => substr($key, strrpos($key, ':') + 1), $seen);
+
+        return array_values(array_intersect($tweetIds, [...$this->blockedReplyIds($account, $tweetIds), ...$reviewed, ...$seen]));
+    }
+
+    /** Une réponse du compte vue sous la cible, même postée hors RS-Max, interdit d’y répondre à nouveau. */
+    public function rememberOwnReply(SocialAccount $account, array $result): void
+    {
+        $target = (string) ($result['target']['id'] ?? '');
+        $own = strtolower((string) $account->browser_username);
+        if ($own !== '' && ctype_digit($target) && collect($result['visible_replies'] ?? [])
+            ->contains(fn ($p) => strtolower($p['author'] ?? '') === $own)) {
+            \Illuminate\Support\Facades\Cache::put($this->ownReplyKey($account, $target), true, now()->addDays(15));
+        }
+    }
+
+    /** Relire un fil déjà commenté et aimé par le compte n’apporte rien : aucun onglet n’est ouvert. */
+    public function assertThreadWorthReading(SocialAccount $account, ?string $targetId): void
+    {
+        if (! $targetId || ! \Illuminate\Support\Facades\Cache::get($this->ownReplyKey($account, $targetId))) {
+            return;
+        }
+        $like = app(AgentCatalog::class)->forAccount($account)->get('like');
+        $likeDone = ! ($like['enabled'] ?? false) || $this->blockedLikeIds($account, [$targetId]) !== [];
+        $uncertain = XEngagement::where('social_account_id', $account->id)->where('action', 'reply')
+            ->where('target_key', hash('sha256', $targetId))->where('status', 'uncertain')->exists();
+        if ($likeDone && ! $uncertain) {
+            throw new \Illuminate\Http\Exceptions\HttpResponseException(response()->json(['message' => 'Fil déjà commenté et aimé par le compte : passer à la cible suivante.',
+                'skip_item' => true, 'target_id' => $targetId], 409));
+        }
+    }
+
+    private function ownReplyKey(SocialAccount $account, string $tweetId): string
+    {
+        return 'x-own-reply:'.$account->id.':'.$tweetId;
     }
 
     private function assertAccount(XEngagement $row, SocialAccount $account): void

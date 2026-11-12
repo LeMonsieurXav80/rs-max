@@ -42,6 +42,10 @@ class CommunityManagerController extends Controller
         abort_unless($request->user()->isManager(), 403);
         $accounts = $request->user()->connectedSocialAccounts()->with(['platform', 'persona'])->get();
         foreach ($accounts as $account) {
+            // Le moniteur consulte le catalogue à chaque passage : une trace par demi-heure suffit au journal.
+            if (! Cache::add('cm-catalog-log:'.$account->id, true, now()->addMinutes(30))) {
+                continue;
+            }
             \App\Models\BotActionLog::create(['social_account_id' => $account->id, 'action_type' => 'agent.catalog.read', 'source' => 'agent', 'target_uri' => '', 'success' => true, 'metadata' => ['status' => 'completed', 'steps' => [['id' => (string) \Illuminate\Support\Str::uuid(), 'stage' => 'agent.account.check', 'details' => ['message' => 'Compte et possibilités consultés dans RS-Max ; aucun geste social.']]]], 'performed_at' => now()]);
         }
 
