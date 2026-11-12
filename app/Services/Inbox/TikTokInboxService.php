@@ -41,7 +41,8 @@ class TikTokInboxService implements PlatformInboxInterface
         }
 
         return collect($comments)
-            ->filter(fn (array $c) => ! $c['replied'] && filled($c['content']) && filled($c['caption']) && $c['author'] !== $account->browser_username)
+            // Un commentaire sans texte est un autocollant ou un GIF : il reçoit un emoji souriant.
+            ->filter(fn (array $c) => ! $c['replied'] && is_string($c['content'] ?? null) && filled($c['author'] ?? null) && filled($c['caption']) && $c['author'] !== $account->browser_username)
             ->map(function (array $c) use ($account) {
                 // TikTok Studio n'expose aucun identifiant : le commentaire se reconnaît à son contenu.
                 $id = self::commentId($account, $c['author'], $c['content'], $c['caption']);
@@ -59,6 +60,7 @@ class TikTokInboxService implements PlatformInboxInterface
                     // Studio affiche « auteur ▸ destinataire » quand le commentaire répond à quelqu’un.
                     'reply_to_username' => is_string($c['reply_to'] ?? null) && preg_match('/^[\w.]{1,64}$/', $c['reply_to']) ? strtolower($c['reply_to']) : null,
                     'content' => $c['content'],
+                    'media_type' => blank($c['content']) ? 'sticker' : null,
                     'post_content' => $c['caption'],
                     'post_url' => self::COMMENTS_URL,
                     'posted_at' => $this->postedAt($c['date'] ?? null),

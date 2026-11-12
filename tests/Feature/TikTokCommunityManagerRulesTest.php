@@ -40,27 +40,45 @@ class TikTokCommunityManagerRulesTest extends TestCase
             'post_content' => 'Tenue du jour', 'status' => 'unread', 'posted_at' => now()->subHours(2)]);
     }
 
-    public function test_emojis_autocollants_et_merci_seuls_sont_des_remerciements(): void
+    public function test_merci_seul_et_emojis_seuls_sont_distingues(): void
     {
         $policy = app(InboxFollowup::class);
-        foreach (['😍😍😍😍😍', '🥰[Réconfortant][Réconfortant][Yeux en cœur]', '😚😚😚😚[J\'aime]', '🤪', 'Merci beaucoup !', 'thank you 🙏', 'Obrigada'] as $text) {
-            $this->assertTrue($policy->isAcknowledgement($text), $text);
+        foreach (['Merci beaucoup !', 'thank you 🙏', 'Obrigada'] as $text) {
+            $this->assertTrue($policy->isThanks($text), $text);
+            $this->assertFalse($policy->isEmojiOnly($text), $text);
+        }
+        foreach (['😍😍😍😍😍', '🥰[Réconfortant][Réconfortant][Yeux en cœur]', '😚😚😚😚[J\'aime]', '🤪', ''] as $text) {
+            $this->assertTrue($policy->isEmojiOnly($text), $text);
+            $this->assertFalse($policy->isThanks($text), $text);
         }
         foreach (['J\'adooooore[Yeux en cœur]', 'The best 💐', 'je confirme, jolie dame élégante 🥰', 'Merci, tu la trouves où ?', '😍 ?'] as $text) {
-            $this->assertFalse($policy->isAcknowledgement($text), $text);
+            $this->assertFalse($policy->isThanks($text) || $policy->isEmojiOnly($text), $text);
         }
     }
 
-    public function test_un_remerciement_recoit_un_like_sans_lecture_studio_ni_reponse(): void
+    public function test_un_merci_recoit_un_like_sans_lecture_studio_ni_reponse(): void
     {
         Queue::fake([LikeInboxItem::class]);
         $this->mock(\App\Services\Browser\BrowserTaskQueue::class)->shouldNotReceive('run');
-        $item = $this->item('😍😍😍', ['posted_at' => now()->subDays(3)]);
+        $item = $this->item('Merci beaucoup !', ['posted_at' => now()->subDays(3)]);
 
         $this->getJson('/api/community-manager/inbox/'.$item->id.'/context')
             ->assertConflict()->assertJsonPath('skip_item', true)->assertJsonPath('review_reason', 'not_relevant');
         Queue::assertPushed(LikeInboxItem::class, fn ($job) => $job->itemId === $item->id);
         $this->assertSame(0, (int) $item->fresh()->reply_attempts);
+    }
+
+    public function test_des_emojis_un_autocollant_ou_un_gif_recoivent_seulement_un_sourire(): void
+    {
+        Queue::fake();
+        foreach (['😍😍😍', ''] as $content) {
+            $item = $this->item($content, ['media_type' => $content === '' ? 'sticker' : null]);
+            $context = $this->getJson('/api/community-manager/inbox/'.$item->id.'/context')->assertOk()
+                ->assertJsonPath('reply_options', InboxFollowup::SMILES)->json('context_id');
+            $url = '/api/community-manager/inbox/'.$item->id.'/reply';
+            $this->postJson($url, ['context_id' => $context, 'reply_text' => 'Merci pour ces cœurs'])->assertStatus(422);
+            $this->postJson($url, ['context_id' => $context, 'reply_text' => '😊'])->assertOk()->assertJsonPath('dry_run', true);
+        }
     }
 
     public function test_une_relance_sans_question_sous_notre_reponse_recoit_un_like(): void
@@ -113,5 +131,19 @@ class TikTokCommunityManagerRulesTest extends TestCase
         ]]);
         $items = app(\App\Services\Inbox\TikTokInboxService::class)->fetchInbox($this->account);
         $this->assertSame(['amie.de.passage', null], $items->pluck('reply_to_username')->all());
+    }
+
+    public function test_les_autres_reseaux_suivent_les_memes_regles(): void
+    {
+        Queue::fake();
+        $fb = SocialAccount::create(['name' => 'Page', 'platform_id' => Platform::firstOrCreate(['slug' => 'facebook'], ['name' => 'Facebook'])->id,
+            'persona_id' => $this->account->persona_id, 'platform_account_id' => 'page-1']);
+        $fb->users()->attach(User::first(), ['is_active' => true]);
+        $item = fn (string $content) => InboxItem::create(['social_account_id' => $fb->id, 'platform_id' => $fb->platform_id, 'type' => 'comment',
+            'external_id' => sha1($content), 'author_username' => 'visitor', 'content' => $content, 'post_content' => 'Publication', 'status' => 'unread', 'posted_at' => now()->subHour()]);
+
+        $this->getJson('/api/community-manager/inbox/'.$item('Merci !')->id.'/context')->assertConflict()->assertJsonPath('review_reason', 'not_relevant');
+        Queue::assertNotPushed(LikeInboxItem::class);
+        $this->getJson('/api/community-manager/inbox/'.$item('👏👏👏')->id.'/context')->assertOk()->assertJsonPath('reply_options', InboxFollowup::SMILES);
     }
 }

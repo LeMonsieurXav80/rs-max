@@ -148,24 +148,29 @@ class TikTokExtensionController extends Controller
     {
         $profile = $this->profile($request);
         $data = $request->validate(['fingerprint' => 'required|string|size:64|regex:/^[a-f0-9]+$/',
-            'author' => 'required|string|max:255', 'content' => 'required|string|max:10000',
+            'author' => 'required|string|max:255', 'content' => 'present|nullable|string|max:10000',
             'video_context' => 'required|string|max:10000', 'max_length' => 'required|integer|min:1|max:150',
             'browser_task_id' => 'sometimes|required|integer|min:1',
             'conversation' => 'sometimes|required|array|list|min:1|max:20',
             'conversation.*.author' => 'required|string|max:24|regex:/^[a-zA-Z0-9_.]+$/',
-            'conversation.*.content' => 'required|string|max:10000',
+            'conversation.*.content' => 'present|nullable|string|max:10000',
             'conversation.*.reply_to' => 'nullable|string|max:24|regex:/^[a-zA-Z0-9_.]+$/']);
+        $data['content'] = (string) ($data['content'] ?? '');
         abort_if(strtolower(ltrim($data['author'], '@')) === $profile->username, 409, 'Commentaire du compte lui-même.');
         $approvedReply = isset($data['browser_task_id']) ? $this->approvedReply($request, $profile, $data) : null;
         $conversation = $data['conversation'] ?? null;
         if ($conversation !== null) {
             abort_if($approvedReply !== null, 422, 'Contexte local inattendu pour une tâche NAS.');
             $last = $conversation[array_key_last($conversation)];
-            abort_unless($last['author'] === $data['author'] && $last['content'] === $data['content'], 422, 'Dernier commentaire différent de la cible.');
+            abort_unless($last['author'] === $data['author'] && (string) ($last['content'] ?? '') === $data['content'], 422, 'Dernier commentaire différent de la cible.');
         }
-        if ($approvedReply === null && app(InboxFollowup::class)->isAcknowledgement($data['content'])) {
+        if ($approvedReply === null && app(InboxFollowup::class)->isThanks($data['content'])) {
             // Companion aime le commentaire si la recette l’y autorise, sans répondre.
-            return response()->json(['message' => 'Remerciement ou emojis seuls : like seulement.', 'like_only' => true], 409);
+            return response()->json(['message' => 'Remerciement seul : like seulement.', 'like_only' => true], 409);
+        }
+        if ($approvedReply === null && app(InboxFollowup::class)->isEmojiOnly($data['content'])) {
+            // Emojis, autocollant ou GIF : un emoji souriant, sans appel au modèle.
+            $approvedReply = InboxFollowup::SMILES[random_int(0, count(InboxFollowup::SMILES) - 1)];
         }
         if ($conversation !== null) {
             if (count($conversation) > 1) {

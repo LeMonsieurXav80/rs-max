@@ -197,11 +197,16 @@ class XExtensionController extends Controller
             422, 'Un message du fil X est illisible.');
         abort_unless(CommentFreshness::allows(CommentFreshness::xStatusDate($v['tweet_id'])), 409, CommentFreshness::REJECTION);
         $quote = $last['quote'] ?? null;
-        abort_unless(app(InboxFollowup::class)->allowsXBranchReply(count($v['conversation']), $v['content'], $quote), 409, 'Réponse sans question ni citation lisible.');
+        if (blank($quote) && app(InboxFollowup::class)->isThanks($v['content'])) {
+            return response()->json(['message' => 'Remerciement seul : like seulement.', 'like_only' => true], 409);
+        }
+        $smile = blank($quote) && app(InboxFollowup::class)->isEmojiOnly($v['content'])
+            ? InboxFollowup::SMILES[random_int(0, count(InboxFollowup::SMILES) - 1)] : null;
+        abort_unless($smile !== null || app(InboxFollowup::class)->allowsXBranchReply(count($v['conversation']), $v['content'], $quote), 409, 'Réponse sans question ni citation lisible.');
         $context = json_encode($v['conversation'], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
         $username = $this->username($r);
 
-        return Cache::lock('x-suggest:'.$a->id.':'.$v['tweet_id'], 90)->block(2, function () use ($a, $v, $context, $generator, $username) {
+        return Cache::lock('x-suggest:'.$a->id.':'.$v['tweet_id'], 90)->block(2, function () use ($a, $v, $context, $generator, $username, $smile) {
             $old = DB::table('extension_x_replies')->where('social_account_id', $a->id)->where('tweet_id', $v['tweet_id'])->first();
             if ($old) {
                 abort_unless($old->status === 'prepared', 409, 'Réponse déjà tentée : aucun nouvel envoi automatique.');
@@ -210,6 +215,14 @@ class XExtensionController extends Controller
                 if (XReplyDraft::fits($old->reply_text)) {
                     return response()->json(['id' => $old->id, 'reply_text' => $old->reply_text, 'status' => 'prepared']);
                 }
+            }
+            if ($smile !== null) {
+                // Emojis seuls : un emoji souriant, sans appel au modèle.
+                $id = DB::table('extension_x_replies')->insertGetId(['social_account_id' => $a->id, 'tweet_id' => $v['tweet_id'],
+                    'author' => $v['author'], 'context_json' => $context, 'persona_hash' => $this->personaHash($a),
+                    'reply_text' => $smile, 'status' => 'prepared', 'created_at' => now(), 'updated_at' => now()]);
+
+                return response()->json(['id' => $id, 'reply_text' => $smile, 'status' => 'prepared']);
             }
             $item = new InboxItem(['type' => 'comment', 'author_name' => $v['author'], 'content' => $v['content']]);
             // Même place dans le fil et mêmes sources que pour Hermès : seul le moteur de rédaction diffère.

@@ -64,18 +64,27 @@ class InboxFollowup
     }
 
     /**
-     * Emojis, autocollants TikTok (« [J'aime] ») ou simple merci : rien à quoi répondre, un like suffit.
-     * Le 12/11/2026, Wildy Caro répondait « Merci, c’est gentil 😊 » à « 😍😍😍 », et TikTok retenait ces réponses.
+     * Un simple merci sans question : rien à quoi répondre, un like suffit.
+     * Le 12/11/2026, Wildy Caro répondait « Merci, c’est gentil 😊 » à tout, et TikTok retenait ces réponses.
      */
-    public function isAcknowledgement(?string $content): bool
+    public function isThanks(?string $content): bool
     {
-        if ($this->isQuestion($content)) {
-            return false;
-        }
-        $text = preg_replace('/\[[^\]\n]{1,40}\]|@[\w.]+|[\p{So}\p{Sk}\p{Cs}\p{Mn}\x{FE0F}\x{200D}\x{20E3}\x{1F3FB}-\x{1F3FF}]/u', ' ', (string) $content);
-        $text = trim(preg_replace('/[\s\p{P}]+/u', ' ', mb_strtolower($text)));
+        return ! $this->isQuestion($content) && (bool) preg_match('/^(?:(?:un )?(?:grand |gros )?merci(?: beaucoup| bcp| à toi| a toi| à vous| a vous| infiniment)?|mercii+|thanks?(?: a lot| so much)?|thank you(?: so much)?|thx|ty|obrigad[oa]|gracias|grazie|danke(?: schön)?|dank je wel|dankjewel|bedankt|спасибо)$/u', $this->words($content));
+    }
 
-        return $text === '' || (bool) preg_match('/^(?:(?:un )?(?:grand |gros )?merci(?: beaucoup| bcp| à toi| a toi| à vous| a vous| infiniment)?|mercii+|thanks?(?: a lot| so much)?|thank you(?: so much)?|thx|ty|obrigad[oa]|gracias|grazie|danke(?: schön)?|dank je wel|dankjewel|bedankt|спасибо)$/u', $text);
+    /** Emojis, autocollants (« [J'aime] ») ou GIF sans texte : l’utilisateur veut un emoji souriant en retour. */
+    public function isEmojiOnly(?string $content): bool
+    {
+        return ! $this->isQuestion($content) && $this->words($content) === '';
+    }
+
+    public const SMILES = ['🙂', '😊', '😄'];
+
+    private function words(?string $content): string
+    {
+        $text = preg_replace('/\[[^\]\n]{1,40}\]|@[\w.]+|[\p{So}\p{Sk}\p{Cs}\p{Mn}\x{FE0F}\x{200D}\x{20E3}\x{1F3FB}-\x{1F3FF}]/u', ' ', (string) $content);
+
+        return trim(preg_replace('/[\s\p{P}]+/u', ' ', mb_strtolower($text)));
     }
 
     private function handle(string $value): string

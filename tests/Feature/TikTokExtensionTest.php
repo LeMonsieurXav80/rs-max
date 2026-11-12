@@ -232,9 +232,15 @@ class TikTokExtensionTest extends TestCase
     public function test_un_remerciement_local_est_reserve_au_like_et_le_style_x_s_applique(): void
     {
         $this->bind();
-        $data = ['content' => '😍😍😍[J\'aime]'] + $this->payload();
+        $data = ['content' => 'Merci beaucoup !'] + $this->payload();
         $this->postJson('/api/extension/tiktok/suggest', $data)->assertConflict()->assertJsonPath('like_only', true);
         $this->assertSame(0, \Illuminate\Support\Facades\DB::table('extension_tiktok_comments')->count());
+        foreach (['😍😍😍[J\'aime]', ''] as $n => $content) {
+            $smile = $this->postJson('/api/extension/tiktok/suggest', ['content' => $content, 'fingerprint' => hash('sha256', 'emoji'.$n)] + $this->payload())->assertOk()->json('reply_text');
+            $this->assertContains($smile, \App\Services\Inbox\InboxFollowup::SMILES);
+        }
+        Http::assertNothingSent();
+        \Illuminate\Support\Facades\DB::table('extension_tiktok_comments')->delete();
 
         $this->aiReply = 'Merci, tu es adorable 🥰';
         $data = ['fingerprint' => hash('sha256', 'style')] + $this->payload();
