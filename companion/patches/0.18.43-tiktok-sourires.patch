@@ -1,0 +1,52 @@
+diff -ruN a2/manifest.json b2/manifest.json
+--- a/manifest.json	2026-11-12 17:54:06
++++ b/manifest.json	2026-11-12 17:54:06
+@@ -1,7 +1,7 @@
+ {
+   "manifest_version": 3,
+   "name": "RS-Max Companion",
+-  "version": "0.18.42",
++  "version": "0.18.43",
+   "description": "Actions assistees sur les reseaux sociaux (engagement, publication) avec remontee vers l'API RS-Max.",
+   "permissions": [
+     "storage",
+diff -ruN a2/tiktok/comments.js b2/tiktok/comments.js
+--- a/tiktok/comments.js	2026-11-12 17:54:06
++++ b/tiktok/comments.js	2026-11-12 17:54:06
+@@ -2,7 +2,7 @@
+ (() => {
+   'use strict';
+   if (window.RSTikTokComments) return;
+-  console.info('[rsmax] Commentaires TikTok 0.10.4 — remerciements aimés sans réponse.');
++  console.info('[rsmax] Commentaires TikTok 0.10.5 — sourire aux emojis, autocollants et GIF.');
+   const S = {
+     avatar: '[data-tt="Header_NewHeader_Clickable"]',
+     profile: 'a[data-tt="Header_NewHeader_TUXMenuItem"][href*="/@"]',
+@@ -77,7 +77,8 @@
+       return {author:handle(authorLink?.getAttribute('href')),content:text(cell.querySelector(S.text)),
+         ...(recipient ? {reply_to:handle(recipient.getAttribute('href'))} : {})};
+     });
+-    if (conversation[0].reply_to || conversation.some(row=>!row.author || !row.content)) return null;
++    // Seule la cible peut être sans texte (autocollant ou GIF).
++    if (conversation[0].reply_to || conversation.some((row,i)=>!row.author || (!row.content && i<conversation.length-1))) return null;
+     if (!item.nested) return conversation;
+     const expected = text(repliesControl(first.cell)).match(/\d+/)?.[0];
+     if (expected && cells.length-1 < Number(expected)) return null;
+@@ -304,7 +305,7 @@
+             await ctx.waitFor(()=>rootRows(item.root).length>1,{timeout:5000});
+           }
+         }
+-        if (!item.author || item.author===username || (action.reply&&(!item.content||!item.caption||!item.image||item.replied))) continue;
++        if (!item.author || item.author===username || (action.reply&&(!item.caption||!item.image||item.replied))) continue;
+         if(!action.reply){if(await likeComment(ctx,item,username,false,local)){done++;ctx.report({action_type:'tt_comment_like',target_author:item.author,success:true});}continue;}
+         const conversation = local ? localConversation(item,username) : null;
+         if (local && !conversation) {
+@@ -377,6 +378,8 @@
+           if (submission) submission.post_type = /photomode/.test(item.image) ? 'photo' : 'video';
+           native?.release();
+           if (submission) window.RSTaskTrace?.mark('tiktok.submission', submission);
++          // 2 = réponse retenue par TikTok, 7 = publication normale : compare le Chrome local au NAS.
++          if (local) ctx.log(`@${item.author} : reçu TikTok comment_status ${submission?.comment_status ?? 'absent'}.`, submission?.comment_status === 2 ? 'warn' : 'info');
+           if (inbox) {
+             // Le worker termine la réservation après la relecture de Studio.
+             inbox.result = {recipe: 'tiktok.comments', draft_id: draft.id, liked, send_clicked: clicked, pause_ms: pauseMs, initial_visible: published, submission, input_mode: native ? 'native' : 'dom'};

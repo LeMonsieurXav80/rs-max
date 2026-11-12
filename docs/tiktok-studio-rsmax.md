@@ -25,7 +25,8 @@ Hermès répond seul aux commentaires reçus par le compte TikTok, du plus ancie
 
 | Règle | Où elle est appliquée |
 | --- | --- |
-| Emojis, autocollants (`[J'aime]`) ou simple merci, sans question : like, jamais de réponse | `reply-context` (avant toute lecture Studio, `skip_item` + `not_relevant`, like programmé) ; `/extension/tiktok/suggest` répond 409 `like_only` et Companion 0.18.41 aime le commentaire si la recette l’autorise |
+| Simple merci sans question : like, jamais de réponse (tous réseaux ; like là où il existe) | `reply-context` (avant toute lecture Studio, `skip_item` + `not_relevant`, like programmé) ; `/extension/tiktok/suggest` répond 409 `like_only` et Companion 0.18.41 aime le commentaire si la recette l’autorise |
+| Emojis seuls, autocollants (`[J'aime]`), autocollant ou GIF sans texte : un like et une réponse 🙂, 😊 ou 😄 (`reply_options`, imposé à `reply` ; tirée par RS-Max sans IA pour Companion local, TikTok et X) |  `InboxFollowup::isEmojiOnly()` ; Companion 0.18.43 ne saute plus une ligne sans texte |
 | Relance sous la réponse du compte sans question : like | `reply-context`, d’après `reply_to_username` |
 | Adressage : `interpelle` (commentaire sous la vidéo ou réponse au compte), `participant` (réponse à quelqu’un d’autre) | `TikTokAddressing`, dans `addressing` ; un remerciement en `participant` est refusé (422) |
 | Aucun emoji de cœur, de bisou ou de rose, aucune question finale sans question reçue | `XReplyStyle` : `reply` (422), suggestion locale (une reformulation puis 422), commentaires de vidéos (`prepare`, générateur) |
