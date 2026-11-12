@@ -1,6 +1,6 @@
 # X public avec RS-Max, Companion et Hermès
 
-État vérifié le 12 novembre 2026, en fin de journée. RS-Max `bd582c4` tourne sur l’instance principale (lemonsieurxav). DIX tourne en `d74250a` : la correction `bd582c4` y attend son déploiement. Companion `0.18.40` est actif sur le NAS (`nas-wildycaro`, `nas-x`) et sur le VPS DIX (`vps-dix`). Le Mac doit recharger l’extension dans chaque profil Chrome.
+État vérifié le 12 novembre 2026, en fin de journée. Les deux instances RS-Max (lemonsieurxav et DIX) partagent la même version. Companion `0.18.40` est actif sur le NAS (`nas-wildycaro`, `nas-x`) et sur le VPS DIX (`vps-dix`). Le Mac doit recharger l’extension dans chaque profil Chrome.
 
 Hermès agit seul sur deux comptes pilotes : Wildy Caro (7) sur l’instance principale, Cyril Certain (23) sur DIX. Chaque profil Hermès a un cycle « RS-Max — File X » toutes les deux minutes, de 06 h à 22 h Lisbonne. L’agent ne démarre que si la prélecture `rsmax_x_watch.py` trouve du travail.
 
@@ -31,6 +31,8 @@ Tous les gestes sont journalisés 7 jours dans `bot_action_logs`. La colonne `so
 - **Companion 0.18.40.** Seul un post daté après le clic est retenu comme réponse. Un ancien post du compte apparu dans la page faisait échouer la preuve.
 - **Réponse de découverte incertaine.** Si l’identifiant capturé est faux, `VerifyXEngagementReply` relit la cible et retient l’unique réponse du compte au texte exact, datée de la tentative, avant le contrôle de parenté. Aucun second geste.
 - **Hermès DIX.** Le SOUL du profil `rsmax-dix` et l’objectif du compte 23 n’autorisaient que des brouillons. Ils autorisent désormais le cycle autonome. La base anti-doublon du profil appartenait à `root` et bloquait toute écriture.
+- **Limitation de débit.** Toutes les limites `throttle:N,M` d’un utilisateur partageaient un seul compteur : les workers du NAS (progress, 240/min) épuisaient les 30/min des recettes locales (« Too Many Attempts »). Chaque route a désormais son préfixe (`707a7df`), contrôlé par `ApiThrottleKeysTest`.
+- **Ciblage des recettes locales.** Le modèle doit nommer le terme de la stratégie du compte (hashtag, recherche ou sujet éditorial) dont relève la publication ; sans correspondance, elle est écartée. En cas de doute, pas de réponse.
 - **Tests Chromium.** `x-mentions.cjs` et `x-backlog.cjs` étaient restés sur l’ancienne API (identité par `twid`, réservations `/extension/x/assisted/reactions`). Les trois scénarios X passent avec l’extension réelle.
 
 ## Diagnostiquer une baisse des réponses

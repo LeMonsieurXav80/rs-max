@@ -109,10 +109,10 @@ class XReplyPreviewController extends Controller
         if ($filterByStrategy) {
             $rules .= ' Décide d’abord si le sujet de la cible correspond clairement à l’audience, aux sujets et au persona du compte. '
                 .'Les mots-clés de recherche orientent ce choix. La présence dans le flux, un mot isolé ou une plaisanterie ne justifie pas un commentaire. '
-                .'Si la cible est hors sujet, si un média inaccessible est indispensable, ou si aucune réponse précise et utile n’est possible, renvoie le JSON {"pertinent":false}. '
+                .'Si la cible est hors sujet, si un média inaccessible est indispensable, ou si aucune réponse précise et utile n’est possible, renvoie le JSON {"pertinent":false}. En cas de doute, renvoie aussi {"pertinent":false}. '
                 .'Le ton vient du persona du compte. Ne reprends pas automatiquement les emojis ni le style de la cible. '
                 .'Ne prétends pas avoir perçu une image, une odeur ou un autre détail que le contexte ne permet pas de connaître. '
-                .'Sinon renvoie uniquement le JSON {"pertinent":true,"texte":"réponse publique"} dans la langue de réponse du compte.';
+                .'Sinon renvoie uniquement le JSON {"pertinent":true,"sujet":"terme exact de strategie_du_compte (hashtag, recherche ou sujet éditorial) dont relève la cible","texte":"réponse publique"} dans la langue de réponse du compte.';
         }
 
         $reply = $generator->generate($item, $account, $input, 'du fil X et des sources du Vault', $rules, $filterByStrategy);

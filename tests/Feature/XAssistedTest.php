@@ -131,8 +131,10 @@ class XAssistedTest extends TestCase
         Http::fake(['api.openai.com/*' => fn ($request) => Http::response(['choices' => [['message' => [
             'content' => str_contains($request['messages'][1]['content'], 'parfum')
                 ? '{"pertinent":false}'
-                : json_encode(['pertinent' => true, 'texte' => str_contains($request['messages'][0]['content'], 'Le premier brouillon dépassait')
-                    ? 'Belle progression !' : str_repeat('進', 141)]),
+                : (str_contains($request['messages'][1]['content'], 'launcher')
+                    ? '{"pertinent":true,"sujet":"jeux vidéo","texte":"Bravo pour le launcher !"}'
+                    : json_encode(['pertinent' => true, 'sujet' => 'Whey', 'texte' => str_contains($request['messages'][0]['content'], 'Le premier brouillon dépassait')
+                    ? 'Belle progression !' : str_repeat('進', 141)])),
         ]]]])]);
         $branch = [
             'target_id' => $branchTargetId, 'author' => 'visitor', 'text' => 'Merci pour la précision',
@@ -148,11 +150,15 @@ class XAssistedTest extends TestCase
             ->assertConflict()->assertJsonPath('message', \App\Services\Agent\CommentFreshness::REJECTION);
         Http::assertNothingSent();
 
+        $launcherId = (string) ($freshId + 4);
+        // Jugée « pertinente » par le modèle, mais rattachée à un sujet absent de la stratégie du compte.
+        $this->postJson($url.'preview', ['target_id' => $launcherId, 'author' => 'visitor', 'text' => 'Notre launcher pour joueurs est sorti'] + $identity)
+            ->assertUnprocessable();
         $this->postJson($url.'preview', ['target_id' => $offTopicId, 'author' => 'visitor', 'text' => 'Mon nouveau parfum'] + $identity)
             ->assertUnprocessable()->assertJsonMissingPath('draft_key');
         $target = ['target_id' => $targetId, 'author' => 'visitor', 'text' => 'New deadlift record', 'origin' => 'Training log'] + $identity;
         $key = $this->postJson($url.'preview', $target)->assertOk()->assertJsonPath('reply_text', 'Belle progression !')->json('draft_key');
-        Http::assertSentCount(3);
+        Http::assertSentCount(4);
         Http::assertSent(fn ($request) => $request['response_format']['type'] === 'json_object'
             && str_contains($request['messages'][0]['content'], 'Rédige en français')
             && str_contains($request['messages'][0]['content'], 'Le ton vient du persona du compte')

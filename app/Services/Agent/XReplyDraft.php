@@ -21,6 +21,30 @@ class XReplyDraft
         return $text !== '' && $doubleWeight !== false && mb_strlen($text) + $doubleWeight <= $limit;
     }
 
+    /**
+     * Le jugement « pertinent » du modèle ne suffit pas : il doit nommer un terme de la stratégie du compte.
+     * Le 12/11/2026, Wildy Caro (mode) a répondu à deux annonces de launcher pour joueurs.
+     */
+    public static function matchesStrategy(SocialAccount $account, mixed $subject): bool
+    {
+        $strategy = $account->agent_strategy ?? [];
+        $terms = collect([...($strategy['hashtags'] ?? []), ...($strategy['search_queries'] ?? []), ...($strategy['editorial_topics'] ?? [])])
+            ->filter(fn ($t) => is_string($t))->map(fn ($t) => self::normalize($t))->filter()->values();
+        if ($terms->isEmpty()) {
+            return true;
+        }
+        $subject = is_string($subject) ? self::normalize($subject) : '';
+
+        return mb_strlen($subject) >= 3 && $terms->contains(fn ($t) => $t === $subject || str_contains($subject, $t) || str_contains($t, $subject));
+    }
+
+    private static function normalize(string $text): string
+    {
+        $ascii = \Illuminate\Support\Str::ascii(mb_strtolower(ltrim(trim($text), '#')));
+
+        return trim(preg_replace('/\s+/', ' ', preg_replace('/\blang:[a-z]{2}\b/', '', $ascii)));
+    }
+
     public function generate(InboxItem $item, SocialAccount $account, string $context, string $contextLabel, ?string $instructions = null, bool $filterByStrategy = false): string
     {
         foreach ([220, 170] as $index => $target) {
@@ -35,7 +59,8 @@ class XReplyDraft
             if ($filterByStrategy) {
                 $draft = json_decode($reply, true);
                 $text = $draft['texte'] ?? null;
-                abort_unless(($draft['pertinent'] ?? false) === true && is_string($text) && filled($text),
+                abort_unless(($draft['pertinent'] ?? false) === true && is_string($text) && filled($text)
+                    && self::matchesStrategy($account, $draft['sujet'] ?? null),
                     422, 'Publication hors ciblage ou contexte insuffisant. Passer à la suivante.');
                 $reply = $text;
             }
