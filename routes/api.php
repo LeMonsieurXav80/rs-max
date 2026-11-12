@@ -17,7 +17,7 @@ use Illuminate\Support\Facades\Route;
 
 Route::middleware(['auth:sanctum', \App\Http\Middleware\CommunityManagerTokenScope::class])->group(function () {
     Route::prefix('community-manager')->controller(\App\Http\Controllers\Api\CommunityManagerController::class)->group(function () {
-        Route::post('accounts/{id}/x/reply-preview', [\App\Http\Controllers\Api\XReplyPreviewController::class, 'forAgent'])->whereNumber('id')->middleware('throttle:20,1');
+        Route::post('accounts/{id}/x/reply-preview', [\App\Http\Controllers\Api\XReplyPreviewController::class, 'forAgent'])->whereNumber('id')->middleware('throttle:20,1,accounts-id-x-reply-preview');
         Route::post('accounts/{id}/threads/read', [\App\Http\Controllers\Api\ThreadsAgentController::class, 'read']);
         Route::get('accounts/{id}/threads/context', [\App\Http\Controllers\Api\ThreadsAgentController::class, 'context']);
         Route::post('accounts/{id}/threads/actions', [\App\Http\Controllers\Api\ThreadsAgentController::class, 'submit']);
@@ -50,12 +50,12 @@ Route::middleware(['auth:sanctum', \App\Http\Middleware\CommunityManagerTokenSco
         Route::match(['get', 'post'], 'report', [\App\Http\Controllers\Api\CommunityManagerReportController::class, 'report']);
         Route::get('logs', [\App\Http\Controllers\Api\AutomationLogController::class, 'index']);
         Route::get('accounts', 'accounts');
-        Route::post('read', 'read')->middleware('throttle:20,1');
+        Route::post('read', 'read')->middleware('throttle:20,1,read');
         Route::get('snapshots/{id}', 'snapshot')->whereUuid('id');
-        Route::post('prepare', 'prepare')->middleware('throttle:20,1');
-        Route::post('engagements/{engagement}/execute', 'execute')->middleware('throttle:20,1');
+        Route::post('prepare', 'prepare')->middleware('throttle:20,1,prepare');
+        Route::post('engagements/{engagement}/execute', 'execute')->middleware('throttle:20,1,engagements-engagement-execute');
         Route::get('engagements/{engagement}', 'result');
-        Route::post('upload/inspect', 'uploadInspect')->middleware('throttle:5,1');
+        Route::post('upload/inspect', 'uploadInspect')->middleware('throttle:5,1,upload-inspect');
     });
     Route::post('agent/accounts/{id}/x/read', [\App\Http\Controllers\Api\XAgentController::class, 'read']);
     Route::get('agent/accounts/{id}/x/context', [\App\Http\Controllers\Api\XAgentController::class, 'context']);
@@ -74,8 +74,8 @@ Route::middleware(['auth:sanctum', \App\Http\Middleware\CommunityManagerTokenSco
     Route::get('/inbox', [InboxApiController::class, 'index']);
     Route::match(['get', 'post'], '/inbox/status', [InboxApiController::class, 'status']);
     Route::post('/inbox/ai-prepare', [InboxApiController::class, 'prepare']);
-    Route::post('/inbox/{inboxItem}/ai-suggest', [InboxApiController::class, 'suggest'])->middleware('throttle:60,1');
-    Route::post('/inbox/{inboxItem}/reply', [InboxApiController::class, 'reply'])->middleware('throttle:60,1');
+    Route::post('/inbox/{inboxItem}/ai-suggest', [InboxApiController::class, 'suggest'])->middleware('throttle:60,1,inbox-inboxitem-ai-suggest');
+    Route::post('/inbox/{inboxItem}/reply', [InboxApiController::class, 'reply'])->middleware('throttle:60,1,inbox-inboxitem-reply');
 
     // ── Posts ──
     Route::get('/posts', [PostApiController::class, 'index']);
@@ -184,10 +184,10 @@ Route::middleware(['auth:sanctum', \App\Http\Middleware\CommunityManagerTokenSco
     Route::delete('/carousel/bricks/{brick}', [CarouselApiController::class, 'destroyBrick']);
     Route::post('/carousel/preview', [CarouselApiController::class, 'preview']); // HTML de la bande, sans Chromium
     Route::post('/carousel/render', [CarouselApiController::class, 'render'])
-        ->middleware('throttle:20,1'); // rendu synchrone Chromium : ~2 s par slide
+        ->middleware('throttle:20,1,carousel-render'); // rendu synchrone Chromium : ~2 s par slide
     // Une brique employée seule => une image (visuel de tweet, vignette d'article).
     Route::post('/carousel/image', [CarouselApiController::class, 'image'])
-        ->middleware('throttle:60,1'); // une seule rasterisation : plafond plus large que /render
+        ->middleware('throttle:60,1,carousel-image'); // une seule rasterisation : plafond plus large que /render
     // Lien vers le Studio pré-rempli : l'IA dégrossit, l'humain peaufine.
     Route::post('/carousel/studio-link', [CarouselApiController::class, 'studioLink']);
 
@@ -197,20 +197,20 @@ Route::middleware(['auth:sanctum', \App\Http\Middleware\CommunityManagerTokenSco
     // ── Agent : réponses compactes, voir docs/API.md ──
     Route::match(['get', 'post'], '/agent/report', [\App\Http\Controllers\Api\CommunityManagerReportController::class, 'report']);
     Route::get('/agent/accounts', [\App\Http\Controllers\Api\AgentApiController::class, 'accounts']);
-    Route::post('/agent/accounts/{id}/tiktok/read', [\App\Http\Controllers\Api\TikTokFeedController::class, 'read'])->whereNumber('id')->middleware('throttle:20,1');
-    Route::post('/agent/accounts/{id}/tiktok/prepare', [\App\Http\Controllers\Api\TikTokFeedController::class, 'prepare'])->whereNumber('id')->middleware('throttle:20,1');
+    Route::post('/agent/accounts/{id}/tiktok/read', [\App\Http\Controllers\Api\TikTokFeedController::class, 'read'])->whereNumber('id')->middleware('throttle:20,1,agent-accounts-id-tiktok-read');
+    Route::post('/agent/accounts/{id}/tiktok/prepare', [\App\Http\Controllers\Api\TikTokFeedController::class, 'prepare'])->whereNumber('id')->middleware('throttle:20,1,agent-accounts-id-tiktok-prepare');
     Route::get('/tiktok/engagements/{engagement}', [\App\Http\Controllers\Api\TikTokFeedController::class, 'show']);
-    Route::post('/tiktok/engagements/{engagement}/send', [\App\Http\Controllers\Api\TikTokFeedController::class, 'send'])->middleware('throttle:20,1');
+    Route::post('/tiktok/engagements/{engagement}/send', [\App\Http\Controllers\Api\TikTokFeedController::class, 'send'])->middleware('throttle:20,1,tiktok-engagements-engagement-send');
     Route::get('/agent/log', [\App\Http\Controllers\Api\AgentApiController::class, 'log']);
     Route::get('/agent/drafts', [\App\Http\Controllers\Api\AgentApiController::class, 'drafts']);
-    Route::post('/agent/accounts/{id}/drafts', [\App\Http\Controllers\Api\AgentApiController::class, 'prepare'])->whereNumber('id')->middleware('throttle:20,1');
+    Route::post('/agent/accounts/{id}/drafts', [\App\Http\Controllers\Api\AgentApiController::class, 'prepare'])->whereNumber('id')->middleware('throttle:20,1,agent-accounts-id-drafts');
     Route::get('/agent/accounts/{id}/read/{action}', [\App\Http\Controllers\Api\AgentApiController::class, 'read'])->whereNumber('id');
     Route::put('/agent/accounts/{id}/actions/{action}', [\App\Http\Controllers\Api\AgentApiController::class, 'configure'])->whereNumber('id');
 
     // ── Extension Chrome (RS-Max Companion) ──
     // Remontée en lot : l'extension bufferise puis pousse, d'où le plafond large.
     Route::post('/extension/actions', [ExtensionApiController::class, 'actions'])
-        ->middleware('throttle:120,1');
+        ->middleware('throttle:120,1,extension-actions');
     Route::get('/extension/summary', [ExtensionApiController::class, 'summary']);
     Route::get('/extension/x/context', [\App\Http\Controllers\Api\XExtensionController::class, 'context']);
     Route::put('/extension/x/context', [\App\Http\Controllers\Api\XExtensionController::class, 'bind']);
@@ -221,13 +221,13 @@ Route::middleware(['auth:sanctum', \App\Http\Middleware\CommunityManagerTokenSco
     Route::post('/extension/tasks/{task}/authorize-threads', [\App\Http\Controllers\Api\BrowserTaskController::class, 'authorizeThreads']);
     Route::post('/extension/tasks/{task}/authorize-photo', [\App\Http\Controllers\Api\BrowserTaskController::class, 'authorizePhoto']);
     Route::post('/extension/tasks/{task}/authorize-tiktok-publication', [\App\Http\Controllers\Api\BrowserTaskController::class, 'authorizeTikTokPublication']);
-    Route::post('/extension/tasks/{task}/progress', [\App\Http\Controllers\Api\BrowserTaskController::class, 'progress'])->middleware('throttle:240,1');
+    Route::post('/extension/tasks/{task}/progress', [\App\Http\Controllers\Api\BrowserTaskController::class, 'progress'])->middleware('throttle:240,1,extension-tasks-task-progress');
     Route::get('/extension/x/session', [\App\Http\Controllers\Api\XExtensionController::class, 'sessionStatus']);
     Route::get('/extension/threads/session', [\App\Http\Controllers\Api\ThreadsExtensionController::class, 'status']);
     Route::post('/extension/threads/session', [\App\Http\Controllers\Api\ThreadsExtensionController::class, 'store']);
-    Route::post('/extension/x/session', [\App\Http\Controllers\Api\XExtensionController::class, 'session'])->middleware('throttle:10,1');
+    Route::post('/extension/x/session', [\App\Http\Controllers\Api\XExtensionController::class, 'session'])->middleware('throttle:10,1,extension-x-session');
     Route::post('/extension/x/like', [\App\Http\Controllers\Api\XExtensionController::class, 'like']);
-    Route::prefix('extension/x/assisted')->controller(\App\Http\Controllers\Api\XAssistedController::class)->middleware('throttle:30,1')->group(function () {
+    Route::prefix('extension/x/assisted')->controller(\App\Http\Controllers\Api\XAssistedController::class)->middleware('throttle:30,1,extension-x-assisted')->group(function () {
         Route::get('context', 'context');
         Route::post('check', 'check');
         Route::post('observations', 'observations');
@@ -237,8 +237,8 @@ Route::middleware(['auth:sanctum', \App\Http\Middleware\CommunityManagerTokenSco
         Route::post('reserve', 'reserve');
         Route::post('replies/{id}/finish', 'finish')->whereNumber('id');
     });
-    Route::post('/extension/x/reply-preview', [\App\Http\Controllers\Api\XReplyPreviewController::class, 'forCompanion'])->middleware('throttle:20,1');
-    Route::post('/extension/x/suggest', [\App\Http\Controllers\Api\XExtensionController::class, 'suggest'])->middleware('throttle:30,1');
+    Route::post('/extension/x/reply-preview', [\App\Http\Controllers\Api\XReplyPreviewController::class, 'forCompanion'])->middleware('throttle:20,1,extension-x-reply-preview');
+    Route::post('/extension/x/suggest', [\App\Http\Controllers\Api\XExtensionController::class, 'suggest'])->middleware('throttle:30,1,extension-x-suggest');
     Route::post('/extension/x/{id}/begin', [\App\Http\Controllers\Api\XExtensionController::class, 'begin']);
     Route::post('/extension/x/{id}/finish', [\App\Http\Controllers\Api\XExtensionController::class, 'finish']);
     Route::get('/extension/tiktok/comments', [\App\Http\Controllers\Api\TikTokExtensionController::class, 'comments']);
@@ -246,7 +246,7 @@ Route::middleware(['auth:sanctum', \App\Http\Middleware\CommunityManagerTokenSco
     Route::put('/extension/tiktok/context', [\App\Http\Controllers\Api\TikTokExtensionController::class, 'bind']);
     Route::post('/extension/tiktok/session', [\App\Http\Controllers\Api\TikTokExtensionController::class, 'session']);
     Route::post('/extension/tiktok/like', [\App\Http\Controllers\Api\TikTokExtensionController::class, 'like']);
-    Route::post('/extension/tiktok/suggest', [\App\Http\Controllers\Api\TikTokExtensionController::class, 'suggest'])->middleware('throttle:30,1');
+    Route::post('/extension/tiktok/suggest', [\App\Http\Controllers\Api\TikTokExtensionController::class, 'suggest'])->middleware('throttle:30,1,extension-tiktok-suggest');
     Route::post('/extension/tiktok/{id}/begin', [\App\Http\Controllers\Api\TikTokExtensionController::class, 'begin']);
     Route::post('/extension/tiktok/{id}/finish', [\App\Http\Controllers\Api\TikTokExtensionController::class, 'finish']);
 });
