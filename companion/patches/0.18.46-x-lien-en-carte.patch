@@ -1,0 +1,48 @@
+diff -ruN a5/manifest.json b5/manifest.json
+--- a/manifest.json	2026-11-12 18:52:26
++++ b/manifest.json	2026-11-12 18:52:26
+@@ -1,7 +1,7 @@
+ {
+   "manifest_version": 3,
+   "name": "RS-Max Companion",
+-  "version": "0.18.45",
++  "version": "0.18.46",
+   "description": "Actions assistees sur les reseaux sociaux (engagement, publication) avec remontee vers l'API RS-Max.",
+   "permissions": [
+     "storage",
+diff -ruN a5/tests/x-publisher-links.test.cjs b5/tests/x-publisher-links.test.cjs
+--- a/tests/x-publisher-links.test.cjs	2026-11-12 18:52:26
++++ b/tests/x-publisher-links.test.cjs	2026-11-12 18:52:26
+@@ -32,3 +32,16 @@
+ 
+ const cardText = 'Dans cette vidéo, je te montre les pièges.\n\nhttps://www.youtube.com/watch?v=6VT92sKqy88';
+ const cardArticle = card => `<article data-testid="tweet"><a href="/owner/status/500"><time>1 min</time></a>
++  <div data-testid="tweetText">Dans cette vidéo, je te montre les pièges.</div>${card}</article>`;
++
++test('un lien final affiché en carte est reconnu sans figurer dans le texte', async () => {
++  const w = browser(cardArticle('<div data-testid="card.wrapper"><a href="https://t.co/cPG1Wy6LPE">youtube.com</a></div>'));
++  const r = await w.RSXPublisher.verify({id:'500', username:'owner', text:cardText, url:'https://x.com/compose/post'});
++  assert.equal(r.result.confirmed, true, JSON.stringify(r));
++});
++
++test('sans carte, un texte privé de son lien final ne prouve rien', async () => {
++  const w = browser(cardArticle(''));
++  const r = await w.RSXPublisher.verify({id:'500', username:'owner', text:cardText, url:'https://x.com/compose/post'});
++  assert.equal(r.result.confirmed, false);
++});
+diff -ruN a5/x/publisher.js b5/x/publisher.js
+--- a/x/publisher.js	2026-11-12 18:52:26
++++ b/x/publisher.js	2026-11-12 18:52:26
+@@ -112,7 +112,11 @@
+       const t=D.snapshot(article);
+       if(!t||t.author!==p.username.toLowerCase()||(p.id&&t.id!==String(p.id))||(p.started_at&&!recent(t.id,p.started_at)))return [];
+       if((p.media||[]).length&&!(p.media.some(m=>/^video\//.test(m.mimetype))?t.has_video:t.media.length>=p.media.length))return [];
+-      return norm(t.text)===expected||norm(publishedText(article,p.text))===expected?[t]:[];
++      const published=norm(publishedText(article,p.text));
++      // Un lien final devient une carte : X le retire du texte affiché (post @dixfrance du 12/11/2026).
++      const trailing=String(p.text).match(/\s*https?:\/\/\S+\s*$/);
++      const withoutCard=trailing&&article.querySelector('[data-testid="card.wrapper"]')?norm(String(p.text).slice(0,trailing.index)):null;
++      return norm(t.text)===expected||published===expected||(withoutCard&&(norm(t.text)===withoutCard||published===withoutCard))?[t]:[];
+     });
+   }
+   async function locate(p){

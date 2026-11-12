@@ -1,6 +1,6 @@
 # X public avec RS-Max, Companion et Hermès
 
-État vérifié le 12 novembre 2026, en fin de journée. Les deux instances RS-Max (lemonsieurxav et DIX) partagent la même version. Companion `0.18.44` est actif sur le NAS (`nas-wildycaro`, `nas-x`) et sur le VPS DIX (`vps-dix`). Le Mac doit recharger l’extension dans chaque profil Chrome.
+État vérifié le 12 novembre 2026, en fin de journée. Les deux instances RS-Max (lemonsieurxav et DIX) partagent la même version. Companion `0.18.46` est actif sur le NAS (`nas-wildycaro`, `nas-x`) et sur le VPS DIX (`vps-dix`). Le Mac doit recharger l’extension dans chaque profil Chrome.
 
 Hermès agit seul sur deux comptes pilotes : Wildy Caro (7) sur l’instance principale, Cyril Certain (23) sur DIX. Chaque profil Hermès a un cycle « RS-Max — File X » toutes les deux minutes, de 06 h à 22 h Lisbonne. L’agent ne démarre que si la prélecture `rsmax_x_watch.py` trouve du travail.
 
@@ -28,6 +28,7 @@ Tous les gestes sont journalisés 7 jours dans `bot_action_logs`. La colonne `so
 - **Likes de commentaires.** `prepare` accepte like et signet sur tout post lu dans le fil. La réponse reste réservée à la cible dont le contexte est chargé.
 - **Publications planifiées.** Une publication refusée avant le clic est relancée 3 fois au plus, à 3 minutes d’intervalle, si elle a moins de 2 h de retard. Un résultat incertain n’est jamais relancé.
 - **Companion 0.18.39.** Preuve d’une publication dont X raccourcit le lien (`t.co`, texte « domaine/chemin… »). L’éditeur dispose de 15 s pour intégrer le texte collé.
+- **Companion 0.18.46.** Un lien final rendu en carte (YouTube) disparaît du texte affiché par X : la preuve accepte le texte sans ce lien, seulement si le post porte une carte. Le post @dixfrance du 12/11 à 19 h 34 était en ligne mais marqué incertain.
 - **Companion 0.18.40.** Seul un post daté après le clic est retenu comme réponse. Un ancien post du compte apparu dans la page faisait échouer la preuve.
 - **Réponse de découverte incertaine.** Si l’identifiant capturé est faux, `VerifyXEngagementReply` relit la cible et retient l’unique réponse du compte au texte exact, datée de la tentative, avant le contrôle de parenté. Aucun second geste.
 - **Hermès DIX.** Le SOUL du profil `rsmax-dix` et l’objectif du compte 23 n’autorisaient que des brouillons. Ils autorisent désormais le cycle autonome. La base anti-doublon du profil appartenait à `root` et bloquait toute écriture.
