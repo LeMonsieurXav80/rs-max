@@ -1,6 +1,6 @@
 # X public avec RS-Max, Companion et Hermès
 
-État vérifié le 12 novembre 2026, en fin de journée. Les deux instances RS-Max (lemonsieurxav et DIX) partagent la même version. Companion `0.18.42` est actif sur le NAS (`nas-wildycaro`, `nas-x`) et sur le VPS DIX (`vps-dix`). Le Mac doit recharger l’extension dans chaque profil Chrome.
+État vérifié le 12 novembre 2026, en fin de journée. Les deux instances RS-Max (lemonsieurxav et DIX) partagent la même version. Companion `0.18.44` est actif sur le NAS (`nas-wildycaro`, `nas-x`) et sur le VPS DIX (`vps-dix`). Le Mac doit recharger l’extension dans chaque profil Chrome.
 
 Hermès agit seul sur deux comptes pilotes : Wildy Caro (7) sur l’instance principale, Cyril Certain (23) sur DIX. Chaque profil Hermès a un cycle « RS-Max — File X » toutes les deux minutes, de 06 h à 22 h Lisbonne. L’agent ne démarre que si la prélecture `rsmax_x_watch.py` trouve du travail.
 
@@ -46,7 +46,7 @@ Tous les gestes sont journalisés 7 jours dans `bot_action_logs`. La colonne `so
 
 ## Maintenir Companion
 
-Depuis Companion 0.18.42, un worker (`taskProfile`) compare entre deux tâches la version du manifeste sur le disque à celle chargée, et appelle `chrome.runtime.reload()` si elles diffèrent, jamais pendant une tâche. Copier les fichiers suffit donc ; garder la réservation `browser:maintenance` et vérifier la version dans le journal. Sur le NAS, Docker s’appelle avec son chemin complet : `sudo -n /usr/local/bin/docker …` (NOPASSWD sur ce binaire ; `sudo docker` demande un mot de passe). Déployer la même version sur le Mac, le NAS et le VPS concerné en conservant `config.local.js` par installation. Sauvegarder les fichiers remplacés dans `companion-before-<version>`. Réserver les files avec `php artisan browser:maintenance PROFIL… --lease=90 --wait=30`, attendre `PRÊT`, redémarrer Chromium deux fois, puis vérifier la version dans `metadata.steps[task.received].details.version` d’une tâche suivante. Les patchs sont dans `companion/patches/`.
+**Ne pas recharger l’extension par `chrome.runtime.reload()`** : avec `--load-extension`, elle est déchargée et les workers cessent de prendre des tâches jusqu’au redémarrage de Chromium (essai 0.18.42, retiré en 0.18.44 le 12/11/2026). Sur le NAS, Docker s’appelle avec son chemin complet : `sudo -n /usr/local/bin/docker …` (NOPASSWD sur ce binaire ; `sudo docker` demande un mot de passe). Déployer la même version sur le Mac, le NAS et le VPS concerné en conservant `config.local.js` par installation. Sauvegarder les fichiers remplacés dans `companion-before-<version>`. Réserver les files avec `php artisan browser:maintenance PROFIL… --lease=90 --wait=30`, attendre `PRÊT`, redémarrer Chromium deux fois, puis vérifier la version dans `metadata.steps[task.received].details.version` d’une tâche suivante. Les patchs sont dans `companion/patches/`.
 
 Déploiement DIX : image en couches `127.0.0.1:5019/rs-max-dix:<sha>-<nom>` (FROM l’image précédente, COPY des dossiers modifiés), puis tag dans l’application Coolify DIX. Aucun déploiement automatique.
 

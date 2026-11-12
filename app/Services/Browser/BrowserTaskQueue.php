@@ -144,10 +144,20 @@ class BrowserTaskQueue
         }
     }
 
+    /** Au-delà du plus long délai d’attente (900 s), plus aucun processus n’attend la tâche. */
+    public const ORPHAN_AFTER = 1800;
+
     /** Une seule tâche à la fois par profil : deux onglets se voleraient la session. */
     public function claim(string $profile): ?BrowserTask
     {
         $claimed = $this->claimLock($profile, 10)->get(fn () => DB::transaction(function () use ($profile) {
+            // Le processus qui attendait a pu mourir avant expire() : sans cela, la tâche bloquerait le profil pour toujours.
+            // Le 12/11/2026, une lecture prise juste avant un rechargement de l’extension a figé vps-dix.
+            foreach (BrowserTask::where('profile', $profile)->where('status', BrowserTask::RUNNING)
+                ->where('claimed_at', '<', now()->subSeconds(self::ORPHAN_AFTER))->lockForUpdate()->get() as $orphan) {
+                $orphan->update(['status' => BrowserTask::UNCERTAIN, 'error' => 'Délai dépassé : tâche orpheline, jamais relancée.', 'finished_at' => now()]);
+                app(\App\Services\Agent\AccountActionBudget::class)->finish($orphan);
+            }
             if (BrowserTask::where('profile', $profile)->where('status', BrowserTask::RUNNING)->lockForUpdate()->exists()) {
                 return null;
             }

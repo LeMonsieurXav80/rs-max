@@ -50,6 +50,19 @@ class BrowserTaskQueueTest extends TestCase
         $this->getJson('/api/extension/tasks/next?profile=wildycaro')->assertOk()->assertJson(['id' => null]);
     }
 
+    public function test_une_tache_orpheline_devient_incertaine_et_libere_le_profil(): void
+    {
+        $recent = $this->task(BrowserTask::RUNNING);
+        $recent->update(['claimed_at' => now()->subMinutes(20)]);
+        $next = $this->task();
+        $this->getJson('/api/extension/tasks/next?profile=wildycaro')->assertOk()->assertJson(['id' => null]);
+
+        $recent->update(['claimed_at' => now()->subMinutes(31)]);
+        $this->getJson('/api/extension/tasks/next?profile=wildycaro')->assertOk()->assertJson(['id' => $next->id]);
+        $this->assertSame(BrowserTask::UNCERTAIN, $recent->fresh()->status);
+        $this->assertSame(BrowserTask::RUNNING, $next->fresh()->status);
+    }
+
     public function test_un_controle_tiktok_en_cours_ne_retient_pas_la_file_x_distincte(): void
     {
         $tiktok = SocialAccount::create(['platform_id' => Platform::where('slug', 'tiktok')->firstOrFail()->id,
