@@ -248,4 +248,19 @@ class TikTokExtensionTest extends TestCase
         Http::assertSentCount(2);
         $this->assertSame(0, \Illuminate\Support\Facades\DB::table('extension_tiktok_comments')->count());
     }
+
+    public function test_un_commentaire_deja_traite_par_hermes_est_saute_sans_generation(): void
+    {
+        $tiktok = SocialAccount::create(['platform_id' => Platform::firstOrCreate(['slug' => 'tiktok'], ['name' => 'TikTok'])->id,
+            'name' => 'Compte TikTok', 'browser_username' => 'test.xav', 'persona_id' => $this->account->persona_id]);
+        $tiktok->users()->attach($this->user, ['is_active' => true]);
+        $this->bind();
+        $data = $this->payload();
+        \App\Models\InboxItem::create(['social_account_id' => $tiktok->id, 'platform_id' => $tiktok->platform_id, 'type' => 'comment',
+            'external_id' => \App\Services\Inbox\TikTokInboxService::commentId($tiktok, $data['author'], $data['content'], $data['video_context']),
+            'author_username' => $data['author'], 'content' => $data['content'], 'post_content' => $data['video_context'],
+            'status' => 'reply_failed', 'reply_attempts' => 3, 'reply_content' => 'Merci !']);
+        $this->postJson('/api/extension/tiktok/suggest', $data)->assertConflict();
+        Http::assertNothingSent();
+    }
 }

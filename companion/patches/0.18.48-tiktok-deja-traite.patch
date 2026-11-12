@@ -1,0 +1,51 @@
+diff -ruN a7/manifest.json b7/manifest.json
+--- a/manifest.json	2026-11-12 19:12:25
++++ b/manifest.json	2026-11-12 19:12:25
+@@ -1,7 +1,7 @@
+ {
+   "manifest_version": 3,
+   "name": "RS-Max Companion",
+-  "version": "0.18.47",
++  "version": "0.18.48",
+   "description": "Actions assistees sur les reseaux sociaux (engagement, publication) avec remontee vers l'API RS-Max.",
+   "permissions": [
+     "storage",
+diff -ruN a7/tiktok/comments.js b7/tiktok/comments.js
+--- a/tiktok/comments.js	2026-11-12 19:12:25
++++ b/tiktok/comments.js	2026-11-12 19:12:25
+@@ -2,7 +2,7 @@
+ (() => {
+   'use strict';
+   if (window.RSTikTokComments) return;
+-  console.info('[rsmax] Commentaires TikTok 0.10.5 — sourire aux emojis, autocollants et GIF.');
++  console.info('[rsmax] Commentaires TikTok 0.10.6 — un commentaire déjà traité est sauté.');
+   const S = {
+     avatar: '[data-tt="Header_NewHeader_Clickable"]',
+     profile: 'a[data-tt="Header_NewHeader_TUXMenuItem"][href*="/@"]',
+@@ -275,7 +275,7 @@
+     if (ctx.params.sourceAccount) context = await window.RSCommentAPI.call(ctx,'put','/extension/tiktok/context',{username,social_account_id:Number(ctx.params.sourceAccount)});
+     if (!context.persona) throw Error(`Choisis le compte RS-Max qui porte le persona de @${username}, puis relance.`);
+     }
+-    ctx.log(`@${username}${context?' → persona '+context.persona.name:''}. Parcours commentaires 0.10.3.`);
++    ctx.log(`@${username}${context?' → persona '+context.persona.name:''}. Parcours commentaires 0.10.6.`);
+     const local = !inbox;
+     const read = local ? localSnapshot : snapshot;
+     await setCommentFilter(ctx,action.reply&&!local);
+@@ -356,7 +356,16 @@
+         assertCurrent(item,username,ctx,true,local);
+         if (local && JSON.stringify(localConversation(item,username))!==JSON.stringify(conversation)) throw Error('Fil TikTok changé avant envoi.');
+         const previousCount = local ? matchingReplies(item,username,draft.reply_text) : 0;
+-        await window.RSCommentAPI.call(ctx,'post',`/extension/tiktok/${draft.id}/begin`,{username,reply_text:draft.reply_text});
++        try {
++          await window.RSCommentAPI.call(ctx,'post',`/extension/tiktok/${draft.id}/begin`,{username,reply_text:draft.reply_text});
++        } catch (e) {
++          // Réservation refusée (déjà répondu, tentative en cours) : aucun clic n’a eu lieu, on passe au suivant.
++          if (!local || e.status!==409) throw e;
++          Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype,'value').set.call(input,'');
++          input.dispatchEvent(new Event('input',{bubbles:true}));
++          ctx.log(`@${item.author} ignoré : ${e.message}`, 'warn');
++          continue;
++        }
+         let published = false, clicked = false, submission = null, receipt = null;
+         try {
+           if (await readIdentity(ctx)!==username) throw Error('Compte changé avant envoi.');

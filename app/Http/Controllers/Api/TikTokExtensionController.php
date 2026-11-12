@@ -164,6 +164,14 @@ class TikTokExtensionController extends Controller
             $last = $conversation[array_key_last($conversation)];
             abort_unless($last['author'] === $data['author'] && (string) ($last['content'] ?? '') === $data['content'], 422, 'Dernier commentaire différent de la cible.');
         }
+        if ($approvedReply === null && ($inbox = $this->inboxAccount($request, $profile->username))) {
+            // Déjà répondu, ou tentative en cours ou incertaine : passer au suivant sans appeler le modèle, jamais de renvoi.
+            $handled = InboxItem::where('social_account_id', $inbox->id)
+                ->where('external_id', TikTokInboxService::commentId($inbox, $data['author'], $data['content'], $data['video_context']))
+                ->where(fn ($q) => $q->whereNotNull('replied_at')->orWhereNotNull('reply_external_id')->orWhere('status', 'replied')
+                    ->orWhere('reply_attempts', '>', 0)->orWhereNotNull('reply_scheduled_at'))->exists();
+            abort_if($handled, 409, 'Ce commentaire a déjà reçu une réponse ou une tentative.');
+        }
         if ($approvedReply === null && app(InboxFollowup::class)->isThanks($data['content'])) {
             // Companion aime le commentaire si la recette l’y autorise, sans répondre.
             return response()->json(['message' => 'Remerciement seul : like seulement.', 'like_only' => true], 409);
