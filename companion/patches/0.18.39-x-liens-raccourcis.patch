@@ -1,0 +1,89 @@
+diff --git a/manifest.json b/manifest.json
+index df2bc49..d043367 100644
+--- a/manifest.json
++++ b/manifest.json
+@@ -1,7 +1,7 @@
+ {
+   "manifest_version": 3,
+   "name": "RS-Max Companion",
+-  "version": "0.18.38",
++  "version": "0.18.39",
+   "description": "Actions assistees sur les reseaux sociaux (engagement, publication) avec remontee vers l'API RS-Max.",
+   "permissions": [
+     "storage",
+diff --git a/x/publisher.js b/x/publisher.js
+index 7ba0611..a1ad770 100644
+--- a/x/publisher.js
++++ b/x/publisher.js
+@@ -64,7 +64,7 @@
+       }
+       window.RSTaskTrace?.mark('x.media.ready',{attached:mediaNodes(c.root).length});
+       D.fill(c.field,p.text||'');
+-      if(!await until(()=>norm(editorText(c.field))===norm(p.text),5))throw Error('Texte saisi différent du texte prévu.');
++      if(!await until(()=>norm(editorText(c.field))===norm(p.text),15))throw Error('Texte saisi différent du texte prévu.');
+       if(!await until(()=>enabled(c.button),p.companion_speed ? 25 : 600))throw Error('Bouton de publication inactif, média peut-être refusé.');
+       if(p.companion_speed) await window.RSPacing.pause({speed:p.companion_speed});
+       guard(p);if(!D.visible(c.field)||!D.visible(c.button)||!enabled(c.button)||!route(p)||norm(editorText(c.field))!==norm(p.text))throw Error('Texte ou cible modifié avant envoi.');
+@@ -83,6 +83,15 @@
+     }catch(e){window.RSTaskTrace?.mark('x.post.error',{error:e.message,gesture:clicked});return {status:clicked?'uncertain':'failed',error:e.message+(clicked?' Aucun renvoi automatique.':''),result:{gesture:clicked,...(e.platform_limit?{platform_limit:e.platform_limit}:{}),...(e.thread_hidden?{thread_hidden:true}:{})}};}
+   }
+   function recent(id,started_at){try{const ms=Number((BigInt(id)>>22n)+1288834974657n);return ms>=Number(started_at)-5000&&ms<=Date.now()+5000;}catch{return false;}}
++  // X remplace un lien par t.co et n’affiche que « domaine/chemin… » : on reconnaît l’URL prévue par ce début.
++  function shortenedUrl(link, expectedUrls) {
++    if(!/^https:\/\/t\.co\//.test(link.getAttribute('href')||''))return null;
++    const bare=s=>String(s).replace(/^https?:\/\/(www\.)?/,'');
++    const shown=bare(String(link.textContent||'').replace(/\s+/g,'').replace(/…$/,''));
++    if(shown.length<8)return null;
++    const found=[...expectedUrls].filter(url => bare(url)===shown || bare(url).startsWith(shown));
++    return found.length===1?found[0]:null;
++  }
+   function publishedText(article, expected) {
+     const expectedUrls = new Set(String(expected).match(/https?:\/\/[^\s]+/g) || []);
+     return D.bodies(article).map(body => {
+@@ -90,7 +99,8 @@
+       copy.querySelectorAll('br').forEach(node => node.replaceWith('\n'));
+       copy.querySelectorAll('a[href]').forEach(link => {
+         const url=['data-expanded-url','title','href']
+-          .map(attribute => link.getAttribute(attribute)).find(candidate => expectedUrls.has(candidate));
++          .map(attribute => link.getAttribute(attribute)).find(candidate => expectedUrls.has(candidate))
++          || shortenedUrl(link, expectedUrls);
+         if(url)link.replaceWith(url);
+       });
+       return D.text(copy);
+diff --git a/tests/x-publisher-links.test.cjs b/tests/x-publisher-links.test.cjs
+new file mode 100644
+index 0000000..673e8b1
+--- /dev/null
++++ b/tests/x-publisher-links.test.cjs
+@@ -0,0 +1,31 @@
++const {test} = require('node:test');
++const assert = require('node:assert/strict');
++const {readFileSync} = require('node:fs');
++const {join} = require('node:path');
++const {JSDOM} = require('jsdom');
++
++function browser(html) {
++  const dom = new JSDOM(`<main>${html}</main>`, {url:'https://x.com/owner/status/500', runScripts:'outside-only', pretendToBeVisual:true});
++  const w = dom.window;
++  w.HTMLElement.prototype.getClientRects = () => [{}];
++  w.scrollTo = () => {};
++  w.RSMAX = {};
++  w.RSXMentions = {identity:() => ({username:'owner'})};
++  for (const name of ['dom', 'thread-context', 'agent', 'publisher']) w.eval(readFileSync(join(__dirname, '../x', name+'.js'), 'utf8'));
++  return w;
++}
++const text = 'Le guide est en ligne.\nhttps://www.laplanetedecaro.com/black-friday-zendure/\nLiens affiliés.';
++const article = link => `<article data-testid="tweet"><a href="/owner/status/500"><time>1 min</time></a>
++  <div data-testid="tweetText">Le guide est en ligne.<br>${link}<br>Liens affiliés.</div></article>`;
++
++test('une publication dont X raccourcit le lien est reconnue après rechargement', async () => {
++  const w = browser(article('<a href="https://t.co/AbC123"><span aria-hidden="true">https://www.</span>laplanetedecaro.com/black-fri<span aria-hidden="true">day-zendure/</span>…</a>'));
++  const r = await w.RSXPublisher.verify({id:'500', username:'owner', text, url:'https://x.com/compose/post'});
++  assert.equal(r.result.confirmed, true, JSON.stringify(r));
++});
++
++test('un lien raccourci vers une autre adresse ne prouve rien', async () => {
++  const w = browser(article('<a href="https://t.co/AbC123">laplanetedecaro.com/autre-article/</a>'));
++  const r = await w.RSXPublisher.verify({id:'500', username:'owner', text, url:'https://x.com/compose/post'});
++  assert.equal(r.result.confirmed, false);
++});
