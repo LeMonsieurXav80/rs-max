@@ -9,6 +9,9 @@ use Illuminate\Support\Facades\Http;
 
 class XReplyVault
 {
+    /** Le Vault apporte des références, jamais un avis : la réponse publique n’en dit pas plus qu’elles. */
+    public const GUARD = 'Les sources vault sont des références vérifiées du compte. Ne cite que ce qu’elles disent, sans extrapoler. Aucun conseil médical, diagnostic, dosage ou promesse de résultat, aucune information interne (prix non publics, stocks, clients, chiffres, contrats, données personnelles). En cas de doute, ne pas utiliser la source.';
+
     public function brandsFor(SocialAccount $account): array
     {
         return $this->profile($account)['brands'] ?? [];

@@ -401,6 +401,34 @@ class XBrowserTest extends TestCase
         \Illuminate\Support\Facades\Http::assertNothingSent();
     }
 
+    public function test_une_publication_refusee_avant_le_clic_est_relancee_trois_fois_au_plus(): void
+    {
+        \Illuminate\Support\Facades\Queue::fake();
+        $this->queue->failure = 'Texte saisi différent du texte prévu.';
+        $post = \App\Models\Post::create(['user_id' => $this->user->id, 'content_fr' => 'Une publication planifiée', 'status' => 'publishing', 'scheduled_at' => now()]);
+        $pp = \App\Models\PostPlatform::create(['post_id' => $post->id, 'platform_id' => $this->account->platform_id, 'social_account_id' => $this->account->id, 'status' => 'publishing']);
+
+        foreach (range(1, 4) as $attempt) {
+            (new \App\Jobs\PublishToPlatformJob($pp->fresh()))->handle(app(\App\Services\PublishingService::class));
+        }
+
+        \Illuminate\Support\Facades\Queue::assertPushed(\App\Jobs\PublishToPlatformJob::class, 3);
+        $this->assertSame('failed', $pp->fresh()->status);
+    }
+
+    public function test_une_publication_incertaine_n_est_jamais_relancee(): void
+    {
+        \Illuminate\Support\Facades\Queue::fake();
+        $this->queue->results['x.post'] = ['id' => '500', 'confirmed' => false, 'proof' => 'after_reload'];
+        $post = \App\Models\Post::create(['user_id' => $this->user->id, 'content_fr' => 'Une publication planifiée', 'status' => 'publishing', 'scheduled_at' => now()]);
+        $pp = \App\Models\PostPlatform::create(['post_id' => $post->id, 'platform_id' => $this->account->platform_id, 'social_account_id' => $this->account->id, 'status' => 'publishing']);
+
+        (new \App\Jobs\PublishToPlatformJob($pp))->handle(app(\App\Services\PublishingService::class));
+
+        \Illuminate\Support\Facades\Queue::assertNothingPushed();
+        $this->assertSame('failed', $pp->fresh()->status);
+    }
+
     public function test_le_menu_choisit_le_serveur_par_profil_sans_changer_le_driver_interne(): void
     {
         $url = route('accounts.edit', $this->account);

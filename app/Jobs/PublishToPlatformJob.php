@@ -24,6 +24,8 @@ class PublishToPlatformJob implements ShouldQueue
 
     public int $tries = 1;
 
+    private const BROWSER_RETRIES = 3;
+
     public int $timeout = 1080;
 
     public function __construct(
@@ -113,9 +115,29 @@ class PublishToPlatformJob implements ShouldQueue
 
             // Check if all platforms are done -> update post status
             $this->updatePostStatus($post);
+        } elseif ($this->retryWithoutGesture($account, $post, $result)) {
+            return;
         } else {
             $this->markFailed($result['error'] ?? 'Unknown error');
         }
+    }
+
+    /**
+     * Companion n’a rien cliqué (file occupée, éditeur lent) : on peut relancer sans risque de doublon.
+     * Un résultat incertain n’est jamais relancé.
+     */
+    private function retryWithoutGesture($account, $post, array $result): bool
+    {
+        if (! $account->usesBrowser() || ($result['uncertain'] ?? false)
+            || ($post->scheduled_at && $post->scheduled_at->lt(now()->subHours(2)))
+            || PostLog::where('post_platform_id', $this->postPlatform->id)->where('action', 'retry')->count() >= self::BROWSER_RETRIES) {
+            return false;
+        }
+        PostLog::create(['post_platform_id' => $this->postPlatform->id, 'action' => 'retry',
+            'details' => ['error' => mb_substr((string) ($result['error'] ?? ''), 0, 500), 'reason' => 'Aucun clic côté Companion : nouvelle tentative.']]);
+        self::dispatch($this->postPlatform)->delay(now()->addMinutes(3));
+
+        return true;
     }
 
     private function markFailed(string $error): void
