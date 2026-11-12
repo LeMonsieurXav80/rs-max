@@ -219,6 +219,8 @@ Route::middleware(['auth:sanctum', \App\Http\Middleware\CommunityManagerTokenSco
     // Remontée en lot : l'extension bufferise puis pousse, d'où le plafond large.
     Route::post('/extension/actions', [ExtensionApiController::class, 'actions'])
         ->middleware('throttle:120,1,extension-actions');
+    Route::post('/extension/errors', [ExtensionApiController::class, 'error'])
+        ->middleware('throttle:30,1,extension-errors');
     Route::get('/extension/summary', [ExtensionApiController::class, 'summary']);
     Route::get('/extension/x/context', [\App\Http\Controllers\Api\XExtensionController::class, 'context']);
     Route::put('/extension/x/context', [\App\Http\Controllers\Api\XExtensionController::class, 'bind']);

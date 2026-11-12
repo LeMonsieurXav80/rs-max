@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Models\BotActionLog;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 
 /**
  * Point d'entrée de l'extension Chrome « RS-Max Companion ».
@@ -22,6 +23,29 @@ class ExtensionApiController extends Controller
      * Idempotence : aucune. L'extension ne rejoue un lot que s'il a échoué,
      * et un doublon d'action reste préférable à une action perdue.
      */
+    /** Erreur JavaScript de Companion, regroupée par empreinte et purgée après 7 jours. */
+    public function error(Request $request): JsonResponse
+    {
+        $data = $request->validate([
+            'context' => 'required|in:content,worker',
+            'message' => 'required|string|max:1000',
+            'stack' => 'nullable|string|max:4000',
+            'page' => 'nullable|string|max:500',
+            'version' => 'nullable|string|max:20',
+            'profile' => 'nullable|string|max:64',
+        ]);
+        $firstFrame = strtok((string) preg_replace('/^[^\n]*\n/', '', (string) ($data['stack'] ?? '')), "\n") ?: '';
+        $fingerprint = sha1(implode('|', [$data['context'], $data['message'], trim($firstFrame), $data['version'] ?? '']));
+        $key = ['user_id' => $request->user()->id, 'fingerprint' => $fingerprint];
+        $now = now();
+        if (! DB::table('extension_errors')->where($key)->update(['occurrences' => DB::raw('occurrences + 1'), 'last_seen_at' => $now,
+            'page' => $data['page'] ?? null, 'profile' => $data['profile'] ?? null, 'updated_at' => $now])) {
+            DB::table('extension_errors')->insertOrIgnore($key + $data + ['first_seen_at' => $now, 'last_seen_at' => $now, 'created_at' => $now, 'updated_at' => $now]);
+        }
+
+        return response()->json(null, 204);
+    }
+
     public function actions(Request $request): JsonResponse
     {
         $validated = $request->validate([

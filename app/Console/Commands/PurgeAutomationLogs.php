@@ -14,6 +14,7 @@ class PurgeAutomationLogs extends Command
     public function handle(): int
     {
         $count = BotActionLog::where('created_at', '<', now()->subDays(7))->delete();
+        \Illuminate\Support\Facades\DB::table('extension_errors')->where('last_seen_at', '<', now()->subDays(7))->delete();
         $this->info($count.' journal(aux) supprimé(s).');
 
         return self::SUCCESS;

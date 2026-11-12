@@ -1,0 +1,73 @@
+diff -ruN a6/background.js b6/background.js
+--- a/background.js	2026-11-12 19:10:30
++++ b/background.js	2026-11-12 19:10:30
+@@ -123,7 +123,31 @@
+ 
+ // ─────────── Messages depuis les content scripts ───────────
+ 
++// La page « Erreurs » de chrome://extensions n’est lisible que dans le navigateur : on remonte les erreurs à RS-Max.
++const reportedErrors = new Map();
++async function reportError(context, message, stack, page) {
++  const text = String(message || 'Erreur inconnue').slice(0, 1000);
++  const key = context + '|' + text;
++  if (Date.now() - (reportedErrors.get(key) || 0) < 600000) return;
++  reportedErrors.set(key, Date.now());
++  try {
++    await apiFetch({ method: 'POST', path: '/extension/errors', body: { context, message: text,
++      stack: stack ? String(stack).slice(0, 4000) : null, page: page ? String(page).slice(0, 500) : null,
++      version: chrome.runtime.getManifest().version, profile: self.RSMAX_DEFAULTS?.taskProfile || null } });
++  } catch {}
++}
++if (typeof self.addEventListener === 'function') {
++  self.addEventListener('error', (e) => { reportError('worker', e.message, e.error?.stack, null); });
++  self.addEventListener('unhandledrejection', (e) => { reportError('worker', e.reason?.message || String(e.reason), e.reason?.stack, null); });
++}
++
+ const handlers = {
++  'error.report': (msg, sender) => {
++    if (sender.id !== chrome.runtime.id) throw new Error('Rapport refusé.');
++    const url = sender.tab?.url ? new URL(sender.tab.url) : null;
++    reportError('content', msg.message, msg.stack, url ? url.origin + url.pathname : null);
++    return true;
++  },
+   'journal.append': async (msg, sender) => {
+     const local=await self.RSRunJournal.append(msg,sender);
+     if(sender.id===chrome.runtime.id&&sender.frameId===0&&Number.isInteger(msg.account_id)){
+diff -ruN a6/content/engine.js b6/content/engine.js
+--- a/content/engine.js	2026-11-12 19:10:30
++++ b/content/engine.js	2026-11-12 19:10:30
+@@ -30,6 +30,14 @@
+ 
+   const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+ 
++  // Erreurs du code Companion seulement (pas celles du site) : RS-Max les garde 7 jours.
++  const ownError = (stack, file) => Boolean(globalThis.chrome?.runtime?.id) && String(stack || file || '').includes('chrome-extension://' + chrome.runtime.id);
++  const reportError = (e) => {
++    try { chrome.runtime.sendMessage({ type: 'error.report', message: String(e?.message || e).slice(0, 1000), stack: e?.stack || null }, () => void chrome.runtime.lastError); } catch {}
++  };
++  window.addEventListener('error', (ev) => { if (ownError(ev.error?.stack, ev.filename)) reportError(ev.error || ev.message); });
++  window.addEventListener('unhandledrejection', (ev) => { if (ownError(ev.reason?.stack)) reportError(ev.reason); });
++
+   // ─────────── Etat global ───────────
+ 
+   const modules = [];
+@@ -710,6 +718,7 @@
+         executionError = e;
+         log(`✖ ${e.message}`, 'err');
+         console.error('[rsmax]', e);
++        reportError(e);
+       }
+     } finally {
+       state.running = false;
+diff -ruN a6/manifest.json b6/manifest.json
+--- a/manifest.json	2026-11-12 19:10:30
++++ b/manifest.json	2026-11-12 19:10:30
+@@ -1,7 +1,7 @@
+ {
+   "manifest_version": 3,
+   "name": "RS-Max Companion",
+-  "version": "0.18.46",
++  "version": "0.18.47",
+   "description": "Actions assistees sur les reseaux sociaux (engagement, publication) avec remontee vers l'API RS-Max.",
+   "permissions": [
+     "storage",
