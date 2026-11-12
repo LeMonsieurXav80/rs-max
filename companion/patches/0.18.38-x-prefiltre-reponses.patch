@@ -1,0 +1,163 @@
+diff --git a/manifest.json b/manifest.json
+--- a/manifest.json
++++ b/manifest.json
+@@ -1,7 +1,7 @@
+ {
+   "manifest_version": 3,
+   "name": "RS-Max Companion",
+-  "version": "0.18.37",
++  "version": "0.18.38",
+   "description": "Actions assistees sur les reseaux sociaux (engagement, publication) avec remontee vers l'API RS-Max.",
+   "permissions": [
+     "storage",
+diff --git a/x/assisted.js b/x/assisted.js
+--- a/x/assisted.js
++++ b/x/assisted.js
+@@ -85,7 +85,7 @@
+     if (ctx.stopped) return;
+     const choice = await ctx.chooseStep('Publications chargées dans X, du plus récent au plus ancien.', posts.map(post => ({
+       value: post.id,
+-      label: `@${post.author} · ${new Date(post.published_at).toLocaleString()} · ${(clean(post.text) || 'Média').slice(0, 85)}${blocked.includes(post.id) ? ' · réponse déjà traitée' : ''}`
++      label: `@${post.author} · ${new Date(post.published_at).toLocaleString()} · ${(clean(post.text) || 'Média').slice(0, 85)}${blocked.includes(post.id) ? ' · réponse écartée par RS-Max' : ''}`
+     })));
+     if (!choice || ctx.stopped) return;
+     assertOwner(owner);
+diff --git a/x/batch.js b/x/batch.js
+--- a/x/batch.js
++++ b/x/batch.js
+@@ -72,7 +72,7 @@
+       window.scrollBy({top:Math.round(window.innerHeight * 0.85), behavior:'instant'});
+       await ctx.waitFor(() => ctx.stopped || read().some(post => !ids.has(post.id)), {timeout:1800, interval:250});
+     }
+-    return [...found.values()].sort((a, b) => Date.parse(b.published_at) - Date.parse(a.published_at));
++    return [...found.values()].sort((a, b) => Date.parse(b.published_at) - Date.parse(a.published_at)).slice(0, targetCount);
+   }
+ 
+   async function runLocked(ctx) {
+@@ -100,6 +100,24 @@
+       const feed = plan.params.source === 'following' ? 'following' : 'foryou';
+       const candidates = await collect(ctx, owner, page, context, plan, feed);
+       ctx.log(`${candidates.length} publication(s) retenue(s), de la plus récente à la plus ancienne.`);
++      const now = Date.now();
++      const cutoff = now - 14 * 86400000;
++      const outsideReplyWindow = target => {
++        const published = Date.parse(target.published_at);
++        return published < cutoff || published > now;
++      };
++      const blockedReplies = new Set();
++      if (plan.params.reply) {
++        const ids = candidates.filter(target => !outsideReplyWindow(target)).map(target => target.id);
++        if (ids.length) {
++          try {
++            const {blocked} = await send('x.assisted', {operation:'check', username:owner.username, data:{ids}});
++            for (const id of blocked) blockedReplies.add(id);
++          } catch (error) {
++            ctx.log('Préfiltre RS-Max indisponible : vérification par cible. '+error.message, 'warn');
++          }
++        }
++      }
+       if (plan.params.stats && !ctx.stopped) {
+         try { await syncStats(ctx, owner); }
+         catch (error) { ctx.log('Relevé des statistiques interrompu. '+error.message, 'warn'); }
+@@ -109,10 +127,11 @@
+       for (const target of candidates) {
+         if (posts >= plan.params.limitMax || used >= plan.actionLimit) break;
+         ensure(ctx, owner, page, feed);
+-        if (plan.actions.every(action => target[reactionStates[action]] === true)) continue;
++        const skipReply = plan.params.reply && (outsideReplyWindow(target) || blockedReplies.has(target.id));
++        if (plan.actions.every(action => action === 'reply' ? skipReply : target[reactionStates[action]] === true)) continue;
+         ctx.log(`Lecture de @${target.author} · ${target.id}`);
+         const result = await worker('target', {username:owner.username, params:plan.params, run,
+-          target, remaining:plan.actionLimit - used, exclusions:context.exclusions});
++          target, skipReply, remaining:plan.actionLimit - used, exclusions:context.exclusions});
+         if (result.used > 0) posts++;
+         used += result.used;
+         for (const event of result.events) {
+diff --git a/x/batch-worker.js b/x/batch-worker.js
+--- a/x/batch-worker.js
++++ b/x/batch-worker.js
+@@ -78,8 +78,10 @@
+       (page.pathname === '/search' && (page.searchParams.get('f') !== 'live' || !page.searchParams.get('q')))) {
+     throw Error('Cible ou budget d’actions invalide.');
+   }
++  const requested = msg.skipReply === true ? actions.filter(action => action !== 'reply') : actions;
++  if (!requested.length) return {used:0, events:[], abort:false};
+   return await withXBatch(tabId, page, msg.run, state =>
+-    processXBatchTarget(tabId, state, identity, target, actions, remaining, params.speed, msg.exclusions));
++    processXBatchTarget(tabId, state, identity, target, requested, remaining, params.speed, msg.exclusions));
+ }
+ 
+ async function withXBatch(tabId, page, run, action) {
+diff --git a/tests/x-assisted.test.cjs b/tests/x-assisted.test.cjs
+--- a/tests/x-assisted.test.cjs
++++ b/tests/x-assisted.test.cjs
+@@ -83,7 +83,7 @@
+   data.posts = [post('11', 'coach', 'Squat'), newest, newest, post('13', 'other', 'Code promo'), post('14', 'cyril', 'Bonjour')];
+   await run('list');
+   assert.equal(Array.from(data.messages[1].data.ids).join(','), '12,11');
+-  assert.match(data.choices[0].label, /réponse déjà traitée/);
++  assert.match(data.choices[0].label, /réponse écartée par RS-Max/);
+   assert.equal(data.href, newest.url);
+   await assert.rejects(fixture('https://x.com/home', 'Abonnements').run('list'), /Pour vous/);
+ });
+diff --git a/tests/x-batch.test.cjs b/tests/x-batch.test.cjs
+--- a/tests/x-batch.test.cjs
++++ b/tests/x-batch.test.cjs
+@@ -115,6 +115,16 @@
+   await assert.rejects(send('target', {params:{...params, limitMax:0}}), /Nombre de publications/);
+ });
+ 
++test('une réponse écartée ne charge pas le fil et conserve le like demandé', async () => {
++  const {data, send} = workerFixture();
++  const result = await send('target', {skipReply:true, params:{...params, repost:false}, remaining:4});
++  assert.deepEqual(data.acts, ['like']);
++  assert.deepEqual(data.reads, []);
++  assert.equal(result.used, 1);
++  await send('target', {skipReply:true, params:{...params, like:false, repost:false}, remaining:2});
++  assert.equal(data.opens.length, 1);
++});
++
+ test('le signet réserve la cible et exige une preuve après rechargement', async () => {
+   for (const [proof, wanted] of [['after_reload', 'confirmed'], ['visible', 'uncertain']]) {
+     const {data, send} = workerFixture();
+@@ -253,18 +263,23 @@
+ ]) test(`le panneau traite les publications récentes de la source ${label}`, async () => {
+   const calls = [];
+   const openedFeeds = [];
++  const checked = [];
+   const post = (id, days, text) => ({...target, id, text, published_at:new Date(Date.now() - days * 86400000).toISOString()});
+-  const posts = [post('1', 3, 'Ancien'), post('2', 0, 'Récent'), post('3', 1, 'Hier'), post('4', 0, 'Code promo')];
++  const posts = [post('1', 3, 'Ancien'), post('2', 0, 'Récent'), post('3', 1, 'Hier'), post('4', 0, 'Code promo'), post('5', 15, 'Il y a deux semaines')];
+   let recipe;
+   const sandbox = {
+     URL, location:{href:url}, AbortController, console,
+     crypto:{randomUUID:() => run},
+     navigator:{locks:{request:(_, __, callback) => callback({})}},
+     chrome:{runtime:{sendMessage:async msg => {
++      if (msg.operation === 'check') {
++        checked.push(Array.from(msg.data.ids));
++        return {ok:true, data:{blocked:['2']}};
++      }
+       if (msg.type === 'x.assisted') return {ok:true, data:context};
+       if (msg.operation === 'resume') return {ok:true, data:null};
+       assert.equal(msg.operation, 'target');
+-      calls.push({id:msg.target.id, remaining:msg.remaining});
++      calls.push({id:msg.target.id, skipReply:msg.skipReply, remaining:msg.remaining});
+       return {ok:true, data:{used:1, events:[{action:'like', confirmed:true}], abort:false}};
+     }}},
+     RSMAX:{register:module => { recipe = module.recipes[0]; }, waitFor:async read => read()},
+@@ -279,11 +294,12 @@
+   const options = await recipe.params.find(param => param.key === 'source').load();
+   assert.ok(options.some(option => option.value === 'following'));
+   const result = await recipe.run({
+-    params:{...params, source:selection, reply:false, repost:false},
++    params:{...params, source:selection, reply:true, repost:false, maxActions:2},
+     signal:new AbortController().signal, speed:'fast', stopped:false,
+     waitFor:async read => read(), log() {}, report() {}
+   });
+-  assert.deepEqual(calls, [{id:'2', remaining:2}, {id:'3', remaining:1}]);
++  assert.deepEqual(checked, [['2','3','1']]);
++  assert.deepEqual(calls, [{id:'2', skipReply:true, remaining:2}, {id:'3', skipReply:false, remaining:1}]);
+   assert.equal(result.incomplete, false);
+   assert.deepEqual(openedFeeds, feed ? [feed] : []);
+ });

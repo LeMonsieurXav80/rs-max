@@ -125,9 +125,15 @@ class XAgentController extends Controller
         if (isset($result['items'])) {
             $ids = array_values(array_unique(array_filter(array_column($result['items'], 'id'), fn ($id) => is_string($id) && ctype_digit($id))));
             $owner = strtolower($a->browser_username);
-            $ownPosts = array_filter($result['items'], fn ($item) => strtolower($item['author'] ?? '') === $owner);
-            $blockedReplies = $engagements->blockedReplyIds($a, $ids);
-            $result['reply_blocked_ids'] = array_values(array_intersect($ids, [...$blockedReplies, ...array_column($ownPosts, 'id')]));
+            $skipped = array_filter($result['items'], function ($item) use ($owner) {
+                $fresh = filled($item['published_at'] ?? null)
+                    ? CommentFreshness::allowsPublishedAt($item['published_at'])
+                    : CommentFreshness::allows(CommentFreshness::xStatusDate((string) ($item['id'] ?? '')));
+
+                return strtolower($item['author'] ?? '') === $owner || ! $fresh;
+            });
+            $blockedReplies = $engagements->replyPrefilterIds($a, $ids);
+            $result['reply_blocked_ids'] = array_values(array_intersect($ids, [...$blockedReplies, ...array_column($skipped, 'id')]));
             $result['like_blocked_ids'] = $engagements->blockedLikeIds($a, $ids);
             $metadata = ['steps' => [[
                 'id' => (string) Str::uuid(), 'stage' => 'agent.x.reply_prefilter',

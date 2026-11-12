@@ -53,9 +53,9 @@ class XAssistedController extends Controller
     public function check(Request $request, XEngagementService $engagements): JsonResponse
     {
         $account = $this->account($request);
-        $data = $request->validate(['ids' => 'required|array|min:1|max:12', 'ids.*' => 'string|distinct|regex:/^[0-9]{1,25}$/']);
+        $data = $request->validate(['ids' => 'required|array|min:1|max:300', 'ids.*' => 'string|distinct|regex:/^[0-9]{1,25}$/']);
 
-        return response()->json(['blocked' => $engagements->blockedReplyIds($account, $data['ids'])]);
+        return response()->json(['blocked' => $engagements->replyPrefilterIds($account, $data['ids'])]);
     }
 
     public function observations(Request $request, XBrowserStatsService $stats): JsonResponse

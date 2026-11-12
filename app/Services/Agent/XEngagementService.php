@@ -181,6 +181,24 @@ class XEngagementService
         return array_values(array_intersect($tweetIds, [...$extension, ...$inbox, ...$reservations, ...$pending]));
     }
 
+    /** Écarter avant lecture les réponses déjà traitées ou différées pour ce compte. */
+    public function replyPrefilterIds(SocialAccount $account, array $tweetIds): array
+    {
+        if ($tweetIds === []) {
+            return [];
+        }
+
+        $review = app(InboxAgentReview::class);
+        $reviewed = InboxItem::where('social_account_id', $account->id)->whereIn('external_id', $tweetIds)
+            ->whereIn('type', ['comment', 'reply'])
+            ->where(fn ($q) => $q->where(fn ($unavailable) => $unavailable->where('status', 'ignored')
+                ->whereIn('agent_review_reason', ['x_account_suspended', 'x_post_deleted']))
+                ->orWhereNot(fn ($eligible) => $review->eligible($eligible, now())))
+            ->pluck('external_id')->all();
+
+        return array_values(array_intersect($tweetIds, [...$this->blockedReplyIds($account, $tweetIds), ...$reviewed]));
+    }
+
     private function assertAccount(XEngagement $row, SocialAccount $account): void
     {
         abort_unless($account->platform->slug === 'twitter' && $account->usesBrowser() && filled($account->browser_profile)

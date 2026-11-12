@@ -157,6 +157,34 @@ class XAgentTest extends TestCase
         Http::assertNothingSent();
     }
 
+    public function test_les_reponses_ecartees_ne_rouvrent_pas_le_fil_sur_x(): void
+    {
+        $other = SocialAccount::create(['name' => 'Autre compte', 'platform_id' => $this->a->platform_id]);
+        $base = ['social_account_id' => $this->a->id, 'platform_id' => $this->a->platform_id, 'type' => 'comment', 'status' => 'unread'];
+        $deferred = ['agent_review_reason' => 'not_relevant', 'agent_reviewed_at' => now()->subHour(), 'agent_retry_at' => now()->addDay()];
+        InboxItem::create(['external_id' => '991'] + $base + $deferred);
+        InboxItem::create(['external_id' => '992', 'status' => 'ignored', 'agent_review_reason' => 'x_account_suspended'] + $base);
+        InboxItem::create(['external_id' => '993', 'agent_retry_at' => now()->subMinute()] + $base + $deferred);
+        InboxItem::create(['external_id' => '994', 'social_account_id' => $other->id] + $base + $deferred);
+        InboxItem::create(['external_id' => '995', 'type' => 'dm'] + $base + $deferred);
+        InboxItem::create(['external_id' => '996', 'agent_review_reason' => 'missing_facts', 'agent_reviewed_at' => now()->subDay()]
+            + $base + $deferred);
+        $ids = ['991', '992', '993', '994', '995', '996', '997'];
+        $posts = array_map(fn ($id) => array_replace($this->target(), ['id' => $id, 'url' => 'https://x.com/visitor/status/'.$id]), $ids);
+        $posts[6]['published_at'] = now()->subDays(15)->toIso8601String();
+        $this->mock(BrowserTaskQueue::class)->shouldReceive('run')->once()->andReturn(['items' => $posts, 'complete' => false]);
+
+        $snapshot = $this->postJson($this->url('read'), ['action' => 'feed.read', 'feed' => 'following'])
+            ->assertOk()->assertJsonPath('reply_blocked_ids', ['991', '992', '997'])->assertJsonPath('like_blocked_ids', [])
+            ->assertJsonCount(7, 'items')->json('snapshot_id');
+        $batchIds = [...$ids, ...array_map('strval', range(1000, 1292))];
+        $this->postJson('/api/extension/x/assisted/check', ['ids' => $batchIds, 'platform_account_id' => '12345', 'username' => 'owner'])
+            ->assertOk()->assertJsonPath('blocked', ['991', '992']);
+        $this->postJson($this->url('prepare'), ['action' => 'like', 'snapshot_id' => $snapshot, 'target_id' => '991'])->assertCreated();
+        $this->assertDatabaseCount('account_action_events', 0);
+        $this->assertDatabaseCount('browser_tasks', 0);
+    }
+
     public function test_la_decouverte_prefiltre_les_likes_de_l_inbox_sans_bloquer_une_reponse(): void
     {
         InboxItem::create(['social_account_id' => $this->a->id, 'platform_id' => $this->a->platform_id,

@@ -1410,6 +1410,8 @@ La langue des réponses et commentaires se règle sur la fiche du compte ou via 
 
 Les comptes X en mode Companion avec `mentions.read` activé reçoivent leurs mentions publiques toutes les quinze minutes, y compris si l’inbox X de l’instance est désactivée. Le jeton Community Manager retrouve ces mentions dans `GET /api/community-manager/accounts/{id}/inbox?agent_queue=1`. Dans ce cas, seuls les commentaires et réponses publics sont accessibles. Activer `reply` sur le compte pour autoriser une réponse. Les comptes X configurés en API restent régis par le réglage général.
 
+Les listes de découverte X signalent dans `reply_blocked_ids` les cibles dont la revue a différé la prochaine lecture, ainsi que les cibles suspendues, supprimées ou de plus de 14 jours. Les autres gestes restent évalués séparément. `POST /api/extension/x/assisted/check` accepte jusqu’à 300 IDs et partage le filtre des revues avec les lots Companion 0.18.38 ou ultérieurs.
+
 Une relance X sans question est éligible si le fil vérifié contient une citation lisible sur la cible elle-même. La citation reste dans `quote`. Companion assisté écarte les publications hors ciblage avant de réserver une réponse.
 
 Les routes suivantes existent sous `/api/agent` et `/api/community-manager` (ce dernier exige le jeton dédié et le compte attribué). Aucune API X ni génération IA RS-Max n’est appelée.
