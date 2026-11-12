@@ -229,7 +229,7 @@ class TikTokExtensionTest extends TestCase
         $this->assertSame(0, DB::table('extension_tiktok_comments')->count());
     }
 
-    public function test_un_remerciement_local_est_reserve_au_like_et_le_style_x_s_applique(): void
+    public function test_un_remerciement_local_est_reserve_au_like_et_le_style_x_ne_s_applique_pas(): void
     {
         $this->bind();
         $data = ['content' => 'Merci beaucoup !'] + $this->payload();
@@ -242,11 +242,11 @@ class TikTokExtensionTest extends TestCase
         Http::assertNothingSent();
         \Illuminate\Support\Facades\DB::table('extension_tiktok_comments')->delete();
 
+        // « Effectivement, MIAM !!! » bloquait le lot le 12/11/2026 : TikTok garde la réponse du persona.
         $this->aiReply = 'Merci, tu es adorable 🥰';
         $data = ['fingerprint' => hash('sha256', 'style')] + $this->payload();
-        $this->postJson('/api/extension/tiktok/suggest', $data)->assertUnprocessable();
-        Http::assertSentCount(2);
-        $this->assertSame(0, \Illuminate\Support\Facades\DB::table('extension_tiktok_comments')->count());
+        $this->postJson('/api/extension/tiktok/suggest', $data)->assertOk()->assertJsonPath('reply_text', 'Merci, tu es adorable 🥰');
+        Http::assertSentCount(1);
     }
 
     public function test_en_local_une_reponse_confirmee_est_sautee_mais_une_reponse_retenue_reste_ouverte(): void

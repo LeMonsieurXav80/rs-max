@@ -103,12 +103,12 @@ class TikTokCommunityManagerRulesTest extends TestCase
         $this->postJson('/api/community-manager/inbox/'.$other->id.'/reply', ['context_id' => $context, 'reply_text' => 'Merci, c’est gentil'])
             ->assertStatus(422);
 
+        // Le style X ne s’applique pas à TikTok : cœur et question finale passent.
         $context = $this->getJson('/api/community-manager/inbox/'.$direct->id.'/context')->json('context_id');
         foreach (['Merci, elle vient d’une friperie 🥰', 'Une friperie de Lisbonne, tu connais ?'] as $text) {
-            $this->postJson('/api/community-manager/inbox/'.$direct->id.'/reply', ['context_id' => $context, 'reply_text' => $text])->assertStatus(422);
+            $this->postJson('/api/community-manager/inbox/'.$direct->id.'/reply', ['context_id' => $context, 'reply_text' => $text])
+                ->assertOk()->assertJsonPath('dry_run', true);
         }
-        $this->postJson('/api/community-manager/inbox/'.$direct->id.'/reply', ['context_id' => $context, 'reply_text' => 'Elle vient d’une friperie de Lisbonne 😊'])
-            ->assertOk()->assertJsonPath('dry_run', true);
     }
 
     public function test_un_commentaire_introuvable_deux_fois_est_ecarte_une_semaine(): void

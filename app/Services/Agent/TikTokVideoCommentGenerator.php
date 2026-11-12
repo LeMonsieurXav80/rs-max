@@ -18,7 +18,6 @@ class TikTokVideoCommentGenerator
 
         $system = $account->persona->system_prompt."\n\n"
             ."Rédige un commentaire original sous la vidéo d'un autre créateur TikTok, avec la voix de ce persona. "
-            .'Aucun emoji de cœur, de bisou ou de rose, aucune séduction, et ne termine pas par une question. '
             ."Lis la légende et l'ensemble de la discussion fournie. Inspire-toi de ses thèmes sans copier les participants. "
             .ReplyLanguage::instruction($account).' '
             ."La discussion peut couvrir seulement les commentaires accessibles : ne prétends jamais avoir lu ceux que TikTok n'a pas chargés. "
@@ -42,14 +41,6 @@ class TikTokVideoCommentGenerator
             // Une seule reformulation de brouillon, jamais un nouvel envoi réseau social.
             // La discussion n'est pas retransmise : seuls le persona et le texte à raccourcir suffisent.
             $payload['messages'] = [['role' => 'system', 'content' => $system], ['role' => 'user', 'content' => 'Reformule en une seule phrase de 50 à 100 caractères, 150 unités UTF-16 maximum. Garde la voix du persona et le sens de ce brouillon JSON : '.json_encode($text, JSON_UNESCAPED_UNICODE | JSON_THROW_ON_ERROR)]];
-            $payload['max_tokens'] = 100;
-            $response = Http::withToken($key)->timeout(35)->post('https://api.openai.com/v1/chat/completions', $payload);
-            $text = $response->successful() ? trim($response->json('choices.0.message.content', '')) : '';
-        }
-
-        if ($text && ($broken = XReplyStyle::violation($text, null)) !== null) {
-            // Ni séduction ni relance, comme sur X : une reformulation, puis le contrôleur refuse.
-            $payload['messages'] = [['role' => 'system', 'content' => $system], ['role' => 'user', 'content' => $broken.' Reformule ce brouillon JSON en gardant la voix du persona et son sens : '.json_encode($text, JSON_UNESCAPED_UNICODE | JSON_THROW_ON_ERROR)]];
             $payload['max_tokens'] = 100;
             $response = Http::withToken($key)->timeout(35)->post('https://api.openai.com/v1/chat/completions', $payload);
             $text = $response->successful() ? trim($response->json('choices.0.message.content', '')) : '';

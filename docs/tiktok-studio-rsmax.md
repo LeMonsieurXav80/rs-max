@@ -29,7 +29,7 @@ Hermès répond seul aux commentaires reçus par le compte TikTok, du plus ancie
 | Emojis seuls, autocollants (`[J'aime]`), autocollant ou GIF sans texte : un like et une réponse 🙂, 😊 ou 😄 (`reply_options`, imposé à `reply` ; tirée par RS-Max sans IA pour Companion local, TikTok et X) |  `InboxFollowup::isEmojiOnly()` ; Companion 0.18.43 ne saute plus une ligne sans texte |
 | Relance sous la réponse du compte sans question : like | `reply-context`, d’après `reply_to_username` |
 | Adressage : `interpelle` (commentaire sous la vidéo ou réponse au compte), `participant` (réponse à quelqu’un d’autre) | `TikTokAddressing`, dans `addressing` ; un remerciement en `participant` est refusé (422) |
-| Aucun emoji de cœur, de bisou ou de rose, aucune question finale sans question reçue | `XReplyStyle` : `reply` (422), suggestion locale (une reformulation puis 422), commentaires de vidéos (`prepare`, générateur) |
+| Style X (cœurs, question finale) | **Ne s’applique pas à TikTok** depuis le 12/11/2026 : `XReplyStyle` reste réservé à X |
 | Pas de relecture inutile | 3 relectures `tiktok.verify` au plus par tentative ; aucune relecture différée si le reçu porte `comment_status` 2 ; un ancien commentaire introuvable deux fois dans Studio est écarté 7 jours |
 
 **`comment_status` au reçu d’envoi.** 7 est le code normal. 2 n’a jamais été confirmé sur six jours (environ 30 cas, souvent des « Merci, c’est gentil 😊 » répétés) : TikTok retient la réponse. Elle reste verrouillée (`reply_failed`, 3 tentatives), sans relecture ni renvoi.

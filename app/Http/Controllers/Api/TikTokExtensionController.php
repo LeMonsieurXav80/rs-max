@@ -203,6 +203,7 @@ class TikTokExtensionController extends Controller
             $addressing = \App\Services\Agent\TikTokAddressing::describe($profile->username, $target);
             $generate = function () use ($generator, $target, $account, $data, $context, $conversation, $addressing) {
                 // Mêmes règles que les réponses d’Hermès : une reformulation, puis aucun brouillon.
+                // Le style X (cœurs, question finale) ne s’applique pas à TikTok, choix de Xavier le 12/11/2026.
                 $feedback = null;
                 foreach ([1, 2] as $_) {
                     $reply = $generator->generate($target, $account, true, $data['max_length'], $context,
@@ -213,14 +214,13 @@ class TikTokExtensionController extends Controller
                     if (blank($reply)) {
                         return null;
                     }
-                    $broken = \App\Services\Agent\XReplyStyle::violation($reply, $data['content'])
-                        ?? (\App\Services\Agent\XAddressing::fits($addressing['role'], $reply) ? null : \App\Services\Agent\XAddressing::REJECTION);
+                    $broken = \App\Services\Agent\XAddressing::fits($addressing['role'], $reply) ? null : \App\Services\Agent\XAddressing::REJECTION;
                     if ($broken === null) {
                         return $reply;
                     }
                     $feedback = 'Le brouillon précédent ne respectait pas cette règle : '.$broken.' Reformule.';
                 }
-                abort(422, \App\Services\Agent\XReplyStyle::REJECTION);
+                abort(422, \App\Services\Agent\XAddressing::REJECTION);
             };
             if ($existing) {
                 abort_unless($existing->persona_hash === $this->personaHash($account), 409, 'Persona modifié depuis la préparation : vérifier le brouillon.');

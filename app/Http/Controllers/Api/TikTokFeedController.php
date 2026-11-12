@@ -130,9 +130,6 @@ class TikTokFeedController extends Controller
                 }
                 abort_unless(filled($text), 503, 'Génération indisponible.');
                 abort_if(strlen(mb_convert_encoding($text, 'UTF-16LE', 'UTF-8')) / 2 > 150, 422, 'Commentaire trop long : aucun texte tronqué.');
-                if (($broken = \App\Services\Agent\XReplyStyle::violation($text, null)) !== null) {
-                    abort(422, \App\Services\Agent\XReplyStyle::REJECTION.' '.$broken);
-                }
                 $payload['text'] = $text;
                 $payload['discussion'] = ['observed' => count($snapshot['comments']), 'expected' => $snapshot['expected'] ?? null,
                     'coverage' => $snapshot['complete'] ? 'reported_total' : 'accessible'];
