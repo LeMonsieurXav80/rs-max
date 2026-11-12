@@ -5,6 +5,7 @@ namespace Tests\Feature;
 use App\Models\InboxItem;
 use App\Models\Persona;
 use App\Models\Platform;
+use App\Models\Setting;
 use App\Models\SocialAccount;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -88,7 +89,7 @@ class CommunityManagerInboxTest extends TestCase
         $this->assertNull($i->fresh()->replied_at);
     }
 
-    public function test_le_contexte_x_contient_la_publication_origine_et_refuse_un_fil_deja_traite(): void
+    public function test_les_mentions_publiques_x_companion_restent_disponibles_sans_inbox_x_globale(): void
     {
         \Illuminate\Support\Facades\Queue::fake([\App\Jobs\SendAutonomousInboxReply::class]);
         $this->travelTo(\Illuminate\Support\Carbon::parse('2026-11-07T12:00:00Z')->setTimezone(config('app.timezone')));
@@ -99,8 +100,16 @@ class CommunityManagerInboxTest extends TestCase
             'driver' => 'browser', 'browser_username' => 'owner', 'browser_profile' => 'nas-test', 'persona_id' => $p->id]);
         $a->users()->attach($u, ['is_active' => true]);
         Sanctum::actingAs($u);
+        Setting::set('inbox_platform_twitter_enabled', '0');
+        $a->agentActions()->create(['action' => 'mentions.read', 'enabled' => true, 'daily_limit' => 100]);
         $i = InboxItem::create(['social_account_id' => $a->id, 'platform_id' => $a->platform_id, 'type' => 'comment', 'external_id' => '987',
             'author_username' => 'visitor', 'content' => 'Très jolie tenue', 'status' => 'unread', 'posted_at' => now()->subMinute()]);
+        InboxItem::create(['social_account_id' => $a->id, 'platform_id' => $a->platform_id, 'type' => 'dm',
+            'external_id' => 'private', 'status' => 'unread', 'posted_at' => now()]);
+        $list = '/api/community-manager/accounts/'.$a->id.'/inbox';
+        $this->getJson($list.'?agent_queue=1')->assertOk()->assertJsonPath('pagination.total', 1)->assertJsonPath('items.0.id', $i->id);
+        $this->getJson($list.'?types[]=dm')->assertOk()->assertJsonPath('pagination.total', 0);
+        $this->getJson('/api/inbox')->assertOk()->assertJsonPath('pagination.total', 0);
         $data = ['target' => ['id' => '987', 'author' => 'visitor', 'text' => 'Très jolie tenue'], 'context_complete' => true,
             'conversation' => [['author' => 'owner', 'text' => 'La robe du jour'], ['author' => 'visitor', 'text' => 'Très jolie tenue']], 'visible_replies' => []];
         $queue = $this->mock(\App\Services\Browser\BrowserTaskQueue::class);
@@ -108,7 +117,11 @@ class CommunityManagerInboxTest extends TestCase
             ->andReturn($data, array_replace($data, ['visible_replies' => [['author' => 'owner', 'text' => 'Merci !']]]));
         $url = '/api/community-manager/inbox/'.$i->id.'/context';
         $context = $this->getJson($url)->assertOk()->assertJsonPath('conversation.0.text', 'La robe du jour')->assertJsonPath('persona.instructions', 'Chaleureux')->json('context_id');
-        $this->postJson('/api/community-manager/inbox/'.$i->id.'/reply', ['context_id' => $context, 'reply_text' => 'Merci à vous !', 'dry_run' => false])->assertAccepted();
+        $reply = '/api/community-manager/inbox/'.$i->id.'/reply';
+        $payload = ['context_id' => $context, 'reply_text' => 'Merci à vous !', 'dry_run' => false];
+        $this->postJson($reply, $payload)->assertForbidden();
+        $a->agentActions()->create(['action' => 'reply', 'enabled' => true, 'daily_limit' => 100]);
+        $this->postJson($reply, $payload)->assertAccepted();
         $this->assertNotNull($i->fresh()->reply_scheduled_at);
         $this->assertSame(0, (int) $i->fresh()->reply_attempts);
         $this->assertSame(0, \App\Models\AccountActionEvent::count());

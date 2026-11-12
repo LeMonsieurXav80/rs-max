@@ -37,6 +37,9 @@ match ($syncFreq) {
 // Send scheduled inbox replies every minute
 Schedule::command('inbox:send-scheduled')->everyMinute()->withoutOverlapping(15)->runInBackground();
 
+// Companion lit les mentions publiques X des comptes activés même si la synchro X API est coupée.
+Schedule::command('inbox:sync --platform=twitter --driver=browser')->everyFifteenMinutes()->withoutOverlapping(10)->runInBackground();
+
 // Inbox sync - per-platform frequency configurable via Settings page
 $inboxPlatforms = ['facebook', 'instagram', 'threads', 'youtube', 'bluesky', 'telegram', 'twitter', 'tiktok'];
 foreach ($inboxPlatforms as $slug) {
@@ -50,8 +53,6 @@ foreach ($inboxPlatforms as $slug) {
     $freq = rescue(fn () => Setting::get("inbox_sync_freq_{$slug}", $defaultFreq), $defaultFreq, false);
     $command = "inbox:sync --platform={$slug}";
     if ($slug === 'twitter') {
-        // Les mentions de Companion ont leur propre fréquence, distincte des appels à l’API X.
-        Schedule::command($command.' --driver=browser')->everyFifteenMinutes()->withoutOverlapping(10)->runInBackground();
         $command .= ' --driver=api';
     }
     $platformSchedule = Schedule::command($command)->withoutOverlapping(10);

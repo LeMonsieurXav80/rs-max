@@ -2,6 +2,7 @@
 
 namespace App\Console\Commands;
 
+use App\Models\Setting;
 use App\Models\SocialAccount;
 use App\Services\Browser\BrowserException;
 use App\Services\Inbox\InboxSyncService;
@@ -40,8 +41,10 @@ class SyncInbox extends Command
                 return self::INVALID;
             }
 
+            $onlyOptedIn = $platformSlug === 'twitter' && $driver === 'browser' && ! Setting::get('inbox_platform_twitter_enabled', true);
             $accounts = SocialAccount::whereHas('platform', fn ($q) => $q->where('slug', $platformSlug))
                 ->when($driver, fn ($query) => $query->where('driver', $driver))
+                ->when($onlyOptedIn, fn ($query) => $query->withCompanionXPublicMentions())
                 ->with('platform')
                 ->get();
 

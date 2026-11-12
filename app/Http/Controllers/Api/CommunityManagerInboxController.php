@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Models\InboxItem;
+use App\Models\Setting;
 use App\Models\SocialAccount;
 use App\Services\Agent\ApiInboxActions;
 use App\Services\Agent\CommentFreshness;
@@ -31,6 +32,8 @@ class CommunityManagerInboxController extends Controller
         $a = $this->account($r, $id);
         $r->validate(['agent_queue' => 'sometimes|boolean']);
         $r->attributes->set('cm_agent_queue', $r->boolean('agent_queue'));
+        $r->attributes->set('cm_public_x_mentions', $a->platform->slug === 'twitter'
+            && ! Setting::get('inbox_platform_twitter_enabled', true) && $a->hasCompanionXPublicMentions());
         $r->merge(['accounts' => [$a->id]]);
 
         return app(InboxApiController::class)->index($r);

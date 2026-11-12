@@ -27,7 +27,7 @@ class InboxApiController extends Controller
     public function index(Request $request): JsonResponse
     {
         $filters = $this->filters($request);
-        $query = $this->query($request->user(), $filters);
+        $query = $this->query($request->user(), $filters, publicXMentions: $request->attributes->get('cm_public_x_mentions', false));
         $status = $filters['status'] ?? 'unanswered';
         if ($status === 'unanswered') {
             $this->unanswered($query);
@@ -203,7 +203,7 @@ class InboxApiController extends Controller
             'dry_run' => 'sometimes|boolean',
             'scheduled_at' => 'nullable|date|after:now',
         ]);
-        $this->authorizeReply($request->user(), $inboxItem);
+        $this->authorizeReply($request->user(), $inboxItem, $request->attributes->get('community_manager', false));
         $text = trim($data['reply_text']);
         abort_if($text === '', 422, 'La réponse ne peut pas être vide.');
 
@@ -254,13 +254,19 @@ class InboxApiController extends Controller
         ]);
     }
 
-    private function query(User $user, array $filters, bool $onlyEnabled = true): Builder
+    private function query(User $user, array $filters, bool $onlyEnabled = true, bool $publicXMentions = false): Builder
     {
         $platforms = $onlyEnabled ? array_filter(self::PLATFORMS, fn ($slug) => (bool) Setting::get("inbox_platform_{$slug}_enabled", true)) : self::PLATFORMS;
+        if ($publicXMentions) {
+            $platforms[] = 'twitter';
+        }
         $query = InboxItem::query()->with(['socialAccount.platform', 'socialAccount.persona'])
             ->whereIn('social_account_id', $user->visibleSocialAccounts()->select('social_accounts.id'))
             ->whereHas('platform', fn ($q) => $q->whereIn('slug', $platforms))
             ->whereIn('type', $filters['types'] ?? ['comment', 'reply']);
+        if ($publicXMentions) {
+            $query->whereIn('type', ['comment', 'reply']);
+        }
         if (isset($filters['platforms'])) {
             $query->whereHas('platform', fn ($q) => $q->whereIn('slug', $filters['platforms']));
         }
@@ -325,14 +331,19 @@ class InboxApiController extends Controller
             && ! $item->reply_scheduled_at && ! filled($item->reply_content) && (int) $item->reply_attempts === 0;
     }
 
-    private function authorizeReply(User $user, InboxItem $item): void
+    private function authorizeReply(User $user, InboxItem $item, bool $communityManager = false): void
     {
         abort_unless($user->connectedSocialAccounts()->where('social_accounts.id', $item->social_account_id)->exists(), 403,
             'Compte non autorisé pour répondre.');
         $item->loadMissing(['socialAccount.platform', 'socialAccount.persona']);
         $slug = $item->socialAccount->platform->slug;
-        abort_unless(in_array($slug, self::PLATFORMS) && Setting::get("inbox_platform_{$slug}_enabled", true), 422,
-            'Réseau non disponible dans la messagerie.');
+        $enabled = in_array($slug, self::PLATFORMS) && Setting::get("inbox_platform_{$slug}_enabled", true);
+        if (! $enabled) {
+            abort_unless($communityManager && in_array($item->type, ['comment', 'reply'])
+                && $item->socialAccount->hasCompanionXPublicMentions(), 422, 'Réseau non disponible dans la messagerie.');
+            abort_unless($item->socialAccount->agentActions()->where('action', 'reply')->where('enabled', true)->exists(),
+                403, 'Réponses X désactivées sur ce compte.');
+        }
         abort_if(app(InboxFollowup::class)->isOwn($item, $item->socialAccount), 409,
             'Ce message a été écrit par le compte lui-même.');
     }

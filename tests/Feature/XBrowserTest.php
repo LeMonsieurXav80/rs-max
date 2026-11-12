@@ -4,6 +4,7 @@ namespace Tests\Feature;
 
 use App\Models\InboxItem;
 use App\Models\Platform;
+use App\Models\Setting;
 use App\Models\SocialAccount;
 use App\Models\User;
 use App\Services\Adapters\AdapterFactory;
@@ -223,6 +224,25 @@ class XBrowserTest extends TestCase
         $items = app(TwitterBrowserInboxService::class)->fetchInbox($this->account);
 
         $this->assertSame(['601'], $items->pluck('external_id')->all());
+    }
+
+    public function test_la_synchro_companion_x_selectionne_les_comptes_opt_in_si_x_est_desactive_globalement(): void
+    {
+        Setting::set('inbox_platform_twitter_enabled', '0');
+        $this->account->agentActions()->create(['action' => 'mentions.read', 'enabled' => true, 'daily_limit' => 100]);
+        foreach (['browser', 'api'] as $driver) {
+            $other = SocialAccount::create(['platform_id' => $this->account->platform_id, 'platform_account_id' => $driver,
+                'driver' => $driver, 'name' => $driver]);
+            $other->agentActions()->create(['action' => 'mentions.read', 'enabled' => $driver === 'api', 'daily_limit' => 100]);
+        }
+        $this->queue->results['x.tweets'] = ['tweets' => [
+            ['id' => '601', 'author' => 'visiteur', 'name' => 'N', 'avatar' => null, 'text' => 'T', 'published_at' => now()->toIso8601String()],
+        ]];
+
+        $this->artisan('inbox:sync --platform=twitter --driver=browser')->assertSuccessful();
+
+        $this->assertSame(['x.whoami', 'x.tweets'], $this->queue->kinds());
+        $this->assertSame($this->account->id, InboxItem::where('external_id', '601')->sole()->social_account_id);
     }
 
     public function test_la_synchro_des_mentions_publiques_conserve_la_date_x_et_les_reponses_existantes(): void

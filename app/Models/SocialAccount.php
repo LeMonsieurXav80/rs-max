@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
@@ -134,6 +135,18 @@ class SocialAccount extends Model
     public function usesBrowser(): bool
     {
         return $this->driver === 'browser';
+    }
+
+    public function scopeWithCompanionXPublicMentions(Builder $query): Builder
+    {
+        return $query->where('driver', 'browser')->whereRelation('platform', 'slug', 'twitter')
+            ->whereHas('agentActions', fn ($actions) => $actions->where('action', 'mentions.read')->where('enabled', true));
+    }
+
+    public function hasCompanionXPublicMentions(): bool
+    {
+        return $this->usesBrowser() && $this->platform->slug === 'twitter'
+            && static::query()->withCompanionXPublicMentions()->whereKey($this->getKey())->exists();
     }
 
     public function agentActions(): HasMany
