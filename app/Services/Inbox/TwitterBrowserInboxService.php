@@ -5,6 +5,7 @@ namespace App\Services\Inbox;
 use App\Models\InboxItem;
 use App\Models\SocialAccount;
 use App\Services\Adapters\TwitterBrowserAdapter;
+use App\Services\Agent\CommentFreshness;
 use App\Services\Browser\BrowserTaskQueue;
 use App\Services\Browser\XSessionService;
 use Carbon\Carbon;
@@ -37,7 +38,8 @@ class TwitterBrowserInboxService implements PlatformInboxInterface
                 'author_external_id' => null,
                 'content' => $t['text'],
                 'post_url' => "https://x.com/{$t['author']}/status/{$t['id']}",
-                'posted_at' => $t['published_at'] ? Carbon::parse($t['published_at']) : null,
+                'posted_at' => (empty($t['published_at']) ? CommentFreshness::xStatusDate((string) $t['id']) : Carbon::parse($t['published_at']))
+                    ?->setTimezone(config('app.timezone')),
             ])
             ->values();
     }

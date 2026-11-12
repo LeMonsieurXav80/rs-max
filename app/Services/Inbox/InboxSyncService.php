@@ -150,6 +150,7 @@ class InboxSyncService
             ->flip();
 
         $stored = 0;
+        $browserX = $account->platform->slug === 'twitter' && $account->usesBrowser();
 
         foreach ($items as $itemData) {
             $externalId = $itemData['external_id'] ?? null;
@@ -172,7 +173,13 @@ class InboxSyncService
                 if (! empty($updates)) {
                     (clone $item)->update($updates);
                 }
-                if ($account->platform->slug === 'tiktok' && ($postedAt = $itemData['posted_at'] ?? null)) {
+                $postedAt = $itemData['posted_at'] ?? null;
+                if ($browserX && $postedAt) {
+                    // La date X est exacte et peut corriger un ancien import au mauvais fuseau.
+                    $item->where('social_account_id', $account->id)
+                        ->where(fn ($q) => $q->whereNull('posted_at')->orWhere('posted_at', '!=', $postedAt))
+                        ->update(['posted_at' => $postedAt]);
+                } elseif ($account->platform->slug === 'tiktok' && $postedAt) {
                     // Un âge Studio arrondi peut avancer d'une lecture à la suivante.
                     $item->where(fn ($q) => $q->whereNull('posted_at')->orWhere('posted_at', '>', $postedAt))
                         ->update(['posted_at' => $postedAt]);

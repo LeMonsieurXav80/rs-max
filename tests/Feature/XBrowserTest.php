@@ -16,6 +16,7 @@ use App\Services\Inbox\InboxSyncService;
 use App\Services\Inbox\TwitterBrowserInboxService;
 use App\Services\Stats\XBrowserStatsService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\DB;
 use Laravel\Sanctum\Sanctum;
 use Tests\TestCase;
 
@@ -222,6 +223,52 @@ class XBrowserTest extends TestCase
         $items = app(TwitterBrowserInboxService::class)->fetchInbox($this->account);
 
         $this->assertSame(['601'], $items->pluck('external_id')->all());
+    }
+
+    public function test_la_synchro_des_mentions_publiques_conserve_la_date_x_et_les_reponses_existantes(): void
+    {
+        $previousTimezone = date_default_timezone_get();
+        config(['app.timezone' => 'Europe/Paris']);
+        date_default_timezone_set('Europe/Paris');
+
+        try {
+            $tweet = ['id' => '2120555661050126802', 'author' => 'visiteur', 'name' => 'N', 'avatar' => null,
+                'text' => 'T', 'published_at' => '2026-11-11T16:34:02.000Z'];
+            $this->queue->results['x.tweets'] = ['tweets' => [$tweet]];
+            $sync = app(InboxSyncService::class);
+
+            $this->assertSame(1, $sync->syncAccount($this->account)['fetched']);
+            $item = InboxItem::where('external_id', $tweet['id'])->sole();
+            $this->assertSame('2026-11-11T16:34:02+00:00', $item->posted_at->utc()->toIso8601String());
+
+            DB::table('inbox_items')->where('id', $item->id)->update([
+                'posted_at' => '2026-11-11 16:34:02', 'status' => 'replied', 'reply_attempts' => 1,
+                'replied_at' => '2026-11-11 18:00:00', 'reply_content' => 'Merci !', 'agent_review_reason' => 'already_handled',
+            ]);
+
+            $this->assertSame(0, $sync->syncAccount($this->account)['fetched']);
+            $item->refresh();
+            $this->assertSame('2026-11-11T16:34:02+00:00', $item->posted_at->utc()->toIso8601String());
+            $this->assertSame('replied', $item->status);
+            $this->assertSame(1, (int) $item->reply_attempts);
+            $this->assertSame('2026-11-11 18:00:00', $item->replied_at->toDateTimeString());
+            $this->assertSame('Merci !', $item->reply_content);
+            $this->assertSame('already_handled', $item->agent_review_reason);
+            $this->assertNotContains('x.post', $this->queue->kinds());
+        } finally {
+            date_default_timezone_set($previousTimezone);
+        }
+    }
+
+    public function test_une_mention_publique_sans_horodatage_visible_utilise_son_identifiant_x(): void
+    {
+        $this->queue->results['x.tweets'] = ['tweets' => [
+            ['id' => '2120555661050126802', 'author' => 'visiteur', 'name' => 'N', 'avatar' => null, 'text' => 'T'],
+        ]];
+
+        $item = app(TwitterBrowserInboxService::class)->fetchInbox($this->account)->sole();
+
+        $this->assertSame('2026-11-11T16:34:02+00:00', $item['posted_at']->utc()->toIso8601String());
     }
 
     public function test_le_mode_de_connexion_change_le_chemin_de_chaque_compte(): void
