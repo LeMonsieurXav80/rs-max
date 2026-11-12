@@ -45,10 +45,10 @@ class XExtensionTest extends TestCase
 
     private function data(): array
     {
-        return ['username' => 'test_xav', 'platform_account_id' => '77', 'tweet_id' => '300', 'author' => 'visiteur', 'content' => 'Bien trouvé !', 'root_id' => '100', 'context_complete' => true,
+        return ['username' => 'test_xav', 'platform_account_id' => '77', 'tweet_id' => '300', 'author' => 'visiteur', 'content' => 'Où trouver cette tenue ?', 'root_id' => '100', 'context_complete' => true,
             'conversation' => [['id' => '100', 'author' => 'original', 'text' => 'Un sujet précis qui donne le contexte.'],
                 ['id' => '200', 'author' => 'test_xav', 'text' => 'Ma réponse intermédiaire.'],
-                ['id' => '300', 'author' => 'visiteur', 'text' => 'Bien trouvé !']]];
+                ['id' => '300', 'author' => 'visiteur', 'text' => 'Où trouver cette tenue ?']]];
     }
 
     public function test_native_identity_resolves_only_an_authorized_x_account_without_writing(): void
@@ -73,6 +73,23 @@ class XExtensionTest extends TestCase
         $this->bind();
         $this->postJson('/api/extension/x/suggest', $this->data())->assertOk()->assertJsonPath('persona.name', 'Xavier');
         Http::assertSent(fn ($r) => str_contains($r['messages'][0]['content'], 'Tu es Xavier') && str_contains($r['messages'][0]['content'], 'Réponse X') && str_contains($r['messages'][1]['content'], 'sujet précis') && str_contains($r['messages'][1]['content'], 'intermédiaire'));
+    }
+
+    public function test_relance_locale_ignore_une_reaction_et_lit_une_citation_sans_texte(): void
+    {
+        $this->bind();
+        $data = $this->data();
+        $data['content'] = $data['conversation'][2]['text'] = 'Merci beaucoup !';
+        $data['conversation'][1]['quote'] = 'Une citation de notre réponse précédente.';
+        $this->postJson('/api/extension/x/suggest', $data)->assertConflict();
+        Http::assertNothingSent();
+
+        $data['content'] = $data['conversation'][2]['text'] = null;
+        $this->postJson('/api/extension/x/suggest', $data)->assertUnprocessable();
+        $data['conversation'][2]['quote'] = 'Un exemple cité par la personne qui répond.';
+        $this->postJson('/api/extension/x/suggest', $data)->assertOk()->assertJsonPath('status', 'prepared');
+        Http::assertSent(fn ($request) => str_contains($request['messages'][1]['content'], 'Un exemple cité'));
+        $this->assertDatabaseCount('browser_tasks', 0);
     }
 
     public function test_missing_original_or_inconsistent_target_cannot_generate(): void

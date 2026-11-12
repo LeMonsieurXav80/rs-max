@@ -129,6 +129,17 @@ class XAssistedTest extends TestCase
                 : json_encode(['pertinent' => true, 'texte' => str_contains($request['messages'][0]['content'], 'Le premier brouillon dépassait')
                     ? 'Belle progression !' : str_repeat('進', 141)]),
         ]]]])]);
+        $branch = [
+            'target_id' => '4103', 'author' => 'visitor', 'text' => 'Merci pour la précision',
+            'thread' => [
+                ['id' => '4101', 'author' => 'visitor', 'text' => 'Une question sur le squat.'],
+                ['id' => '4102', 'author' => 'owner', 'text' => 'Ma réponse.'],
+                ['id' => '4103', 'author' => 'visitor', 'text' => 'Merci pour la précision'],
+            ],
+        ] + $identity;
+        $this->postJson($url.'preview', $branch)->assertConflict();
+        Http::assertNothingSent();
+
         $this->postJson($url.'preview', ['target_id' => '4102', 'author' => 'visitor', 'text' => 'Mon nouveau parfum'] + $identity)
             ->assertUnprocessable()->assertJsonMissingPath('draft_key');
         $target = ['target_id' => '4100', 'author' => 'visitor', 'text' => 'New deadlift record', 'origin' => 'Training log'] + $identity;
@@ -139,6 +150,11 @@ class XAssistedTest extends TestCase
             && str_contains($request['messages'][0]['content'], 'Le ton vient du persona du compte')
             && ! str_contains($request['messages'][1]['content'], 'proportions similaires')
             && str_contains($request['messages'][1]['content'], 'Pratiquants de musculation'));
+        $branch['text'] = $branch['thread'][2]['text'] = 'Quelle charge pour commencer ?';
+        $this->postJson($url.'preview', $branch)->assertOk()->assertJsonPath('thread_root_id', '4101');
+        $branch['text'] = $branch['thread'][2]['text'] = null;
+        $branch['thread'][2]['quote'] = 'Un exercice présenté dans une publication citée.';
+        $this->postJson($url.'preview', $branch)->assertOk()->assertJsonPath('thread_root_id', '4101');
         $this->assertDatabaseCount('extension_x_replies', 0);
         $this->assertDatabaseCount('browser_tasks', 0);
 

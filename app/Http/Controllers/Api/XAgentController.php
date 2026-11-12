@@ -164,7 +164,7 @@ class XAgentController extends Controller
             $quote = $policy->verifiedXQuote($result['target'], $conversation[array_key_last($conversation)] ?? []);
             $targetText = $result['target']['text'] ?? '';
             abort_unless(filled($targetText) || $quote !== null, 422, 'Mention sans texte ni citation lisible.');
-            abort_if(count($conversation) > 2 && $quote === null && ! $policy->isQuestion($targetText), 409, 'Réponse sans question ni citation lisible.');
+            abort_unless($policy->allowsXBranchReply(count($conversation), $targetText, $quote), 409, 'Réponse sans question ni citation lisible.');
             app(XEngagementService::class)->assertReplyAvailable($a, $result['target']['id']);
             abort_unless($a->persona?->is_active && filled($a->persona->system_prompt), 422, 'Persona actif requis.');
             abort_if(strtolower($result['target']['author']) === strtolower($a->browser_username), 422, 'Pas de réponse automatique au compte lui-même.');

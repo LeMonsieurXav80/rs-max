@@ -7,6 +7,7 @@ use App\Models\InboxItem;
 use App\Models\SocialAccount;
 use App\Services\Agent\XReplyDraft;
 use App\Services\Agent\XReplyVault;
+use App\Services\Inbox\InboxFollowup;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 
@@ -40,7 +41,7 @@ class XReplyPreviewController extends Controller
     {
         abort_unless($account->persona?->is_active && filled($account->persona->system_prompt), 422, 'Persona actif requis.');
         $data = $request->validate([
-            'text' => 'required|string|max:6000',
+            'text' => 'present|required_without:thread|nullable|string|max:6000',
             'target_id' => 'sometimes|string|regex:/^[0-9]{1,25}$/',
             'origin' => 'nullable|string|max:6000',
             'conversation' => 'sometimes|array|max:18',
@@ -64,12 +65,13 @@ class XReplyPreviewController extends Controller
                 422, 'Un message du fil X est illisible.');
             abort_if(collect($thread)->sum(fn ($post) => mb_strlen($post['text'] ?? '') + mb_strlen($post['quote'] ?? '') + mb_strlen($post['media'] ?? '')) > 40000,
                 422, 'Le fil X dépasse la taille de contexte disponible.');
+            abort_unless(app(InboxFollowup::class)->allowsXBranchReply(count($thread), $data['text'], $target['quote'] ?? null), 409, 'Réponse sans question ni citation lisible.');
         }
         if (isset($data['target_id'])) {
             app(\App\Services\Agent\XEngagementService::class)->assertReplyAvailable($account, $data['target_id']);
         }
         $origin = $data['origin'] ?? null;
-        $searchTarget = $data['text'];
+        $searchTarget = $data['text'] ?? '';
         if ($thread !== null) {
             // La réponse la plus proche peut porter le sujet scientifique à elle seule.
             $origin = mb_substr(collect(array_reverse(array_slice($thread, 0, -1)))
@@ -117,7 +119,7 @@ class XReplyPreviewController extends Controller
         foreach ($vault->brandsFor($account) as $brand) {
             $pattern = '~(?<![\p{L}\p{N}])'.preg_quote($brand, '~').'(?![\p{L}\p{N}])~u';
             $matchBrand = $pattern.(mb_strtoupper($brand) === $brand ? '' : 'i');
-            abort_if(preg_match($matchBrand, $reply) && ! preg_match($pattern.'i', $data['text']),
+            abort_if(preg_match($matchBrand, $reply) && ! preg_match($pattern.'i', $data['text'] ?? ''),
                 422, 'Mention de marque écartée par le filtre de relecture.');
         }
 

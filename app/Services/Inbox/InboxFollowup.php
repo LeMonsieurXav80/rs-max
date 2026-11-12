@@ -41,6 +41,11 @@ class InboxFollowup
         return $quote;
     }
 
+    public function allowsXBranchReply(int $branchLength, ?string $targetText, ?string $quote): bool
+    {
+        return $branchLength <= 2 || filled($quote) || $this->isQuestion($targetText);
+    }
+
     public function isQuestion(?string $content): bool
     {
         $text = preg_replace('~https?://\S+~i', '', trim((string) $content));

@@ -1,0 +1,273 @@
+diff --git a/manifest.json b/manifest.json
+index 8f3193b..f0f9b9e 100644
+--- a/manifest.json
++++ b/manifest.json
+@@ -1,7 +1,7 @@
+ {
+   "manifest_version": 3,
+   "name": "RS-Max Companion",
+-  "version": "0.18.36",
++  "version": "0.18.37",
+   "description": "Actions assistees sur les reseaux sociaux (engagement, publication) avec remontee vers l'API RS-Max.",
+   "permissions": [
+     "storage",
+diff --git a/tests/x-assisted.test.cjs b/tests/x-assisted.test.cjs
+index ab54720..4d95452 100644
+--- a/tests/x-assisted.test.cjs
++++ b/tests/x-assisted.test.cjs
+@@ -118,6 +118,17 @@ test('le brouillon attend la validation, puis relève seulement la réponse visi
+ });
+ 
+ 
++test('un aperçu manuel transmet une publication constituée d’une citation', async () => {
++  const target = {...post('12', 'athlete', ''), quote:'La publication citée'};
++  const {data, ctx, run} = fixture(target.url);
++  ctx.params.operation = 'reply';
++  data.posts = [target];
++  data.confirmation = false;
++  await run('react');
++  assert.equal(data.messages.length, 1);
++  assert.equal(data.messages[0].data.thread[0].quote, 'La publication citée');
++});
++
+ test('la recette de profil envoie le suivi au worker du compte connecté', async () => {
+   const {data, run} = fixture('https://x.com/athlete');
+   data.profile = {handle:'athlete', following:false};
+diff --git a/tests/x-batch.test.cjs b/tests/x-batch.test.cjs
+index 7edd720..bf2be3b 100644
+--- a/tests/x-batch.test.cjs
++++ b/tests/x-batch.test.cjs
+@@ -39,8 +39,11 @@ function workerFixture(url = 'https://x.com/home') {
+       data.calls.push(options);
+       if (options.path.endsWith('/context')) return context;
+       if (options.path.endsWith('/observations')) return data.audience;
+-      if (options.path.endsWith('/preview')) return {draft_key:'draft', reply_text:'Bravo pour la reprise !',
+-        thread_root_id:data.wrongRoot ? '999' : options.body.thread[0].id, sources:[{pmid:'123'}]};
++      if (options.path.endsWith('/preview')) {
++        if (data.refuseDraft) throw Object.assign(Error('Réponse sans question ni citation lisible.'), {status:409});
++        return {draft_key:'draft', reply_text:'Bravo pour la reprise !',
++          thread_root_id:data.wrongRoot ? '999' : options.body.thread[0].id, sources:[{pmid:'123'}]};
++      }
+       if (options.path.endsWith('/reactions/reserve') && data.conflicts?.includes(options.body.action)) {
+         throw Object.assign(Error('Geste déjà réservé'), {status:409});
+       }
+@@ -63,7 +66,7 @@ function workerFixture(url = 'https://x.com/home') {
+         return {status:'failed', error:'Onglet masqué.', result:{thread_hidden:true}};
+       }
+       const conversation = data.thread || [target];
+-      return {status:'done', result:{target, root_id:conversation[0].id, context_complete:!data.partial, conversation, visible_replies:data.visible || []}};
++      return {status:'done', result:{target:conversation.at(-1), root_id:conversation[0].id, context_complete:!data.partial, conversation, visible_replies:data.visible || []}};
+     },
+     performXAgentAction:async (task, _, options) => {
+       await options.before();
+@@ -154,6 +157,24 @@ test('la réponse vérifie le fil, réserve une seule fois et conserve le reçu
+   assert.deepEqual(data.acts, ['reply']);
+ });
+ 
++test('le lot transmet les relances et citations au serveur avant de réserver la réponse', async () => {
++  const {data, send} = workerFixture();
++  const own = {id:'20', author:'cyril', text:'Ma réponse précédente'};
++  const origin = {id:'10', author:'coach', text:'Post original'};
++  const onlyReply = {...params, like:false, repost:false};
++  data.thread = [origin, own, {...target, text:'Merci !'}];
++  data.refuseDraft = true;
++  assert.equal((await send('target', {params:onlyReply, remaining:1})).used, 0);
++  assert.equal(data.calls[0].body.thread[1].author, 'cyril');
++  assert.deepEqual(data.acts, []);
++  data.refuseDraft = false;
++  data.thread = [origin, own, {...target, text:'', quote:'Publication citée'}];
++  assert.equal((await send('target', {params:onlyReply, remaining:1})).used, 1);
++  assert.equal(data.calls[1].body.text, '');
++  assert.equal(data.calls[1].body.thread.at(-1).quote, 'Publication citée');
++  assert.deepEqual(data.acts, ['reply']);
++});
++
+ test('changer d’onglet pendant la lecture interrompt les réponses et laisse le nouvel onglet actif', async () => {
+   const {data, send} = workerFixture();
+   data.switchTab = true;
+diff --git a/tests/x-mentions.test.cjs b/tests/x-mentions.test.cjs
+index 25f13ad..08acffc 100644
+--- a/tests/x-mentions.test.cjs
++++ b/tests/x-mentions.test.cjs
+@@ -5,13 +5,14 @@ function fixture(options={}){
+  Object.defineProperty(w.navigator,'locks',{value:{request:async(_n,_o,cb)=>cb(options.locked?null:{})}});
+  const stored=options.storage||{};w.chrome={storage:{local:{get:async key=>({[key]:stored[key]}),set:async values=>{Object.assign(stored,values)}}}};
+  let now=0,stopped=false;w.Date.now=()=>now;const calls=[],likes=[],logs=[],events=[];
+- function tweet(id,author,body,count=0){return `<article data-testid="tweet"><a href="/${author}/status/${id}"><time>${id}</time></a><div data-testid="tweetText">${body}</div><button data-testid="reply" aria-label="${count} réponse. Réponse">Répondre</button><button data-testid="${options.liked?'unlike':'like'}">♥</button></article>`}
++ const mention=options.mention??'Mention précise',quote=options.quote??'';
++ function tweet(id,author,body,count=0,citation=''){return `<article data-testid="tweet"><a href="/${author}/status/${id}"><time>${id}</time></a><div data-testid="tweetText">${body}</div>${citation?'<div role="link"><div data-testid="tweetText">'+citation+'</div></div>':''}<button data-testid="reply" aria-label="${count} réponse. Réponse">Répondre</button><button data-testid="${options.liked?'unlike':'like'}">♥</button></article>`}
+  const main=d.querySelector('main');
+- function wire(){for(const article of main.querySelectorAll('article')){const link=article.querySelector('a:has(time)');link.onclick=e=>{e.preventDefault();thread()};const like=article.querySelector('[data-testid="like"],[data-testid="unlike"]');like.onclick=()=>{events.push('like');if(!options.likeFailure)like.dataset.testid='unlike'};article.querySelector('[data-testid="reply"]').onclick=()=>{w.history.pushState({},'','/compose/post');const dialog=d.createElement('div');dialog.setAttribute('role','dialog');dialog.innerHTML='<div data-testid="tweetText">Mention précise</div><div data-testid="tweetTextarea_0" contenteditable="true"></div><button data-testid="tweetButton">Répondre</button>';d.body.append(dialog);dialog.querySelector('button').onclick=()=>{events.push('send');if(options.unconfirmed)return;const reply=dialog.querySelector('[contenteditable]').textContent;if(!options.keepDialog)dialog.remove();w.history.pushState({},'','/visitor/status/300');main.insertAdjacentHTML('beforeend',tweet('400','xav',reply,0));};};}}
+- function list(){main.innerHTML=tweet('300','visitor','Mention précise',options.replied?1:0);main.querySelector('article').insertAdjacentHTML('afterbegin','<div>En réponse à <a href="/xav">@xav</a></div>');wire();w.history.replaceState({},'','/notifications/mentions')}
+- function thread(){w.history.pushState({},'','/visitor/status/300');main.innerHTML=tweet('100','origin',options.noContext?'':'Tweet d’origine : sujet concret')+tweet('200',options.followup?'xav':'other','Une réponse intermédiaire')+tweet('300','visitor','Mention précise',0);main.insertAdjacentHTML('beforeend','<div data-inline-reply><div data-testid="tweetTextarea_0" contenteditable="true"><div><br></div></div></div>');if(options.unavailable)main.insertAdjacentHTML('afterbegin','<div>Ce post est indisponible</div>');wire()}
++ function wire(){for(const article of main.querySelectorAll('article')){const link=article.querySelector('a:has(time)');link.onclick=e=>{e.preventDefault();thread()};const like=article.querySelector('[data-testid="like"],[data-testid="unlike"]');like.onclick=()=>{events.push('like');if(!options.likeFailure)like.dataset.testid='unlike'};article.querySelector('[data-testid="reply"]').onclick=()=>{w.history.pushState({},'',!mention&&quote&&!options.ambiguousComposer?'/compose/post?in_reply_to=300':'/compose/post');const dialog=d.createElement('div');dialog.setAttribute('role','dialog');dialog.innerHTML='<div data-testid="tweetText">'+(mention||quote)+'</div><div data-testid="tweetTextarea_0" contenteditable="true"></div><button data-testid="tweetButton">Répondre</button>';d.body.append(dialog);dialog.querySelector('button').onclick=()=>{events.push('send');if(options.unconfirmed)return;const reply=dialog.querySelector('[contenteditable]').textContent;if(!options.keepDialog)dialog.remove();w.history.pushState({},'','/visitor/status/300');main.insertAdjacentHTML('beforeend',tweet('400','xav',reply,0));};};}}
++ function list(){main.innerHTML=tweet('300','visitor',mention,options.replied?1:0,quote);main.querySelector('article').insertAdjacentHTML('afterbegin','<div>En réponse à <a href="/xav">@xav</a></div>');wire();w.history.replaceState({},'','/notifications/mentions')}
++ function thread(){w.history.pushState({},'','/visitor/status/300');main.innerHTML=tweet('100','origin',options.noContext?'':'Tweet d’origine : sujet concret')+tweet('200',options.followup?'xav':'other','Une réponse intermédiaire')+tweet('300','visitor',mention,0,quote);main.insertAdjacentHTML('beforeend','<div data-inline-reply><div data-testid="tweetTextarea_0" contenteditable="true"><div><br></div></div></div>');if(options.unavailable)main.insertAdjacentHTML('afterbegin','<div>Ce post est indisponible</div>');wire()}
+  d.querySelector('[data-testid="AppTabBar_Notifications_Link"]').onclick=e=>{e.preventDefault();list()};list();
+- const ctx={params:{mode:options.mode||'publish',limitMax:1},rand:a=>a,get stopped(){return stopped},pause:async ms=>{now+=ms||0},waitFor:async fn=>fn()||null,log:m=>logs.push(m),report:()=>{},pasteInto:(el,value)=>{el.textContent=value},api:{get:async()=>({account_id:7,bound:true,persona:{id:6,name:'Xavier'},accounts:[]}),put:async()=>{throw Error('Unexpected binding')},post:async(p,b)=>{if(p==='/extension/x/like'){likes.push({...b});return {status:'confirmed'}}calls.push({p,b});if(p.endsWith('/suggest')){options.onGenerate?.({d,stop:()=>stopped=true});if(options.conflict)throw Object.assign(Error('Déjà tenté'),{status:409});return{id:9,reply_text:'Merci pour cette précision !'}}return{}}}};
++ const ctx={params:{mode:options.mode||'publish',limitMax:1},rand:a=>a,get stopped(){return stopped},pause:async ms=>{now+=ms||0},waitFor:async fn=>fn()||null,log:m=>logs.push(m),report:()=>{},pasteInto:(el,value)=>{el.textContent=value},api:{get:async()=>({account_id:7,bound:true,persona:{id:6,name:'Xavier'},accounts:[]}),put:async()=>{throw Error('Unexpected binding')},post:async(p,b)=>{if(p==='/extension/x/like'){likes.push({...b});return {status:'confirmed'}}calls.push({p,b});if(p.endsWith('/suggest')){options.onGenerate?.({d,stop:()=>stopped=true});if(options.conflict||options.replyRefused)throw Object.assign(Error(options.replyRefused?'Réponse sans question ni citation lisible.':'Déjà tenté'),{status:409});return{id:9,reply_text:'Merci pour cette précision !'}}return{}}}};
+  w.eval(readFileSync(join(__dirname,'../shared/pacing.js'),'utf8'));w.eval(readFileSync(join(__dirname,'../shared/list-progress.js'),'utf8'));
+  w.RSMAX={register:mod=>{w.module=mod}};w.eval(readFileSync(join(__dirname,'../shared/comment-api.js'),'utf8'));w.eval(readFileSync(join(__dirname,'../x/mentions.js'),'utf8'));
+  return{dom,w,d,ctx,calls,likes,logs,events,thread,stored};
+@@ -54,15 +55,38 @@ for(const target of [50,1000])test('X : objectif '+target+' après plus de 200 m
+ 
+ test('X : limite 1000 acceptée, dépassement refusé avant exécution',()=>{const f=fixture();assert.equal(f.w.RSXMentions.plan({limitMax:1000}).limit,1000);assert.throws(()=>f.w.RSXMentions.plan({limitMax:1001}),/entre 1 et 1000/);f.dom.window.close()});
+ 
+-for(const mode of ['reply','publish'])test('X : relance après notre réponse ignorée avant IA et like ('+mode+')',async()=>{
+- const f=fixture({mode,followup:true});await f.w.RSXMentions.run(f.ctx);
+- assert.equal(f.calls.length,0);assert.deepEqual(f.events,[]);assert.ok(f.logs.some(l=>l.includes('pas de relance automatique')));f.dom.window.close();
+-});
+-test('X : notre tweet initial autorise une première réponse, contrairement à notre réponse intermédiaire',()=>{
+- const f=fixture(),check=f.w.RSXMentions.alreadyInConversation;
+- assert.equal(check({conversation:[{author:'XAV'},{author:'visitor'}]},{username:'xav'}),false);
+- assert.equal(check({conversation:[{author:'origin'},{author:'XAV'},{author:'visitor'}]},{username:'xav'}),true);
+- assert.equal(check({conversation:[{author:'origin'},{author:'other'},{author:'visitor'}]},{username:'xav'}),false);f.dom.window.close();
++for (const mode of ['reply','publish']) {
++ test('X : une nouvelle question après notre réponse conserve toute la branche ('+mode+')', async () => {
++  const f=fixture({mode,followup:true,mention:'Quelle taille choisir ?'});
++  await f.w.RSXMentions.run(f.ctx);
++  const draft=f.calls.find(call=>call.p.endsWith('/suggest')).b;
++  assert.equal(draft.conversation[1].author,'xav');
++  assert.equal(draft.conversation[2].text,'Quelle taille choisir ?');
++  assert.deepEqual(f.events,mode==='publish'?['like','send']:['send']);
++  f.dom.window.close();
++ });
++ test('X : le refus serveur d’une relance sans question précède toute interaction ('+mode+')', async () => {
++  const f=fixture({mode,followup:true,replyRefused:true});
++  await f.w.RSXMentions.run(f.ctx);
++  assert.equal(f.calls.length,1);
++  assert.deepEqual(f.events,[]);
++  assert.ok(f.logs.some(log=>log.includes('sans question')));
++  f.dom.window.close();
++ });
++}
++test('X : une citation seule conserve son contenu et exige la cible native exacte',async()=>{
++ const f=fixture({mode:'reply',followup:true,mention:'',quote:'La publication citée'});
++ await f.w.RSXMentions.run(f.ctx);
++ const draft=f.calls.find(call=>call.p.endsWith('/suggest')).b;
++ assert.equal(draft.content,'');
++ assert.equal(draft.conversation.at(-1).quote,'La publication citée');
++ assert.deepEqual(f.events,['send']);
++ f.dom.window.close();
++ const ambiguous=fixture({mode:'reply',mention:'',quote:'Une citation',ambiguousComposer:true});
++ await assert.rejects(ambiguous.w.RSXMentions.run(ambiguous.ctx),/bonne mention/);
++ assert.deepEqual(ambiguous.events,[]);
++ assert.ok(!ambiguous.calls.some(call=>call.p.endsWith('/begin')));
++ ambiguous.dom.window.close();
+ });
+ 
+ test('X : reprise avant le curseur sans ouverture des mentions plus récentes',async()=>{
+@@ -85,8 +109,8 @@ test('X : curseurs séparés par compte et opération, comparaison exacte des gr
+ test('X : envoi incertain ne fait pas avancer le curseur',async()=>{
+  const f=fixture({unconfirmed:true});await assert.rejects(f.w.RSXMentions.run(f.ctx),/non confirmée/);assert.equal(f.stored['rsmaxXMentionsCursor:v2:@xav:publish'],undefined);f.dom.window.close();
+ });
+-test('X : relance ignorée fait avancer la reprise, sans génération ni clic',async()=>{
+- const f=fixture({followup:true});await f.w.RSXMentions.run(f.ctx);assert.equal(f.stored['rsmaxXMentionsCursor:v2:@xav:publish'].before,'300');assert.deepEqual(f.events,[]);f.dom.window.close();
++test('X : relance refusée par RS-Max fait avancer la reprise sans clic',async()=>{
++ const f=fixture({followup:true,replyRefused:true});await f.w.RSXMentions.run(f.ctx);assert.equal(f.stored['rsmaxXMentionsCursor:v2:@xav:publish'].before,'300');assert.deepEqual(f.events,[]);f.dom.window.close();
+ });
+ 
+ test('X : deux lots reprennent vers les anciennes malgré une nouvelle mention en tête',async()=>{
+diff --git a/x/assisted.js b/x/assisted.js
+index 5813ce0..5e0b635 100644
+--- a/x/assisted.js
++++ b/x/assisted.js
+@@ -155,7 +155,7 @@
+   }
+ 
+   function replyContext(target, thread) {
+-    if (!thread.target.text?.trim()) throw Error('Texte de la publication introuvable.');
++    if (!(thread.target.text?.trim() || thread.target.quote?.trim())) throw Error('Texte ou citation de la publication introuvable.');
+     return {
+       target_id: target.id,
+       author: target.author,
+diff --git a/x/batch-worker.js b/x/batch-worker.js
+index 516d646..a3f19f8 100644
+--- a/x/batch-worker.js
++++ b/x/batch-worker.js
+@@ -257,13 +257,12 @@ async function replyFromXBatch(tabId, payload, identity, exclusions, before) {
+   if (thread?.platform_limit || thread?.thread_hidden) return read;
+   const target = thread?.target;
+   if (read?.status !== 'done' || !thread?.context_complete || target?.id !== payload.target.id ||
+-      target.author !== payload.target.author || !target.text?.trim() || !thread.root_id ||
++      target.author !== payload.target.author || !(target.text?.trim() || target.quote?.trim()) || !thread.root_id ||
+       thread.conversation.at(-1)?.id !== target.id || xBatchPlan.excluded(target, exclusions)) {
+     return skipped(read?.error || 'Discussion ou publication non vérifiable.');
+   }
+-  if (thread.visible_replies?.some(post => post.author === identity.username) ||
+-      thread.conversation.slice(1, -1).some(post => post.author === identity.username)) {
+-    return skipped('Le compte a déjà répondu dans cette discussion.');
++  if (thread.visible_replies?.some(post => post.author === identity.username)) {
++    return skipped('Le compte a déjà répondu à cette publication.');
+   }
+   const published = Date.parse(target.published_at);
+   if (!Number.isFinite(published) || published < Date.now() - 14 * 86400000) {
+diff --git a/x/mentions.js b/x/mentions.js
+index fb2c2b0..5cb67fc 100644
+--- a/x/mentions.js
++++ b/x/mentions.js
+@@ -59,7 +59,7 @@
+         row&&row!==item.cell&&item.cell.contains(row)&&replyLabel.test(text(row))));
+   }
+   function replySkipReason(item){
+-    if(!item.text)return 'texte indisponible';
++    if(!item.text&&!item.quote)return 'texte ou citation indisponible';
+     if(item.replyCount===null)return 'compteur de réponses illisible';
+     if(item.replyCount!==0)return `X affiche déjà ${item.replyCount} réponse(s)`;
+     return null;
+@@ -78,10 +78,6 @@
+     if(chain.length>20||(!chain[0].text&&!chain[0].quote))throw Error('Contexte d’origine trop long ou sans texte lisible.');
+     return {root_id:chain[0].id,conversation:chain.map(({id,author,text,quote,media})=>({id,author,text,quote,media})),target:all[index]};
+   }
+-  function alreadyInConversation(thread,owner){
+-    // Notre publication initiale est autorisée ; une réponse ultérieure ferme la relance automatique.
+-    return thread.conversation.slice(1,-1).some(p=>p.author.toLowerCase()===owner.username.toLowerCase());
+-  }
+   async function openThread(ctx,item,owner){
+     ensure(ctx,owner);
+     const current=find(item.id);
+@@ -105,7 +101,8 @@
+     if((document.querySelector(S.primary)||document).querySelector('[data-testid="tweet-text-show-more-link"]'))throw Error('Texte d’origine encore tronqué.');
+     if(item.isReply && !await ctx.waitFor(()=>{const all=articles().map(snapshot).filter(Boolean);return all.findIndex(p=>p.id===item.id)>0},{timeout:15000}))throw Error('Tweet d’origine non chargé pour cette réponse : mention ignorée.');
+     const result=threadSnapshot(item.id);
+-    if(result.target.text!==item.text||result.target.author!==item.author)throw Error('Mention modifiée pendant la lecture du contexte.');
++    if(result.target.text!==item.text||result.target.author!==item.author||
++       (item.quote&&result.target.quote!==item.quote))throw Error('Mention modifiée pendant la lecture du contexte.');
+     ctx.log(`Contexte lu : tweet d’origine ${result.root_id}, ${result.conversation.length} publication(s) jusqu’à @${item.author}.`);
+     return result;
+   }
+@@ -220,7 +217,7 @@
+ 
+   // Le budget de rendu ne s'écoule que pendant les périodes visibles.
+   function composerTargets(current,item) {
+-    if(current.field.matches('textarea')){
++    if(!item.text||current.field.matches('textarea')){
+       const route=new URL(location.href);
+       return route.pathname==='/compose/post'&&route.searchParams.get('in_reply_to')===item.id;
+     }
+@@ -372,15 +369,11 @@
+       if(!action.reply){if(await likeMention(ctx,item,owner,false)){done++;ctx.report({action_type:'x_mention_like',success:true,target_author:item.author});}reviewed=true;continue;}
+       let thread;
+       try{thread=await openThread(ctx,item,owner)}catch(e){if(ctx.stopped)throw e;ctx.log(`Mention ${item.id} ignorée : ${e.message}`,'warn');await mentions(ctx);reviewed=true;continue;}
+-      if(alreadyInConversation(thread,owner)){
+-        ctx.log(`Mention ${item.id} ignorée : ton compte a déjà répondu dans ce fil ; pas de relance automatique.`);
+-        await mentions(ctx);reviewed=true;continue;
+-      }
+       const threadSkipReason=replySkipReason(thread.target);
+       if(threadSkipReason){ctx.log(`Mention ${item.id} ignorée après ouverture : ${threadSkipReason}.`);await mentions(ctx);reviewed=true;continue;}
+       let draft;
+       try{draft=await API.call(ctx,'post','/extension/x/suggest',{...ident,tweet_id:item.id,author:item.author,content:item.text,root_id:thread.root_id,context_complete:true,conversation:thread.conversation})}
+-      catch(e){if(e.status===409){ctx.log(`Mention ${item.id} ignorée : ${e.message}`,'warn');await mentions(ctx);reviewed=true;continue;}throw e;}
++      catch(e){if(e.status===409||e.status===422){ctx.log(`Mention ${item.id} ignorée : ${e.message}`,'warn');await mentions(ctx);reviewed=true;continue;}throw e;}
+       if(!draft.reply_text||draft.reply_text.length>280)throw Error('Brouillon X vide ou trop long.');
+       ensure(ctx,owner);const current=threadSnapshot(item.id);
+       if(JSON.stringify(current.conversation)!==JSON.stringify(thread.conversation))throw Error('Contexte changé pendant la génération.');
+@@ -420,7 +413,7 @@
+     return{reason:done>=pace.limit?'Objectif atteint.':`Plus aucune nouvelle mention chargée en bas de liste ; ${seen.size} examinée(s), ${seen.size-done} ignorée(s).`};
+   }
+   async function run(ctx){if(!navigator.locks)throw Error('Verrou navigateur indisponible.');return await navigator.locks.request('rsmax-x-mentions',{ifAvailable:true},lock=>{if(!lock)throw Error('Un lot X est déjà en cours.');return runLocked(ctx)});}
+-  window.RSXMentions={S,identity,snapshot,threadSnapshot,ancestorButtons,articles,alreadyInConversation,historyCursor,status,plan,run,sources};
++  window.RSXMentions={S,identity,snapshot,threadSnapshot,ancestorButtons,articles,historyCursor,status,plan,run,sources};
+   R.register({platform:'twitter',localOnly:true,match:u=>u.hostname==='x.com',recipes:[{id:'x.mentions',localOnly:true,quantity:{key:'limitMax',unit:'mentions'},label:'X — gérer les mentions',available:u=>u.pathname==='/notifications/mentions',description:'Reprendre les anciennes mentions et répondre avec le contexte, sans relancer les fils où ton compte a déjà répondu.',params:[
+     {key:'sourceAccount',type:'select',label:'Compte X et persona RS-Max',showWhen:{mode:['reply','publish']},load:sources},
+     {key:'mode',type:'select',label:'Opération',default:'publish',options:[{value:'like',label:'Liker seulement'},{value:'reply',label:'Répondre seulement'},{value:'publish',label:'Liker et répondre'}]},
