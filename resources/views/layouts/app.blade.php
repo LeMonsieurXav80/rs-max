@@ -468,6 +468,17 @@
                     </a>
                     @endif
 
+                    {{-- Sources du Vault : dossiers que les comptes peuvent citer dans leurs réponses --}}
+                    @if(auth()->user()->isManager())
+                    <a href="{{ route('vault-sources.index') }}"
+                       class="flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-colors {{ str_starts_with($currentRoute, 'vault-sources') ? 'bg-indigo-50 text-indigo-600' : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900' }}">
+                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1.5">
+                            <path stroke-linecap="round" stroke-linejoin="round" d="M12 6.042A8.967 8.967 0 0 0 6 3.75c-1.052 0-2.062.18-3 .512v14.25A8.987 8.987 0 0 1 6 18c2.305 0 4.408.867 6 2.292m0-14.25a8.966 8.966 0 0 1 6-2.292c1.052 0 2.062.18 3 .512v14.25A8.987 8.987 0 0 0 18 18a8.967 8.967 0 0 0-6 2.292m0-14.25v14.25" />
+                        </svg>
+                        Sources du Vault
+                    </a>
+                    @endif
+
                     {{-- Parametres (manager+) --}}
                     @if(auth()->user()->isManager())
                     <a href="{{ url('/settings') }}"

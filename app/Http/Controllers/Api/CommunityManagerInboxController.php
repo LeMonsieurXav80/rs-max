@@ -263,9 +263,8 @@ class CommunityManagerInboxController extends Controller
             'persona_hash' => \App\Models\TikTokEngagement::personaHash($a), 'x_quote_verified' => $xQuote !== null,
             'addressing' => $addressing['role'] ?? null], now()->addMinutes(15));
 
-        $vault = $a->platform->slug === 'twitter'
-            ? app(\App\Services\Agent\XReplyVault::class)->search($a, filled($inboxItem->content) ? (string) $inboxItem->content : ($xQuote ?? ''), $postText)
-            : null;
+        $vault = $inboxItem->type === 'dm' || blank($inboxItem->content) && $xQuote === null ? null
+            : app(\App\Services\Agent\XReplyVault::class)->search($a, filled($inboxItem->content) ? (string) $inboxItem->content : $xQuote, $postText);
 
         return ['context_id' => $context, 'item_id' => $inboxItem->id, 'content' => $inboxItem->content, 'post_content' => $postText,
             'publication' => $inboxItem->type === 'dm' ? null : ['text' => $postText, 'url' => $conversation[0]['url'] ?? $inboxItem->post_url],

@@ -181,6 +181,13 @@
             <div class="bg-white rounded-2xl shadow-sm border border-gray-100 p-6 mb-6">
                 <h2 class="text-base font-semibold text-gray-900 mb-2">Community Manager : cadence et ciblage</h2>
                 <p class="text-xs text-gray-500 mb-5">Réglages propres à ce compte et à ce réseau, accessibles à l’agent par API. Ils ne déclenchent aucune action.</p>
+                <p class="text-xs text-gray-600 mb-5">
+                    Sources du Vault pour les réponses :
+                    {{ $account->vaultSources->where('is_active', true)->pluck('name')->implode(', ') ?: 'aucune' }}
+                    @if(auth()->user()->isManager())
+                        · <a href="{{ route('vault-sources.index') }}" class="text-indigo-600 hover:underline">gérer</a>
+                    @endif
+                </p>
                 <div class="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-5">
                     <div>
                         <label for="agent_hourly_limit" class="block text-sm font-medium mb-1">Maximum d’actions sur 60 minutes</label>

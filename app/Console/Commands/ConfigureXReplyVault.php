@@ -2,15 +2,15 @@
 
 namespace App\Console\Commands;
 
-use App\Models\Setting;
 use App\Models\SocialAccount;
+use App\Models\VaultSource;
 use Illuminate\Console\Command;
 
 class ConfigureXReplyVault extends Command
 {
     protected $signature = 'x:configure-reply-vault {corpus} {--account=*} {--brand=*}';
 
-    protected $description = 'Associer les comptes X sélectionnés à un Vault interrogé en lecture';
+    protected $description = 'Rattacher des comptes aux fiches PubMed (Recherches) d’un Vault ; les autres sources se gèrent dans /vault-sources';
 
     public function handle(): int
     {
@@ -34,9 +34,9 @@ class ConfigureXReplyVault extends Command
 
             return self::FAILURE;
         }
-        foreach ($accounts as $account) {
-            Setting::set("x_reply_vault_account_{$account->id}", json_encode(['corpus' => $corpus, 'persona_id' => $account->persona_id, 'brands' => $brands], JSON_THROW_ON_ERROR));
-        }
+        $source = VaultSource::updateOrCreate(['corpus' => $corpus, 'format' => 'pubmed', 'name' => 'Fiches PubMed '.$corpus],
+            ['folders' => ['Recherches'], 'brands' => $brands, 'is_active' => true]);
+        $source->socialAccounts()->syncWithoutDetaching($accounts->pluck('id')->all());
 
         return self::SUCCESS;
     }

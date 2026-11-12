@@ -280,6 +280,9 @@ Route::middleware(['auth', 'verified', 'throttle:600,1,web'])->group(function ()
         Route::get('partners/{partner}/posts', [PartnerController::class, 'posts'])->name('partners.posts');
         Route::resource('partners', PartnerController::class)->except(['show']);
 
+        // Dossiers du Vault que chaque compte peut citer dans ses réponses (agent et Companion)
+        Route::resource('vault-sources', \App\Http\Controllers\VaultSourceController::class)->except(['show']);
+
         // Personas : ils ne servent qu'aux reponses et aux commentaires. Sans cet
         // ecran, les contextes de commentaire du bot ne seraient plus editables
         // que directement en base.

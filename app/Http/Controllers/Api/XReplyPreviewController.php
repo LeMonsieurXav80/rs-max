@@ -138,7 +138,7 @@ class XReplyPreviewController extends Controller
             'status' => 'preview',
             'reply_text' => $reply,
             'vault_revision' => $evidence['revision'],
-            'sources' => array_map(fn ($source) => $source + ['url' => 'https://pubmed.ncbi.nlm.nih.gov/'.$source['pmid'].'/'], $evidence['sources']),
+            'sources' => array_map(fn ($source) => isset($source['pmid']) ? $source + ['url' => 'https://pubmed.ncbi.nlm.nih.gov/'.$source['pmid'].'/'] : $source, $evidence['sources']),
         ] + ($thread === null ? [] : ['thread_root_id' => $thread[0]['id']]))->header('Cache-Control', 'no-store, private');
     }
 }

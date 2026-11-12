@@ -149,6 +149,11 @@ class SocialAccount extends Model
             && static::query()->withCompanionXPublicMentions()->whereKey($this->getKey())->exists();
     }
 
+    public function vaultSources(): BelongsToMany
+    {
+        return $this->belongsToMany(VaultSource::class);
+    }
+
     public function agentActions(): HasMany
     {
         return $this->hasMany(AgentAccountAction::class);
