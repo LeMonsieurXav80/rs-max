@@ -1,5 +1,7 @@
 # X — mentions avec contexte, RS Companion 0.9.0
 
+Pour les versions en service, les procédures Hermès et le diagnostic des réponses publiques, voir [X public avec RS-Max, Companion et Hermès](x-companion-reprise.md). Cette page conserve le parcours historique de la version 0.9.0.
+
 Pour le routage des tâches actuelles sur le NAS, le VPS et Chrome local, voir
 [Profils d’exécution Companion](companion-workers.md).
 
