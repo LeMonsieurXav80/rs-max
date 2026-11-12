@@ -189,4 +189,43 @@ class XAssistedTest extends TestCase
         $this->assertDatabaseCount('extension_x_replies', 1);
         $this->assertDatabaseCount('browser_tasks', 0);
     }
+
+    public function test_une_reponse_de_tiers_ne_remercie_pas_un_compliment_adresse_a_un_autre(): void
+    {
+        $platform = Platform::firstOrCreate(['slug' => 'twitter'], ['name' => 'X', 'auth_type' => 'oauth2']);
+        $persona = Persona::create(['name' => 'Réponses', 'system_prompt' => 'Aide sans promotion.', 'is_active' => true]);
+        $owner = User::factory()->create();
+        $account = SocialAccount::create(['name' => 'X', 'platform_id' => $platform->id, 'platform_account_id' => '1000',
+            'persona_id' => $persona->id, 'driver' => 'api', 'browser_username' => 'owner', 'languages' => ['fr'],
+            'agent_strategy' => ['search_queries' => ['whey lang:fr']]]);
+        $account->users()->attach($owner, ['is_active' => true]);
+        $this->withToken($owner->createToken('extension')->plainTextToken);
+        $identity = ['platform_account_id' => '1000', 'username' => 'owner'];
+        $this->freezeSecond();
+        $targetId = (string) (((now()->subHour()->getTimestampMs() - 1288834974657) << 22) + 1);
+        Setting::setEncrypted('openai_api_key', 'test-key');
+        $answer = 'Merci beaucoup, c’est vraiment gentil !';
+        Http::fake(['api.openai.com/*' => function () use (&$answer) {
+            return Http::response(['choices' => [['message' => ['content' => json_encode(['pertinent' => true, 'sujet' => 'whey', 'texte' => $answer])]]]]);
+        }]);
+        // Le 12/11/2026 : un compliment de gabriellabb12 à l’autrice du post, remercié par Wildy Caro.
+        $thread = [
+            ['id' => '5001', 'author' => 'alice', 'text' => 'Ma whey du matin avant la séance'],
+            ['id' => $targetId, 'author' => 'gabriella', 'text' => 'Tu es toujours au top, bravo !'],
+        ];
+        $payload = ['target_id' => $targetId, 'author' => 'gabriella', 'text' => $thread[1]['text'], 'thread' => $thread] + $identity;
+
+        $this->postJson('/api/extension/x/assisted/preview', $payload)->assertUnprocessable()
+            ->assertJsonPath('message', \App\Services\Agent\XAddressing::REJECTION);
+        Http::assertSent(fn ($request) => str_contains($request['messages'][1]['content'], '"role":"exterieur"')
+            && str_contains($request['messages'][0]['content'], '@owner n’apparaît pas dans ce fil'));
+
+        $answer = 'La whey avant la séance, tu la prends combien de temps avant ?';
+        $this->postJson('/api/extension/x/assisted/preview', $payload)->assertOk()->assertJsonPath('reply_text', $answer);
+
+        // La même phrase reste permise quand la cible répond au compte.
+        $answer = 'Merci beaucoup !';
+        $payload['thread'][0]['author'] = 'owner';
+        $this->postJson('/api/extension/x/assisted/preview', $payload)->assertOk()->assertJsonPath('reply_text', $answer);
+    }
 }
