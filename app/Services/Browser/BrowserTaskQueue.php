@@ -8,6 +8,8 @@ use App\Models\SocialAccount;
 use App\Services\Agent\AccountActionBudget;
 use App\Services\Agent\AdaptiveAccountLimits;
 use App\Services\Agent\CommunityManagerWindow;
+use Closure;
+use Illuminate\Contracts\Cache\Lock;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 
@@ -110,10 +112,42 @@ class BrowserTaskQueue
         return array_map(fn ($m) => [parse_url($m['url'] ?? '', PHP_URL_HOST), parse_url($m['url'] ?? '', PHP_URL_PATH), $m['mimetype'] ?? null, $m['sha256'] ?? null], $media);
     }
 
+    private function claimLock(string $profile, int $seconds): Lock
+    {
+        return Cache::lock('browser-claim:'.$profile, $seconds);
+    }
+
+    /** Empêche de nouvelles prises pendant une intervention sur des profils libres. */
+    public function withIdleProfiles(array $profiles, int $lease, Closure $operation): bool
+    {
+        $locks = [];
+        try {
+            foreach (array_unique($profiles) as $profile) {
+                $lock = $this->claimLock($profile, $lease);
+                if (! $lock->get()) {
+                    return false;
+                }
+                $locks[] = $lock;
+            }
+
+            if (BrowserTask::whereIn('profile', $profiles)->whereIn('status', [BrowserTask::PENDING, BrowserTask::RUNNING])->exists()) {
+                return false;
+            }
+
+            $operation();
+
+            return true;
+        } finally {
+            foreach (array_reverse($locks) as $lock) {
+                $lock->release();
+            }
+        }
+    }
+
     /** Une seule tâche à la fois par profil : deux onglets se voleraient la session. */
     public function claim(string $profile): ?BrowserTask
     {
-        $claimed = Cache::lock('browser-claim:'.$profile, 10)->get(fn () => DB::transaction(function () use ($profile) {
+        $claimed = $this->claimLock($profile, 10)->get(fn () => DB::transaction(function () use ($profile) {
             if (BrowserTask::where('profile', $profile)->where('status', BrowserTask::RUNNING)->lockForUpdate()->exists()) {
                 return null;
             }

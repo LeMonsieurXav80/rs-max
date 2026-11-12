@@ -66,6 +66,67 @@ class BrowserTaskQueueTest extends TestCase
         $this->assertSame(BrowserTask::RUNNING, $verification->fresh()->status);
     }
 
+    public function test_un_redemarrage_reserve_la_file_libre_jusqua_la_fin_de_lintervention(): void
+    {
+        $queue = app(BrowserTaskQueue::class);
+        $other = $this->task(profile: 'autre');
+        $pending = null;
+
+        $this->assertTrue($queue->withIdleProfiles(['wildycaro'], 30, function () use (&$pending, $other) {
+            $pending = $this->task();
+            $this->getJson('/api/extension/tasks/next?profile=wildycaro')->assertOk()->assertJsonPath('id', null);
+            $this->getJson('/api/extension/tasks/next?profile=autre')->assertOk()->assertJsonPath('id', $other->id);
+            $this->assertSame(BrowserTask::PENDING, $pending->fresh()->status);
+        }));
+
+        $this->getJson('/api/extension/tasks/next?profile=wildycaro')->assertOk()->assertJsonPath('id', $pending->id);
+    }
+
+    public function test_le_redemarrage_attend_les_taches_et_libere_les_autres_profils(): void
+    {
+        $queue = app(BrowserTaskQueue::class);
+        $running = $this->task(BrowserTask::RUNNING);
+        $maintenance = fn () => $this->fail('Intervention lancée sur une file occupée.');
+
+        $this->assertFalse($queue->withIdleProfiles(['autre', 'wildycaro'], 30, $maintenance));
+        $other = $this->task(profile: 'autre');
+        $this->assertSame($other->id, $queue->claim('autre')?->id);
+        $this->assertSame(BrowserTask::RUNNING, $running->fresh()->status);
+
+        $pending = $this->task(profile: 'attente');
+        $this->assertFalse($queue->withIdleProfiles(['attente'], 30, $maintenance));
+        $this->assertSame($pending->id, $queue->claim('attente')?->id);
+    }
+
+    public function test_une_intervention_interrompue_restitue_la_prise_des_taches(): void
+    {
+        $queue = app(BrowserTaskQueue::class);
+        try {
+            $queue->withIdleProfiles(['wildycaro'], 30, function () {
+                $this->task();
+                throw new \RuntimeException('Interruption simulée');
+            });
+            $this->fail('Exception attendue.');
+        } catch (\RuntimeException $error) {
+            $this->assertSame('Interruption simulée', $error->getMessage());
+        }
+
+        $this->assertNotNull($queue->claim('wildycaro'));
+    }
+
+    public function test_la_commande_de_maintenance_refuse_un_profil_inconnu_ou_occupe(): void
+    {
+        $this->artisan('browser:maintenance', ['profiles' => ['inconnu'], '--wait' => '0'])
+            ->expectsOutputToContain('profil est inconnu')->assertExitCode(2);
+        $this->artisan('browser:maintenance', ['profiles' => ['wildycaro'], '--wait' => '0'])
+            ->expectsOutputToContain('cache partagé')->assertExitCode(2);
+
+        config(['cache.default' => 'database']);
+        $this->task(BrowserTask::RUNNING);
+        $this->artisan('browser:maintenance', ['profiles' => ['wildycaro'], '--wait' => '0'])
+            ->expectsOutputToContain('Profil occupé')->assertExitCode(1);
+    }
+
     public function test_le_resultat_est_journalise_et_ne_peut_pas_etre_reecrit(): void
     {
         $task = $this->task(BrowserTask::RUNNING);

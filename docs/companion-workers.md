@@ -19,4 +19,11 @@ Sur un NAS qui héberge X et TikTok, attribuer un profil dédié aux comptes X �
 
 Si deux conteneurs montent le même dossier de code Companion en lecture seule, chacun garde sa configuration locale et son stockage. Après une mise à jour, redémarrer et vérifier les deux conteneurs. Confirmer aussi la version sur le VPS et dans Chrome local quand ils sont concernés.
 
+## Redémarrer un navigateur distant
+
+1. Relever les profils des conteneurs concernés et leurs publications proches. Choisir un créneau qui laisse le temps de terminer le redémarrage.
+2. Depuis le conteneur applicatif RS-Max, lancer `php artisan browser:maintenance PROFIL --lease=90 --wait=30` avec l’entrée standard ouverte. Passer plusieurs profils en arguments si plusieurs navigateurs doivent être arrêtés ensemble. La commande attend une file vide et réserve les prises de tâche sur les seuls profils demandés.
+3. Attendre le message `PRÊT`, puis redémarrer et contrôler Chromium dans un autre terminal pendant la durée indiquée. Un refus pour profil occupé signifie que la file continue à travailler. Revenir quand les tâches ont abouti.
+4. Appuyer sur Entrée dès que Chromium est prêt. Les tâches arrivées entre-temps reprennent dans la même file. Le verrou expire automatiquement si la connexion disparaît. Vérifier le profil et la version avec une lecture dans le journal.
+
 Pour l’agent, les comptes, le canal, le persona, la langue et les limites viennent de `accounts` et `strategy`. Le serveur choisit le profil, l’agent utilise le parcours `x-read` puis `x-context` et vérifie le reçu de toute écriture. Les consignes sont dans le [skill Community Manager](../hermes/skills/community-manager-x/SKILL.md).
