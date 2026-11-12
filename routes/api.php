@@ -106,6 +106,14 @@ Route::middleware(['auth:sanctum', \App\Http\Middleware\CommunityManagerTokenSco
     Route::get('/partners/{partner}/threads', [PartnerApiController::class, 'threads']);
     Route::get('/partners/{partner}/emv', [PartnerApiController::class, 'emv']);
 
+    // ── Sources du Vault (manager ; écritures en dry_run par défaut) ──
+    Route::get('/vault-sources', [\App\Http\Controllers\Api\VaultSourceApiController::class, 'index']);
+    Route::post('/vault-sources', [\App\Http\Controllers\Api\VaultSourceApiController::class, 'store']);
+    Route::get('/vault-sources/{vaultSource}', [\App\Http\Controllers\Api\VaultSourceApiController::class, 'show']);
+    Route::put('/vault-sources/{vaultSource}', [\App\Http\Controllers\Api\VaultSourceApiController::class, 'update']);
+    Route::delete('/vault-sources/{vaultSource}', [\App\Http\Controllers\Api\VaultSourceApiController::class, 'destroy']);
+    Route::post('/vault-sources/{vaultSource}/test', [\App\Http\Controllers\Api\VaultSourceApiController::class, 'test']);
+
     // ── Meta Ads ──
     // Lecture ouverte ; écriture en dry-run par défaut, derrière
     // META_ADS_WRITE_ENABLED et réservée aux managers. Pas de création ni de

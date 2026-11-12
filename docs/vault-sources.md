@@ -5,6 +5,7 @@ Un compte peut s’appuyer sur des dossiers du Vault de son serveur pour répond
 ## Modèle
 
 - `/vault-sources` (rôle manager) : une source = un Vault du serveur (`corpus`), un format (`notes` ou `pubmed`), des dossiers autorisés, des exclusions, des marques à ne jamais placer d’elles-mêmes, et les comptes qui l’utilisent. La fiche du compte affiche ses sources actives.
+- API (rôle manager, jeton ordinaire, `dry_run` par défaut) : `/api/vault-sources`, et `POST /api/vault-sources/{id}/test` pour voir les extraits sans rien modifier. Voir [API.md](API.md) §15 ter. Écran et API partagent `VaultSourceInput`.
 - Tables `vault_sources` et `social_account_vault_source`, dans la base de chaque instance. Aucune configuration n’est partagée entre lemonsieurxav et DIX : chaque écosystème garde son Vault.
 - Les zones sensibles (`07-Raw`, `Compta`, `Mails`, `Contacts`, `Contacts-Pro`, `Partenaires`, identifiants, `.git`, `.obsidian`) sont refusées par le formulaire, par `XReplyVault` et par le service lui-même.
 - La réponse reçoit au plus 4 extraits et `vault.guard` : ne citer que la source, aucune information interne, ne pas prétendre avoir lu ou vécu ce qu’elle contient ni parler au nom de son auteur.
@@ -24,6 +25,8 @@ Le dossier des sockets est monté dans le conteneur RS-Max sur `/run/rsmax-vault
 | --- | --- | --- | --- |
 | lemonsieurxav | `cerveau-xav` | copie Hermès `vaults/vault-cerveau-xav` (pull Gitea toutes les 5 min) | `/opt/rsmax-vault/sockets` |
 | DIX | `dix` | copie Hermès `vaults/vault-dix` | `/opt/rsmax-dix-vault/sockets` |
+
+DIX : la source « Fiches PubMed dix » remplace l’ancien réglage depuis le 12/11/2026. L’ancien service `rsmax-dix-vault-lookup` (hors dépôt, PubMed seul) tourne encore et ignore `format`/`folders` ; le remplacer par `install.sh dix …` aligne les deux serveurs.
 
 Ajouter des dossiers à un autre compte ne demande aucune intervention technique : créer ou modifier la source dans `/vault-sources`. Un nouveau serveur demande un Vault, `install.sh` et le volume Coolify.
 

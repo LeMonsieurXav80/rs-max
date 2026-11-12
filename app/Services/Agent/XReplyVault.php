@@ -50,21 +50,38 @@ class XReplyVault
         $revisions = [];
         $found = [];
         foreach ($sources as $source) {
-            try {
-                $response = Http::withOptions(['curl' => [CURLOPT_UNIX_SOCKET_PATH => "/run/rsmax-vault/{$source['corpus']}.sock"]])
-                    ->connectTimeout(2)->timeout(12)->acceptJson()
-                    ->post('http://localhost/lookup', ['target' => $target, 'origin' => $origin, 'format' => $source['format'],
-                        'folders' => $source['folders'], 'excluded' => $source['excluded']]);
-            } catch (ConnectionException) {
-                abort(503, 'Le Vault est momentanément inaccessible.');
-            }
-            $result = $response->json();
-            abort_unless($response->successful() && is_array($result['sources'] ?? null) && is_string($result['revision'] ?? null),
-                503, 'Le Vault est momentanément inaccessible.');
+            $result = $this->lookup($source, $target, $origin);
             $revisions[$source['corpus']] = $result['revision'];
             array_push($found, ...array_slice($result['sources'], 0, 3));
         }
 
         return ['revision' => implode(',', array_unique($revisions)), 'sources' => array_slice($found, 0, 4)];
+    }
+
+    /** Pour tester une source avant de la rattacher : mêmes filtres que pour un compte. */
+    public function lookupSource(VaultSource $source, string $target, ?string $origin = null): array
+    {
+        $folders = array_values(array_filter($source->folders ?? [], fn ($folder) => ! VaultSource::forbidden($folder)));
+        abort_if($folders === [], 422, 'Aucun dossier autorisé dans cette source.');
+
+        return $this->lookup(['corpus' => $source->corpus, 'format' => $source->format, 'folders' => $folders,
+            'excluded' => array_values($source->excluded_folders ?? [])], $target, $origin);
+    }
+
+    private function lookup(array $source, string $target, ?string $origin): array
+    {
+        try {
+            $response = Http::withOptions(['curl' => [CURLOPT_UNIX_SOCKET_PATH => "/run/rsmax-vault/{$source['corpus']}.sock"]])
+                ->connectTimeout(2)->timeout(12)->acceptJson()
+                ->post('http://localhost/lookup', ['target' => $target, 'origin' => $origin, 'format' => $source['format'],
+                    'folders' => $source['folders'], 'excluded' => $source['excluded']]);
+        } catch (ConnectionException) {
+            abort(503, 'Le Vault est momentanément inaccessible.');
+        }
+        $result = $response->json();
+        abort_unless($response->successful() && is_array($result['sources'] ?? null) && is_string($result['revision'] ?? null),
+            503, 'Le Vault est momentanément inaccessible.');
+
+        return $result;
     }
 }

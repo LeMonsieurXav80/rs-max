@@ -78,4 +78,38 @@ class VaultSourceTest extends TestCase
         $notes->update(['is_active' => false]);
         $this->assertNull($vault->search($wildy->fresh(), 'habitudes'));
     }
+
+    public function test_l_api_gere_les_sources_en_apercu_par_defaut(): void
+    {
+        $manager = User::factory()->create(['role' => 'manager']);
+        $account = $this->account();
+        $account->users()->attach($manager, ['is_active' => true]);
+        $this->withToken($manager->createToken('api')->plainTextToken);
+        $payload = ['name' => 'Livres', 'corpus' => 'cerveau-xav', 'format' => 'notes',
+            'folders' => ['03-Resources/Livres'], 'accounts' => [$account->id]];
+
+        $this->postJson('/api/vault-sources', $payload)->assertOk()->assertJsonPath('dry_run', true);
+        $this->assertDatabaseCount('vault_sources', 0);
+        $this->postJson('/api/vault-sources', ['folders' => ['Compta/2026']] + $payload)->assertUnprocessable()->assertJsonValidationErrors('folders');
+        $this->postJson('/api/vault-sources', ['accounts' => [999999]] + $payload)->assertUnprocessable()->assertJsonValidationErrors('accounts');
+        $id = $this->postJson('/api/vault-sources', ['dry_run' => false] + $payload)->assertCreated()
+            ->assertJsonPath('source.accounts.0.id', $account->id)->json('source.id');
+
+        $this->putJson("/api/vault-sources/{$id}", ['folders' => '03-Resources/Livres
+01-Projects/Wildycaro/Posts'])->assertOk()->assertJsonPath('dry_run', true);
+        $this->assertSame(['03-Resources/Livres'], VaultSource::find($id)->folders);
+        $this->putJson("/api/vault-sources/{$id}", ['folders' => ['03-Resources/Livres', '01-Projects/Wildycaro/Posts'], 'dry_run' => false])->assertOk()
+            ->assertJsonPath('source.folders.1', '01-Projects/Wildycaro/Posts')->assertJsonPath('source.accounts.0.id', $account->id);
+
+        Http::fake(['http://localhost/lookup' => Http::response(['revision' => 'r2', 'sources' => [['path' => '03-Resources/Livres/A.md', 'title' => 'A', 'excerpt' => 'E']]])]);
+        $this->postJson("/api/vault-sources/{$id}/test", ['text' => 'habitudes'])->assertOk()->assertJsonPath('sources.0.path', '03-Resources/Livres/A.md');
+        $this->getJson('/api/vault-sources')->assertOk()->assertJsonPath('sources.0.name', 'Livres');
+        $this->deleteJson("/api/vault-sources/{$id}")->assertOk()->assertJsonPath('deleted', false);
+        $this->deleteJson("/api/vault-sources/{$id}", ['dry_run' => false])->assertOk()->assertJsonPath('deleted', true);
+        $this->assertDatabaseCount('vault_sources', 0);
+
+        $this->app['auth']->forgetGuards();
+        $this->withToken(User::factory()->create(['role' => 'user'])->createToken('api')->plainTextToken)
+            ->getJson('/api/vault-sources')->assertForbidden();
+    }
 }

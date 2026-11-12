@@ -3,10 +3,9 @@
 namespace App\Http\Controllers;
 
 use App\Models\VaultSource;
+use App\Services\Agent\VaultSourceInput;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
-use Illuminate\Validation\Rule;
-use Illuminate\Validation\ValidationException;
 use Illuminate\View\View;
 
 class VaultSourceController extends Controller
@@ -28,8 +27,9 @@ class VaultSourceController extends Controller
     public function store(Request $request): RedirectResponse
     {
         abort_unless($request->user()->isManager(), 403);
-        $source = VaultSource::create($this->validated($request));
-        $source->socialAccounts()->sync($this->accountIds($request));
+        [$attributes, $accounts] = VaultSourceInput::validate($request, $request->user());
+        $source = VaultSource::create($attributes + ['is_active' => $request->boolean('is_active')]);
+        $source->socialAccounts()->sync($accounts ?? []);
 
         return redirect()->route('vault-sources.index')->with('status', 'Source du Vault créée.');
     }
@@ -44,8 +44,9 @@ class VaultSourceController extends Controller
     public function update(Request $request, VaultSource $vaultSource): RedirectResponse
     {
         abort_unless($request->user()->isManager(), 403);
-        $vaultSource->update($this->validated($request));
-        $vaultSource->socialAccounts()->sync($this->accountIds($request));
+        [$attributes, $accounts] = VaultSourceInput::validate($request, $request->user());
+        $vaultSource->update($attributes + ['excluded_folders' => [], 'brands' => [], 'is_active' => $request->boolean('is_active')]);
+        $vaultSource->socialAccounts()->sync($accounts ?? []);
 
         return redirect()->route('vault-sources.index')->with('status', 'Source du Vault mise à jour.');
     }
@@ -61,38 +62,5 @@ class VaultSourceController extends Controller
     private function accounts(Request $request)
     {
         return $request->user()->visibleSocialAccounts()->with('platform')->orderBy('name')->get();
-    }
-
-    private function accountIds(Request $request): array
-    {
-        $ids = array_map('intval', (array) $request->input('accounts', []));
-
-        return $this->accounts($request)->whereIn('id', $ids)->pluck('id')->all();
-    }
-
-    private function validated(Request $request): array
-    {
-        $data = $request->validate([
-            'name' => 'required|string|max:120',
-            'corpus' => ['required', 'string', 'regex:/^[a-z][a-z0-9_-]{0,30}$/'],
-            'format' => ['required', Rule::in(array_keys(VaultSource::FORMATS))],
-            'folders' => 'required|string|max:6000',
-            'excluded_folders' => 'nullable|string|max:6000',
-            'brands' => 'nullable|string|max:3000',
-            'accounts' => 'nullable|array',
-            'accounts.*' => 'integer',
-        ]);
-        $lines = fn (?string $text) => collect(preg_split('/\R/', (string) $text))->map(fn ($l) => trim($l, " \t/"))->filter()->unique()->values()->all();
-        $folders = $lines($data['folders']);
-        $refused = array_values(array_filter($folders, fn ($folder) => VaultSource::forbidden($folder)));
-        if ($refused !== [] || $folders === [] || count($folders) > 30) {
-            throw ValidationException::withMessages(['folders' => $refused !== []
-                ? 'Dossiers refusés (zone sensible) : '.implode(', ', $refused).'.'
-                : 'Indiquez entre 1 et 30 dossiers, un par ligne.']);
-        }
-
-        return ['name' => $data['name'], 'corpus' => $data['corpus'], 'format' => $data['format'], 'folders' => $folders,
-            'excluded_folders' => $lines($data['excluded_folders'] ?? null), 'brands' => $lines($data['brands'] ?? null),
-            'is_active' => $request->boolean('is_active')];
     }
 }

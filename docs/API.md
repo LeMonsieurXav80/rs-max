@@ -942,6 +942,18 @@ Le client `cli/community_manager.py` utilise uniquement `/api/community-manager/
 
 Pour rédiger : `GET /api/community-manager/accounts/{id}/comment-context?snapshot_id=…` renvoie le persona actif du compte et les commentaires accessibles. **Hermès rédige lui-même avec son abonnement connecté** ; ce parcours n’appelle jamais le modèle API configuré dans RS-Max et ne consomme donc pas son quota API. `POST /api/community-manager/prepare` reçoit `account_id`, `action:video.comment`, `snapshot_id`, `context_id`, `text`. Le contexte est lié au compte, au snapshot et à l’empreinte du persona ; il expire après 15 minutes. Texte absent ou persona changé : refus, aucun repli API. `draft_source:hermes_subscription` identifie ce chemin. La limite de 150 unités UTF-16 et la preuve après rechargement restent obligatoires. Aucun remplacement après une tentative.
 
+## 15 ter. Sources du Vault
+
+Dossiers du Vault de **ce serveur** qu'un compte peut citer dans ses réponses. Hermès (`x-context`, `reply-context`) et Companion (Mac, NAS, VPS) reçoivent les extraits dans `vault`, avec `vault.guard`. Rôle `manager` ; jeton ordinaire (le jeton Community Manager n'y a pas accès). Écran équivalent : `/vault-sources`. Détails : [vault-sources.md](vault-sources.md).
+
+- `GET /api/vault-sources` · `GET /api/vault-sources/{id}` : `id`, `name`, `corpus`, `format` (`notes` | `pubmed`), `folders`, `excluded_folders`, `brands`, `is_active`, `accounts` (`id`, `name`, `platform`).
+- `POST /api/vault-sources` : `name`, `corpus` (nom du service du serveur, ex. `cerveau-xav`, `dix`), `format`, `folders` (1 à 30 chemins, tableau ou une ligne par entrée), facultatifs `excluded_folders`, `brands` (marques jamais placées si la personne ne les nomme pas), `is_active`, `accounts` (ids). **`dry_run` vaut `true` par défaut** : la réponse montre la source sans l'enregistrer ; `"dry_run": false` → 201.
+- `PUT /api/vault-sources/{id}` : mêmes champs, tous facultatifs. `accounts` remplace la liste quand il est fourni. `dry_run` par défaut.
+- `DELETE /api/vault-sources/{id}` : `dry_run` par défaut, `"dry_run": false` supprime (les comptes perdent la source).
+- `POST /api/vault-sources/{id}/test` : `{"text": "…", "origin": "…"}`, lecture seule. Renvoie `revision` et jusqu'à 3 `sources` (`path`, `title`, `excerpt` ; `pmid` pour le format `pubmed`), exactement ce que recevrait un compte.
+
+Refus 422 : dossier sensible (`07-Raw`, `Compta`, `Mails`, `Contacts`, `Contacts-Pro`, `Partenaires`, identifiants, `.git`, `.obsidian`), compte inconnu, liste trop longue. 503 au test ou à une réponse : service du Vault injoignable sur ce serveur.
+
 ## 16. Endpoints en session web (PAS accessibles par token)
 
 Quatre endpoints commencent par `/api/` alors qu'ils sont déclarés dans
