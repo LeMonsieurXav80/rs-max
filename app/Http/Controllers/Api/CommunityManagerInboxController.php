@@ -139,7 +139,20 @@ class CommunityManagerInboxController extends Controller
             $this->deferContext($inboxItem, 'already_handled', 'Commentaire du compte lui-même : passer au suivant.');
         }
         $followup = $policy->isNestedReply($inboxItem);
-        if ($a->platform->slug === 'tiktok' && $inboxItem->posted_at?->lt(now()->subDay())) {
+        $tiktok = $a->platform->slug === 'tiktok';
+        $ownHandle = strtolower(ltrim((string) $a->browser_username, '@'));
+        if ($tiktok && ($policy->isAcknowledgement($inboxItem->content)
+            || ($inboxItem->reply_to_username === $ownHandle && $ownHandle !== '' && ! $policy->isQuestion($inboxItem->content)))) {
+            // Avant toute lecture Studio : un merci ou des emojis seuls reçoivent un like, jamais une réponse.
+            $liking = ! $inboxItem->liked_at && ! $inboxItem->reply_attempts && $a->usesBrowser();
+            if ($liking) {
+                $next = app(\App\Services\Agent\AccountActionBudget::class)->usage($a)['next_allowed_at'];
+                \App\Jobs\LikeInboxItem::dispatch($inboxItem->id)
+                    ->delay($next ? \Illuminate\Support\Carbon::parse($next)->addSeconds(2) : now());
+            }
+            $this->deferContext($inboxItem, 'not_relevant', 'Remerciement ou emojis seuls : '.($liking ? 'like programmé par RS-Max, ' : '').'passer au commentaire suivant.');
+        }
+        if ($tiktok && $inboxItem->posted_at?->lt(now()->subDay())) {
             abort_if($inboxItem->reply_attempts > 0 || $inboxItem->replied_at || $inboxItem->reply_scheduled_at, 409, 'Commentaire déjà tenté ou en cours.');
             $r->attributes->set('community_manager', true);
             try {
@@ -256,8 +269,11 @@ class CommunityManagerInboxController extends Controller
         if ($compact && $followup && count($conversation) < 2) {
             $this->deferContext($inboxItem, 'context_changed', 'Message parent indisponible dans la messagerie.');
         }
-        $addressing = $xThread && filled($a->browser_username)
-            ? \App\Services\Agent\XAddressing::describe($a->browser_username, $conversation, $xThread['target']) : null;
+        $addressing = match (true) {
+            $xThread && filled($a->browser_username) => \App\Services\Agent\XAddressing::describe($a->browser_username, $conversation, $xThread['target']),
+            $tiktok && filled($a->browser_username) => \App\Services\Agent\TikTokAddressing::describe($a->browser_username, $inboxItem),
+            default => null,
+        };
         $context = (string) Str::uuid();
         \Illuminate\Support\Facades\Cache::put('cm-inbox-context:'.$context, ['item_id' => $inboxItem->id,
             'persona_hash' => \App\Models\TikTokEngagement::personaHash($a), 'x_quote_verified' => $xQuote !== null,
@@ -342,7 +358,7 @@ class CommunityManagerInboxController extends Controller
             $r->validate(['reply_text' => 'required|string|max:150']);
         }
         abort_unless(\App\Services\Agent\XAddressing::fits($context['addressing'] ?? null, (string) $r->input('reply_text', '')), 422, \App\Services\Agent\XAddressing::REJECTION);
-        if ($a->platform->slug === 'twitter' && ($broken = \App\Services\Agent\XReplyStyle::violation((string) $r->input('reply_text', ''), $inboxItem->content)) !== null) {
+        if (in_array($a->platform->slug, ['twitter', 'tiktok'], true) && ($broken = \App\Services\Agent\XReplyStyle::violation((string) $r->input('reply_text', ''), $inboxItem->content)) !== null) {
             abort(422, \App\Services\Agent\XReplyStyle::REJECTION.' '.$broken);
         }
         abort_unless(app(CommunityManagerWindow::class)->isOpen(), 423, 'Actions autorisées de 06 h à 22 h à Lisbonne.');

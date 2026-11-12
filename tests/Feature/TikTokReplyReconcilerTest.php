@@ -129,4 +129,23 @@ class TikTokReplyReconcilerTest extends TestCase
         $this->postJson($this->url().'/verify-reply')->assertNotFound();
         Bus::assertNothingDispatched();
     }
+
+    public function test_trois_relectures_au_plus_par_tentative(): void
+    {
+        foreach (range(1, 3) as $n) {
+            BrowserTask::create(['social_account_id' => $this->task->social_account_id, 'profile' => 'nas-test', 'kind' => 'tiktok.verify', 'status' => 'done',
+                'payload' => $this->task->payload + ['action' => 'tiktok.reply', 'source_task_id' => $this->task->id]]);
+        }
+        $this->mock(\App\Services\Browser\BrowserTaskQueue::class)->shouldNotReceive('run');
+        $this->postJson($this->url().'/verify-reply')->assertConflict();
+    }
+
+    public function test_une_reponse_retenue_par_tiktok_ne_declenche_aucune_relecture_differee(): void
+    {
+        $this->task->update(['result' => ['send_clicked' => true, 'submission' => ['comment_status' => 2, 'comment_id' => '7707164140067226400']]]);
+        $this->mock(\App\Services\Browser\BrowserTaskQueue::class)->shouldNotReceive('run');
+        (new \App\Jobs\VerifyTikTokInboxReply($this->item->id))->handle(app(\App\Services\Inbox\TikTokReplyReconciler::class));
+        $this->assertSame('reply_failed', $this->item->fresh()->status);
+        Bus::assertNothingDispatched();
+    }
 }

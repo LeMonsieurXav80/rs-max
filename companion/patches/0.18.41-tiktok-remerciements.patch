@@ -1,0 +1,51 @@
+diff -ruN a/manifest.json b/manifest.json
+--- a/manifest.json	2026-11-12 16:51:31
++++ b/manifest.json	2026-11-12 16:51:31
+@@ -1,7 +1,7 @@
+ {
+   "manifest_version": 3,
+   "name": "RS-Max Companion",
+-  "version": "0.18.40",
++  "version": "0.18.41",
+   "description": "Actions assistees sur les reseaux sociaux (engagement, publication) avec remontee vers l'API RS-Max.",
+   "permissions": [
+     "storage",
+diff -ruN a/tiktok/comments.js b/tiktok/comments.js
+--- a/tiktok/comments.js	2026-11-12 16:51:31
++++ b/tiktok/comments.js	2026-11-12 16:51:31
+@@ -2,7 +2,7 @@
+ (() => {
+   'use strict';
+   if (window.RSTikTokComments) return;
+-  console.info('[rsmax] Commentaires TikTok 0.10.3 — trois opérations et cadence commune.');
++  console.info('[rsmax] Commentaires TikTok 0.10.4 — remerciements aimés sans réponse.');
+   const S = {
+     avatar: '[data-tt="Header_NewHeader_Clickable"]',
+     profile: 'a[data-tt="Header_NewHeader_TUXMenuItem"][href*="/@"]',
+@@ -324,6 +324,12 @@
+         try {
+           draft = await window.RSCommentAPI.call(ctx,'post','/extension/tiktok/suggest',{username,fingerprint,author:item.author,content:item.content,video_context:item.caption,max_length:Math.min(150,input.maxLength>0?input.maxLength:150), ...(inbox ? {browser_task_id: inbox.id} : {conversation})});
+         } catch (e) {
++          if (e.status===409 && /like seulement/i.test(e.message||'')) {
++            // Remerciement ou emojis seuls : RS-Max refuse la réponse, le like suffit.
++            if (action.like && await likeComment(ctx,item,username,true,local)) { done++; ctx.report({action_type:'tt_comment_like',target_author:item.author,success:true}); }
++            else ctx.log(`@${item.author} : remerciement ou emojis seuls, aucune réponse.`);
++            continue;
++          }
+           if (e.status===409) { ctx.log(`@${item.author} ignoré : ${e.message}`, 'warn'); continue; }
+           throw e;
+         }
+diff -ruN a/tiktok/session.js b/tiktok/session.js
+--- a/tiktok/session.js	2026-11-12 16:51:31
++++ b/tiktok/session.js	2026-11-12 16:51:31
+@@ -22,7 +22,9 @@
+     await window.RSMAX.waitFor(()=>document.querySelector(C.S.cell),{timeout:20000});
+     const items=[...document.querySelectorAll(C.S.cell)].slice(0,limit).map(cell=>{
+       const{author,content,caption,replied}=C.snapshot(cell);
+-      return{author,content,caption,replied,liked:C.isLiked(cell),date:C.text(cell.querySelector(C.S.date))||null,avatar:cell.querySelector('img')?.getAttribute('src')||null};
++      // Second lien d’auteur : Studio affiche « auteur ▸ destinataire » pour une réponse.
++      const reply_to=C.handle(cell.querySelectorAll(C.S.author)[1]?.getAttribute('href'))||null;
++      return{author,content,caption,replied,reply_to,liked:C.isLiked(cell),date:C.text(cell.querySelector(C.S.date))||null,avatar:cell.querySelector('img')?.getAttribute('src')||null};
+     });
+     return{status:'done',result:{items}};
+   }

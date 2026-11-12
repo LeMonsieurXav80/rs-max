@@ -56,6 +56,8 @@ class TikTokInboxService implements PlatformInboxInterface
                     'author_username' => $c['author'],
                     'author_avatar_url' => $c['avatar'] ?? null,
                     'author_external_id' => null,
+                    // Studio affiche « auteur ▸ destinataire » quand le commentaire répond à quelqu’un.
+                    'reply_to_username' => is_string($c['reply_to'] ?? null) && preg_match('/^[\w.]{1,64}$/', $c['reply_to']) ? strtolower($c['reply_to']) : null,
                     'content' => $c['content'],
                     'post_content' => $c['caption'],
                     'post_url' => self::COMMENTS_URL,

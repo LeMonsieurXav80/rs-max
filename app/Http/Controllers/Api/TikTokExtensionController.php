@@ -162,6 +162,12 @@ class TikTokExtensionController extends Controller
             abort_if($approvedReply !== null, 422, 'Contexte local inattendu pour une tâche NAS.');
             $last = $conversation[array_key_last($conversation)];
             abort_unless($last['author'] === $data['author'] && $last['content'] === $data['content'], 422, 'Dernier commentaire différent de la cible.');
+        }
+        if ($approvedReply === null && app(InboxFollowup::class)->isAcknowledgement($data['content'])) {
+            // Companion aime le commentaire si la recette l’y autorise, sans répondre.
+            return response()->json(['message' => 'Remerciement ou emojis seuls : like seulement.', 'like_only' => true], 409);
+        }
+        if ($conversation !== null) {
             if (count($conversation) > 1) {
                 $previous = array_slice($conversation, 0, -1);
                 abort_unless(($last['reply_to'] ?? null) === $profile->username
@@ -175,16 +181,33 @@ class TikTokExtensionController extends Controller
             'commentaires_dans_l_ordre_jusqu_a_la_cible' => $conversation,
         ], JSON_UNESCAPED_UNICODE | JSON_THROW_ON_ERROR);
 
-
         return Cache::lock('tt-suggest:'.$profile->id.':'.$data['fingerprint'], 60)->block(2, function () use ($request, $profile, $data, $generator, $approvedReply, $conversation, $context) {
             $existing = DB::table('extension_tiktok_comments')->where('profile_id', $profile->id)->where('fingerprint', $data['fingerprint'])->first();
             $account = $this->account($request, $profile->social_account_id);
-            $generate = fn () => $generator->generate(
-                new InboxItem(['type' => 'comment', 'author_name' => $data['author'], 'content' => $data['content']]),
-                $account, true, $data['max_length'], $context,
-                contextLabel: $conversation === null ? 'de la vidéo' : 'du fil TikTok',
-                orderedConversation: $conversation !== null,
-            );
+            $target = new InboxItem(['type' => 'comment', 'author_name' => $data['author'], 'author_username' => $data['author'],
+                'content' => $data['content'], 'reply_to_username' => $conversation ? ($conversation[array_key_last($conversation)]['reply_to'] ?? null) : null]);
+            $addressing = \App\Services\Agent\TikTokAddressing::describe($profile->username, $target);
+            $generate = function () use ($generator, $target, $account, $data, $context, $conversation, $addressing) {
+                // Mêmes règles que les réponses d’Hermès : une reformulation, puis aucun brouillon.
+                $feedback = null;
+                foreach ([1, 2] as $_) {
+                    $reply = $generator->generate($target, $account, true, $data['max_length'], $context,
+                        contextLabel: $conversation === null ? 'de la vidéo' : 'du fil TikTok',
+                        orderedConversation: $conversation !== null,
+                        extraInstructions: trim($addressing['consigne'].' '.$feedback));
+                    $reply = is_string($reply) ? trim($reply) : null;
+                    if (blank($reply)) {
+                        return null;
+                    }
+                    $broken = \App\Services\Agent\XReplyStyle::violation($reply, $data['content'])
+                        ?? (\App\Services\Agent\XAddressing::fits($addressing['role'], $reply) ? null : \App\Services\Agent\XAddressing::REJECTION);
+                    if ($broken === null) {
+                        return $reply;
+                    }
+                    $feedback = 'Le brouillon précédent ne respectait pas cette règle : '.$broken.' Reformule.';
+                }
+                abort(422, \App\Services\Agent\XReplyStyle::REJECTION);
+            };
             if ($existing) {
                 abort_unless($existing->persona_hash === $this->personaHash($account), 409, 'Persona modifié depuis la préparation : vérifier le brouillon.');
                 abort_unless($existing->status === 'prepared', 409, 'Envoi déjà tenté : vérifier TikTok avant toute reprise.');

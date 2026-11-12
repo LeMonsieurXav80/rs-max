@@ -14,6 +14,8 @@ use Illuminate\Support\Str;
 /** Relecture d'une réponse incertaine : aucun second clic d'envoi. */
 class TikTokReplyReconciler
 {
+    public const MAX_VERIFICATIONS = 3;
+
     private function original(InboxItem $item): BrowserTask
     {
         abort_unless($item->socialAccount->usesBrowser() && $item->platform->slug === 'tiktok' && filled($item->reply_content), 422);
@@ -26,9 +28,18 @@ class TikTokReplyReconciler
         return $task;
     }
 
+    /** Code 2 au reçu d’envoi : sur 6 jours (environ 30 cas), TikTok n’a jamais publié la réponse. */
+    public function withheld(InboxItem $item): bool
+    {
+        return (int) ($this->original($item)->result['submission']['comment_status'] ?? 0) === 2;
+    }
+
     public function verify(InboxItem $item): array
     {
         $task = $this->original($item);
+        // Chaque relecture occupe le profil Companion partagé plus d’une minute.
+        abort_if(BrowserTask::where('social_account_id', $item->social_account_id)->where('kind', 'tiktok.verify')
+            ->where('payload->source_task_id', $task->id)->count() >= self::MAX_VERIFICATIONS, 409, 'Relectures épuisées pour cette tentative : aucun renvoi.');
         $nonce = (string) Str::uuid();
         $payload = array_merge($task->payload, ['action' => 'tiktok.reply', 'source_task_id' => $task->id, 'verification_nonce' => $nonce, 'submission' => $task->result['submission'] ?? null]);
         $result = app(BrowserTaskQueue::class)->run($item->socialAccount, 'tiktok.verify', $payload, 180);

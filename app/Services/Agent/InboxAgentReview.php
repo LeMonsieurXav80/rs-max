@@ -65,7 +65,8 @@ class InboxAgentReview
 
     public function defer(InboxItem $item, string $reason): void
     {
-        $minutes = match ($reason) {
+        // Deux fois introuvable dans Studio : chaque recherche coûte environ 20 s de file partagée.
+        $minutes = $reason === 'tiktok_target_not_found' && $item->agent_review_reason === $reason ? 10080 : match ($reason) {
             'already_handled', 'not_relevant' => 10080,
             'tiktok_target_not_found', 'x_target_not_found', 'x_context_changed', self::MISSING_FACTS => 360,
             'context_changed' => 30,

@@ -20,6 +20,7 @@ class InboxItem extends Model
         'author_username',
         'author_avatar_url',
         'author_external_id',
+        'reply_to_username',
         'content',
         'media_url',
         'media_type',

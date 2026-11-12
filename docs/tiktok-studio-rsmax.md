@@ -18,3 +18,25 @@ Appliquer `companion/patches/0.18.9-tiktok-preuve-publique.patch` sur 0.18.8. La
 Appliquer `companion/patches/0.18.10-tiktok-comptes-cibles.patch` sur 0.18.9. L’action `feed.read` accepte `feed: targets` et un `target` facultatif. Le profil doit figurer dans les comptes cibles du compte TikTok associé. Sans profil explicite, RS-Max prend le premier compte cible valide. Companion relève jusqu’à dix vidéos publiques du profil sur le NAS.
 
 Pour Hermès, envoyer ces paramètres à `POST /api/community-manager/read` avec `account_id` et `action: feed.read`. Lire les commentaires d’une vidéo avec `action: video.comments`, puis consulter jusqu’à vingt-cinq entrées avec `GET /api/community-manager/snapshots/{id}?limit=25`. Le client propose aussi `discover` et `snapshot`. Un like demande une préparation puis une exécution explicite. Vérifier la preuve `after_reload` et conserver un like déjà présent.
+
+## Community manager TikTok — règles de X (12 novembre 2026)
+
+Hermès répond seul aux commentaires reçus par le compte TikTok, du plus ancien au plus récent, avec le persona du compte, la légende, les échanges connus et les sources du Vault rattachées (`vault`). Companion local (Mac), le NAS et un VPS appliquent les mêmes règles, vérifiées par RS-Max.
+
+| Règle | Où elle est appliquée |
+| --- | --- |
+| Emojis, autocollants (`[J'aime]`) ou simple merci, sans question : like, jamais de réponse | `reply-context` (avant toute lecture Studio, `skip_item` + `not_relevant`, like programmé) ; `/extension/tiktok/suggest` répond 409 `like_only` et Companion 0.18.41 aime le commentaire si la recette l’autorise |
+| Relance sous la réponse du compte sans question : like | `reply-context`, d’après `reply_to_username` |
+| Adressage : `interpelle` (commentaire sous la vidéo ou réponse au compte), `participant` (réponse à quelqu’un d’autre) | `TikTokAddressing`, dans `addressing` ; un remerciement en `participant` est refusé (422) |
+| Aucun emoji de cœur, de bisou ou de rose, aucune question finale sans question reçue | `XReplyStyle` : `reply` (422), suggestion locale (une reformulation puis 422), commentaires de vidéos (`prepare`, générateur) |
+| Pas de relecture inutile | 3 relectures `tiktok.verify` au plus par tentative ; aucune relecture différée si le reçu porte `comment_status` 2 ; un ancien commentaire introuvable deux fois dans Studio est écarté 7 jours |
+
+**`comment_status` au reçu d’envoi.** 7 est le code normal. 2 n’a jamais été confirmé sur six jours (environ 30 cas, souvent des « Merci, c’est gentil 😊 » répétés) : TikTok retient la réponse. Elle reste verrouillée (`reply_failed`, 3 tentatives), sans relecture ni renvoi.
+
+**`reply_to_username`.** Companion 0.18.41 lit le second lien d’auteur d’une ligne Studio (« auteur ▸ destinataire »). Sans lui, un commentaire est considéré comme adressé au compte.
+
+### Incident du 12 novembre : file TikTok arrêtée
+
+La gateway Hermès a été redémarrée par son watchdog à 11 h 21 (heure de Paris), le VPS étant en swap. Le cycle TikTok en cours est devenu « inconnu » et l’ordonnanceur l’a mis en pause (`Canonical cron unknown; no automatic re-execution`), sans alerte : aucune réponse de 11 h 27 à 17 h 45. RS-Max, la session et la file `nas-wildycaro` étaient sains (attente moyenne 7 s). Le moniteur X (`rsmax_x_watch.py`, toutes les 2 minutes) relance désormais une file `RS-Max — File …` en pause pour ce motif depuis plus de 5 minutes ; RS-Max reste juge des doublons (tentatives verrouillées, réservations).
+
+Diagnostic d’une file muette : `enabled`, `state` et `paused_reason` des jobs dans `cron/jobs.json` du profil Hermès, puis `docker logs … | grep "missed 3 consecutive liveness"`, avant de soupçonner RS-Max ou l’agent.

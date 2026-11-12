@@ -63,6 +63,21 @@ class InboxFollowup
             .')\b~iu', $text);
     }
 
+    /**
+     * Emojis, autocollants TikTok (« [J'aime] ») ou simple merci : rien à quoi répondre, un like suffit.
+     * Le 12/11/2026, Wildy Caro répondait « Merci, c’est gentil 😊 » à « 😍😍😍 », et TikTok retenait ces réponses.
+     */
+    public function isAcknowledgement(?string $content): bool
+    {
+        if ($this->isQuestion($content)) {
+            return false;
+        }
+        $text = preg_replace('/\[[^\]\n]{1,40}\]|@[\w.]+|[\p{So}\p{Sk}\p{Cs}\p{Mn}\x{FE0F}\x{200D}\x{20E3}\x{1F3FB}-\x{1F3FF}]/u', ' ', (string) $content);
+        $text = trim(preg_replace('/[\s\p{P}]+/u', ' ', mb_strtolower($text)));
+
+        return $text === '' || (bool) preg_match('/^(?:(?:un )?(?:grand |gros )?merci(?: beaucoup| bcp| à toi| a toi| à vous| a vous| infiniment)?|mercii+|thanks?(?: a lot| so much)?|thank you(?: so much)?|thx|ty|obrigad[oa]|gracias|grazie|danke(?: schön)?|dank je wel|dankjewel|bedankt|спасибо)$/u', $text);
+    }
+
     private function handle(string $value): string
     {
         return strtolower(ltrim(trim($value), '@'));

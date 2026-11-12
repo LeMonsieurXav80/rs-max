@@ -27,6 +27,7 @@ class VerifyTikTokInboxReplyTest extends TestCase
         Queue::fake();
         $item = $this->item();
         $service = $this->mock(TikTokReplyReconciler::class);
+        $service->shouldReceive('withheld')->andReturnFalse();
         $service->shouldReceive('verify')->once()->withArgs(fn ($i) => $i->id === $item->id)->andReturn(['verification_task_id' => 42, 'result' => ['confirmed' => true]]);
         $service->shouldReceive('reconcile')->once()->withArgs(fn ($i, $proof, $dry) => $i->id === $item->id && $proof === 42 && $dry === false)->andReturn(['success' => true]);
         (new VerifyTikTokInboxReply($item->id))->handle($service);
@@ -40,6 +41,7 @@ class VerifyTikTokInboxReplyTest extends TestCase
         Queue::fake();
         $item = $this->item();
         $service = $this->mock(TikTokReplyReconciler::class);
+        $service->shouldReceive('withheld')->andReturnFalse();
         $service->shouldReceive('verify')->twice()->andReturn(['verification_task_id' => 42, 'result' => ['confirmed' => false]]);
         $service->shouldNotReceive('reconcile');
         (new VerifyTikTokInboxReply($item->id))->handle($service);
@@ -75,6 +77,7 @@ class VerifyTikTokInboxReplyTest extends TestCase
         Queue::fake();
         $item = $this->item();
         $service = $this->mock(TikTokReplyReconciler::class);
+        $service->shouldReceive('withheld')->andReturnFalse();
         $service->shouldNotReceive('verify');
         $item->update(['replied_at' => now(), 'status' => 'replied']);
         (new VerifyTikTokInboxReply($item->id))->handle($service);

@@ -216,8 +216,49 @@ def snapshot(client, now=None, lane=None):
     return {'state':'work','cycle_key':int(now.timestamp())//cycle_seconds,'accounts':work,'priority_threads':explorations,'priority_x':x_explorations,'priority_x_follow':x_follows,'priority_tiktok':tiktok_explorations} if work or x_explorations or x_follows or tiktok_explorations else {'state':'idle'}
 
 
+PAUSE_UNKNOWN = 'Canonical cron unknown; no automatic re-execution'
+RESUME_AFTER = dt.timedelta(minutes=5)
+
+
+def resume_stalled_lanes(home, now=None):
+    """Relance une file RS-Max mise en pause par un redémarrage de la gateway.
+
+    Le 12/11/2026, la file TikTok est restée arrêtée six heures après le redémarrage du watchdog :
+    l'ordonnanceur refuse de rejouer un tir à l'issue inconnue et n'alerte personne. Seule la
+    planification reprend ; RS-Max reste juge des doublons (tentatives verrouillées, réservations).
+    """
+    import shutil
+    import subprocess
+    now = now or dt.datetime.now(dt.timezone.utc)
+    try:
+        jobs = json.loads((home/'cron'/'jobs.json').read_text()).get('jobs', [])
+    except (OSError, ValueError):
+        return []
+    resumed = []
+    for job in jobs:
+        if not str(job.get('name', '')).startswith('RS-Max — File') or job.get('state') != 'paused' or job.get('paused_reason') != PAUSE_UNKNOWN:
+            continue
+        try:
+            paused_at = dt.datetime.fromisoformat(job['paused_at'])
+        except (KeyError, TypeError, ValueError):
+            continue
+        if now - paused_at < RESUME_AFTER:
+            continue
+        hermes = shutil.which('hermes') or '/opt/hermes/bin/hermes'
+        done = subprocess.run([hermes, 'cron', 'resume', job['id']], env={**os.environ, 'HERMES_HOME': str(home)},
+                              capture_output=True, text=True, timeout=60)
+        if done.returncode == 0:
+            resumed.append(job['id'])
+    return resumed
+
+
 def main(lane=None):
     home = Path(os.environ.get('HERMES_HOME', '~/.hermes')).expanduser()
+    if lane == 'x':
+        try:
+            resume_stalled_lanes(home)
+        except Exception:  # noqa: BLE001 — la prélecture X ne doit jamais tomber pour ce contrôle annexe
+            pass
     client = Client(json.loads((home/'community-manager.json').read_text()))
     try:
         print(json.dumps(snapshot(client, lane=lane), ensure_ascii=False, sort_keys=True, separators=(',', ':')))

@@ -370,3 +370,26 @@ class ReportScheduleTest(unittest.TestCase):
         self.assertIsNone(module.report_arguments(dt.datetime.fromisoformat('2026-11-07T07:00:00+00:00')))
         self.assertIn('--scheduled',module.report_arguments(dt.datetime.fromisoformat('2026-07-07T07:00:00+00:00')))
         self.assertIsNone(module.report_arguments(dt.datetime.fromisoformat('2026-07-07T08:00:00+00:00')))
+
+class ResumeStalledLanesTest(unittest.TestCase):
+    def jobs(self, tmp, jobs):
+        import json
+        (tmp/'cron').mkdir(); (tmp/'cron'/'jobs.json').write_text(json.dumps({'jobs':jobs}))
+
+    def test_seule_une_file_rsmax_en_pause_inconnue_depuis_cinq_minutes_est_relancee(self):
+        import tempfile
+        from unittest.mock import patch
+        now=dt.datetime.fromisoformat('2026-11-12T10:30:00+00:00')
+        with tempfile.TemporaryDirectory() as d:
+            tmp=Path(d)
+            self.jobs(tmp,[
+                {'id':'tt','name':'RS-Max — File TikTok','state':'paused','paused_reason':watch.PAUSE_UNKNOWN,'paused_at':'2026-11-12T10:23:44+00:00'},
+                {'id':'frais','name':'RS-Max — File API','state':'paused','paused_reason':watch.PAUSE_UNKNOWN,'paused_at':'2026-11-12T10:28:00+00:00'},
+                {'id':'humain','name':'RS-Max — File Threads','state':'paused','paused_reason':None,'paused_at':'2026-11-12T09:00:00+00:00'},
+                {'id':'autre','name':'Community Manager TikTok','state':'paused','paused_reason':watch.PAUSE_UNKNOWN,'paused_at':'2026-11-12T09:00:00+00:00'},
+            ])
+            with patch('subprocess.run') as run:
+                run.return_value.returncode=0
+                self.assertEqual(watch.resume_stalled_lanes(tmp,now),['tt'])
+            self.assertEqual(run.call_args.args[0][-3:],['cron','resume','tt'])
+            self.assertEqual(run.call_args.kwargs['env']['HERMES_HOME'],str(tmp))

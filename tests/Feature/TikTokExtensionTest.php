@@ -228,4 +228,18 @@ class TikTokExtensionTest extends TestCase
         $this->postJson('/api/extension/tiktok/suggest', $this->payload())->assertUnprocessable();
         $this->assertSame(0, DB::table('extension_tiktok_comments')->count());
     }
+
+    public function test_un_remerciement_local_est_reserve_au_like_et_le_style_x_s_applique(): void
+    {
+        $this->bind();
+        $data = ['content' => '😍😍😍[J\'aime]'] + $this->payload();
+        $this->postJson('/api/extension/tiktok/suggest', $data)->assertConflict()->assertJsonPath('like_only', true);
+        $this->assertSame(0, \Illuminate\Support\Facades\DB::table('extension_tiktok_comments')->count());
+
+        $this->aiReply = 'Merci, tu es adorable 🥰';
+        $data = ['fingerprint' => hash('sha256', 'style')] + $this->payload();
+        $this->postJson('/api/extension/tiktok/suggest', $data)->assertUnprocessable();
+        Http::assertSentCount(2);
+        $this->assertSame(0, \Illuminate\Support\Facades\DB::table('extension_tiktok_comments')->count());
+    }
 }

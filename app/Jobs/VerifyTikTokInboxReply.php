@@ -34,6 +34,11 @@ class VerifyTikTokInboxReply implements ShouldQueue
                 return;
             }
             try {
+                if ($reconciler->withheld($item)) {
+                    Log::notice('TikTok : réponse retenue au reçu (code 2), aucune relecture différée', ['item_id' => $item->id]);
+
+                    return;
+                }
                 $proof = $reconciler->verify($item);
                 if (($proof['result']['confirmed'] ?? false) === true) {
                     $reconciler->reconcile($item, $proof['verification_task_id'], false);
