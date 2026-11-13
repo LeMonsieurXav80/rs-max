@@ -57,7 +57,8 @@ class CommunityManagerInboxTest extends TestCase
         Sanctum::actingAs($u);
         $i = InboxItem::create(['social_account_id' => $a->id, 'platform_id' => $a->platform_id, 'type' => 'comment', 'external_id' => 'comment-1', 'content' => 'Très jolie paire !', 'post_content' => 'Nouvelle vidéo', 'status' => 'unread', 'posted_at' => now()]);
         $this->getJson('/api/community-manager/accounts/'.$a->id.'/inbox')->assertOk()->assertJsonPath('items.0.post_content', 'Nouvelle vidéo');
-        $ctx = $this->getJson('/api/community-manager/inbox/'.$i->id.'/context')->assertOk()->assertJsonPath('persona.instructions', 'Ton chaleureux et sobre')->json('context_id');
+        $ctx = $this->getJson('/api/community-manager/inbox/'.$i->id.'/context')->assertOk()->assertJsonPath('persona.instructions', 'Ton chaleureux et sobre')
+            ->assertJsonPath('posted_at', $i->posted_at->toIso8601String())->json('context_id');
         $data = ['context_id' => $ctx, 'reply_text' => 'Merci beaucoup !'];
         $url = '/api/community-manager/inbox/'.$i->id.'/reply';
         $this->postJson($url, $data)->assertOk()->assertJsonPath('dry_run', true);
