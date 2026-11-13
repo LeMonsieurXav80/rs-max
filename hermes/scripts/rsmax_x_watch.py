@@ -5,6 +5,7 @@ import json
 import os
 from pathlib import Path
 from urllib.parse import urlencode
+from zoneinfo import ZoneInfo
 from community_manager import Client, daytime, pending_inbox_order
 
 LANES = {
@@ -201,7 +202,7 @@ def snapshot(client, now=None, lane=None):
             if tiktok and lane:
                 reply_limit = min(TIKTOK_MAX_REPLIES, len(items), actions.get('reply', {}).get('left', 0))
             work.append({'platform':account['platform'], 'account_id':account['id'], 'strategy':account.get('strategy', {}), 'items':items,
-                         'persona':account.get('persona'),'auto_like':auto_like,'executor':'api' if api else 'browser', 'threads_discovery':threads_discovery, 'discovery_plan':discovery_plan, 'remaining':cadence.get('remaining'), 'daily_remaining':cadence.get('daily', {}).get('remaining'), 'batch_max':min(reply_limit, max(1, ((cadence.get('remaining') if cadence.get('remaining') is not None else 11) - hourly_reserve)//steps), max(1, ((cadence.get('daily', {}).get('remaining') if cadence.get('daily', {}).get('remaining') is not None else 11) - daily_reserve)//steps)), 'next_publication_at':upcoming})
+                         'persona':account.get('persona'),'auto_like':auto_like,'executor':'api' if api else 'browser', 'threads_discovery':threads_discovery, 'discovery_plan':'priority_threads' if discovery_plan else None, 'remaining':cadence.get('remaining'), 'daily_remaining':cadence.get('daily', {}).get('remaining'), 'batch_max':min(reply_limit, max(1, ((cadence.get('remaining') if cadence.get('remaining') is not None else 11) - hourly_reserve)//steps), max(1, ((cadence.get('daily', {}).get('remaining') if cadence.get('daily', {}).get('remaining') is not None else 11) - daily_reserve)//steps)), 'next_publication_at':upcoming})
             if discovery_plan:
                 explorations.append(discovery_plan)
     discovery_first=[a for a in work if a['threads_discovery']]
@@ -213,7 +214,10 @@ def snapshot(client, now=None, lane=None):
     if lane:
         work = [a for a in work if a['items'] or a['discovery_plan'] or any(p['account_id'] == a['account_id'] for p in x_explorations + x_follows + tiktok_explorations)]
     cycle_seconds = 120 if lane == 'x' else 300
-    return {'state':'work','cycle_key':int(now.timestamp())//cycle_seconds,'accounts':work,'priority_threads':explorations,'priority_x':x_explorations,'priority_x_follow':x_follows,'priority_tiktok':tiktok_explorations} if work or x_explorations or x_follows or tiktok_explorations else {'state':'idle'}
+    # L'heure locale évite au modèle un appel `date` ; elle ne change le hachage que dans l'état work,
+    # que cycle_key fait déjà changer à chaque créneau.
+    local = now.astimezone(ZoneInfo('Europe/Lisbon')).strftime('%Y-%m-%d %H:%M')
+    return {'state':'work','now_lisbon':local,'cycle_key':int(now.timestamp())//cycle_seconds,'accounts':work,'priority_threads':explorations,'priority_x':x_explorations,'priority_x_follow':x_follows,'priority_tiktok':tiktok_explorations} if work or x_explorations or x_follows or tiktok_explorations else {'state':'idle'}
 
 
 PAUSE_UNKNOWN = 'Canonical cron unknown; no automatic re-execution'

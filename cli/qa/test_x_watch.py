@@ -282,6 +282,9 @@ class XWatchTest(unittest.TestCase):
         self.assertEqual(r['priority_threads'][0]['persona'],5)
         self.assertTrue(r['priority_threads'][0]['reserve_for_inbox'])
         self.assertTrue(r['accounts'][0]['items'])
+        # Le plan n'est transmis qu'une fois : la fiche du compte y renvoie.
+        self.assertEqual(r['accounts'][0]['discovery_plan'],'priority_threads')
+        self.assertEqual(r['now_lisbon'],'2026-11-08 12:00')
 
     def test_threads_ne_recherche_pas_a_nouveau_avant_quinze_minutes_et_garde_inbox(self):
         a=self.account();a.update(platform='threads',driver='api',api_ready=True,persona=5,strategy={'search_queries':['style']})

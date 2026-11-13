@@ -392,4 +392,34 @@ class CommunityManagerInboxTest extends TestCase
         $this->assertSame($updated['text'], $item->fresh()->content);
         $this->assertSame(0, (int) $item->fresh()->reply_attempts);
     }
+
+    public function test_un_commentaire_lu_trois_fois_sans_decision_est_ecarte_six_heures(): void
+    {
+        $this->travelTo(\Illuminate\Support\Carbon::parse('2026-11-13T10:00:00Z')->setTimezone(config('app.timezone')));
+        Http::preventStrayRequests();
+        $user = User::factory()->create(['role' => 'manager']);
+        $persona = Persona::create(['name' => 'Voix', 'system_prompt' => 'Répondre simplement', 'is_active' => true]);
+        $platform = Platform::firstOrCreate(['slug' => 'instagram'], ['name' => 'Instagram']);
+        $account = SocialAccount::create(['name' => 'Compte', 'platform_id' => $platform->id, 'persona_id' => $persona->id,
+            'driver' => 'api', 'credentials' => ['access_token' => 'test']]);
+        $account->users()->attach($user, ['is_active' => true]);
+        $account->agentActions()->create(['action' => 'reply', 'enabled' => true, 'daily_limit' => 5]);
+        Sanctum::actingAs($user, ['community-manager']);
+        $item = InboxItem::create(['social_account_id' => $account->id, 'platform_id' => $platform->id, 'type' => 'comment',
+            'status' => 'unread', 'author_username' => 'lecteur', 'post_content' => 'La publication',
+            'external_id' => 'compliment', 'content' => 'Je t’aime beaucoup', 'posted_at' => now()->subMinutes(5)]);
+
+        $path = "/api/community-manager/accounts/{$account->id}/inbox/contexts";
+        foreach (range(1, 3) as $read) {
+            $this->getJson($path)->assertOk()->assertJsonPath('items.0.item_id', $item->id);
+        }
+        $this->getJson("/api/community-manager/inbox/{$item->id}/context")
+            ->assertConflict()->assertJsonPath('skip_item', true)->assertJsonPath('review_reason', 'agent_no_decision');
+        $item->refresh();
+        $this->assertSame(360, (int) $item->agent_reviewed_at->diffInMinutes($item->agent_retry_at));
+        $this->getJson($path)->assertOk()->assertJsonCount(0, 'items');
+        $this->getJson("/api/community-manager/accounts/{$account->id}/inbox?agent_queue=1")->assertOk()->assertJsonPath('pagination.total', 0);
+        $this->assertSame(0, (int) $item->reply_attempts);
+        Http::assertNothingSent();
+    }
 }

@@ -20,6 +20,10 @@ use Illuminate\Validation\Rule;
 
 class CommunityManagerInboxController extends Controller
 {
+    private const READS_KEY = 'cm-inbox-context-reads:';
+
+    private const MAX_READS_WITHOUT_DECISION = 3;
+
     private function account(Request $r, int $id): SocialAccount
     {
         abort_unless($r->user()->isManager(), 403);
@@ -152,6 +156,11 @@ class CommunityManagerInboxController extends Controller
         }
         $this->checkMissingFacts($inboxItem);
         abort_unless($a->persona?->is_active && filled($a->persona->system_prompt), 422, 'Persona actif requis.');
+        // Le 13/11/2026, un compliment séducteur sur Threads a été relu toutes les cinq minutes pendant
+        // des heures : l'agent s'abstenait sans enregistrer review, à environ 70 000 jetons par réveil.
+        if ((int) \Illuminate\Support\Facades\Cache::get(self::READS_KEY.$inboxItem->id, 0) >= self::MAX_READS_WITHOUT_DECISION) {
+            $this->deferContext($inboxItem, InboxAgentReview::NO_DECISION, 'Contexte déjà lu trois fois sans réponse : écarté six heures. Passer au suivant.');
+        }
 
         if ($policy->isOwn($inboxItem, $a)) {
             $this->deferContext($inboxItem, 'already_handled', 'Commentaire du compte lui-même : passer au suivant.');
@@ -296,6 +305,8 @@ class CommunityManagerInboxController extends Controller
         \Illuminate\Support\Facades\Cache::put('cm-inbox-context:'.$context, ['item_id' => $inboxItem->id,
             'persona_hash' => \App\Models\TikTokEngagement::personaHash($a), 'x_quote_verified' => $xQuote !== null,
             'addressing' => $addressing['role'] ?? null, 'emoji_only' => $emojiOnly = $inboxItem->type !== 'dm' && $policy->isEmojiOnly($inboxItem->content)], now()->addMinutes(15));
+        \Illuminate\Support\Facades\Cache::add(self::READS_KEY.$inboxItem->id, 0, now()->addHours(3));
+        \Illuminate\Support\Facades\Cache::increment(self::READS_KEY.$inboxItem->id);
 
         $vault = $inboxItem->type === 'dm' || blank($inboxItem->content) && $xQuote === null ? null
             : app(\App\Services\Agent\XReplyVault::class)->search($a, filled($inboxItem->content) ? (string) $inboxItem->content : $xQuote, $postText);

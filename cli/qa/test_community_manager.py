@@ -188,4 +188,44 @@ class CommunityManagerTest(unittest.TestCase):
                 cm.main(args+['--commit','--rehearse','--request-key','00000000-0000-4000-8000-000000000000'])
                 self.assertFalse(api.call_args.args[2]['dry_run']);self.assertTrue(api.call_args.args[2]['rehearse'])
 
+    def test_accounts_et_strategy_compacts_par_defaut_complets_sur_demande(self):
+        import json,io,contextlib
+        catalog={'daytime':True,'accounts':[
+            {'id':7,'platform':'twitter','actions':{'reply':{'label':'Répondre','kind':'write','left':3}},
+             'cadence':{'remaining':5,'adaptation':{'policy':'x','state':'stable','history':[1,2]}},'hourly_history':[1]},
+            {'id':63,'platform':'tiktok','actions':{},'cadence':{}}]}
+        with tempfile.TemporaryDirectory() as tmp:
+            config=Path(tmp)/'config.json';config.write_text(json.dumps({'state_path':tmp+'/state.sqlite'}))
+            def run(*extra):
+                out=io.StringIO()
+                with patch.object(cm.Client,'api',return_value=catalog),contextlib.redirect_stdout(out):
+                    cm.main(['--config',str(config),'accounts',*extra])
+                return json.loads(out.getvalue())
+            compact=run('--platform','twitter')
+            self.assertEqual([a['id'] for a in compact['accounts']],[7])
+            self.assertEqual(compact['accounts'][0]['actions']['reply'],{'left':3})
+            self.assertEqual(compact['accounts'][0]['cadence'],{'remaining':5,'adaptation':{'policy':'x','state':'stable'}})
+            self.assertNotIn('hourly_history',compact['accounts'][0])
+            self.assertEqual(run('--full'),catalog)
+
+    def test_persona_transmis_une_fois_par_session_hermes(self):
+        import json,io,contextlib
+        context={'context_id':'c1','persona':{'instructions':'Ton chaleureux'}}
+        with tempfile.TemporaryDirectory() as tmp:
+            config=Path(tmp)/'config.json';config.write_text(json.dumps({'state_path':tmp+'/state.sqlite'}))
+            def run(session,*extra):
+                out=io.StringIO()
+                env={'HERMES_SESSION_ID':session} if session else {}
+                with patch.dict(cm.os.environ,env,clear=False),patch.object(cm,'daytime',return_value=True),\
+                     patch.object(cm.Client,'api',return_value=context),contextlib.redirect_stdout(out):
+                    if not session: cm.os.environ.pop('HERMES_SESSION_ID',None)
+                    cm.main(['--config',str(config),'reply-context','12',*extra])
+                return json.loads(out.getvalue())['persona']
+            self.assertEqual(run('s1')['instructions'],'Ton chaleureux')
+            again=run('s1')
+            self.assertTrue(again['same_as_previous']);self.assertNotIn('instructions',again)
+            self.assertEqual(run('s1','--full-persona'),{'instructions':'Ton chaleureux'})
+            self.assertEqual(run('s2')['instructions'],'Ton chaleureux')
+            self.assertEqual(run(None),{'instructions':'Ton chaleureux'})
+
 if __name__=='__main__': unittest.main()

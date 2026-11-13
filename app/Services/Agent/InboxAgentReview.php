@@ -11,6 +11,9 @@ class InboxAgentReview
 {
     public const MISSING_FACTS = 'missing_facts';
 
+    /** Contexte servi plusieurs fois sans réponse ni review : l'agent s'abstient sans le dire. */
+    public const NO_DECISION = 'agent_no_decision';
+
     public function eligible(Builder $query, CarbonInterface $now): Builder
     {
         return $query->where(fn (Builder $review) => $review
@@ -68,7 +71,7 @@ class InboxAgentReview
         // Deux fois introuvable dans Studio : chaque recherche coûte environ 20 s de file partagée.
         $minutes = $reason === 'tiktok_target_not_found' && $item->agent_review_reason === $reason ? 10080 : match ($reason) {
             'already_handled', 'not_relevant' => 10080,
-            'tiktok_target_not_found', 'x_target_not_found', 'x_context_changed', self::MISSING_FACTS => 360,
+            'tiktok_target_not_found', 'x_target_not_found', 'x_context_changed', self::MISSING_FACTS, self::NO_DECISION => 360,
             'context_changed' => 30,
             default => 15,
         };

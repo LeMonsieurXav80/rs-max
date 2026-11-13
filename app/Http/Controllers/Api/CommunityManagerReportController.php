@@ -16,7 +16,7 @@ class CommunityManagerReportController extends Controller
     {
         abort_unless($r->user()->isManager(), 403);
         $v = $r->validate(['hours' => 'sometimes|integer|min:1|max:48', 'note' => 'nullable|string|max:600',
-            'dry_run' => 'sometimes|boolean', 'report_key' => 'nullable|uuid']);
+            'dry_run' => 'sometimes|boolean', 'report_key' => 'nullable|uuid', 'agent_cost' => 'nullable|string|max:400']);
         $hours = $v['hours'] ?? 24;
         $since = now()->subHours($hours);
         $accounts = $r->user()->connectedSocialAccounts()->with('platform')->get();
@@ -51,6 +51,10 @@ class CommunityManagerReportController extends Controller
         }
         if (! empty($v['note'])) {
             $text .= "\n\nConstat · ".app(AutomationJournal::class)->text($v['note'], 300);
+        }
+        if (! empty($v['agent_cost'])) {
+            // Mesuré par Hermès (cron/usage_audit.jsonl) : RS-Max ne voit pas les jetons du modèle.
+            $text .= "\n\nCoût agent · ".app(AutomationJournal::class)->text($v['agent_cost'], 400);
         }
         $data = ['hours' => $hours, 'accounts' => $rows, 'text' => $text];
         if ($r->isMethod('get') || $r->boolean('dry_run', true)) {

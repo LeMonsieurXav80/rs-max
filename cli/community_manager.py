@@ -24,6 +24,23 @@ def pending_inbox_order(platform):
     return 'oldest' if platform == 'tiktok' else 'newest'
 
 
+PERSONA_COMMANDS = ('reply-context', 'reply-contexts', 'x-context', 'threads-context', 'comment-context')
+
+
+def compact_catalog(value, key=None):
+    """Vue courante de accounts et strategy : chaque appel d'outil renvoie tout le contexte au modèle.
+
+    Le 13/11/2026, accounts pesait 13 % des jetons d'un réveil. L'historique horaire, celui des paliers
+    et les libellés d'actions ne servent qu'au diagnostic : --full les rend.
+    """
+    if isinstance(value, list):
+        return [compact_catalog(v) for v in value]
+    if not isinstance(value, dict):
+        return value
+    drop = {'hourly_history'} | ({'history'} if key == 'adaptation' else set()) | ({'label', 'kind'} if key == 'action' else set())
+    return {k: compact_catalog(v, 'action' if key == 'actions' else k) for k, v in value.items() if k not in drop}
+
+
 class ApiError(RuntimeError):
     def __init__(self, status, payload):
         self.status, self.payload = status, payload
@@ -39,7 +56,29 @@ class Client:
         self.db.execute('CREATE TABLE IF NOT EXISTS attempts(id INTEGER PRIMARY KEY, state TEXT NOT NULL, updated_at TEXT NOT NULL)')
         self.db.execute('CREATE TABLE IF NOT EXISTS x_attempts(id INTEGER PRIMARY KEY, state TEXT NOT NULL, updated_at TEXT NOT NULL)')
         self.db.execute('CREATE TABLE IF NOT EXISTS reports(id TEXT PRIMARY KEY, state TEXT NOT NULL, updated_at TEXT NOT NULL)')
+        self.db.execute('CREATE TABLE IF NOT EXISTS personas_sent(session TEXT NOT NULL, sha TEXT NOT NULL, at TEXT NOT NULL, PRIMARY KEY(session, sha))')
         self.db.commit()
+
+    def persona_once(self, result, session):
+        """Un persona déjà transmis dans la même session Hermès est remplacé par un renvoi.
+
+        Le modèle l'a déjà dans son contexte ; le renvoyer à chaque reply-context le faisait payer
+        une fois par appel suivant. Une autre session (autre réveil, mission) le reçoit en entier.
+        """
+        persona = result.get('persona') if isinstance(result, dict) else None
+        if not session or not isinstance(persona, dict) or not persona.get('instructions'):
+            return result
+        import hashlib
+        sha = hashlib.sha256(persona['instructions'].encode()).hexdigest()[:16]
+        now = dt.datetime.now(dt.timezone.utc)
+        self.db.execute('DELETE FROM personas_sent WHERE at < ?', ((now - dt.timedelta(days=2)).isoformat(),))
+        seen = self.db.execute('SELECT 1 FROM personas_sent WHERE session=? AND sha=?', (session, sha)).fetchone()
+        self.db.execute('INSERT OR IGNORE INTO personas_sent VALUES(?,?,?)', (session, sha, now.isoformat()))
+        self.db.commit()
+        if not seen:
+            return {**result, 'persona': {**persona, 'sha': sha}}
+        return {**result, 'persona': {'same_as_previous': True, 'sha': sha,
+                                      'note': 'Persona identique à celui déjà reçu dans ce réveil : le réutiliser tel quel.'}}
 
     def api(self, method, path, data=None, *, timeout=125):
         cmd = ['curl', '--silent', '--show-error', '--max-time', str(timeout), '--config', '-', '-H', 'Accept: application/json', '-H', 'Content-Type: application/json', '-X', method]
@@ -169,7 +208,7 @@ def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--config', type=Path, default=Path(os.environ.get('COMMUNITY_MANAGER_CONFIG', str(Path(os.environ.get('HERMES_HOME', '~/.hermes')).expanduser() / 'community-manager.json'))))
     subs = parser.add_subparsers(dest='command', required=True)
-    subs.add_parser('accounts')
+    p = subs.add_parser('accounts'); p.add_argument('--platform'); p.add_argument('--full', action='store_true')
     subs.add_parser('media-folders')
     p=subs.add_parser('media-search');p.add_argument('--folder',required=True);p.add_argument('--limit',type=int,default=10)
     p=subs.add_parser('photo-post');p.add_argument('--account',type=int,required=True);p.add_argument('--media',type=int,nargs='+',required=True);p.add_argument('--title',default='');p.add_argument('--caption',required=True);p.add_argument('--visibility',choices=['public','private'],required=True);p.add_argument('--request-key');p.add_argument('--rehearse',action='store_true');p.add_argument('--commit',action='store_true')
@@ -177,7 +216,7 @@ def main(argv=None):
     p=subs.add_parser('photo-status');p.add_argument('id',type=int)
     p = subs.add_parser('note'); p.add_argument('--text',required=True)
     p = subs.add_parser('logs'); p.add_argument('--account', type=int); p.add_argument('--platform'); p.add_argument('--status'); p.add_argument('--action'); p.add_argument('--limit',type=int,default=20); p.add_argument('--before',type=int)
-    p = subs.add_parser('strategy'); p.add_argument('--account', type=int, required=True); p.add_argument('--update-file', type=Path)
+    p = subs.add_parser('strategy'); p.add_argument('--account', type=int, required=True); p.add_argument('--update-file', type=Path); p.add_argument('--full', action='store_true')
     p = subs.add_parser('inbox'); p.add_argument('--account', type=int, required=True); p.add_argument('--pending',action='store_true'); p.add_argument('--limit',type=int,default=10); p.add_argument('--status', choices=['all','unanswered','replied','reply_failed'], default='unanswered')
     p = subs.add_parser('reply-status'); p.add_argument('id',type=int); p.add_argument('--wait',type=int,choices=(0, 60, 120, 150),default=0)
     p = subs.add_parser('verify-reply'); p.add_argument('id',type=int)
@@ -225,12 +264,19 @@ def main(argv=None):
     p.add_argument('--commit', action='store_true')
     p = subs.add_parser('x-status'); p.add_argument('id', type=int)
     p = subs.add_parser('x-contacts'); p.add_argument('--account', type=int, required=True); p.add_argument('--page', type=int, default=1)
-    p = subs.add_parser('report'); p.add_argument('--hours', type=int, default=24); p.add_argument('--scheduled',action='store_true'); p.add_argument('--note-file', type=Path); p.add_argument('--note'); p.add_argument('--commit', action='store_true'); p.add_argument('--key')
+    p = subs.add_parser('report'); p.add_argument('--hours', type=int, default=24); p.add_argument('--scheduled',action='store_true'); p.add_argument('--note-file', type=Path); p.add_argument('--note'); p.add_argument('--cost'); p.add_argument('--commit', action='store_true'); p.add_argument('--key')
+    for name in PERSONA_COMMANDS:
+        subs.choices[name].add_argument('--full-persona', action='store_true')
     args = parser.parse_args(argv)
     if args.command not in ('accounts', 'note', 'logs', 'status', 'x-status', 'x-contacts', 'report', 'reply-status', 'photo-status','threads-status') and not daytime():
         print(json.dumps({'state': 'sleep', 'window': '06:00-22:00 Europe/Lisbon'})); return 0
     client = Client(json.loads(args.config.read_text()))
-    if args.command == 'accounts': result = client.api('GET', 'accounts')
+    if args.command == 'accounts':
+        result = client.api('GET', 'accounts')
+        if args.platform:
+            result = {**result, 'accounts': [a for a in result.get('accounts', []) if a.get('platform') == args.platform]}
+        if not args.full:
+            result = compact_catalog(result)
     elif args.command == 'media-folders': result=client.api('GET','media/folders')
     elif args.command == 'media-search': result=client.api('GET','media/search?'+urlencode({'folder':args.folder,'limit':args.limit}))
     elif args.command == 'photo-check': result=client.api('POST',f'tiktok/photo-posts/{args.id}/verify',{'dry_run':not args.commit})
@@ -263,7 +309,7 @@ def main(argv=None):
         else:
             if args.commit:
                 client.db.execute('INSERT INTO reports VALUES(?,?,?)', (key,'requested',dt.datetime.now(dt.timezone.utc).isoformat())); client.db.commit()
-            result = client.api('POST', 'report', {'hours':args.hours, 'note':note, 'report_key':key, 'dry_run':not args.commit})
+            result = client.api('POST', 'report', {'hours':args.hours, 'note':note, 'report_key':key, 'dry_run':not args.commit, **({'agent_cost':args.cost} if args.cost else {})})
     elif args.command == 'threads-read': result=client.api('POST',f'accounts/{args.account}/threads/read',{k:getattr(args,k) for k in ('action','query','url','handle','limit') if getattr(args,k) is not None})
     elif args.command == 'threads-context': result=client.api('GET',f'accounts/{args.account}/threads/context?'+urlencode({'snapshot_id':args.snapshot}))
     elif args.command == 'threads-check': result=client.api('POST',f'threads/actions/{args.id}/verify',{'dry_run':not args.commit})
@@ -280,7 +326,10 @@ def main(argv=None):
         result = client.x_action(args.account, args.action, args.snapshot, args.commit, args.target, text, args.context)
     elif args.command == 'x-status': result = client.api('GET', f'x/engagements/{args.id}')
     elif args.command == 'x-contacts': result = client.api('GET', f'accounts/{args.account}/x/contacts?' + urlencode({'page':args.page}))
-    elif args.command == 'strategy': result = client.api('PATCH' if args.update_file else 'GET', f'accounts/{args.account}/strategy', json.loads(args.update_file.read_text()) if args.update_file else None)
+    elif args.command == 'strategy':
+        result = client.api('PATCH' if args.update_file else 'GET', f'accounts/{args.account}/strategy', json.loads(args.update_file.read_text()) if args.update_file else None)
+        if not args.full:
+            result = compact_catalog(result)
     elif args.command == 'inbox':
         order = 'newest'
         if args.pending:
@@ -328,6 +377,8 @@ def main(argv=None):
         result = client.api('GET', 'snapshots/' + args.id + '?' + urlencode({'limit': args.limit}))
     elif args.command == 'status': result = client.api('GET', 'engagements/' + str(args.id))
     else: result = client.api('POST', 'upload/inspect', {'account_id': args.account})
+    if args.command in PERSONA_COMMANDS and not args.full_persona:
+        result = client.persona_once(result, os.environ.get('HERMES_SESSION_ID'))
     print(json.dumps(result, ensure_ascii=False, separators=(',', ':')))
     return 0
 
