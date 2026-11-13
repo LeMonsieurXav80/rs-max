@@ -149,3 +149,9 @@ Premiers réveils observés après la bascule (13/11, 11 h 08–11 h 12 UTC, lem
 caractères au lieu de 12,7 k, message de cycle 11,7 à 15,8 k au lieu de 41,7 k ; un réveil TikTok à 4 appels
 coûte 38 k jetons (155 k en moyenne avant), un réveil API silencieux 15 k (40 k), un réveil Threads silencieux 6 k (72 k).
 À confirmer sur des journées complètes.
+
+**Incident du 13/11, 11 h 08 → 18 h 50 UTC (lemonsieurxav).** La règle commune « écarter une cible sans date
+vérifiable » s'appliquait aussi aux commentaires reçus, dont le contexte ne portait pas la date. Hermès a différé
+en `missing_facts` tout ce qui arrivait sur Facebook, Instagram et Threads : aucune réponse pendant 7 h 40, et des
+réveils « silencieux » qui faussent les gestes du 13/11. Corrigé par `2ecb1a6` (`posted_at` dans le contexte, règle
+réservée à la découverte) ; 86 commentaires différés à tort remis en file. Ne pas comparer la journée du 13/11.
