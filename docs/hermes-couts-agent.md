@@ -142,4 +142,10 @@ Comparer à gestes constants : les jetons par geste sont l'indicateur principal,
 | 12/11 (réf., 12 h → 24 h) | DIX | 121 | 20,8 M | 172 k | — | — | — | avant |
 | 13/11 (24 h glissantes, réf.) | lemonsieurxav | 585 | 85,0 M | 145 k | 692 | 123 k | 43 % (sem.) | avant |
 | 13/11 (24 h glissantes, réf.) | DIX | 166 | 28,8 M | 173 k | 45 | 640 k | 43 % (sem.) | avant |
-| 13/11 | les deux | | | | | | | changements 1 à 9 déployés |
+| 13/11 | lemonsieurxav | | | | | | | changements 1 à 9 déployés à 11 h 08 UTC (RS-Max `ffc679f`, Hermès) |
+| 13/11 | DIX | | | | | | | changements 1 à 9 déployés à 11 h 12 UTC (image `27c38d8-couts`, Hermès) |
+
+Premiers réveils observés après la bascule (13/11, 11 h 08–11 h 12 UTC, lemonsieurxav) : prompt système 10,3 k
+caractères au lieu de 12,7 k, message de cycle 11,7 à 15,8 k au lieu de 41,7 k ; un réveil TikTok à 4 appels
+coûte 38 k jetons (155 k en moyenne avant), un réveil API silencieux 15 k (40 k), un réveil Threads silencieux 6 k (72 k).
+À confirmer sur des journées complètes.
