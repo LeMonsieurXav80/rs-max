@@ -1,0 +1,130 @@
+diff -ruN a9/background.js b9/background.js
+--- a/background.js	2026-11-13 14:46:05
++++ b/background.js	2026-11-13 14:46:05
+@@ -835,7 +835,8 @@
+     if (task.kind === 'x.whoami') return { status: 'done', result: { username: null } };
+     throw e;
+   }
+-  const tabId = await taskTab(task.payload.url, !(task.kind === 'x.tweets' && task.payload.followers));
++  // Au premier plan : un onglet caché ne charge plus le fil en défilant (6 publications pour 10 écrans).
++  const tabId = await taskTab(task.payload.url);
+   try {
+     // Sans session, TikTok renvoie hors de Studio, où Companion n'est pas chargé.
+     const { url } = await chrome.tabs.get(tabId);
+diff -ruN a9/manifest.json b9/manifest.json
+--- a/manifest.json	2026-11-13 14:46:05
++++ b/manifest.json	2026-11-13 14:46:05
+@@ -1,7 +1,7 @@
+ {
+   "manifest_version": 3,
+   "name": "RS-Max Companion",
+-  "version": "0.18.48",
++  "version": "0.18.50",
+   "description": "Actions assistees sur les reseaux sociaux (engagement, publication) avec remontee vers l'API RS-Max.",
+   "permissions": [
+     "storage",
+diff -ruN a9/tests/x-followers.test.cjs b9/tests/x-followers.test.cjs
+--- a/tests/x-followers.test.cjs	1970-01-01 01:00:00
++++ b/tests/x-followers.test.cjs	2026-11-13 14:46:05
+@@ -0,0 +1,38 @@
++const assert = require('node:assert/strict');
++const {readFileSync} = require('node:fs');
++const {join} = require('node:path');
++const {test} = require('node:test');
++const {JSDOM} = require('jsdom');
++
++const schema = (handle, count) => `<script type="application/ld+json" data-testid="UserProfileSchema-test">${JSON.stringify({
++  '@type':'ProfilePage', mainEntity:{'@type':'Person', additionalName:handle, interactionStatistic:[
++    {'@type':'InteractionCounter', interactionType:'https://schema.org/FollowAction', name:'Follows', userInteractionCount:count},
++    {'@type':'InteractionCounter', interactionType:'https://schema.org/SubscribeAction', name:'Friends', userInteractionCount:812},
++  ]}})}</script>`;
++
++function observe(body) {
++  const dom = new JSDOM(`<main><a href="/owner/verified_followers"><span>22,9 k</span> abonnés</a>${body}</main>`,
++    {url:'https://x.com/owner', runScripts:'outside-only'});
++  const w = dom.window;
++  w.RSMAX = {};
++  w.RSXMentions = {identity:() => ({username:'owner'})};
++  w.chrome = {runtime:{onMessage:{addListener() {}}}};
++  w.eval(readFileSync(join(__dirname, '../x/tasks.js'), 'utf8'));
++  try { return w.RSXTasks.followersObservation(); } finally { w.close(); }
++}
++
++test('X lit le compte exact d’abonnés dans le schéma du profil plutôt que le lien arrondi', () => {
++  const o = observe(schema('owner', 22673));
++  assert.equal(o.value, 22673);
++  assert.equal(o.precision, 'exact');
++  assert.equal(o.source, 'profile_schema');
++  assert.equal(o.display, '22,9 k abonnés');
++});
++
++test('X garde le lien arrondi quand le schéma décrit un autre profil ou manque', () => {
++  for (const body of [schema('someone', 50), '']) {
++    const o = observe(body);
++    assert.equal(o.precision, 'rounded');
++    assert.equal(o.value, 22900);
++  }
++});
+diff -ruN a9/x/tasks.js b9/x/tasks.js
+--- a/x/tasks.js	2026-11-13 14:46:05
++++ b/x/tasks.js	2026-11-13 14:46:05
+@@ -36,21 +36,31 @@
+       text:text(a.querySelector('[data-testid="tweetText"]')),published_at:a.querySelector('time')?.getAttribute('datetime')||null,
+       stats:a.querySelector('[role="group"]')?.getAttribute('aria-label')||'',pinned:/pinned|épinglé/i.test(social),reposted:/repost/i.test(social),reply:/^(replying to|en réponse à)/im.test(a.innerText)};
+   }
++  /* Le lien du profil arrondit au-delà de 10 000 (« 22,9 k ») ; le schéma ProfilePage que X
++     insère dans la page porte le compte exact. Lu tel quel : aucune requête de plus. */
++  function schemaFollowers(username){
++    try{const d=JSON.parse($('script[data-testid="UserProfileSchema-test"]').textContent),e=d.mainEntity||d.author||d;
++      const handle=String(e.additionalName||'').replace(/^@/,'').toLowerCase();
++      if(username&&handle&&handle!==username)return null;
++      const counters=[].concat(e.interactionStatistic||[]);
++      const n=(counters.find(x=>x.name==='Follows')||counters.find(x=>/FollowAction$/.test(x.interactionType||'')))?.userInteractionCount;
++      if(n!==null&&n!==undefined&&n!==''&&Number.isFinite(Number(n)))return Number(n);
++    }catch{}
++    return null;
++  }
+   function followersObservation(){
+     const username=me(),links=[...document.querySelectorAll('main a[href]')].filter(a=>{
+       const u=new URL(a.getAttribute('href'),location.origin);return u.pathname.toLowerCase()==='/'+username+'/verified_followers'||u.pathname.toLowerCase()==='/'+username+'/followers';
+     });
++    const display=links.length===1?norm(links[0].textContent):null,schema=schemaFollowers(username);
++    if(schema!==null)return {value:schema,precision:'exact',display:display||String(schema),source:'profile_schema'};
+     if(links.length===1){
+-      const link=links[0],raw=norm(link.textContent),title=[link,...link.querySelectorAll('[title]')].map(n=>n.getAttribute('title')).find(Boolean);
++      const link=links[0],raw=display,title=[link,...link.querySelectorAll('[title]')].map(n=>n.getAttribute('title')).find(Boolean);
+       const exact=(title||raw).match(/^([\d\s\u00a0\u202f]+)(?:\s*(?:abonnés|followers))?$/i);
+       if(exact)return {value:Number(exact[1].replace(/\D/g,'')),precision:'exact',display:raw};
+       const rounded=raw.match(/([\d]+(?:[.,]\d+)?)\s*([kKmM])/);
+       if(rounded)return {value:Number(rounded[1].replace(',','.'))*(rounded[2].toLowerCase()==='k'?1000:1000000),precision:'rounded',display:raw};
+     }
+-    try{const d=JSON.parse($('script[data-testid="UserProfileSchema-test"]').textContent),e=d.mainEntity||d.author||d;
+-      const n=[].concat(e.interactionStatistic||[]).find(x=>/Follow/.test(x.interactionType||x.name||''))?.userInteractionCount;
+-      if(n!==null&&n!==undefined&&Number.isFinite(Number(n)))return {value:Number(n),precision:'exact',display:String(n)};
+-    }catch{}
+     return null;
+   }
+   const followers=()=>{const o=followersObservation();return o?.precision==='exact'?o.value:null;};
+@@ -96,18 +106,20 @@
+     }
+     const firstObservation = followersObservation();
+     const found = new Map(first.map(post => [post.id, post]));
+-    const screens = Math.min(Number(p.screens) || 1, 10);
++    const screens = Math.min(Number(p.screens) || 1, 10), seen = [found.size];
+     for (let i = 1; i < screens; i++) {
+       window.scrollBy(0, Math.round(innerHeight * 1.3));
+       await sleep(1600);
+       for (const post of scan()) found.set(post.id, post);
++      seen.push(found.size);
+     }
+     if (p.companion_stats && (me() !== username || location.pathname.toLowerCase() !== '/' + username)) {
+       return failed('Compte X changé pendant le relevé.');
+     }
+     const observation = firstObservation || followersObservation();
+     return done({tweets: [...found.values()], followers: observation?.precision === 'exact' ? observation.value : null,
+-      followers_observation: observation});
++      followers_observation: observation, probe: {schema: Boolean($('script[data-testid="UserProfileSchema-test"]')),
++        visibility: document.visibilityState, seen}});
+   }
+   async function tweets(p){
+     if (p.followers && window.RSXDom) return profileTweets(p);

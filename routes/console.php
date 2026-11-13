@@ -90,7 +90,7 @@ Schedule::call(function () {
 // Navigateur du VPS : la session est contrôlée, et restaurée au besoin, avant de servir
 Schedule::command('x:session-check')->hourly()->withoutOverlapping(30);
 Schedule::command('tiktok:session-check')->hourly()->withoutOverlapping(30);
-Schedule::command('x:browser-sync')->everySixHours()->withoutOverlapping(60);
+Schedule::command('x:browser-sync --screens=10')->everySixHours()->withoutOverlapping(60);
 // Même source pour les statistiques et le miroir des publications natives TikTok.
 Schedule::command('external:import --platform=tiktok --limit=100 --no-hash')->cron('20 0,6,12,18 * * *')->withoutOverlapping(30);
 
