@@ -58,8 +58,12 @@ class CostReportTest(unittest.TestCase):
             with patch.object(cost, 'confirmed_gestures', return_value=0):
                 self.assertTrue(cost.record_day(home, day))
                 self.assertFalse(cost.record_day(home, day))
+            with patch.dict(cost.os.environ, {'HERMES_HOME': str(home)}), patch.object(cost, 'confirmed_gestures', return_value=0), \
+                 patch('sys.stdout'):
+                self.assertEqual(cost.main(['--record']), 0)
             entries = (home / cost.HISTORY).read_text().splitlines()
-            self.assertEqual(len(entries), 1)
+            self.assertLessEqual(len(entries), 2)
+            self.assertEqual(len({json.loads(e)['day'] for e in entries}), len(entries))
             self.assertEqual(json.loads(entries[0])['total']['wakes'], 1)
 
     def test_le_bilan_joint_le_cout_mesure(self):

@@ -13,7 +13,7 @@ abonnement ChatGPT Pro** : leur coût s'additionne sur un seul quota hebdomadair
 | Déclenchements du cron, dont ceux évités par la prélecture (`no_change`) | `cron/executions.db` (≈ 17 h conservées) |
 | Gestes confirmés | `account_action_events` de RS-Max, ou le bilan `report` en dry-run |
 | Quota de l'abonnement | réglages Codex de chatgpt.com, page Usage, ou `/usage` dans une session Hermès |
-| Journal quotidien (jetons **et** gestes de la veille) | `workspace/cost-history.jsonl` du profil, écrit par le bilan de 08 h |
+| Journal quotidien (jetons **et** gestes de la veille) | `workspace/cost-history.jsonl` du profil, écrit par le bilan de 08 h (lemonsieurxav) ou le job sans modèle « RS-Max — Relevé du coût » à 08 h 05 (DIX, qui n'a pas de bilan) |
 
 Commandes, depuis le profil (`docker exec -u hermes -w /opt/data/profiles/<profil> -e HERMES_HOME=/opt/data/profiles/<profil> <gateway> …`) :
 

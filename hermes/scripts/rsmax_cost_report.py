@@ -8,6 +8,7 @@ en dry-run pour les gestes confirmés.
     python3 scripts/rsmax_cost_report.py              # 7 derniers jours, par jour et par file
     python3 scripts/rsmax_cost_report.py --days 14 --json
     python3 scripts/rsmax_cost_report.py --history    # journal quotidien conservé (gestes compris)
+    python3 scripts/rsmax_cost_report.py --record     # ajoute la veille au journal (sans modèle)
 """
 import argparse
 import collections
@@ -195,8 +196,13 @@ def main(argv=None):
     p.add_argument('--days', type=int, default=7)
     p.add_argument('--json', action='store_true')
     p.add_argument('--history', action='store_true', help='afficher le journal quotidien conservé')
+    p.add_argument('--record', action='store_true', help='ajouter la veille au journal (job quotidien sans modèle)')
     args = p.parse_args(argv)
     home = Path(os.environ.get('HERMES_HOME', '~/.hermes')).expanduser()
+    if args.record:
+        day = dt.datetime.now(LISBON).date() - dt.timedelta(days=1)
+        print(json.dumps({'day': day.isoformat(), 'recorded': record_day(home, day)}))
+        return 0
     if args.history:
         path = home / HISTORY
         entries = [json.loads(l) for l in path.read_text().splitlines() if l.strip()] if path.is_file() else []
