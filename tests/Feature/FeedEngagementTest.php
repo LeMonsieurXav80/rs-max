@@ -165,8 +165,11 @@ class FeedEngagementTest extends TestCase
         {
             public function __construct(public array $outcomes) {}
 
+            public int $busy = 0;
+
             public function execute(XEngagement $row): XEngagement
             {
+                abort_if($this->busy-- > 0, 429, 'Délai minimal non écoulé. Prochaine action : maintenant');
                 $row->update(['status' => 'queued', 'requested_at' => now()]);
 
                 return $row;
@@ -263,6 +266,18 @@ class FeedEngagementTest extends TestCase
         $this->assertSame('Le squat lourd le matin, ça réveille 💪', XEngagement::find($first)->payload['text']);
         $this->assertSame('hermes_subscription', XEngagement::find($first)->payload['draft_source']);
         $this->assertSame(1, BotActionLog::where('action_type', 'feed.llm')->where('success', true)->count());
+    }
+
+    public function test_un_delai_minimal_passager_est_attendu_au_lieu_d_arreter_le_passage(): void
+    {
+        $this->travelTo(\Illuminate\Support\Carbon::parse('2026-11-14 12:00', 'Europe/Lisbon'));
+        $account = $this->account(['enabled' => true, 'spin_percent' => 0]);
+        $executor = $this->executor();
+        (fn () => $this->engagements->busy = 1)->call($executor);
+        $posts = [$this->feedPost('701', 'alice', 'Squat')];
+        $run = $executor->run($account, app(FeedEngagementPlanner::class)->plan($account, $posts), collect($posts)->keyBy('id')->all(), 'snap', 'server');
+        $this->assertNull($run['stopped']);
+        $this->assertSame('confirmed', $run['done'][0]['status']);
     }
 
     public function test_une_redaction_non_remise_expire_sans_geste(): void

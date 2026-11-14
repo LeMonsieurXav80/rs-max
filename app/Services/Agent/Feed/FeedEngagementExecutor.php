@@ -160,7 +160,16 @@ class FeedEngagementExecutor
     /** Demande le geste puis attend sa preuve, comme le client d'Hermès. */
     private function send(XEngagement $row): XEngagement
     {
-        $row = $this->engagements->execute($row);
+        try {
+            $row = $this->engagements->execute($row);
+        } catch (HttpException $e) {
+            // Un autre geste du compte vient de partir (passage manuel, mention d'Hermès) : attendre le délai minimal,
+            // une seule fois. Le 14/11/2026, le passage de 14 h 40 s'est arrêté là sans aucun geste.
+            if ($e->getStatusCode() !== 429 || ! str_starts_with($e->getMessage(), 'Délai minimal') || $this->waitForCadence(SocialAccount::findOrFail($row->social_account_id))) {
+                throw $e;
+            }
+            $row = $this->engagements->execute($row->fresh());
+        }
         $deadline = time() + self::RESULT_TIMEOUT_SECONDS;
         do {
             ($this->sleep)(5);
