@@ -295,6 +295,14 @@ class XWatchTest(unittest.TestCase):
             self.assertEqual(r['state'],wanted);self.assertEqual(c.api.call_count,5 if wanted=='work' else (3 if session=='connected' else 1))
             if wanted=='work':self.assertTrue(r['accounts'][0]['threads_discovery'])
 
+    def test_threads_lit_pour_toi_puis_les_abonnements_en_repli(self):
+        a=self.account();a.update(platform='threads',driver='api',api_ready=True,persona=5,strategy={})
+        a['actions']={'feed.read':{'enabled':True,'left':2},'thread.read':{'enabled':True,'left':2},'like':{'enabled':True,'left':2}}
+        c=Mock();c.api.side_effect=lambda method,path: {'daytime':True,'accounts':[a]} if path=='accounts' else {'logs':[]}
+        plan=watch.snapshot(c,dt.datetime.fromisoformat('2026-11-08T12:00:00+00:00'))['priority_threads'][0]
+        self.assertEqual(plan['read_action'],'feed.read');self.assertNotIn('feed',plan)
+        self.assertEqual(plan['fallback'],{'read_action':'feed.read','feed':'following'})
+
     def test_threads_explore_avant_inbox_meme_si_son_stock_est_non_vide(self):
         a=self.account();a.update(platform='threads',driver='api',api_ready=True,persona=5,strategy={'search_queries':['style','robe']})
         a['actions']['like']['enabled']=True

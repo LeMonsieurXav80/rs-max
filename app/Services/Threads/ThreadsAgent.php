@@ -7,9 +7,9 @@ use App\Models\SocialAccount;
 use App\Services\Agent\AgentCatalog;
 use App\Services\Agent\ApiInboxActions;
 use App\Services\Agent\CommentFreshness;
-use App\Services\Inbox\ReplyLanguage;
 use App\Services\Agent\CommunityManagerWindow;
 use App\Services\Browser\BrowserTaskQueue;
+use App\Services\Inbox\ReplyLanguage;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
@@ -36,7 +36,8 @@ class ThreadsAgent
         $this->ready($a);
         app(ApiInboxActions::class)->assertEnabled($a, $d['action']);
         $url = match ($d['action']) {
-            'feed.read' => 'https://www.threads.com/following/',
+            // « Pour toi » d'abord (décision de Xavier, 14/11/2026), les abonnements seulement sur demande.
+            'feed.read' => ($d['feed'] ?? 'foryou') === 'following' ? 'https://www.threads.com/following/' : 'https://www.threads.com/',
             'search.read' => 'https://www.threads.com/search?q='.rawurlencode($d['query'] ?? '').'&serp_type=default',
             'thread.read' => $this->canonical($d['url'] ?? ''),
             'profile.read' => 'https://www.threads.com/@'.ltrim($d['handle'] ?? '', '@'),

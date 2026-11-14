@@ -84,6 +84,9 @@ def discovery_source(client, account, now):
         plan['fallback'] = {'read_action': alternative, **sources[alternative]}
     elif is_x and choice == 'search.read' and len(queries) > 1:
         plan['fallback'] = {'read_action': 'search.read', 'query': queries[(index + 1) % len(queries)]}
+    elif account['platform'] == 'threads' and choice == 'feed.read':
+        # « Pour toi » d'abord ; les abonnements seulement si la première lecture ne donne aucune cible.
+        plan['fallback'] = {'read_action': 'feed.read', 'feed': 'following'}
     return plan
 
 

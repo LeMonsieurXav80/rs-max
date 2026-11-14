@@ -20,7 +20,7 @@ class ThreadsAgentController extends Controller
 
     public function read(Request $r, int $id, ThreadsAgent $agent)
     {
-        $d = $r->validate(['action' => 'required|in:feed.read,search.read,thread.read,profile.read', 'query' => 'required_if:action,search.read|string|max:150', 'url' => 'required_if:action,thread.read|url|max:500', 'handle' => ['required_if:action,profile.read', 'string', 'regex:/^@?[a-zA-Z0-9_.]{1,50}$/'], 'limit' => 'sometimes|integer|min:1|max:20']);
+        $d = $r->validate(['action' => 'required|in:feed.read,search.read,thread.read,profile.read', 'query' => 'required_if:action,search.read|string|max:150', 'url' => 'required_if:action,thread.read|url|max:500', 'handle' => ['required_if:action,profile.read', 'string', 'regex:/^@?[a-zA-Z0-9_.]{1,50}$/'], 'feed' => 'sometimes|in:foryou,following', 'limit' => 'sometimes|integer|min:1|max:20']);
 
         return response()->json($agent->read($this->account($r, $id), $d));
     }

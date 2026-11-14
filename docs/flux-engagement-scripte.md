@@ -105,8 +105,9 @@ exacts, réponses reçues sous les commentaires spintax comparées aux commentai
 - `php artisan threads:feed-engage <compte> [--json]` lit `https://www.threads.com/` (« Pour toi », pas `/following/`),
   jusqu'à 25 publications sur 12 écrans au plus, n'envoie rien et journalise la lecture (`agent.feed.read`,
   `origin=script`, `dry_run=true`). `--commit` reste refusé jusqu'à l'étape 2.
-- **Hermès lit toujours `/following/`** pour son exploration (`ThreadsAgent::read`) : à changer seulement sur décision
-  de Xavier.
+- **Hermès lit aussi « Pour toi » en priorité** depuis le 14/11/2026 (décision de Xavier) : `feed.read` ouvre
+  `https://www.threads.com/`, et le plan de la prélecture propose les abonnements (`feed: following`) en repli, une fois,
+  quand la première lecture ne donne aucune cible (`threads-read --feed following`).
 - Code commun à X et Threads : `FeedNetwork` (`XFeedNetwork`, `ThreadsFeedNetwork`) porte ce qui change d'un réseau à
   l'autre (identifiant, ancienneté, langue, longueur d'un commentaire, gestes déjà faits). Les règles de tri restent
   dans `FeedEngagementPlanner`, la lecture et l'affichage dans `FeedEngageCommand`.

@@ -52,6 +52,16 @@ class ThreadsAgentTest extends TestCase
         return $r->assertOk()->json('snapshot_id');
     }
 
+    public function test_le_fil_lu_est_pour_toi_sauf_demande_des_abonnements(): void
+    {
+        $queue = $this->mock(BrowserTaskQueue::class);
+        $queue->shouldReceive('run')->once()->withArgs(fn ($a, $kind, $p) => $p['url'] === 'https://www.threads.com/')->andReturn(['items' => []]);
+        $queue->shouldReceive('run')->once()->withArgs(fn ($a, $kind, $p) => $p['url'] === 'https://www.threads.com/following/')->andReturn(['items' => []]);
+        $this->postJson($this->prefix().'/read', ['action' => 'feed.read'])->assertOk();
+        $this->postJson($this->prefix().'/read', ['action' => 'feed.read', 'feed' => 'following'])->assertOk();
+        $this->postJson($this->prefix().'/read', ['action' => 'feed.read', 'feed' => 'abonnes'])->assertUnprocessable();
+    }
+
     public function test_lecture_et_commentaire_contextuel_idempotent_avec_driver_api_conserve(): void
     {
         $snapshot = $this->read();

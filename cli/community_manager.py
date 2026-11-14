@@ -252,7 +252,7 @@ def main(argv=None):
     p.add_argument('--limit', type=int, choices=range(1, 26), default=3)
     p = subs.add_parser('status'); p.add_argument('id', type=int)
     p = subs.add_parser('inspect-upload'); p.add_argument('--account', type=int, required=True)
-    p = subs.add_parser('threads-read'); p.add_argument('--account',type=int,required=True); p.add_argument('--action',choices=['feed.read','search.read','thread.read','profile.read'],required=True); p.add_argument('--query'); p.add_argument('--url'); p.add_argument('--handle'); p.add_argument('--limit',type=int,default=10)
+    p = subs.add_parser('threads-read'); p.add_argument('--account',type=int,required=True); p.add_argument('--action',choices=['feed.read','search.read','thread.read','profile.read'],required=True); p.add_argument('--query'); p.add_argument('--url'); p.add_argument('--handle'); p.add_argument('--feed',choices=['foryou','following']); p.add_argument('--limit',type=int,default=10)
     p = subs.add_parser('threads-context'); p.add_argument('--account',type=int,required=True); p.add_argument('--snapshot',required=True)
     p = subs.add_parser('threads-action'); p.add_argument('--account',type=int,required=True); p.add_argument('--action',choices=['like','comment'],required=True); p.add_argument('--snapshot',required=True); p.add_argument('--target'); p.add_argument('--context'); p.add_argument('--text'); p.add_argument('--request-key'); p.add_argument('--commit',action='store_true')
     p = subs.add_parser('threads-check'); p.add_argument('id',type=int); p.add_argument('--commit',action='store_true')
@@ -314,7 +314,7 @@ def main(argv=None):
             if args.commit:
                 client.db.execute('INSERT INTO reports VALUES(?,?,?)', (key,'requested',dt.datetime.now(dt.timezone.utc).isoformat())); client.db.commit()
             result = client.api('POST', 'report', {'hours':args.hours, 'note':note, 'report_key':key, 'dry_run':not args.commit, **({'agent_cost':args.cost} if args.cost else {})})
-    elif args.command == 'threads-read': result=client.api('POST',f'accounts/{args.account}/threads/read',{k:getattr(args,k) for k in ('action','query','url','handle','limit') if getattr(args,k) is not None})
+    elif args.command == 'threads-read': result=client.api('POST',f'accounts/{args.account}/threads/read',{k:getattr(args,k) for k in ('action','query','url','handle','feed','limit') if getattr(args,k) is not None})
     elif args.command == 'threads-context': result=client.api('GET',f'accounts/{args.account}/threads/context?'+urlencode({'snapshot_id':args.snapshot}))
     elif args.command == 'threads-check': result=client.api('POST',f'threads/actions/{args.id}/verify',{'dry_run':not args.commit})
     elif args.command == 'threads-status': result=client.api('GET',f'threads/actions/{args.id}')
