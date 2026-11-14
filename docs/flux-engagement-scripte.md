@@ -96,7 +96,7 @@ compacte de l'API. Un réglage par compte, donc séparément pour X et pour Thre
 | Commentaires spintax en français | un modèle par ligne, `{a\|b\|c}` | vide (aucun commentaire spintax) |
 | Commentaires emojis seuls | un modèle par ligne, pour une autre langue ou sans texte | vide |
 | Part des commentaires spintax | pourcentage des publications retenues | 40 % |
-| Portée du like | tout ce qui n'est pas exclu, ou seulement ce qui contient un mot-clé | à décider |
+| Portée du like | tout ce qui n'est pas exclu, ou seulement ce qui contient un mot-clé | mot-clé (décidé le 14/11) |
 | Plafond quotidien de likes par script | nombre | à fixer |
 | Plafond quotidien de commentaires spintax | nombre | à fixer |
 | Publications lues par passage | nombre, 30 au plus | 25 |
@@ -227,5 +227,6 @@ entrées « X — Engager mon fil » et « Threads — Engager mon fil » dans l
 - La détection de la langue sur Threads est à vérifier.
 - La liste des mots exclus et les modèles spintax sont à fournir par Xavier sur la fiche compte, une fois les champs créés.
 - Les plafonds de départ sont à fixer.
-- Faut-il retenir tout ce qui n'est pas exclu pour le like, et réserver les mots-clés aux commentaires ?
+- Portée du like décidée le 14/11 : seulement les publications qui contiennent un mot-clé, élargie après le relevé à blanc si trop peu sont retenues.
+- Les plafonds ne portent que sur l'engagement du fil par script : les réponses aux mentions et la recherche gardent leurs propres limites, et la cadence du compte s'applique à l'ensemble.
 - La commande d'envoi groupé et l'attente de la preuve sur Threads sont à construire.
