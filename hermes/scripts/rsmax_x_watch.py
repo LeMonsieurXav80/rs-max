@@ -43,7 +43,7 @@ def discovery_source(client, account, now):
     queries = [q.strip() for q in configured if isinstance(q, str) and 0 < len(q.strip()) <= (X_SEARCH_QUERY_LIMIT if is_x else 150)]
     sources = {}
     # Fil « Pour vous » trié par script dans RS-Max (feed_engagement allumé) : le modèle ne le relit pas.
-    scripted = is_x and (strategy.get('feed_engagement') or {}).get('enabled')
+    scripted = account['platform'] in ('twitter', 'threads') and (strategy.get('feed_engagement') or {}).get('enabled')
     if action_available(actions, 'feed.read') and not scripted:
         sources['feed.read'] = {}
     if queries and action_available(actions, 'search.read'):

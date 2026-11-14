@@ -158,6 +158,8 @@ class FeedEngagementTest extends TestCase
         $this->assertTrue($account->fresh()->agent_strategy['feed_engagement']['enabled']);
     }
 
+    private ?XEngagementService $fakeEngagements = null;
+
     /** Faux navigateur : chaque geste aboutit avec le statut demandé, sans tâche Companion. */
     private function executor(array $outcomes = []): FeedEngagementExecutor
     {
@@ -183,7 +185,10 @@ class FeedEngagementTest extends TestCase
             }
         };
 
-        return new FeedEngagementExecutor($fake, app(AccountActionBudget::class), new \App\Services\Agent\Feed\FeedDraftService($fake), fn () => null);
+        $this->fakeEngagements = $fake;
+
+        return new FeedEngagementExecutor(app(AccountActionBudget::class), fn () => null,
+            new \App\Services\Agent\Feed\XFeedNetwork($fake, new \App\Services\Agent\Feed\FeedDraftService($fake)));
     }
 
     public function test_l_execution_aime_commente_journalise_et_ne_refait_rien_au_passage_suivant(): void
@@ -273,7 +278,7 @@ class FeedEngagementTest extends TestCase
         $this->travelTo(\Illuminate\Support\Carbon::parse('2026-11-14 12:00', 'Europe/Lisbon'));
         $account = $this->account(['enabled' => true, 'spin_percent' => 0]);
         $executor = $this->executor();
-        (fn () => $this->engagements->busy = 1)->call($executor);
+        $this->fakeEngagements->busy = 1;
         $posts = [$this->feedPost('701', 'alice', 'Squat')];
         $run = $executor->run($account, app(FeedEngagementPlanner::class)->plan($account, $posts), collect($posts)->keyBy('id')->all(), 'snap', 'server');
         $this->assertNull($run['stopped']);

@@ -4,7 +4,6 @@ namespace App\Console\Commands;
 
 use App\Models\SocialAccount;
 use App\Services\Agent\CommunityManagerWindow;
-use App\Services\Agent\Feed\FeedEngagementExecutor;
 use App\Services\Agent\XEngagementService;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Facades\Cache;
@@ -47,15 +46,5 @@ class XFeedEngageCommand extends FeedEngageCommand
             'read_at' => now()->toIso8601String()], now()->addHour());
 
         return $snapshot;
-    }
-
-    protected function usedToday(SocialAccount $account): array
-    {
-        return app(FeedEngagementExecutor::class)->usedToday($account);
-    }
-
-    protected function engageFeed(SocialAccount $account, array $plan, array $posts, string $snapshot): array
-    {
-        return app(FeedEngagementExecutor::class)->run($account, $plan, $posts, $snapshot, 'server');
     }
 }

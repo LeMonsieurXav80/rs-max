@@ -93,6 +93,8 @@ Schedule::command('tiktok:session-check')->hourly()->withoutOverlapping(30);
 Schedule::command('x:browser-sync --screens=10')->everySixHours()->withoutOverlapping(60);
 // Fil « Pour vous » par script (docs/flux-engagement-scripte.md) : seuls les comptes allumés sur leur fiche.
 Schedule::command('x:feed-engage --all --commit')->cron('*/20 * * * *')->withoutOverlapping(30);
+// Threads décalé de 10 min : le profil du NAS est partagé avec TikTok et Planète de Caro.
+Schedule::command('threads:feed-engage --all --commit')->cron('10-59/20 * * * *')->withoutOverlapping(30);
 // Même source pour les statistiques et le miroir des publications natives TikTok.
 Schedule::command('external:import --platform=tiktok --limit=100 --no-hash')->cron('20 0,6,12,18 * * *')->withoutOverlapping(30);
 

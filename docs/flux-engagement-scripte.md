@@ -114,13 +114,40 @@ exacts, réponses reçues sous les commentaires spintax comparées aux commentai
 - Gestes déjà faits, pour le like, le commentaire et le délai « même auteur » : tâches `threads.agent.act` en attente,
   en cours, faites ou incertaines (Hermès ou script). Un échec franc laisse réessayer.
 
+**Étape 2 livrée le 14/11/2026** : exécution des likes et du spintax, le script attend lui-même la preuve.
+- `php artisan threads:feed-engage <compte> --commit` : refusé tant que l'interrupteur de la fiche est coupé. Planifié
+  `threads:feed-engage --all --commit` aux minutes 10, 30 et 50 (X tourne à 0, 20 et 40), pour les seuls comptes allumés.
+- **Reçu durable : `threads_engagements`** (modèle `ThreadsEngagement`), sur le modèle de `x_engagements`. Choisi parce
+  que les plafonds et le bilan à J+7 doivent survivre à la purge de 7 jours de `bot_action_logs`, que les rédactions
+  d'Hermès (étape 3) doivent exister avant toute tâche (« en attente », sans geste), ce que `browser_tasks` ne peut pas
+  porter sans devenir prenable par le NAS, et qu'une clé unique compte/geste/publication interdit un second geste.
+  `browser_tasks` reste la file d'exécution ; chaque reçu pointe sa tâche.
+- Un geste est une tâche `threads.agent.act` de même forme que celles d'Hermès (`idempotency_key = threads-feed:<reçu>`) :
+  contrôle à la prise (`ThreadsAgent::claim`), autorisation avant le clic, preuve après rechargement
+  (`ThreadsAgent::finish`), cadence (`AccountActionBudget`). Hermès et le script se voient : chacun refuse un geste
+  déjà demandé par l'autre sur la même publication.
+- **Le script attend la preuve** (`ThreadsEngagementService::result`, toutes les 5 s, au plus 9 min 20) : plus aucun
+  `threads-status` répété par le modèle pour ces gestes. Un incertain n'est jamais renvoyé et arrête les autres gestes
+  sur la même publication.
+- Plafonds du jour (`daily_likes`, `daily_spin_comments`) comptés sur `threads_engagements` `origin=feed_script` depuis
+  minuit à Lisbonne, en plus des quotas Threads du catalogue (`like`, `comment`) et de la cadence du compte.
+- Journal : `feed.like`, `feed.spin` et `agent.feed.read` dans `bot_action_logs`, comme pour X, plus les lignes
+  `threads.like`/`threads.comment` que la tâche écrit d'elle-même. **Bilan à J+7** : `threads_engagements` où
+  `payload->origin = 'feed_script'`.
+- Quand l'interrupteur est allumé, Hermès ne planifie plus de découverte du fil pour ce compte (`priority_threads`).
+  **Tant que l'étape 3 n'est pas livrée, les publications « pour le modèle » ne reçoivent que le like.**
+- Code commun : `FeedEngagementExecutor` ne connaît plus `XEngagement` ; `FeedNetwork` réserve, envoie et lit l'issue.
+- `FrenchText` reconnaît aussi l'espagnol et le portugais courants, sans les mots qu'ils partagent avec le français.
+- Fiche de Wildy Caro Threads : mêmes 129 recherches et 12 hashtags que sur X (vérifié), plus 3 exclusions demandées
+  par Xavier (`#pub`, `shein`, `code promo`) : 81 exclusions contre 78 sur X.
+
 **Premier relevé à blanc** (Wildy Caro, Threads #36, 14/11/2026 à 14 h 53 UTC, tâche 10755, 25 s) : 22 publications lues
 sur 12 écrans, 3 retenues, 3 likes, 0 spintax, 1 pour le modèle.
 - Interface en anglais pour cette session aussi (22 sur 22) : 8 liens « Translate », aucune réponse ni publicité.
 - Retenues : « Pilates » (publication `#pub` SHEIN, partenariat payé), « training/biceps/triceps » (anglais, question :
   like seul), « course à pied » (français : like et rédaction).
-- **Faux français** : « Ni antes ni después, todo llega… » (espagnol) passe pour du français (`que` + accent). Sans
-  conséquence ici (aucun mot-clé), à corriger avant l'activation.
+- **Faux français** : « Ni antes ni después, todo llega… » (espagnol) passait pour du
+  français (`que` + accent). Corrigé à l'étape 2.
 - Le fil « Pour toi » de ce compte est peu tourné vers le sport : 19 publications sans mot-clé sur 22.
 
 **DOM vérifié sur le NAS le 14/11/2026** (CDP du Chromium `rsmax-browser`, file réservée, trois lectures, environ

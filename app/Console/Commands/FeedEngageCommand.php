@@ -6,6 +6,7 @@ use App\Models\BotActionLog;
 use App\Models\SocialAccount;
 use App\Services\Agent\AgentCatalog;
 use App\Services\Agent\CommunityManagerWindow;
+use App\Services\Agent\Feed\FeedEngagementExecutor;
 use App\Services\Agent\Feed\FeedEngagementPlanner;
 use App\Services\Agent\Feed\FeedEngagementSettings;
 use App\Services\Browser\BrowserException;
@@ -33,12 +34,6 @@ abstract class FeedEngageCommand extends Command
 
     /** Garde la lecture pour les gestes qui suivent ; renvoie l'identifiant de l'instantané. */
     abstract protected function remember(SocialAccount $account, array $payload, array $result): string;
-
-    /** @return array{likes?:int, spin?:int, llm?:int} */
-    abstract protected function usedToday(SocialAccount $account): array;
-
-    /** @return array{done: list<array<string, mixed>>, requested: int, stopped: ?string} */
-    abstract protected function engageFeed(SocialAccount $account, array $plan, array $posts, string $snapshot): array;
 
     public function handle(BrowserTaskQueue $browser, FeedEngagementPlanner $planner): int
     {
@@ -88,9 +83,10 @@ abstract class FeedEngageCommand extends Command
         }
         $snapshot = $this->remember($account, $payload, $result);
         $items = $result['items'] ?? [];
-        $plan = $planner->plan($account, $items, $this->usedToday($account));
+        $executor = app(FeedEngagementExecutor::class);
+        $plan = $planner->plan($account, $items, $executor->usedToday($account));
 
-        $run = $commit ? $this->engageFeed($account, $plan, collect($items)->keyBy(fn ($i) => (string) ($i['id'] ?? ''))->all(), $snapshot)
+        $run = $commit ? $executor->run($account, $plan, collect($items)->keyBy(fn ($i) => (string) ($i['id'] ?? ''))->all(), $snapshot, 'server')
             : ['done' => [], 'requested' => 0, 'stopped' => null];
         BotActionLog::create(['social_account_id' => $account->id, 'action_type' => 'agent.feed.read', 'source' => AgentCatalog::SOURCE,
             'target_uri' => $payload['url'], 'success' => true, 'performed_at' => now(),

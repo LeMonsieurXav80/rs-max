@@ -30,10 +30,6 @@ class ThreadsFeedEngageCommand extends FeedEngageCommand
 
     protected function unavailable(SocialAccount $account): ?string
     {
-        if ($this->option('commit')) {
-            return 'Exécution Threads pas encore livrée : relevé à blanc seulement.';
-        }
-
         return blank($account->browser_username) || $account->browser_session_status !== 'connected'
             ? 'Session Companion Threads sur le NAS non connectée.' : null;
     }
@@ -52,15 +48,5 @@ class ThreadsFeedEngageCommand extends FeedEngageCommand
         Cache::put('threads-snapshot:'.$snapshot, ['account_id' => $account->id, 'read_action' => 'feed.read', 'result' => $result], now()->addHour());
 
         return $snapshot;
-    }
-
-    protected function usedToday(SocialAccount $account): array
-    {
-        return [];
-    }
-
-    protected function engageFeed(SocialAccount $account, array $plan, array $posts, string $snapshot): array
-    {
-        return ['done' => [], 'requested' => 0, 'stopped' => 'exécution Threads pas encore livrée'];
     }
 }

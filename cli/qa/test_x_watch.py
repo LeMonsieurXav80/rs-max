@@ -303,6 +303,12 @@ class XWatchTest(unittest.TestCase):
         self.assertEqual(plan['read_action'],'feed.read');self.assertNotIn('feed',plan)
         self.assertEqual(plan['fallback'],{'read_action':'feed.read','feed':'following'})
 
+    def test_threads_ne_relit_pas_un_fil_trie_par_script(self):
+        a=self.account();a.update(platform='threads',driver='api',api_ready=True,persona=5,strategy={'feed_engagement':{'enabled':True}})
+        a['actions']={'feed.read':{'enabled':True,'left':2},'thread.read':{'enabled':True,'left':2},'like':{'enabled':True,'left':2}}
+        c=Mock();c.api.side_effect=lambda method,path: {'daytime':True,'accounts':[a]} if path=='accounts' else {'logs':[]}
+        self.assertEqual(watch.snapshot(c,dt.datetime.fromisoformat('2026-11-08T12:00:00+00:00')).get('priority_threads',[]),[])
+
     def test_threads_explore_avant_inbox_meme_si_son_stock_est_non_vide(self):
         a=self.account();a.update(platform='threads',driver='api',api_ready=True,persona=5,strategy={'search_queries':['style','robe']})
         a['actions']['like']['enabled']=True
