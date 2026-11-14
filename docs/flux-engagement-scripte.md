@@ -187,7 +187,7 @@ entrées « X — Engager mon fil » et « Threads — Engager mon fil » dans l
 ## Ce qui ne change pas
 
 - Les réponses aux mentions et aux commentaires reçus (messagerie, `/inbox`) gardent leur parcours actuel.
-- La recherche par requêtes reste disponible. On décidera après le test si elle passe aussi par le script.
+- **La découverte par recherche est coupée depuis le 14/11/2026**, sur X et Threads (action `search.read` désactivée pour Wildy Caro X #7, Threads #36 et Cyril X DIX #23). On reste sur le fil « Pour vous ». Les listes de recherches servent désormais à **retenir** les publications du fil. Les mentions X ne sont pas touchées : leur recherche `to:compte` passe par la tâche `x.tweets`, indépendante de cette action. Conséquence : plus de suggestions d'abonnement issues de la recherche (`xFollowCandidate`), seulement celles des conversations et des comptes à suivre.
 
 ## Journalisation et point dans une semaine
 
@@ -230,3 +230,65 @@ entrées « X — Engager mon fil » et « Threads — Engager mon fil » dans l
 - Portée du like décidée le 14/11 : seulement les publications qui contiennent un mot-clé, élargie après le relevé à blanc si trop peu sont retenues.
 - Les plafonds ne portent que sur l'engagement du fil par script : les réponses aux mentions et la recherche gardent leurs propres limites, et la cadence du compte s'applique à l'ensemble.
 - La commande d'envoi groupé et l'attente de la preuve sur Threads sont à construire.
+
+## Annexe : modèles spintax proposés le 14/11/2026
+
+Unisexes : aucun mot ne qualifie l'auteur ni ne décrit une image, que le script ne voit pas. Pas de question, pas de
+séduction, pas de vécu inventé. À enregistrer sur la fiche quand les champs existeront.
+
+**Wildy Caro, en français**
+```
+{Belle|Super|Très belle|Grosse} {séance|perf|progression} {💪|🔥|👏}
+{Bravo|Chapeau|Respect} pour {la régularité|le travail|la discipline} {💪|👏|🙌}
+{Ça|Voilà qui} {motive|donne envie de s'y mettre|met de l'énergie} {🔥|💪|⚡️}
+{La régularité|Le travail|La discipline} {paie|finit toujours par payer} {👏|💪|🙌}
+{Top|Joli|Beau} {travail|boulot} {👌|💪|👏}
+{Quelle|Belle} {énergie|motivation} {🔥|⚡️|💪}
+{Inspirant|Motivant|Ça booste} {👏|🔥|💪}
+{Superbe|Très belle|Jolie} {énergie|détermination|régularité} {🔥|💪|✨}
+{Énorme|Gros|Beau} {boulot|travail|taf} {💪|🔥|👏}
+{Rien ne remplace|Rien ne bat} {la régularité|le travail|la constance} {💪|👏|🙌}
+Ça donne envie d'aller {à la salle|s'entraîner|soulever} {🔥|💪|😄}
+{Propre|Solide|Impeccable}, {bravo|respect|chapeau} {👏|💪|🔥}
+{Quelle|Belle} {régularité|constance|détermination} {👏|💪|🙌}
+{Motivation|Énergie|Discipline} au top {🔥|💪|⚡️}
+Vraiment {inspirant|motivant|stimulant} {👏|🔥|💪}
+Merci pour {l'inspiration|la motivation|le partage} {🙏|💪|🔥}
+{Bien joué|Bien vu|Joli} {💪|👏|🔥}{|🔥|💯}
+Du {sérieux|solide|très propre} {💪|🔥|👏}
+J'adore {l'énergie|la motivation|la détermination} {🔥|💪|⚡️}
+{C'est|Voilà} ce qu'on appelle {de la régularité|du travail|de la détermination} {💪|👏|🔥}
+```
+
+**Wildy Caro, emojis seuls**
+```
+{💪|🔥|👏}{🔥|💪|🙌}{⚡️|💯|🔥}
+{👏|🙌}{💪|🔥}{💯|👊}
+{🔥|💯}{💪|👊}{👏|🙌}
+{💪|🏋️|🔥}{💯|👏}{🔥|⚡️|💪}
+{🙌|👏|💪}{🔥|💯}
+{⚡️|🔥}{💪|🙌}{👊|💯|👏}
+{💪🔥|🔥💪|💪💪}{👏|🙌}
+```
+
+**Cyril (DIX), en français** : ton de pro, sobre, sans mention de DIX. « Bon rappel » et « Point important »
+seulement sous une publication avec du texte.
+```
+{Bonne|Belle|Très bonne} {approche|démarche|progression} {👍|💪|👏}
+{La régularité|La constance|La rigueur} {fait la différence|reste la clé|paie toujours} {💪|👍|👌}
+{Travail sérieux|Démarche sérieuse|Approche solide}, {bravo|bien joué|respect} {👏|💪|👍}
+{Bon rappel|Rappel utile|Point important} {👍|👌|💪}
+{Les bases|Les fondamentaux} {avant tout|d'abord|toujours} {💪|👍|👌}
+{Progression|Discipline|Rigueur} {exemplaire|solide|au rendez-vous} {👏|💪|👍}
+{Continue comme ça|Garde ce rythme|Belle dynamique} {💪|👊|👏}
+{Bien vu|Juste|Très juste} {👍|👌|💯}
+{Récupération|Nutrition|Sommeil} et {régularité|constance|rigueur} : {la base|le combo gagnant|l'essentiel} {💪|👍|👌}
+{Sérieux et efficace|Simple et efficace|Méthodique}, {bravo|respect|bien joué} {👏|👍|💪}
+```
+
+**Cyril (DIX), emojis seuls**
+```
+{👍|💪|👏}{💯|👌}
+{💪|👊}{👏|👍}
+{👌|💯}{💪|👍}
+```
