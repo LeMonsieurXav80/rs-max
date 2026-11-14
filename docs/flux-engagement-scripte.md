@@ -136,6 +136,43 @@ Le délai « même auteur » (7 jours) reste une constante.
 - **À coordonner** : `resources/views/accounts/edit.blade.php` porte des modifications locales non commitées dans le
   dépôt principal.
 
+## Trois installations synchronisées
+
+Companion et les scripts tournent à trois endroits. Chaque livraison les met tous à jour **dans la même intervention** :
+
+| Où | Companion | Scripts et skills Hermès |
+|---|---|---|
+| Mac (local, Chrome) | dossier `DEV/Chrome/rs-max-companion`, rechargé dans chaque profil Chrome | — |
+| NAS (`rsmax-browser`, `rsmax-browser-x`) | `/volume1/docker/rsmax-browser/ext` | — |
+| VPS DIX (`rsmax-browser-dix`) | `/opt/rsmax-browser-dix/ext` | profil `rsmax-dix` |
+| VPS lemonsieurxav | — | profil `community-manager` |
+
+- Procédure Companion inchangée : réserver la file avec `browser:maintenance`, copier, redémarrer **deux fois**,
+  libérer, garder le `config.local.js` de chaque installation. Le correctif est aussi enregistré dans `companion/patches/`.
+- Contrôle après livraison : empreinte de chaque fichier comparée entre les trois installations, et scripts ou skills
+  Hermès comparés au dépôt.
+- **Écarts voulus** au 14/11/2026 : le compte par défaut est écrit en dur dans cinq fichiers (`lemonsieurxav` ou
+  `dix` dans `pinterest/batch.js`, `shared/library.js`, `tiktok/batch.js`, `tiktok/discovery.js`), plus
+  `shared/seed.json`, propre à chaque marque. À déplacer dans `config.local.js` pour que le code soit identique partout.
+- **À construire** : Companion envoie sa version à chaque appel, et RS-Max garde la dernière version vue par
+  installation (Mac, NAS, VPS) sur la page `/agent`. Aujourd'hui, la version n'apparaît que dans `extension_errors`, et
+  le rechargement des profils Chrome du Mac ne se vérifie pas à distance.
+
+## Exécution manuelle en local
+
+Chaque action doit aussi pouvoir être lancée **à la main depuis Companion sur le Mac**, dans le Chrome de Xavier :
+entrées « X — Engager mon fil » et « Threads — Engager mon fil » dans le menu de Companion, comme
+« X — Actualiser mes statistiques » aujourd'hui.
+
+- Mêmes routes RS-Max, mêmes règles de sélection, mêmes plafonds et même cadence que le passage automatique :
+  le script vit dans RS-Max et Companion, il ne dépend pas de qui le déclenche.
+- Les cibles confiées au modèle rejoignent la même file que celles du passage automatique, et Hermès les rédige.
+  Le résultat est donc le même quel que soit le déclencheur.
+- Journal identique (`bot_action_logs`), avec l'origine du déclenchement : `local` ou `nas`/`vps`.
+- Relevé à blanc possible en local : sélection affichée, rien envoyé.
+- Cela reste compatible avec la règle « le Mac n'est jamais worker » : le Mac n'exécute que ce que Xavier lance,
+  jamais la file automatique.
+
 ## Garde-fous conservés
 
 - Fenêtre 06 h–22 h à Lisbonne (`CommunityManagerWindow`).
