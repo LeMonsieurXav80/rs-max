@@ -84,6 +84,34 @@ de l'étape 6 attend.
   - un plafond quotidien de likes et un plafond quotidien de commentaires automatiques, en plus de la cadence
     existante.
 
+## Champs à ajouter à la fiche Community Manager
+
+Les nouveaux réglages vont dans `agent_strategy`, sous une clé `feed_engagement`. Aucune migration n'est nécessaire,
+mais il faut étendre la liste des clés acceptées par `AccountStrategy::validate()`, le formulaire du compte et la vue
+compacte de l'API. Un réglage par compte, donc séparément pour X et pour Threads.
+
+| Champ | Contenu | Défaut |
+|---|---|---|
+| Engagement du fil par script | interrupteur | coupé |
+| Commentaires spintax en français | un modèle par ligne, `{a\|b\|c}` | vide (aucun commentaire spintax) |
+| Commentaires emojis seuls | un modèle par ligne, pour une autre langue ou sans texte | vide |
+| Part des commentaires spintax | pourcentage des publications retenues | 40 % |
+| Portée du like | tout ce qui n'est pas exclu, ou seulement ce qui contient un mot-clé | à décider |
+| Plafond quotidien de likes par script | nombre | à fixer |
+| Plafond quotidien de commentaires spintax | nombre | à fixer |
+| Publications lues par passage | nombre, 30 au plus | 25 |
+
+Champs existants **réutilisés** : recherches, hashtags et comptes à suivre pour retenir une publication ; « Mots et
+comptes à exclure » comme liste de mots interdits ; `discovery_interval_minutes` pour la fréquence des passages.
+Le délai « même auteur » (7 jours) reste une constante.
+
+- **Formulaire** : vérifier que les accolades sont équilibrées, afficher trois tirages d'exemple et le nombre de
+  combinaisons possibles.
+- **Sécurité** : comme pour la cadence adaptative, le jeton Community Manager d'Hermès ne peut **ni activer
+  l'interrupteur ni relever un plafond**. Seul un humain le fait depuis la fiche.
+- **À coordonner** : `resources/views/accounts/edit.blade.php` porte des modifications locales non commitées dans le
+  dépôt principal.
+
 ## Garde-fous conservés
 
 - Fenêtre 06 h–22 h à Lisbonne (`CommunityManagerWindow`).
@@ -136,7 +164,7 @@ de l'étape 6 attend.
 ## Points ouverts
 
 - La détection de la langue sur Threads est à vérifier.
-- La liste des mots exclus et les modèles spintax sont à fournir par Xavier sur la fiche compte.
+- La liste des mots exclus et les modèles spintax sont à fournir par Xavier sur la fiche compte, une fois les champs créés.
 - Les plafonds de départ sont à fixer.
 - Faut-il retenir tout ce qui n'est pas exclu pour le like, et réserver les mots-clés aux commentaires ?
 - La commande d'envoi groupé et l'attente de la preuve sur Threads sont à construire.
