@@ -2,13 +2,17 @@
 
 namespace Tests\Feature;
 
+use App\Models\BotActionLog;
 use App\Models\Platform;
 use App\Models\SocialAccount;
 use App\Models\User;
 use App\Models\XEngagement;
+use App\Services\Agent\AccountActionBudget;
+use App\Services\Agent\Feed\FeedEngagementExecutor;
 use App\Services\Agent\Feed\FeedEngagementPlanner;
 use App\Services\Agent\Feed\FeedMatcher;
 use App\Services\Agent\Feed\Spintax;
+use App\Services\Agent\XEngagementService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
 
@@ -152,5 +156,77 @@ class FeedEngagementTest extends TestCase
         $this->withToken($agent)->patchJson($cm, ['agent_strategy' => ['feed_engagement' => ['daily_likes' => 100]]])->assertOk();
         $this->assertSame(100, $account->fresh()->agent_strategy['feed_engagement']['daily_likes']);
         $this->assertTrue($account->fresh()->agent_strategy['feed_engagement']['enabled']);
+    }
+
+    /** Faux navigateur : chaque geste aboutit avec le statut demandé, sans tâche Companion. */
+    private function executor(array $outcomes = []): FeedEngagementExecutor
+    {
+        $fake = new class($outcomes) extends XEngagementService
+        {
+            public function __construct(public array $outcomes) {}
+
+            public function execute(XEngagement $row): XEngagement
+            {
+                $row->update(['status' => 'queued', 'requested_at' => now()]);
+
+                return $row;
+            }
+
+            public function result(XEngagement $row): XEngagement
+            {
+                $row->update(['status' => array_shift($this->outcomes) ?? 'confirmed']);
+
+                return $row->fresh();
+            }
+        };
+
+        return new FeedEngagementExecutor($fake, app(AccountActionBudget::class), fn () => null);
+    }
+
+    public function test_l_execution_aime_commente_journalise_et_ne_refait_rien_au_passage_suivant(): void
+    {
+        $this->travelTo(\Illuminate\Support\Carbon::parse('2026-11-14 12:00', 'Europe/Lisbon'));
+        $account = $this->account(['enabled' => true, 'spin_percent' => 100]);
+        $posts = [$this->feedPost('301', 'alice', 'Grosse séance de squat'), $this->feedPost('302', 'bob', 'Leg day squat', ['lang' => 'en'])];
+        $executor = $this->executor();
+        $plan = app(FeedEngagementPlanner::class)->plan($account, $posts, $executor->usedToday($account));
+        $run = $executor->run($account, $plan, collect($posts)->keyBy('id')->all(), 'snap', 'server');
+
+        $this->assertNull($run['stopped']);
+        $this->assertSame(['like', 'reply', 'like', 'reply'], array_column($run['done'], 'action'));
+        $this->assertSame(['likes' => 2, 'spin' => 2, 'llm' => 0], $executor->usedToday($account));
+        $reply = XEngagement::where('action', 'reply')->where('target_key', hash('sha256', '301'))->first();
+        $this->assertSame('feed_script', $reply->payload['origin']);
+        $this->assertSame('script_spintax', $reply->payload['draft_source']);
+        $this->assertMatchesRegularExpression('/^(Belle|Super) séance (💪|🔥)$/u', $reply->payload['text']);
+        $this->assertSame(2, BotActionLog::where('action_type', 'feed.like')->where('success', true)->count());
+        $this->assertSame(2, BotActionLog::where('action_type', 'feed.spin')->count());
+
+        $again = app(FeedEngagementPlanner::class)->plan($account, $posts, $executor->usedToday($account));
+        $this->assertSame(0, $again['summary']['likes'] + $again['summary']['spin'], 'déjà aimées et commentées');
+    }
+
+    public function test_un_geste_incertain_arrete_la_publication_et_le_plafond_du_passage_tient(): void
+    {
+        $this->travelTo(\Illuminate\Support\Carbon::parse('2026-11-14 12:00', 'Europe/Lisbon'));
+        $account = $this->account(['enabled' => true, 'spin_percent' => 100, 'pass_max_actions' => 3]);
+        $posts = [$this->feedPost('401', 'alice', 'Squat'), $this->feedPost('402', 'bob', 'Squat'), $this->feedPost('403', 'carla', 'Squat')];
+        $executor = $this->executor(['uncertain']);
+        $plan = app(FeedEngagementPlanner::class)->plan($account, $posts);
+        $run = $executor->run($account, $plan, collect($posts)->keyBy('id')->all(), 'snap', 'server');
+
+        $this->assertSame([['401', 'like', 'uncertain'], ['402', 'like', 'confirmed'], ['402', 'reply', 'confirmed']],
+            array_map(fn ($d) => [$d['id'], $d['action'], $d['status']], $run['done']));
+        $this->assertSame('plafond du passage (3 gestes)', $run['stopped']);
+        $this->assertFalse(XEngagement::where('action', 'reply')->where('target_key', hash('sha256', '401'))->exists());
+    }
+
+    public function test_commit_refuse_tant_que_l_interrupteur_est_coupe(): void
+    {
+        $account = $this->account();
+        $this->artisan('x:feed-engage', ['account' => $account->id, '--commit' => true])
+            ->expectsOutputToContain('Engagement du fil coupé sur la fiche du compte')->assertFailed();
+        $this->artisan('x:feed-engage', ['--all' => true, '--commit' => true])->assertSuccessful();
+        $this->assertSame(0, XEngagement::count());
     }
 }

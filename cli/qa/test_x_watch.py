@@ -28,6 +28,14 @@ class XWatchTest(unittest.TestCase):
         self.assertEqual(r['accounts'][0]['account_id'],11);self.assertEqual(r['accounts'][0]['items'][0]['id'],99)
         self.assertIn('accounts/11/inbox?',c.api.call_args.args[1])
 
+    def test_le_fil_trie_par_script_n_est_plus_relu_par_le_modele(self):
+        a=self.account(); a.update(persona=5, strategy={'feed_engagement':{'enabled':True}})
+        a['actions']={'like':{'left':5},'reply':{'left':5},'feed.read':{'left':5},'thread.read':{'left':5}}
+        self.assertIsNone(watch.discovery_source(Mock(), a, dt.datetime.fromisoformat('2026-11-07T12:30:00+00:00')))
+        a['strategy']['feed_engagement']['enabled']=False
+        c=Mock(); c.api.return_value={'logs':[]}
+        self.assertEqual(watch.discovery_source(c, a, dt.datetime.fromisoformat('2026-11-07T12:30:00+00:00'))['read_action'],'feed.read')
+
     def test_le_modele_ne_recoit_de_la_strategie_que_de_quoi_rediger(self):
         c=Mock(); a=self.account()
         a['strategy']={'audience':'Sportifs','objective':'Encourager','exclusions':['spam'],'search_queries':['squat']*113,

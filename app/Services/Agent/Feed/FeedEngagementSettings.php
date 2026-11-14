@@ -17,12 +17,13 @@ final class FeedEngagementSettings
         'daily_spin_comments' => 20,
         'daily_llm_comments' => 40,
         'read_limit' => 25,
+        'pass_max_actions' => 8,
     ];
 
     public const TEMPLATE_LISTS = ['spin_templates', 'emoji_templates'];
 
     /** Réglages qui élargissent ce que le script fait : réservés à un accès gestionnaire complet. */
-    public const RAISING = ['spin_percent', 'daily_likes', 'daily_spin_comments', 'daily_llm_comments', 'read_limit'];
+    public const RAISING = ['spin_percent', 'daily_likes', 'daily_spin_comments', 'daily_llm_comments', 'read_limit', 'pass_max_actions'];
 
     public static function for(SocialAccount $account): array
     {

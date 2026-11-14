@@ -186,7 +186,8 @@ class AccountStrategy
             'agent_strategy.feed_engagement.daily_likes' => 'sometimes|integer|min:0|max:1000',
             'agent_strategy.feed_engagement.daily_spin_comments' => 'sometimes|integer|min:0|max:500',
             'agent_strategy.feed_engagement.daily_llm_comments' => 'sometimes|integer|min:0|max:500',
-            'agent_strategy.feed_engagement.read_limit' => 'sometimes|integer|min:5|max:30'];
+            'agent_strategy.feed_engagement.read_limit' => 'sometimes|integer|min:5|max:30',
+            'agent_strategy.feed_engagement.pass_max_actions' => 'sometimes|integer|min:1|max:30'];
         foreach (array_keys(self::LISTS) as $key) {
             $rules['agent_strategy.'.$key] = 'sometimes|array|max:200';
             $rules['agent_strategy.'.$key.'.*'] = 'string|max:255|distinct';

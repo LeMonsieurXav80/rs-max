@@ -5,7 +5,9 @@ namespace App\Services\Agent\Feed;
 use App\Models\SocialAccount;
 use App\Models\XEngagement;
 use App\Services\Agent\CommentFreshness;
+use App\Services\Agent\XAddressing;
 use App\Services\Agent\XEngagementService;
+use App\Services\Agent\XReplyDraft;
 use App\Services\Inbox\InboxFollowup;
 
 /**
@@ -129,7 +131,14 @@ class FeedEngagementPlanner
             }
             $left['spin']--;
 
-            return ['comment' => 'spin', 'comment_text' => Spintax::expand($templates[random_int(0, count($templates) - 1)]), 'reasons' => $reasons];
+            $text = $this->spin($templates);
+            if ($text === null) {
+                $left['spin']++;
+
+                return $none('aucun modèle spintax ne passe les règles de réponse');
+            }
+
+            return ['comment' => 'spin', 'comment_text' => $text, 'reasons' => $reasons];
         }
         if (! $french) {
             // Le modèle répond dans la langue du compte : il ne rédige que sous une publication en français.
@@ -141,6 +150,22 @@ class FeedEngagementPlanner
         $left['llm']--;
 
         return ['comment' => 'llm', 'comment_text' => null, 'reasons' => [...$reasons, ...($question ? ['question : rédaction'] : [])]];
+    }
+
+    /**
+     * Tire un modèle qui passe les règles serveur d'une réponse : longueur X, et pas de « merci » en tête,
+     * puisque le compte n'est pas interpellé sous une publication du fil (`XAddressing::OUTSIDER`).
+     */
+    private function spin(array $templates): ?string
+    {
+        for ($try = 0; $try < 8; $try++) {
+            $text = Spintax::expand($templates[random_int(0, count($templates) - 1)]);
+            if (XReplyDraft::fits($text, XReplyDraft::LIMIT) && XAddressing::fits(XAddressing::OUTSIDER, $text)) {
+                return $text;
+            }
+        }
+
+        return null;
     }
 
     /** `fr`, une autre langue, ou `none` pour une publication sans texte à lire. */
