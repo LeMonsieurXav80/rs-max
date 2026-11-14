@@ -43,7 +43,7 @@ class XFeedEngageCommand extends Command
 
         $settings = FeedEngagementSettings::for($account);
         $payload = ['url' => 'https://x.com/home', 'action' => 'feed.read', 'username' => $account->browser_username,
-            'limit' => $settings['read_limit'], 'screens' => 5, 'feed' => 'foryou', 'handle' => '', 'target_id' => null,
+            'limit' => $settings['read_limit'], 'screens' => 12, 'feed' => 'foryou', 'handle' => '', 'target_id' => null,
             'activity_window' => $window->specification()];
         try {
             $result = $browser->run($account, 'x.agent.read', $payload, 110);

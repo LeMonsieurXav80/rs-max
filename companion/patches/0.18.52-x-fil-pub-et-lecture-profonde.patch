@@ -1,0 +1,59 @@
+diff -ruN a11/manifest.json b11/manifest.json
+--- a/manifest.json	2026-11-14 12:37:31
++++ b/manifest.json	2026-11-14 12:37:31
+@@ -1,7 +1,7 @@
+ {
+   "manifest_version": 3,
+   "name": "RS-Max Companion",
+-  "version": "0.18.51",
++  "version": "0.18.52",
+   "description": "Actions assistees sur les reseaux sociaux (engagement, publication) avec remontee vers l'API RS-Max.",
+   "permissions": [
+     "storage",
+diff -ruN a11/tests/x-feed-markers.test.cjs b11/tests/x-feed-markers.test.cjs
+--- a/tests/x-feed-markers.test.cjs	2026-11-14 12:37:31
++++ b/tests/x-feed-markers.test.cjs	2026-11-14 12:37:31
+@@ -32,6 +32,11 @@
+   assert.equal(repost.social_context, 'Coach a reposté');
+ });
+ 
++test('une vidéo suivie par X n’est pas une publicité sans la mention visible', () => {
++  const [video] = rows(`<div data-testid="placementTracking">${post('6', '<div data-testid="tweetText" lang="fr">Séance du jour</div><video></video>')}</div>`);
++  assert.equal(video.promoted, false);
++});
++
+ test('une publication sans texte n’a pas de langue', () => {
+   const [photo] = rows(post('5', '<div data-testid="tweetPhoto"><img alt="Image"></div>'));
+   assert.equal(photo.lang, null);
+diff -ruN a11/x/agent.js b11/x/agent.js
+--- a/x/agent.js	2026-11-14 12:37:31
++++ b/x/agent.js	2026-11-14 12:37:31
+@@ -130,10 +130,12 @@
+     }
+     await wait(()=>articles().length,20000);guardFeed();
+     const found=new Map(),limit=Math.min(30,Math.max(1,Number(p.limit)||10));
+-    for(let screen=0;screen<Math.min(5,Number(p.screens)||2);screen++){
++    // Au-delà de 10 publications (tri du fil par script), l'écran du NAS en montre peu : plus d'écrans, plus d'attente.
++    const deep=limit>10;
++    for(let screen=0;screen<Math.min(deep?12:5,Number(p.screens)||2);screen++){
+       for(const a of articles()){const s=snapshot(a);if(s)found.set(s.id,s);}
+       if(found.size>=limit) break;
+-      window.scrollBy(0,innerHeight*1.4);await sleep(1000);guardFeed();
++      window.scrollBy(0,innerHeight*1.4);await sleep(deep?1500:1000);guardFeed();
+     }
+     return result({items:[...found.values()].slice(0,limit),complete:false,observed:Math.min(found.size,limit),...(feed ? {feed} : {})});
+   }
+diff -ruN a11/x/dom.js b11/x/dom.js
+--- a/x/dom.js	2026-11-14 12:37:31
++++ b/x/dom.js	2026-11-14 12:37:31
+@@ -136,8 +136,8 @@
+     const lang=texts.map(n=>n.getAttribute('lang')).find(Boolean)||null;
+     const context=[...a.querySelectorAll('[data-testid="socialContext"]')].find(n=>own(n,a));
+     const social=context?text(context):'';
+-    const promoted=Boolean(a.closest('[data-testid="placementTracking"]')||a.querySelector('[data-testid="placementTracking"]'))
+-      ||[...a.querySelectorAll('span')].some(n=>own(n,a)&&/^(Ad|Ads|Promoted|Sponsored|Sponsorisé|Publicité)$/.test((n.textContent||'').trim()));
++    // Seule la mention visible fait foi : placementTracking entoure aussi chaque lecteur vidéo, citations comprises.
++    const promoted=[...a.querySelectorAll('span')].some(n=>own(n,a)&&/^(Ad|Ads|Promoted|Sponsored|Sponsorisé|Publicité)$/.test((n.textContent||'').trim()));
+     return {...p,name,avatar,quoted_ids,text:texts.map(text).join('\n'),lang,promoted,
+       ...(social ? {social_context:social} : {}), ...(/repost|republi|retweet/i.test(social) ? {reposted_by:true} : {}),quote:[...new Set(nested.length?nested:legacyQuotes)].join('\n'),
+       ...(reply.isReply ? {reply_hint:true} : {}), ...(reply.parentId ? {reply_parent_id:reply.parentId} : {}),
