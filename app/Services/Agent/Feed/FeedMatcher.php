@@ -106,6 +106,12 @@ final class FeedMatcher
             return null;
         }
         $words = explode(' ', $phrase);
+        // « haltères » doit aussi trouver « l'haltère » : le dernier mot revient au singulier, sauf les mots
+        // courts (« dos », « abs », « pecs ») qui deviendraient un autre mot.
+        $last = array_key_last($words);
+        if (strlen($words[$last]) >= 5) {
+            $words[$last] = preg_replace('/[sx]$/', '', $words[$last]) ?: $words[$last];
+        }
         // Pluriel sur le dernier mot ; mots composés acceptés avec espace, tiret (déjà normalisé) ou collés.
         $spaced = implode(' ', array_map('preg_quote', $words));
         $glued = preg_quote(implode('', $words));

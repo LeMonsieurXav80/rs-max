@@ -53,6 +53,13 @@ class FeedEngagementTest extends TestCase
         $this->assertSame(['créatine'], $m->keywordHits('la CREATINE ça marche ?'));
         $this->assertSame(['#legday'], $m->keywordHits('#LegDay'));
         $this->assertSame([], $m->keywordHits('squatter le canapé'));
+        $plural = new FeedMatcher(['search_queries' => ['haltères', 'wall balls', 'dos', 'abs', 'lunges']]);
+        $this->assertSame(['haltères'], $plural->keywordHits("L'haltère de 20 kg"));
+        $this->assertSame(['haltères'], $plural->keywordHits('Deux haltères'));
+        $this->assertSame(['wall balls'], $plural->keywordHits('100 wall ball'));
+        $this->assertSame(['lunges'], $plural->keywordHits('walking lunge'));
+        $this->assertSame(['dos'], $plural->keywordHits('Mon dos'));
+        $this->assertSame([], $plural->keywordHits('I do it, ab'));
         $this->assertSame('onlyfans', $m->excludedBy('lien OnlyFans en bio', 'x'));
         $this->assertSame('@spammeur', $m->excludedBy('Belle séance', '@SPAMMEUR'));
         $this->assertTrue($m->isTarget('coach'));
