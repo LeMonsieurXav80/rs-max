@@ -185,3 +185,6 @@ le même réveil (sessions `source='cron'` de `state.db`, messages `tool` rappro
 
 Pistes, par gain attendu : moins d'appels par réveil (le socle est payé à chaque appel) ; `logs` compact
 (~10 k → ~1 k jetons) ; prélecture élaguée des comptes sans travail ; file Threads.
+
+Stratégie suivante, à tester : tri du fil « Pour vous » par script, likes et commentaires spintax sans modèle, lots de
+commentaires rédigés en un appel. Voir `docs/flux-engagement-scripte.md`.
