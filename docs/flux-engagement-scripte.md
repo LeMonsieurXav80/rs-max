@@ -25,8 +25,26 @@ Suivi des coûts : `docs/hermes-couts-agent.md`.
 - Depuis `2bd84f3`, une exclusion peut être un emoji (💦), et le pseudo de l'auteur est examiné (« mrfunkyxxx »
   contient « xxx »). Un mot exclu court peut écarter à tort un pseudo qui le contient : c'est le prix de la prudence.
 
-**Prochaine étape** : exécution des likes et du spintax (plafonds, journal par action, résumé quotidien), une fois les
-listes complétées et un nouveau relevé à blanc validé.
+**Étape 2 livrée le 14/11/2026** (RS-Max `e55d185`) : exécution des likes et du spintax.
+- `php artisan x:feed-engage <compte> --commit` : refusé tant que l'interrupteur de la fiche est coupé. Planifié
+  `x:feed-engage --all --commit` toutes les 20 minutes, pour les seuls comptes allumés.
+- `FeedEngagementExecutor` : un geste à la fois, par le circuit des gestes d'Hermès (`XEngagement`, cadence et délai
+  minimal, tâche Companion `x.agent.act`, preuve après rechargement). Un résultat incertain n'est jamais renvoyé, et
+  arrête les autres gestes sur la même publication. Arrêt du passage sur un refus de cadence, de quota ou de réservation.
+- Plafonds : du jour (`daily_likes`, `daily_spin_comments`), comptés sur les reçus `XEngagement` `origin=feed_script`
+  depuis minuit à Lisbonne, et du passage (`pass_max_actions`, 8 par défaut).
+- Un modèle spintax doit passer les règles serveur d'une réponse : longueur X, pas de « merci » en tête
+  (`XAddressing::OUTSIDER`). Sinon, un autre modèle est tiré.
+- Journal : `feed.like` et `feed.spin` dans `bot_action_logs` (statut, auteur, mots-clés, langue, texte), plus
+  `agent.feed.read` par passage (résumé, gestes, motif d'arrêt). **Bilan à J+7** : les reçus `XEngagement`
+  (`payload->origin = feed_script`) restent en base au-delà de la purge de 7 jours.
+- Quand l'engagement d'un compte est allumé, Hermès ne relit plus son fil (`rsmax_x_watch.discovery_source`).
+  **Tant que l'étape 3 n'est pas livrée, les publications « pour le modèle » ne reçoivent que le like** : les
+  commentaires rédigés du fil s'arrêtent pour ce compte.
+
+**Listes au 14/11/2026** : Wildy Caro X et Threads 129 recherches et 78 exclusions, Cyril 136 et 81.
+
+**Prochaine étape** : lots de commentaires rédigés par Hermès (étape 3).
 
 ## Pourquoi
 
