@@ -113,6 +113,15 @@ exacts, réponses reçues sous les commentaires spintax comparées aux commentai
 - Gestes déjà faits, pour le like, le commentaire et le délai « même auteur » : tâches `threads.agent.act` en attente,
   en cours, faites ou incertaines (Hermès ou script). Un échec franc laisse réessayer.
 
+**Premier relevé à blanc** (Wildy Caro, Threads #36, 14/11/2026 à 14 h 53 UTC, tâche 10755, 25 s) : 22 publications lues
+sur 12 écrans, 3 retenues, 3 likes, 0 spintax, 1 pour le modèle.
+- Interface en anglais pour cette session aussi (22 sur 22) : 8 liens « Translate », aucune réponse ni publicité.
+- Retenues : « Pilates » (publication `#pub` SHEIN, partenariat payé), « training/biceps/triceps » (anglais, question :
+  like seul), « course à pied » (français : like et rédaction).
+- **Faux français** : « Ni antes ni después, todo llega… » (espagnol) passe pour du français (`que` + accent). Sans
+  conséquence ici (aucun mot-clé), à corriger avant l'activation.
+- Le fil « Pour toi » de ce compte est peu tourné vers le sport : 19 publications sans mot-clé sur 22.
+
 **DOM vérifié sur le NAS le 14/11/2026** (CDP du Chromium `rsmax-browser`, file réservée, trois lectures, environ
 120 publications) :
 - **L'interface Threads était en anglais** (session de Planète de Caro installée ce jour-là) et le lien « Translate »
