@@ -168,42 +168,54 @@ class BrowserTaskQueue
                 if (! $task) {
                     return null;
                 }
-                $window = $task->payload['activity_window'] ?? null;
-                if ($window !== null && ! app(CommunityManagerWindow::class)->isOpen($window)) {
-                    $task->update(['status' => BrowserTask::CANCELLED, 'finished_at' => now(),
-                        'error' => 'Plage de journée Community Manager terminée : tâche annulée sans exécution.']);
-
-                    continue;
+                if ($this->start($task)) {
+                    return $task;
                 }
-                try {
-                    try {
-                        app(\App\Services\Threads\ThreadsAgent::class)->claim($task);
-                    } catch (\Throwable $e) {
-                        throw new BrowserException($e->getMessage());
-                    }
-                    app(\App\Services\Agent\XEngagementService::class)->claim($task);
-                    try {
-                        app(\App\Services\Agent\TikTokPhotoPublisher::class)->claim($task);
-                    } catch (\Throwable $e) {
-                        throw new BrowserException($e->getMessage());
-                    }
-                    app(\App\Services\Agent\AccountActionBudget::class)->forTask($task);
-                } catch (BrowserException $e) {
-                    $task->update(['status' => BrowserTask::CANCELLED, 'finished_at' => now(), 'error' => $e->getMessage()]);
-                    app(\App\Services\Agent\XEngagementService::class)->finish($task);
-                    app(\App\Services\Agent\TikTokPhotoPublisher::class)->finish($task);
-
-                    continue;
-                }
-                $task->update(['status' => BrowserTask::RUNNING, 'claimed_at' => now()]);
-
-                return $task;
             }
 
             return null;
         }));
 
         return $claimed instanceof BrowserTask ? $claimed : null;
+    }
+
+    /**
+     * Contrôles de prise d'une tâche en attente (horaires, gestes Threads et X, photos TikTok, cadence), puis passage
+     * en cours. `false` : la tâche est annulée sans exécution. Sert aussi aux tâches lancées depuis le Mac
+     * (`LocalFeedRun`), prises une par une par leur identifiant.
+     */
+    public function start(BrowserTask $task): bool
+    {
+        $window = $task->payload['activity_window'] ?? null;
+        if ($window !== null && ! app(CommunityManagerWindow::class)->isOpen($window)) {
+            $task->update(['status' => BrowserTask::CANCELLED, 'finished_at' => now(),
+                'error' => 'Plage de journée Community Manager terminée : tâche annulée sans exécution.']);
+
+            return false;
+        }
+        try {
+            try {
+                app(\App\Services\Threads\ThreadsAgent::class)->claim($task);
+            } catch (\Throwable $e) {
+                throw new BrowserException($e->getMessage());
+            }
+            app(\App\Services\Agent\XEngagementService::class)->claim($task);
+            try {
+                app(\App\Services\Agent\TikTokPhotoPublisher::class)->claim($task);
+            } catch (\Throwable $e) {
+                throw new BrowserException($e->getMessage());
+            }
+            app(\App\Services\Agent\AccountActionBudget::class)->forTask($task);
+        } catch (BrowserException $e) {
+            $task->update(['status' => BrowserTask::CANCELLED, 'finished_at' => now(), 'error' => $e->getMessage()]);
+            app(\App\Services\Agent\XEngagementService::class)->finish($task);
+            app(\App\Services\Agent\TikTokPhotoPublisher::class)->finish($task);
+
+            return false;
+        }
+        $task->update(['status' => BrowserTask::RUNNING, 'claimed_at' => now()]);
+
+        return true;
     }
 
     private function outcome(BrowserTask $task): array

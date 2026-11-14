@@ -41,8 +41,11 @@ interface FeedNetwork
     /** Reçu préparé pour un geste, ou `null` si le même geste est déjà parti pour cette publication. */
     public function reserve(SocialAccount $account, string $action, array $post, string $snapshot, string $trigger, ?string $text): ?Model;
 
-    /** Demande le geste à Companion ; lève une `HttpException` (cadence, quota, réservation) sans rien envoyer. */
-    public function dispatch(Model $receipt): Model;
+    /**
+     * Demande le geste à Companion ; lève une `HttpException` (cadence, quota, réservation) sans rien envoyer.
+     * `$profile` : le Chrome du Mac pour un passage lancé à la main, sinon le Chromium du compte.
+     */
+    public function dispatch(Model $receipt, ?string $profile = null): Model;
 
     /** Issue connue du geste. */
     public function refresh(Model $receipt): Model;

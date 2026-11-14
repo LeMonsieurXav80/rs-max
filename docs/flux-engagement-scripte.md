@@ -369,6 +369,28 @@ Companion et les scripts tournent à trois endroits. Chaque livraison les met to
 
 ## Exécution manuelle en local
 
+**Étape 4 livrée le 14/11/2026** (Companion 0.18.54) : « X — Engager mon fil » et « Threads — Engager mon fil » dans le
+panneau Companion, sur l'accueil de X (`/home`) et de Threads (`/`), dans le Chrome de Xavier.
+- **Relevé à blanc par défaut** : case « Aimer et commenter pour de vrai » décochée, la sélection est affichée dans le
+  journal du panneau, rien n'est envoyé (`agent.feed.read`, `trigger=local`, `dry_run=true`).
+- Companion lit environ 25 publications du fil « Pour vous / Pour toi » avec les mêmes repères que sur le NAS et les
+  envoie à RS-Max (`POST /api/extension/feed/runs`), qui décide avec `FeedEngagementPlanner`, les plafonds du jour et
+  l'interrupteur de la fiche (refus 403 s'il est coupé).
+- Passage réel : `LocalFeedRun` avance d'un geste à la fois (`POST /api/extension/feed/runs/{run}/next`) dans l'ordre
+  et avec les règles du passage du NAS (`FeedEngagementExecutor::steps`, plafond du passage, fenêtre, cadence, arrêt
+  sur incertain). Chaque geste est une tâche normale (`x.agent.act`, `threads.agent.act`) avec son reçu
+  (`XEngagement`, `ThreadsEngagement`, `origin=feed_script`, `trigger=local`), créée sur le profil **`mac-local`**,
+  qu'aucun worker ne prend. Companion la prend par son identifiant (`POST /api/extension/feed/tasks/{id}/claim`, mêmes
+  contrôles de prise que `BrowserTaskQueue`), l'exécute avec les exécuteurs du NAS, puis la clôt par `finish`.
+- Le Chrome de Xavier **n'installe jamais la session d'un autre compte** : si le compte ouvert n'est pas celui du
+  passage, le geste échoue sans rien faire. Le Mac reste hors de la file automatique.
+- Les rédactions confiées au modèle rejoignent la file d'Hermès (`feed_drafts`), comme au passage du NAS.
+- Stop : RS-Max clôt le geste en cours et termine le passage sans en créer d'autre.
+- Journal identique (`feed.like`, `feed.spin`, `feed.llm`, `agent.feed.read`), avec `trigger=local` au lieu de `server`.
+
+### Principe retenu le 14/11/2026
+
+
 Chaque action doit aussi pouvoir être lancée **à la main depuis Companion sur le Mac**, dans le Chrome de Xavier :
 entrées « X — Engager mon fil » et « Threads — Engager mon fil » dans le menu de Companion, comme
 « X — Actualiser mes statistiques » aujourd'hui.

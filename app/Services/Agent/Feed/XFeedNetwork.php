@@ -102,9 +102,9 @@ final class XFeedNetwork implements FeedNetwork
             ['payload' => $payload, 'status' => 'prepared', 'persona_hash' => null]);
     }
 
-    public function dispatch(Model $receipt): Model
+    public function dispatch(Model $receipt, ?string $profile = null): Model
     {
-        return $this->engagements->execute($receipt);
+        return $this->engagements->execute($receipt, $profile);
     }
 
     public function refresh(Model $receipt): Model

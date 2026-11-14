@@ -20,9 +20,10 @@ class ThreadsEngagementService
     /** Délai de prise par le NAS, partagé avec TikTok et Planète de Caro. */
     public const DEADLINE_MINUTES = 6;
 
-    public function execute(ThreadsEngagement $row): ThreadsEngagement
+    /** `$profile` : le Chrome du Mac pour un passage lancé à la main, sinon le Chromium du compte. */
+    public function execute(ThreadsEngagement $row, ?string $profile = null): ThreadsEngagement
     {
-        return DB::transaction(function () use ($row) {
+        return DB::transaction(function () use ($row, $profile) {
             $account = SocialAccount::with('platform')->whereKey($row->social_account_id)->lockForUpdate()->firstOrFail();
             $row = ThreadsEngagement::whereKey($row->id)->lockForUpdate()->firstOrFail();
             abort_unless($row->status === 'prepared' && $row->browser_task_id === null, 409, 'Action déjà demandée : consulter son résultat, sans renvoi.');
@@ -43,7 +44,7 @@ class ThreadsEngagementService
             abort_if(BrowserTask::where('social_account_id', $account->id)->where('kind', 'threads.agent.act')
                 ->where('payload->action', $row->action)->where('payload->target->url', $row->payload['url'])
                 ->whereIn('status', ['pending', 'running', 'done', 'uncertain'])->exists(), 409, 'Geste déjà demandé sur cette publication.');
-            $task = BrowserTask::create(['social_account_id' => $account->id, 'profile' => $account->browser_profile,
+            $task = BrowserTask::create(['social_account_id' => $account->id, 'profile' => $profile ?? $account->browser_profile,
                 'kind' => 'threads.agent.act', 'status' => BrowserTask::PENDING, 'idempotency_key' => 'threads-feed:'.$row->id,
                 'payload' => $row->payload + ['engagement_id' => $row->id, 'deadline' => now()->addMinutes(self::DEADLINE_MINUTES)->toIso8601String()]]);
             $row->update(['status' => 'queued', 'browser_task_id' => $task->id, 'requested_at' => now()]);

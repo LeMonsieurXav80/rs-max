@@ -226,6 +226,13 @@ Route::middleware(['auth:sanctum', \App\Http\Middleware\CommunityManagerTokenSco
     Route::get('/extension/summary', [ExtensionApiController::class, 'summary']);
     Route::get('/extension/x/context', [\App\Http\Controllers\Api\XExtensionController::class, 'context']);
     Route::put('/extension/x/context', [\App\Http\Controllers\Api\XExtensionController::class, 'bind']);
+    // « Engager mon fil » lancé depuis Companion sur le Mac (X et Threads).
+    Route::post('/extension/feed/runs', [\App\Http\Controllers\Api\LocalFeedRunController::class, 'start'])
+        ->middleware('throttle:20,1,extension-feed-runs');
+    Route::post('/extension/feed/runs/{run}/next', [\App\Http\Controllers\Api\LocalFeedRunController::class, 'next'])
+        ->whereUuid('run')->middleware('throttle:120,1,extension-feed-runs-run-next');
+    Route::post('/extension/feed/tasks/{task}/claim', [\App\Http\Controllers\Api\LocalFeedRunController::class, 'claim'])
+        ->middleware('throttle:60,1,extension-feed-tasks-task-claim');
     Route::get('/extension/tasks/next', [\App\Http\Controllers\Api\BrowserTaskController::class, 'next']);
     Route::get('/extension/tasks/{task}/session', [\App\Http\Controllers\Api\BrowserTaskController::class, 'session']);
     Route::post('/extension/tasks/{task}/finish', [\App\Http\Controllers\Api\BrowserTaskController::class, 'finish']);

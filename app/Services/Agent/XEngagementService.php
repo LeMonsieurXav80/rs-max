@@ -119,9 +119,10 @@ class XEngagementService
         return array_values(array_intersect($tweetIds, [...$reservations, ...$liked, ...$pending]));
     }
 
-    public function execute(XEngagement $row): XEngagement
+    /** `$profile` : le Chrome du Mac pour un passage lancé à la main, sinon le Chromium du compte. */
+    public function execute(XEngagement $row, ?string $profile = null): XEngagement
     {
-        return DB::transaction(function () use ($row) {
+        return DB::transaction(function () use ($row, $profile) {
             $account = SocialAccount::whereKey($row->social_account_id)->lockForUpdate()->firstOrFail();
             $row = XEngagement::whereKey($row->id)->lockForUpdate()->firstOrFail();
             abort_unless($row->status === 'prepared' && $row->browser_task_id === null, 409, 'Action déjà demandée : consulter son résultat, sans renvoi.');
@@ -133,7 +134,7 @@ class XEngagementService
             abort_if($cadence['remaining'] === 0, 429, 'Cadence horaire atteinte.');
             abort_if($cadence['next_allowed_at'] && now()->lessThan($cadence['next_allowed_at']), 429, 'Délai minimal non écoulé. Prochaine action : '.$cadence['next_allowed_at']);
             $payload = $row->payload + ['engagement_id' => $row->id, 'deadline' => now()->addMinutes(5)->toIso8601String()];
-            $task = BrowserTask::create(['social_account_id' => $account->id, 'profile' => $account->browser_profile,
+            $task = BrowserTask::create(['social_account_id' => $account->id, 'profile' => $profile ?? $account->browser_profile,
                 'kind' => 'x.agent.act', 'payload' => $payload]);
             $row->update(['status' => 'queued', 'browser_task_id' => $task->id, 'requested_at' => now()]);
 

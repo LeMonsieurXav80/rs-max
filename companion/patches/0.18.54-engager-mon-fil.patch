@@ -1,0 +1,280 @@
+diff -ruN a/background.js b/background.js
+--- a/background.js	2026-11-14 16:25:08
++++ b/background.js	2026-11-14 16:25:08
+@@ -178,6 +178,14 @@
+   /** Appel API brut, utilise par les recettes (ex: lire les posts a publier). */
+   api: (msg) => apiFetch(msg),
+   'x.batch': (msg, sender) => handleXBatch(msg, sender),
++  // « Engager mon fil » lancé à la main : RS-Max décide, le Chrome de Xavier n'exécute que les gestes de ce passage.
++  'feed.local': async (msg) => {
++    const who = {platform: msg.platform, username: msg.username};
++    if (msg.operation === 'start') return apiFetch({method:'POST', path:'/extension/feed/runs', body:{...who, items:msg.items, commit:Boolean(msg.commit)}});
++    if (msg.operation === 'next') return apiFetch({method:'POST', path:`/extension/feed/runs/${msg.run}/next`, body:who});
++    if (msg.operation === 'task') return runLocalFeedTask(msg.task_id);
++    throw Error('Opération du fil inconnue.');
++  },
+ 
+   'x.assisted': async (msg, sender) => {
+     if (sender.id !== chrome.runtime.id || sender.frameId !== 0 ||
+@@ -386,6 +394,8 @@
+ async function ensureXAccount(task) {
+   globalThis.RSTaskJournal?.mark('identity.check');
+   if (!task.account_id || await connectedXAccount() === task.account_id) return;
++  // Le Chrome de Xavier n'installe jamais la session d'un autre compte.
++  if (task.local) throw new Error('Le compte X ouvert dans Chrome n’est pas celui du passage : rien n’a été fait.');
+   const { cookies } = await apiFetch({ path: `/extension/tasks/${task.id}/session` });
+   globalThis.RSTaskJournal?.mark('identity.restore');
+   await clearXCookies();
+@@ -787,6 +797,7 @@
+   try {
+     const who=await askPage(tabId,{kind:'threads.whoami'});
+     if(task.kind==='threads.session.apply'||who?.result?.username!==task.payload.username){
++      if(task.local)throw Error('Le compte Threads ouvert dans Chrome n’est pas celui du passage : rien n’a été fait.');
+       const data=await apiFetch({path:`/extension/tasks/${task.id}/session`});
+       if(!data.cookies?.length)throw Error('Session Threads absente : transmettre la session depuis Companion.');
+       if(data.cookies.some(c=>!/^\.?([a-z0-9-]+\.)*threads\.(com|net)$/.test(c.domain)))throw Error('Domaine de session Threads refusé.');
+@@ -855,6 +866,20 @@
+     taskMedia = null;
+     await chrome.tabs.remove(tabId).catch(() => {});
+   }
++}
++
++/** Geste d'un passage « Engager mon fil » : pris par son identifiant, exécuté comme sur le NAS, toujours clos. */
++async function runLocalFeedTask(taskId) {
++  const task = {...await apiFetch({method:'POST', path:`/extension/feed/tasks/${taskId}/claim`}), local:true};
++  globalThis.RSTaskJournal?.start(task);
++  let outcome;
++  try { outcome = await executeTask(task).catch(e => ({status:'failed', error:e.message})); }
++  finally {
++    const diagnostics = globalThis.RSTaskJournal?.finish(outcome || {status:'uncertain'}) || [];
++    try { await apiFetch({method:'POST', path:`/extension/tasks/${task.id}/finish`, body:{...(outcome || {status:'uncertain', error:'Résultat du geste perdu.'}), diagnostics}}); }
++    finally { globalThis.RSTaskJournal?.clear(); }
++  }
++  return {status:outcome.status, error:outcome.error || null};
+ }
+ 
+ async function runTasks() {
+diff -ruN a/manifest.json b/manifest.json
+--- a/manifest.json	2026-11-14 16:25:08
++++ b/manifest.json	2026-11-14 16:25:08
+@@ -1,7 +1,7 @@
+ {
+   "manifest_version": 3,
+   "name": "RS-Max Companion",
+-  "version": "0.18.53",
++  "version": "0.18.54",
+   "description": "Actions assistees sur les reseaux sociaux (engagement, publication) avec remontee vers l'API RS-Max.",
+   "permissions": [
+     "storage",
+@@ -146,7 +146,7 @@
+         "x/vault-preview.js",
+         "x/assisted.js",
+         "x/batch-plan.js",
+-        "x/batch.js",
++        "x/batch.js", "shared/feed-engage.js",
+         "x/publisher.js",
+         "x/tasks.js"
+       ],
+@@ -183,7 +183,7 @@
+         "shared/task-trace.js",
+         "content/engine.js",
+         "threads/agent.js",
+-        "threads/session.js"
++        "threads/session.js", "shared/feed-engage.js"
+       ],
+       "css": [
+         "content/ui.css"
+diff -ruN a/shared/feed-engage.js b/shared/feed-engage.js
+--- a/shared/feed-engage.js	1970-01-01 01:00:00
++++ b/shared/feed-engage.js	2026-11-14 16:25:08
+@@ -0,0 +1,87 @@
++/* « Engager mon fil » lancé à la main sur X et Threads : Companion lit le fil, RS-Max décide avec les règles,
++ * plafonds et journal du passage automatique (trigger=local), puis confie au Chrome de Xavier les seuls gestes de ce
++ * passage, un par un. Relevé à blanc par défaut. Voir docs/flux-engagement-scripte.md (RS-Max). */
++(() => {
++  'use strict';
++  const R = window.RSMAX;
++  if (!R || window.RSFeedEngage) return;
++  const onX = location.hostname === 'x.com';
++  const platform = onX ? 'x' : 'threads';
++  const READ_LIMIT = 25;
++  const labels = {like:'like', reply:'commentaire'};
++
++  async function send(payload) {
++    const reply = await chrome.runtime.sendMessage({type:'feed.local', platform, ...payload});
++    if (!reply?.ok) throw Error(reply?.error || 'Companion ne répond pas.');
++    return reply.data;
++  }
++  const identity = () => onX ? window.RSXMentions?.identity()?.username || null : window.RSThreads?.identity() || null;
++  const read = () => onX ? window.RSXDom.articles().map(window.RSXDom.snapshot).filter(Boolean)
++    : window.RSThreads.snapshots().map(v => v.s);
++  const available = url => onX ? url.pathname === '/home' : url.pathname === '/';
++
++  async function collect(ctx, username) {
++    const guard = () => { if (identity() !== username) throw Error('Le compte a changé pendant la lecture : rien n’a été envoyé.'); };
++    if (onX) await window.RSXDom.openFeed('foryou', guard);
++    window.scrollTo({top:0, behavior:'instant'});
++    await ctx.waitFor(() => ctx.stopped || read().length, {timeout:15000});
++    const found = new Map();
++    for (let screen = 0, quiet = 0; screen < 20 && quiet < 3 && found.size < READ_LIMIT && !ctx.stopped; screen++) {
++      guard();
++      const size = found.size;
++      for (const post of read()) if (!found.has(post.id)) found.set(post.id, post);
++      quiet = found.size === size ? quiet + 1 : 0;
++      window.scrollBy({top:Math.round(window.innerHeight * 0.85), behavior:'instant'});
++      await ctx.pause(1500);
++    }
++    return [...found.values()].slice(0, READ_LIMIT);
++  }
++
++  function describe(d) {
++    return [d.like ? 'like' : null, d.comment === 'spin' ? 'spintax « '+d.comment_text+' »' : null,
++      d.comment === 'llm' ? 'rédaction par Hermès' : null].filter(Boolean).join(' + ');
++  }
++
++  async function run(ctx) {
++    const username = identity();
++    if (!username) throw Error(`Ouvrir ${onX ? 'X' : 'Threads'} connecté au compte à engager.`);
++    const commit = ctx.params.commit === true;
++    const items = await collect(ctx, username);
++    if (ctx.stopped) return {incomplete:true, reason:'Arrêt demandé pendant la lecture : rien n’a été envoyé.'};
++    ctx.log(`@${username} · ${items.length} publication(s) lue(s) dans « Pour ${onX ? 'vous' : 'toi'} ».`);
++    const start = await send({operation:'start', username, items, commit});
++    for (const d of start.plan.items) {
++      const actions = describe(d);
++      ctx.log(`${actions ? '✓' : '·'} @${d.author} [${d.language}] ${actions || (d.reasons || []).join(' · ') || 'rien'}`);
++    }
++    const s = start.plan.summary;
++    if (start.dry_run) {
++      return {reason:`Relevé à blanc, rien n’a été envoyé : ${s.read} lues, ${s.retained} retenues, ${s.likes} likes, ${s.spin} spintax, ${s.llm} pour Hermès.`};
++    }
++    for (;;) {
++      const step = await send({operation:'next', username, run:start.run, stop:ctx.stopped});
++      if (step.state === 'done') {
++        const confirmed = step.done.filter(d => d.status === 'confirmed').length;
++        return {incomplete:Boolean(step.stopped), reason:`${step.done.length} geste(s), ${confirmed} confirmé(s) après rechargement, `
++          +`${step.requested} rédaction(s) confiée(s) à Hermès${step.stopped ? ' · arrêt : '+step.stopped : ''}.`};
++      }
++      if (step.state === 'wait' || step.state === 'pending') {
++        if (step.state === 'wait') ctx.log(`Cadence du compte : prochain geste dans ${step.seconds} s.`);
++        await ctx.pause((step.seconds || 5) * 1000);
++        continue;
++      }
++      ctx.log(`@${step.author} · ${labels[step.action] || step.action}${step.text ? ' « '+step.text+' »' : ''}…`);
++      const outcome = await send({operation:'task', task_id:step.task_id});
++      if (outcome.status !== 'done') ctx.log(`@${step.author} · ${outcome.status}${outcome.error ? ' : '+outcome.error : ''} (aucun renvoi)`, 'warn');
++    }
++  }
++
++  window.RSFeedEngage = {run};
++  R.register({platform:onX ? 'twitter' : 'threads', localOnly:true, match:url => onX ? url.origin === 'https://x.com'
++    : /^(www\.)?threads\.(com|net)$/.test(url.hostname), recipes:[{
++    id:platform+'.feed-engage', localOnly:true, label:`${onX ? 'X' : 'Threads'} — Engager mon fil`, available,
++    startLabel:'Lancer', params:[
++      {key:'commit', type:'checkbox', label:'Aimer et commenter pour de vrai (sinon relevé à blanc)', default:false},
++    ], run,
++  }]});
++})();
+diff -ruN a/tests/feed-engage.test.cjs b/tests/feed-engage.test.cjs
+--- a/tests/feed-engage.test.cjs	1970-01-01 01:00:00
++++ b/tests/feed-engage.test.cjs	2026-11-14 16:25:08
+@@ -0,0 +1,68 @@
++const {test} = require('node:test');
++const assert = require('node:assert/strict');
++const {readFileSync} = require('node:fs');
++const {join} = require('node:path');
++const {JSDOM} = require('jsdom');
++
++/** Recette « Threads — Engager mon fil » avec un faux service worker : RS-Max décide, le Chrome n'exécute que ses gestes. */
++function load(replies) {
++  const dom = new JSDOM('<main></main>', {url: 'https://www.threads.com/', runScripts: 'outside-only'});
++  const w = dom.window, sent = [];
++  let recipe;
++  w.scrollTo = w.scrollBy = () => {};
++  w.RSMAX = {register: mod => { recipe = mod.recipes[0]; }};
++  w.RSThreads = {identity: () => 'wildycaro', snapshots: () => [{s: {id: 'DfA1', author: 'alice', text: 'Squat du jour'}}]};
++  w.chrome = {runtime: {sendMessage: async msg => {
++    sent.push(msg);
++    const data = replies[msg.operation].shift();
++    return data instanceof Error ? {ok: false, error: data.message} : {ok: true, data};
++  }}};
++  w.eval(readFileSync(join(__dirname, '../shared/feed-engage.js'), 'utf8'));
++  const logs = [];
++  const ctx = (params, stopAfter = Infinity) => ({params, log: m => logs.push(m), waitFor: async () => true, pause: async () => {},
++    get stopped() { return sent.filter(m => m.operation === 'task').length >= stopAfter; }});
++  return {recipe, sent, logs, ctx, close: () => w.close()};
++}
++
++const plan = {summary: {read: 1, retained: 1, likes: 1, spin: 1, llm: 0},
++  items: [{author: 'alice', language: 'fr', like: true, comment: 'spin', comment_text: 'Belle séance 💪', reasons: []}]};
++
++test('le relevé à blanc lit le fil et n’envoie aucun geste', async () => {
++  const t = load({start: [{dry_run: true, plan}]});
++  try {
++    assert.equal(t.recipe.id, 'threads.feed-engage');
++    const out = await t.recipe.run(t.ctx({commit: false}));
++    assert.match(out.reason, /Relevé à blanc, rien n’a été envoyé : 1 lues, 1 retenues, 1 likes, 1 spintax/);
++    assert.deepEqual(t.sent.map(m => m.operation), ['start']);
++    assert.equal(t.sent[0].items[0].id, 'DfA1');
++    assert.equal(t.sent[0].commit, false);
++    assert.ok(t.logs.some(l => l.includes('spintax « Belle séance 💪 »')));
++  } finally { t.close(); }
++});
++
++test('le passage réel exécute un geste à la fois, attend la cadence et rend le bilan de RS-Max', async () => {
++  const t = load({start: [{dry_run: false, plan, run: 'r1'}],
++    next: [{state: 'task', task_id: 7, action: 'like', author: 'alice'}, {state: 'wait', seconds: 30},
++      {state: 'task', task_id: 8, action: 'reply', author: 'alice', text: 'Belle séance 💪'},
++      {state: 'done', done: [{status: 'confirmed'}, {status: 'uncertain'}], requested: 0, stopped: null}],
++    task: [{status: 'done'}, {status: 'uncertain', error: 'Commentaire peut-être envoyé'}]});
++  try {
++    const out = await t.recipe.run(t.ctx({commit: true}));
++    assert.deepEqual(t.sent.map(m => m.operation), ['start', 'next', 'task', 'next', 'next', 'task', 'next']);
++    assert.deepEqual(t.sent.filter(m => m.operation === 'task').map(m => m.task_id), [7, 8]);
++    assert.match(out.reason, /2 geste\(s\), 1 confirmé\(s\)/);
++    assert.ok(t.logs.some(l => l.includes('uncertain') && l.includes('aucun renvoi')));
++  } finally { t.close(); }
++});
++
++test('Stop clôt le geste en cours auprès de RS-Max sans en demander d’autre', async () => {
++  const t = load({start: [{dry_run: false, plan, run: 'r2'}],
++    next: [{state: 'task', task_id: 9, action: 'like', author: 'alice'}, {state: 'done', done: [{status: 'confirmed'}], requested: 0, stopped: 'arrêt demandé depuis Companion'}],
++    task: [{status: 'done'}]});
++  try {
++    const out = await t.recipe.run(t.ctx({commit: true}, 1));
++    assert.equal(t.sent.at(-1).stop, true);
++    assert.equal(out.incomplete, true);
++    assert.equal(t.sent.filter(m => m.operation === 'task').length, 1);
++  } finally { t.close(); }
++});
+diff -ruN a/tests/feed-local-task.test.cjs b/tests/feed-local-task.test.cjs
+--- a/tests/feed-local-task.test.cjs	1970-01-01 01:00:00
++++ b/tests/feed-local-task.test.cjs	2026-11-14 16:25:08
+@@ -0,0 +1,27 @@
++const test = require('node:test'), assert = require('node:assert/strict'), fs = require('node:fs'), vm = require('node:vm');
++const source = fs.readFileSync(require('node:path').join(__dirname, '../background.js'), 'utf8');
++const body = source.slice(source.indexOf('async function runLocalFeedTask'), source.indexOf('async function runTasks'));
++
++/** Tâche d'un passage local : prise par son identifiant, marquée locale, toujours close, même sur une exception. */
++function fixture(execute) {
++  const calls = [];
++  const sandbox = {globalThis: {}, apiFetch: async p => { calls.push(p); return p.path.endsWith('/claim') ? {id: 5, kind: 'threads.agent.act', payload: {}} : {ok: true}; },
++    executeTask: execute};
++  return {run: vm.runInNewContext(`(${body.replace('async function runLocalFeedTask', 'async function')})`, sandbox), calls};
++}
++
++test('la tâche locale est exécutée sans changer de session puis close', async () => {
++  let seen;
++  const f = fixture(async task => { seen = task; return {status: 'done', result: {confirmed: true}}; });
++  assert.deepEqual({...await f.run(5)}, {status: 'done', error: null});
++  assert.equal(seen.local, true);
++  assert.deepEqual(f.calls.map(c => c.path), ['/extension/feed/tasks/5/claim', '/extension/tasks/5/finish']);
++  assert.equal(f.calls[1].body.status, 'done');
++});
++
++test('une exception pendant le geste clôt la tâche en échec, sans renvoi', async () => {
++  const f = fixture(async () => { throw Error('Le compte Threads ouvert dans Chrome n’est pas celui du passage'); });
++  assert.equal((await f.run(5)).status, 'failed');
++  assert.equal(f.calls.at(-1).path, '/extension/tasks/5/finish');
++  assert.match(f.calls.at(-1).body.error, /pas celui du passage/);
++});

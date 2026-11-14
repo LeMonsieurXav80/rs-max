@@ -122,7 +122,7 @@ class ThreadsAgent
         }$a = $t->socialAccount;
         $this->ready($a);
         app(ApiInboxActions::class)->assertEnabled($a, $t->payload['action']);
-        abort_unless($a->browser_profile === $t->profile && $a->browser_username === $t->payload['username'] && now()->lte($t->payload['deadline']), 409, 'Identité Threads ou délai modifié.');
+        abort_unless($this->sameProfile($a, $t) && $a->browser_username === $t->payload['username'] && now()->lte($t->payload['deadline']), 409, 'Identité Threads ou délai modifié.');
         if ($t->payload['action'] === 'comment') {
             abort_unless(CommentFreshness::allowsPublishedAt($t->payload['target']['published_at'] ?? null), 409, CommentFreshness::REJECTION);
         }
@@ -134,11 +134,17 @@ class ThreadsAgent
         $a = $t->socialAccount;
         $this->ready($a);
         $setting = app(AgentCatalog::class)->forAccount($a)->get($t->payload['action']);
-        abort_unless($setting && $setting['enabled'] && $a->browser_profile === $t->profile && $a->browser_username === $t->payload['username'] && now()->lte($t->payload['deadline']), 409, 'Autorisation Threads modifiée.');
+        abort_unless($setting && $setting['enabled'] && $this->sameProfile($a, $t) && $a->browser_username === $t->payload['username'] && now()->lte($t->payload['deadline']), 409, 'Autorisation Threads modifiée.');
         if ($t->payload['action'] === 'comment') {
             abort_unless(CommentFreshness::allowsPublishedAt($t->payload['target']['published_at'] ?? null), 409, CommentFreshness::REJECTION);
         }
         abort_if(app(\App\Services\Agent\AccountActionBudget::class)->usage($a)['blocked'], 429, 'Compte en pause : aucun geste Threads.');
+    }
+
+    /** Le Chromium du compte, ou le Chrome du Mac pour un passage lancé à la main (`LocalFeedRun`). */
+    private function sameProfile(SocialAccount $a, BrowserTask $t): bool
+    {
+        return $t->profile === $a->browser_profile || $t->profile === \App\Services\Agent\Feed\LocalFeedRun::PROFILE;
     }
 
     public function checkpoint(BrowserTask $t, array $r): void

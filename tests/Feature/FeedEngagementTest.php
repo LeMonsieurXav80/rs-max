@@ -175,7 +175,7 @@ class FeedEngagementTest extends TestCase
 
             public int $busy = 0;
 
-            public function execute(XEngagement $row): XEngagement
+            public function execute(XEngagement $row, ?string $profile = null): XEngagement
             {
                 abort_if($this->busy-- > 0, 429, 'Délai minimal non écoulé. Prochaine action : maintenant');
                 $row->update(['status' => 'queued', 'requested_at' => now()]);
