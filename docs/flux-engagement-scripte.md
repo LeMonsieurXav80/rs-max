@@ -3,6 +3,31 @@
 Décidée le 14/11/2026 avec Xavier. Statut : **à construire, puis à tester une semaine**. Réseaux : X et Threads.
 Suivi des coûts : `docs/hermes-couts-agent.md`.
 
+## Avancement
+
+**Étape 1 livrée le 14/11/2026** (RS-Max `2bd84f3`, Companion 0.18.52 sur le Mac, le NAS et le VPS DIX) :
+- réglages `feed_engagement` dans la stratégie, remplissables par l'API, interrupteur coupé ;
+- moteur spintax (`app/Services/Agent/Feed/Spintax.php`), correspondance (`FeedMatcher`), décision par
+  publication avec son motif (`FeedEngagementPlanner`), détection simple du français (`FrenchText`) ;
+- relevé à blanc : `php artisan x:feed-engage <compte> [--json]`. Il lit le vrai fil (jusqu'à 12 écrans), n'envoie
+  rien et journalise la lecture (`agent.feed.read`, `origin=script`, `dry_run=true`) ;
+- Companion donne la langue marquée par X (`lang`), les publicités (mention « Ad » ou « Sponsorisé » seulement :
+  `placementTracking` entoure aussi chaque vidéo) et les reposts ;
+- la prélecture n'envoie plus au modèle que l'audience, l'objectif, les exclusions et la langue de la stratégie.
+
+**Premier relevé à blanc** (Wildy Caro, X, 14/11/2026, environ 13 h) : 25 publications lues, 5 retenues, 5 likes,
+3 spintax, aucune pour le modèle.
+- Le fil « Pour vous » est surtout en anglais : like et emojis seulement sous ces publications.
+- **2 des 5 publications retenues n'auraient pas dû l'être** : une publication sexualisée retenue pour « haltères », et
+  une provocation hommes/femmes retenue pour « gym ». Un mot-clé ne dit rien du ton : la liste d'exclusions doit
+  couvrir ce vocabulaire avant toute activation.
+- Des publications sport ont été manquées faute de mot-clé : « muscle », « biceps », « triceps », « cut »…
+- Depuis `2bd84f3`, une exclusion peut être un emoji (💦), et le pseudo de l'auteur est examiné (« mrfunkyxxx »
+  contient « xxx »). Un mot exclu court peut écarter à tort un pseudo qui le contient : c'est le prix de la prudence.
+
+**Prochaine étape** : exécution des likes et du spintax (plafonds, journal par action, résumé quotidien), une fois les
+listes complétées et un nouveau relevé à blanc validé.
+
 ## Pourquoi
 
 L'agent trie le fil « Pour vous » avec le modèle. À chaque passage, il lit environ 9 publications, en choisit une et
