@@ -59,8 +59,18 @@ Suivi des coûts : `docs/hermes-couts-agent.md`.
 5. **[script, 0 jeton]** Le passage suivant envoie d'abord ces textes, par le même circuit que les likes, avec preuve
    après rechargement (journal `feed.llm`). Une demande non remise expire après 3 heures.
 
-**Prochaine étape** : activation sur Wildy Caro (X) au palier 1, puis lancement manuel en local et relevé des
-versions (étape 4), puis Threads et Cyril.
+**Activé le 14/11/2026 à 13 h 37 UTC sur Wildy Caro (X, compte 7), palier 1** : 150 likes, 20 spintax, 40 rédactions
+par jour, 8 gestes par passage, 40 % de spintax. Début de la semaine de test : point à J+7, le 21/11/2026.
+- Premier passage (manuel) : 25 lues, 10 retenues, 8 gestes demandés et 8 confirmés en 3 min 30 (7 likes, 1 spintax
+  « 💪🔥👏 »), 1 rédaction réservée. Hermès l'a écartée (allusion sexuelle, vidéo non décrite) au réveil suivant.
+- Le passage planifié suivant, tombé pendant le passage manuel, s'est arrêté sur « Délai minimal non écoulé » sans
+  geste. Corrigé par `1822951` : attente du délai et nouvel essai, une fois.
+- Les passages partagent la file du navigateur avec Hermès (mentions) : une tâche à la fois par profil, donc un passage
+  de 8 gestes peut durer plus de 10 minutes quand les mentions affluent.
+- Une allusion sexuelle (« missionnaire ») a reçu un like : les exclusions par mots ne voient pas tout. À compléter au fil
+  des relevés.
+
+**Prochaine étape** : lancement manuel en local et relevé des versions (étape 4), puis Threads et Cyril.
 
 ## Pourquoi
 
