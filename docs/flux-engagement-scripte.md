@@ -44,7 +44,23 @@ Suivi des coûts : `docs/hermes-couts-agent.md`.
 
 **Listes au 14/11/2026** : Wildy Caro X et Threads 129 recherches et 78 exclusions, Cyril 136 et 81.
 
-**Prochaine étape** : lots de commentaires rédigés par Hermès (étape 3).
+**Étape 3 livrée le 14/11/2026** (RS-Max `7b48659`) : lots de commentaires rédigés par Hermès.
+1. **[script, 0 jeton]** Le passage réserve les publications « pour le modèle » (`FeedDraftService::request`, reçu
+   `XEngagement` « reply » préparé, `draft_state=awaiting`), dans le plafond `daily_llm_comments` qui compte aussi les
+   demandes en attente. Journal `feed.llm` `status=requested`.
+2. **[script, 0 jeton]** Le catalogue porte `feed_drafts` ; la prélecture X l'annonce dans `priority_feed_drafts`,
+   même quand la cadence retient les autres gestes (aucun navigateur en jeu).
+3. **[modèle, jetons]** Hermès : `feed-drafts --account ID` (persona une fois par session, jusqu'à 5 publications avec
+   leur texte, citation, médias décrits et langue), puis un seul `feed-drafts-submit --account ID --drafts '[…]'`
+   (texte ou `skip` avec motif). Consigne dans la skill `rsmax-cycle-x` (+0,7 k caractères).
+4. **[script, 0 jeton]** RS-Max valide chaque texte : longueur, pas de « merci » en tête (tiers), persona inchangé
+   depuis la lecture du lot, publication de moins de 14 jours, aucune réponse existante. Refus motivé, sinon
+   `draft_state=ready`.
+5. **[script, 0 jeton]** Le passage suivant envoie d'abord ces textes, par le même circuit que les likes, avec preuve
+   après rechargement (journal `feed.llm`). Une demande non remise expire après 3 heures.
+
+**Prochaine étape** : activation sur Wildy Caro (X) au palier 1, puis lancement manuel en local et relevé des
+versions (étape 4), puis Threads et Cyril.
 
 ## Pourquoi
 
