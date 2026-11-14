@@ -72,6 +72,12 @@ class FeedEngagementTest extends TestCase
         $this->assertSame('xxx', $symbols->excludedBy('Belle séance', 'mrfunkyxxx'));
         $this->assertSame('sexy', $symbols->excludedBy('Séance', 'SexyGymGirl'));
         $this->assertNull($symbols->excludedBy('Séance', 'maxence'));
+        $tags = new FeedMatcher(['search_queries' => ['workout', 'hyrox', 'gym', 'haltères'], 'exclusions' => ['onlyfans']]);
+        $this->assertSame(['workout', 'hyrox'], $tags->keywordHits('Canapé H38 #sandbagworkout #hyroxathlete'));
+        $this->assertSame(['haltères'], $tags->keywordHits('#halteredujour'));
+        $this->assertSame([], $tags->keywordHits('#gymnastique #biggym'), 'un mot de moins de 4 lettres reste un mot entier');
+        $this->assertSame([], $tags->keywordHits('Mon workoutplan est prêt'), 'hors hashtag, le mot reste entier');
+        $this->assertSame('onlyfans', $tags->excludedBy('Séance #onlyfanslink', 'alice'));
     }
 
     public function test_le_plan_aime_commente_et_explique_chaque_publication_ecartee(): void

@@ -8,13 +8,14 @@ use Illuminate\Support\Str;
  * Compare une publication du fil à la fiche Community Manager, sans modèle de langue.
  * Mots entiers, insensibles à la casse et aux accents ; « squats » répond à « squat »,
  * « pull-up », « pull up » et « pullup » se valent. Une exclusion l'emporte sur tout.
+ * Dans un hashtag collé (« #sandbagworkout », « #hyroxathlete »), un mot de 4 lettres ou plus est cherché à l'intérieur.
  */
 final class FeedMatcher
 {
-    /** @var list<array{phrase:string, pattern:string}> */
+    /** @var list<array{phrase:string, pattern:string, glued:string}> */
     private array $keywords = [];
 
-    /** @var list<array{phrase:string, pattern:string}> */
+    /** @var list<array{phrase:string, pattern:string, glued:string}> */
     private array $exclusions = [];
 
     /** @var list<string> Exclusions sans lettre ni chiffre (emojis), cherchées telles quelles. */
@@ -74,8 +75,9 @@ final class FeedMatcher
         $normalized = self::normalize($text);
         $handle = self::normalize(preg_replace('/(?<=[a-z])(?=[A-Z0-9])|[_.]/', ' ', ltrim($author, '@')));
         $glued = str_replace(' ', '', $handle);
+        $tags = self::hashtags($text);
         foreach ($this->exclusions as $entry) {
-            if (preg_match($entry['pattern'], $normalized) || preg_match($entry['pattern'], $handle)
+            if (preg_match($entry['pattern'], $normalized) || preg_match($entry['pattern'], $handle) || self::inHashtag($entry, $tags)
                 || (! str_contains($entry['phrase'], ' ') && str_contains($glued, self::normalize($entry['phrase'])))) {
                 return $entry['phrase'];
             }
@@ -88,9 +90,10 @@ final class FeedMatcher
     public function keywordHits(string $text): array
     {
         $normalized = self::normalize($text);
+        $tags = self::hashtags($text);
 
         return array_values(array_unique(array_map(fn ($entry) => $entry['phrase'],
-            array_filter($this->keywords, fn ($entry) => preg_match($entry['pattern'], $normalized)))));
+            array_filter($this->keywords, fn ($entry) => preg_match($entry['pattern'], $normalized) || self::inHashtag($entry, $tags)))));
     }
 
     public function isTarget(string $author): bool
@@ -98,7 +101,30 @@ final class FeedMatcher
         return isset($this->targets[strtolower(ltrim($author, '@'))]);
     }
 
-    /** @return array{phrase:string, pattern:string}|null */
+    /** @return list<string> hashtags du texte, normalisés et collés */
+    private static function hashtags(string $text): array
+    {
+        preg_match_all('/#([\p{L}\p{N}_]+)/u', $text, $m);
+
+        return array_values(array_filter(array_map(fn ($tag) => str_replace(' ', '', self::normalize($tag)), $m[1])));
+    }
+
+    /** @param  list<string>  $tags */
+    private static function inHashtag(array $entry, array $tags): bool
+    {
+        if (strlen($entry['glued']) < 4) {
+            return false; // « gym », « abs », « dos » : trop courts, ils se trouveraient partout
+        }
+        foreach ($tags as $tag) {
+            if (str_contains($tag, $entry['glued'])) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /** @return array{phrase:string, pattern:string, glued:string}|null */
     private static function entry(string $value): ?array
     {
         $phrase = self::normalize(ltrim(trim($value), '#'));
@@ -117,7 +143,8 @@ final class FeedMatcher
         $glued = preg_quote(implode('', $words));
         $alternatives = count($words) > 1 ? '(?:'.$spaced.'|'.$glued.')' : $spaced;
 
-        return ['phrase' => trim($value), 'pattern' => '/(?<![a-z0-9])'.$alternatives.'(?:s|x|es)?(?![a-z0-9])/'];
+        return ['phrase' => trim($value), 'pattern' => '/(?<![a-z0-9])'.$alternatives.'(?:s|x|es)?(?![a-z0-9])/',
+            'glued' => implode('', $words)];
     }
 
     private static function handle(string $value): ?string

@@ -143,6 +143,14 @@ exacts, réponses reçues sous les commentaires spintax comparées aux commentai
   passage s'arrête et le suivant reprend 20 minutes plus tard. « Um pouco de ousadia nunca sai de moda » passait encore
   pour du français : mots portugais complétés. Des publications sportives restent manquées quand le mot-clé est collé
   dans un hashtag (`#sandbagworkout`, `#hyroxathlete`).
+- **Hashtags collés** (accord de Xavier, 14/11/2026) : un mot-clé ou une exclusion de 4 lettres ou plus est aussi
+  cherché à l'intérieur d'un hashtag (`#sandbagworkout` → workout, `#onlyfanslink` → onlyfans), sur X et Threads.
+  Hors hashtag, les mots restent entiers ; « gym », « abs », « dos » restent des mots entiers partout.
+- **Palier 1 de Wildy Caro Threads**, réglé le 14/11/2026 à 16 h 45 (interrupteur coupé) : catalogue 100 likes et
+  30 commentaires par jour (au lieu de 20 et 5), cadence du compte 40/h et 200/jour (au lieu de 20 et 100), délai
+  minimal 60 s inchangé ; script 80 likes, 15 spintax, 15 rédactions par jour, 8 gestes par passage. Exclusions
+  identiques à X (81, `#pub`, `shein`, `code promo` ajoutés sur les deux). @mpbaribeau (selfie + `#gymmotivation`)
+  : accepté par Xavier.
 - **Quotas Threads du catalogue** (fiche agent du compte) : like 20 et commentaire 5 par jour, partagés avec Hermès.
   Ils bornent le script avant `daily_likes` et `daily_spin_comments` : le 14/11 à 16 h 30, il restait 1 like et
   0 commentaire.
