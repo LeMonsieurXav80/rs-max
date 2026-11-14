@@ -105,10 +105,34 @@ Champs existants **réutilisés** : recherches, hashtags et comptes à suivre po
 comptes à exclure » comme liste de mots interdits ; `discovery_interval_minutes` pour la fréquence des passages.
 Le délai « même auteur » (7 jours) reste une constante.
 
+- **API** : tout se remplit par la route existante `PATCH /api/accounts/{id}/strategy`, rôle manager, la même que
+  le formulaire (`AccountStrategy::save()`). Les listes s'envoient en tableaux, le formulaire en lignes. Exemple :
+
+  ```json
+  {"agent_strategy": {
+    "search_queries": ["musculation", "leg day"],
+    "hashtags": ["#fitness"],
+    "exclusions": ["onlyfans", "deuil"],
+    "feed_engagement": {
+      "enabled": false,
+      "spin_templates": ["{Belle|Super} {séance|perf} {💪|🔥}"],
+      "emoji_templates": ["{💪|🔥}{👏|🙌}{💯|🔥}"],
+      "spin_percent": 40,
+      "like_scope": "keywords",
+      "daily_likes": 150,
+      "daily_spin_comments": 20,
+      "read_limit": 25
+    }
+  }}
+  ```
+
+  `GET` sur la même route renvoie l'état, avec un tirage d'exemple de chaque modèle spintax et son nombre de
+  combinaisons. Un modèle aux accolades mal fermées est refusé en 422.
 - **Formulaire** : vérifier que les accolades sont équilibrées, afficher trois tirages d'exemple et le nombre de
   combinaisons possibles.
-- **Sécurité** : comme pour la cadence adaptative, le jeton Community Manager d'Hermès ne peut **ni activer
-  l'interrupteur ni relever un plafond**. Seul un humain le fait depuis la fiche.
+- **Sécurité** : comme pour la cadence adaptative, le jeton Community Manager d'Hermès (`/api/community-manager/…`)
+  peut remplir les textes mais ne peut **ni activer l'interrupteur ni relever un plafond** (403). Un jeton manager le
+  peut, par l'API comme par la fiche.
 - **À coordonner** : `resources/views/accounts/edit.blade.php` porte des modifications locales non commitées dans le
   dépôt principal.
 
