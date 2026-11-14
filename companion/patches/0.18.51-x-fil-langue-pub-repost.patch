@@ -1,0 +1,73 @@
+diff -ruN a10/manifest.json b10/manifest.json
+--- a/manifest.json	2026-11-14 12:29:30
++++ b/manifest.json	2026-11-14 12:29:30
+@@ -1,7 +1,7 @@
+ {
+   "manifest_version": 3,
+   "name": "RS-Max Companion",
+-  "version": "0.18.50",
++  "version": "0.18.51",
+   "description": "Actions assistees sur les reseaux sociaux (engagement, publication) avec remontee vers l'API RS-Max.",
+   "permissions": [
+     "storage",
+diff -ruN a10/tests/x-feed-markers.test.cjs b10/tests/x-feed-markers.test.cjs
+--- a/tests/x-feed-markers.test.cjs	1970-01-01 01:00:00
++++ b/tests/x-feed-markers.test.cjs	2026-11-14 12:29:30
+@@ -0,0 +1,38 @@
++const {test} = require('node:test');
++const assert = require('node:assert/strict');
++const {readFileSync} = require('node:fs');
++const {join} = require('node:path');
++const {JSDOM} = require('jsdom');
++
++const post = (id, inner) => `<article data-testid="tweet"><a href="/visitor">Visiteur</a><a href="/visitor/status/${id}"><time datetime="2026-11-14T07:00:00Z"></time></a>${inner}</article>`;
++
++function rows(html) {
++  const dom = new JSDOM(`<main>${html}</main>`, {url: 'https://x.com/home', runScripts: 'outside-only'});
++  try {
++    dom.window.eval(readFileSync(join(__dirname, '../x/dom.js'), 'utf8'));
++    return [...dom.window.document.querySelectorAll('article')].map(a => dom.window.RSXDom.snapshot(a));
++  } finally {
++    dom.window.close();
++  }
++}
++
++test('le fil X porte la langue marquée par X, les publicités et les reposts', () => {
++  const [fr, en, ad, repost] = rows([
++    post('1', '<div data-testid="tweetText" lang="fr">Belle séance de squat</div>'),
++    post('2', '<div data-testid="tweetText" lang="en">Leg day done</div>'),
++    `<div data-testid="placementTracking">${post('3', '<span>Ad</span><div data-testid="tweetText" lang="en">Buy now</div>')}</div>`,
++    post('4', '<span data-testid="socialContext">Coach a reposté</span><div data-testid="tweetText" lang="fr">WOD du jour</div>'),
++  ].join(''));
++  assert.equal(fr.lang, 'fr');
++  assert.equal(fr.promoted, false);
++  assert.equal(fr.reposted_by, undefined);
++  assert.equal(en.lang, 'en');
++  assert.equal(ad.promoted, true);
++  assert.equal(repost.reposted_by, true);
++  assert.equal(repost.social_context, 'Coach a reposté');
++});
++
++test('une publication sans texte n’a pas de langue', () => {
++  const [photo] = rows(post('5', '<div data-testid="tweetPhoto"><img alt="Image"></div>'));
++  assert.equal(photo.lang, null);
++});
+diff -ruN a10/x/dom.js b10/x/dom.js
+--- a/x/dom.js	2026-11-14 12:29:30
++++ b/x/dom.js	2026-11-14 12:29:30
+@@ -132,7 +132,14 @@
+     const nested=children.map(q=>bodies(q).map(text).join('\n')).filter(Boolean);
+     const legacyQuotes=[...a.querySelectorAll('[data-testid="tweetText"]')].filter(n=>!own(n,a)).map(text);
+     const reply = replyMarker(a);
+-    return {...p,name,avatar,quoted_ids,text:texts.map(text).join('\n'),quote:[...new Set(nested.length?nested:legacyQuotes)].join('\n'),
++    // Pour le tri du fil par script : langue marquée par X, publicité, repost d'un autre compte.
++    const lang=texts.map(n=>n.getAttribute('lang')).find(Boolean)||null;
++    const context=[...a.querySelectorAll('[data-testid="socialContext"]')].find(n=>own(n,a));
++    const social=context?text(context):'';
++    const promoted=Boolean(a.closest('[data-testid="placementTracking"]')||a.querySelector('[data-testid="placementTracking"]'))
++      ||[...a.querySelectorAll('span')].some(n=>own(n,a)&&/^(Ad|Ads|Promoted|Sponsored|Sponsorisé|Publicité)$/.test((n.textContent||'').trim()));
++    return {...p,name,avatar,quoted_ids,text:texts.map(text).join('\n'),lang,promoted,
++      ...(social ? {social_context:social} : {}), ...(/repost|republi|retweet/i.test(social) ? {reposted_by:true} : {}),quote:[...new Set(nested.length?nested:legacyQuotes)].join('\n'),
+       ...(reply.isReply ? {reply_hint:true} : {}), ...(reply.parentId ? {reply_parent_id:reply.parentId} : {}),
+       published_at:a.querySelector('time')?.getAttribute('datetime')||null,
+       liked:state(a,'like'),bookmarked:state(a,'bookmark'),reposted:state(a,'repost'),

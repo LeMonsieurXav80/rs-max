@@ -19,6 +19,15 @@ TIKTOK_MAX_REPLIES = 10
 X_SEARCH_QUERY_LIMIT = 263
 
 
+# Ce que le modèle lit de la stratégie : de quoi rédiger. Les listes de mots-clés et les réglages du
+# script restent côté RS-Max (le 14/11/2026, 113 recherches partaient dans chaque appel).
+MODEL_STRATEGY_KEYS = ('audience', 'objective', 'exclusions', 'reply_language')
+
+
+def model_strategy(strategy):
+    return {k: v for k, v in (strategy or {}).items() if k in MODEL_STRATEGY_KEYS} if isinstance(strategy, dict) else strategy
+
+
 def action_available(actions, name):
     action = actions.get(name, {})
     # Le catalogue compact ne renvoie que les actions activées.
@@ -201,7 +210,7 @@ def snapshot(client, now=None, lane=None):
                     reply_limit = min(reply_limit, actions['comment.like']['left'])
             if tiktok and lane:
                 reply_limit = min(TIKTOK_MAX_REPLIES, len(items), actions.get('reply', {}).get('left', 0))
-            work.append({'platform':account['platform'], 'account_id':account['id'], 'strategy':account.get('strategy', {}), 'items':items,
+            work.append({'platform':account['platform'], 'account_id':account['id'], 'strategy':model_strategy(account.get('strategy', {})), 'items':items,
                          'persona':account.get('persona'),'auto_like':auto_like,'executor':'api' if api else 'browser', 'threads_discovery':threads_discovery, 'discovery_plan':'priority_threads' if discovery_plan else None, 'remaining':cadence.get('remaining'), 'daily_remaining':cadence.get('daily', {}).get('remaining'), 'batch_max':min(reply_limit, max(1, ((cadence.get('remaining') if cadence.get('remaining') is not None else 11) - hourly_reserve)//steps), max(1, ((cadence.get('daily', {}).get('remaining') if cadence.get('daily', {}).get('remaining') is not None else 11) - daily_reserve)//steps)), 'next_publication_at':upcoming})
             if discovery_plan:
                 explorations.append(discovery_plan)

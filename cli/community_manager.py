@@ -37,7 +37,7 @@ def compact_catalog(value, key=None):
         return [compact_catalog(v) for v in value]
     if not isinstance(value, dict):
         return value
-    drop = {'hourly_history'} | ({'history'} if key == 'adaptation' else set()) | ({'label', 'kind'} if key == 'action' else set())
+    drop = {'hourly_history', 'feed_engagement'} | ({'history'} if key == 'adaptation' else set()) | ({'label', 'kind'} if key == 'action' else set())
     return {k: compact_catalog(v, 'action' if key == 'actions' else k) for k, v in value.items() if k not in drop}
 
 

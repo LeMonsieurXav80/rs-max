@@ -143,6 +143,15 @@ class AccountStrategy
                     $strategy[$key] = array_values(array_filter(array_map('trim', preg_split('/\r?\n/', (string) $strategy[$key]))));
                 }
             }
+            $feed = $strategy['feed_engagement'] ?? null;
+            if (is_array($feed)) {
+                foreach (Feed\FeedEngagementSettings::TEMPLATE_LISTS as $key) {
+                    if (array_key_exists($key, $feed) && ($feed[$key] === null || is_string($feed[$key]))) {
+                        $feed[$key] = array_values(array_filter(array_map('trim', preg_split('/\r?\n/', (string) $feed[$key]))));
+                    }
+                }
+                $strategy['feed_engagement'] = $feed;
+            }
             $request->merge(['agent_strategy' => $strategy]);
         }
         foreach (['max_hourly', 'max_daily'] as $field) {
@@ -159,19 +168,38 @@ class AccountStrategy
             'agent_adaptation.max_hourly' => 'sometimes|integer|min:1|max:1000',
             'agent_adaptation.max_daily' => 'sometimes|integer|min:2|max:100000',
             'agent_min_interval_seconds' => 'sometimes|integer|min:0|max:86400',
-            'agent_strategy' => 'sometimes|array:audience,objective,hashtags,target_accounts,search_queries,exclusions,unfollow_after_days,editorial_topics,reply_language,discovery_interval_minutes',
+            'agent_strategy' => 'sometimes|array:audience,objective,hashtags,target_accounts,search_queries,exclusions,unfollow_after_days,editorial_topics,reply_language,discovery_interval_minutes,feed_engagement',
             'agent_strategy.discovery_interval_minutes' => 'sometimes|nullable|integer|min:1|max:1440',
             'agent_strategy.reply_language' => ['sometimes', 'nullable', Rule::in(array_keys(ReplyLanguage::LABELS))],
             'agent_strategy.editorial_topics' => 'sometimes|array',
             'agent_strategy.editorial_topics.*' => ['string', 'distinct', Rule::in(array_keys(config('editorial_calendar.topics')))],
             'agent_strategy.unfollow_after_days' => 'sometimes|integer|min:1|max:365',
             'agent_strategy.audience' => 'sometimes|nullable|string|max:4000', 'agent_strategy.objective' => 'sometimes|nullable|string|max:2000'];
+        $rules += ['agent_strategy.feed_engagement' => 'sometimes|array:'.implode(',', array_keys(Feed\FeedEngagementSettings::DEFAULTS)),
+            'agent_strategy.feed_engagement.enabled' => 'sometimes|boolean',
+            'agent_strategy.feed_engagement.spin_templates' => 'sometimes|array|max:100',
+            'agent_strategy.feed_engagement.spin_templates.*' => 'string|distinct',
+            'agent_strategy.feed_engagement.emoji_templates' => 'sometimes|array|max:100',
+            'agent_strategy.feed_engagement.emoji_templates.*' => 'string|distinct',
+            'agent_strategy.feed_engagement.spin_percent' => 'sometimes|integer|min:0|max:100',
+            'agent_strategy.feed_engagement.like_scope' => 'sometimes|in:keywords,all',
+            'agent_strategy.feed_engagement.daily_likes' => 'sometimes|integer|min:0|max:1000',
+            'agent_strategy.feed_engagement.daily_spin_comments' => 'sometimes|integer|min:0|max:500',
+            'agent_strategy.feed_engagement.daily_llm_comments' => 'sometimes|integer|min:0|max:500',
+            'agent_strategy.feed_engagement.read_limit' => 'sometimes|integer|min:5|max:30'];
         foreach (array_keys(self::LISTS) as $key) {
             $rules['agent_strategy.'.$key] = 'sometimes|array|max:200';
             $rules['agent_strategy.'.$key.'.*'] = 'string|max:255|distinct';
         }
 
         $data = $request->validate($rules);
+        foreach (Feed\FeedEngagementSettings::TEMPLATE_LISTS as $key) {
+            foreach ($data['agent_strategy']['feed_engagement'][$key] ?? [] as $i => $template) {
+                if ($error = Feed\Spintax::error($template)) {
+                    throw \Illuminate\Validation\ValidationException::withMessages(["agent_strategy.feed_engagement.$key.$i" => "Modèle « $template » : $error"]);
+                }
+            }
+        }
         if (isset($data['agent_strategy']['discovery_interval_minutes'])) {
             $data['agent_strategy']['discovery_interval_minutes'] = (int) $data['agent_strategy']['discovery_interval_minutes'];
         }
@@ -192,6 +220,16 @@ class AccountStrategy
         DB::transaction(function () use ($data, $account, $adaptive, $scoped) {
             $account = SocialAccount::whereKey($account->id)->lockForUpdate()->firstOrFail();
             if (isset($data['agent_strategy'])) {
+                if (isset($data['agent_strategy']['feed_engagement'])) {
+                    $current = Feed\FeedEngagementSettings::for($account);
+                    $next = array_replace($account->agent_strategy['feed_engagement'] ?? [], $data['agent_strategy']['feed_engagement']);
+                    $merged = array_replace($current, $next);
+                    // Ce qui élargit l'action du script (allumer, relever un plafond, aimer hors mots-clés) se règle par un humain.
+                    abort_if($scoped && ($merged['enabled'] !== $current['enabled'] || $merged['like_scope'] !== $current['like_scope']
+                        || collect(Feed\FeedEngagementSettings::RAISING)->contains(fn ($key) => $merged[$key] > $current[$key])),
+                        403, 'L’engagement du fil se met en route et ses plafonds se relèvent avec un accès gestionnaire complet.');
+                    $data['agent_strategy']['feed_engagement'] = $next;
+                }
                 $data['agent_strategy'] = array_replace($account->agent_strategy ?? [], $data['agent_strategy']);
             }
             if ($scoped && (($account->agent_adaptation['enabled'] ?? false) && array_intersect(array_keys($data), ['agent_hourly_limit', 'agent_daily_limit', 'agent_min_interval_seconds']))) {

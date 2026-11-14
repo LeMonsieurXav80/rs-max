@@ -28,6 +28,14 @@ class XWatchTest(unittest.TestCase):
         self.assertEqual(r['accounts'][0]['account_id'],11);self.assertEqual(r['accounts'][0]['items'][0]['id'],99)
         self.assertIn('accounts/11/inbox?',c.api.call_args.args[1])
 
+    def test_le_modele_ne_recoit_de_la_strategie_que_de_quoi_rediger(self):
+        c=Mock(); a=self.account()
+        a['strategy']={'audience':'Sportifs','objective':'Encourager','exclusions':['spam'],'search_queries':['squat']*113,
+                       'hashtags':['#gym'],'feed_engagement':{'spin_templates':['{Top|Super}']}}
+        c.api.side_effect=[{'daytime':True,'accounts':[a]},{'items':[{'id':99,'content':'Belle séance','can_reply':True}]}]
+        r=watch.snapshot(c,dt.datetime.fromisoformat('2026-11-07T12:30:00+00:00'))
+        self.assertEqual(r['accounts'][0]['strategy'],{'audience':'Sportifs','objective':'Encourager','exclusions':['spam']})
+
     def test_x_prelecture_elargie_et_plafond_du_lot_selon_les_gestes_disponibles(self):
         client = Mock()
         items = [{'id': i, 'content': 'Merci', 'can_reply': True} for i in range(20)]
