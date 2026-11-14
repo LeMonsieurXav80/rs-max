@@ -70,6 +70,34 @@ class ThreadsEngagementService
         $row->update(['status' => $status, 'result' => $state['result'],
             'error' => $status === 'confirmed' ? null : ($state['error'] ?? ($status === 'uncertain' ? 'Absence de preuve après rechargement.' : null))]);
 
+        return $status === 'uncertain' ? $this->reconcile($row->fresh()) : $row->fresh();
+    }
+
+    /**
+     * Un commentaire cliqué mais non retrouvé dans la page dans les 20 s est relu une fois après rechargement
+     * (`threads.agent.check`), sans second envoi. Le 14/11/2026, les deux premiers commentaires spintax étaient en
+     * ligne alors que la tâche les donnait incertains.
+     */
+    public function reconcile(ThreadsEngagement $row): ThreadsEngagement
+    {
+        $task = $row->browserTask;
+        if ($row->status !== 'uncertain' || $row->action !== 'comment' || ! $task
+            || ($task->result['clicked'] ?? false) !== true || ($row->result['reload_checked'] ?? false)) {
+            return $row;
+        }
+        try {
+            app(ThreadsAgent::class)->verify($task, false);
+        } catch (\Throwable $e) {
+            $row->update(['result' => ($row->result ?? []) + ['reload_checked' => true],
+                'error' => mb_substr('Relecture impossible : '.$e->getMessage(), 0, 1000)]);
+
+            return $row->fresh();
+        }
+        $task->refresh();
+        $confirmed = $task->status === BrowserTask::DONE && ($task->result['confirmed'] ?? false) === true;
+        $row->update(['status' => $confirmed ? 'confirmed' : 'uncertain', 'result' => ($task->result ?? []) + ['reload_checked' => true],
+            'error' => $confirmed ? null : 'Commentaire absent après rechargement : aucun renvoi.']);
+
         return $row->fresh();
     }
 }

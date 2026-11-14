@@ -167,7 +167,11 @@ exacts, réponses reçues sous les commentaires spintax comparées aux commentai
 - Skill `rsmax-cycle-threads` : +506 octets (8 696 → 9 202), prompt de cycle inchangé.
 
 **Activé le 14/11/2026 à 15 h 50 (Lisbonne) sur Wildy Caro (Threads, compte 36)**, palier 1, sur feu vert de Xavier.
-Premier passage lancé à la main à 15 h 51 ; premier like confirmé à 15 h 52 (@_elenafit2_).
+Premier passage lancé à la main à 15 h 51 : 25 lues, 5 retenues, 7 gestes en 7 min 30 (5 likes confirmés, 2 spintax
+« 🔥💪🔥 » et « C'est ce qu'on appelle du travail 💪 »). Les 2 commentaires sont sortis **incertains** (« identifiant non
+trouvé » : Companion n'attend que 20 s dans la page), mais la relecture après rechargement les a trouvés en ligne. Depuis,
+`ThreadsEngagementService::reconcile` relit une fois, après rechargement, tout commentaire cliqué puis incertain
+(`threads.agent.check`), sans second envoi. 2 rédactions réservées seulement après le déploiement de l'étape 3.
 
 **Premier relevé à blanc** (Wildy Caro, Threads #36, 14/11/2026 à 14 h 53 UTC, tâche 10755, 25 s) : 22 publications lues
 sur 12 écrans, 3 retenues, 3 likes, 0 spintax, 1 pour le modèle.

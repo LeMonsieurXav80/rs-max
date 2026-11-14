@@ -250,4 +250,37 @@ class ThreadsFeedEngagementTest extends TestCase
         $this->assertSame('Le squat dès le matin, belle façon de lancer la journée 💪', $sent->browserTask->payload['text']);
         $this->assertSame('cancelled', ThreadsEngagement::find($second)->status);
     }
+
+    public function test_un_commentaire_clique_mais_non_retrouve_est_relu_apres_rechargement_sans_renvoi(): void
+    {
+        $account = $this->enable($this->account(['enabled' => true, 'spin_percent' => 100]));
+        $queue = $this->mock(BrowserTaskQueue::class);
+        $queue->shouldReceive('run')->once()->withArgs(fn ($a, $kind) => $kind === 'threads.agent.check')
+            ->andReturnUsing(fn ($a, $kind, $p) => ['action' => 'comment', 'username' => 'wildycaro', 'target_url' => $p['url'], 'proof' => 'after_reload',
+                'confirmed' => true, 'text' => $p['text'], 'post_url' => 'https://www.threads.com/@wildycaro/post/DfZ0001', 'post_id' => 'DfZ0001']);
+        $posts = [$this->threadsPost('DfI0001', 'alice', 'Grosse séance de squat ce matin')];
+        $run = $this->executor(['confirmed', 'uncertain'])->run($account, app(FeedEngagementPlanner::class)->plan($account, $posts),
+            collect($posts)->keyBy('id')->all(), 'snap', 'server');
+
+        $this->assertSame([['like', 'confirmed'], ['reply', 'confirmed']], array_map(fn ($d) => [$d['action'], $d['status']], $run['done']));
+        $comment = ThreadsEngagement::where('action', 'comment')->sole();
+        $this->assertTrue($comment->result['reload_checked']);
+        $this->assertSame('done', $comment->browserTask->status);
+        $this->assertSame(2, BrowserTask::where('kind', 'threads.agent.act')->count(), 'aucun second envoi');
+    }
+
+    public function test_un_commentaire_absent_apres_rechargement_reste_incertain_et_n_est_relu_qu_une_fois(): void
+    {
+        $account = $this->enable($this->account(['enabled' => true, 'spin_percent' => 100]));
+        $queue = $this->mock(BrowserTaskQueue::class);
+        $queue->shouldReceive('run')->once()->andReturn(['confirmed' => false, 'proof' => 'after_reload']);
+        $posts = [$this->threadsPost('DfJ0001', 'alice', 'Grosse séance de squat ce matin')];
+        $this->executor(['confirmed', 'uncertain'])->run($account, app(FeedEngagementPlanner::class)->plan($account, $posts),
+            collect($posts)->keyBy('id')->all(), 'snap', 'server');
+
+        $comment = ThreadsEngagement::where('action', 'comment')->sole();
+        $this->assertSame('uncertain', $comment->status);
+        $this->assertSame('uncertain', app(\App\Services\Threads\ThreadsEngagementService::class)->reconcile($comment)->status);
+        $this->assertSame(2, BrowserTask::where('kind', 'threads.agent.act')->count());
+    }
 }
