@@ -167,7 +167,7 @@ class AccountStrategy
             'agent_strategy.unfollow_after_days' => 'sometimes|integer|min:1|max:365',
             'agent_strategy.audience' => 'sometimes|nullable|string|max:4000', 'agent_strategy.objective' => 'sometimes|nullable|string|max:2000'];
         foreach (array_keys(self::LISTS) as $key) {
-            $rules['agent_strategy.'.$key] = 'sometimes|array|max:100';
+            $rules['agent_strategy.'.$key] = 'sometimes|array|max:200';
             $rules['agent_strategy.'.$key.'.*'] = 'string|max:255|distinct';
         }
 

@@ -37,6 +37,10 @@ class AccountStrategyTest extends TestCase
         $this->withToken($token)->getJson('/api/community-manager/accounts/'.$this->account()->id.'/strategy')->assertNotFound();
         $this->withToken($token)->patchJson($path, ['agent_strategy' => ['credentials' => ['secret']]])->assertUnprocessable();
         $this->withToken($token)->patchJson($path, ['agent_hourly_limit' => -1])->assertUnprocessable();
+        // Le vocabulaire CrossFit et HYROX, en français et en anglais, dépasse la centaine de recherches.
+        $queries = array_map(fn ($i) => 'mouvement '.$i, range(1, 200));
+        $this->withToken($token)->patchJson($path, ['agent_strategy' => ['search_queries' => $queries]])->assertOk()->assertJsonCount(200, 'strategy.search_queries');
+        $this->withToken($token)->patchJson($path, ['agent_strategy' => ['search_queries' => [...$queries, 'mouvement 201']]])->assertUnprocessable();
         $this->assertSame(['#mode'], $a->fresh()->agent_strategy['hashtags']);
     }
 
