@@ -138,6 +138,14 @@ exacts, réponses reçues sous les commentaires spintax comparées aux commentai
   **Tant que l'étape 3 n'est pas livrée, les publications « pour le modèle » ne reçoivent que le like.**
 - Code commun : `FeedEngagementExecutor` ne connaît plus `XEngagement` ; `FeedNetwork` réserve, envoie et lit l'issue.
 - `FrenchText` reconnaît aussi l'espagnol et le portugais courants, sans les mots qu'ils partagent avec le français.
+- **Second relevé à blanc** (14/11/2026, 16 h 30 Lisbonne, tâche 10800) : 25 lues, 6 retenues, 6 likes, 3 spintax,
+  1 pour le modèle. Une première lecture a échoué juste avant (« Page du navigateur non chargée », tâche 10798) : le
+  passage s'arrête et le suivant reprend 20 minutes plus tard. « Um pouco de ousadia nunca sai de moda » passait encore
+  pour du français : mots portugais complétés. Des publications sportives restent manquées quand le mot-clé est collé
+  dans un hashtag (`#sandbagworkout`, `#hyroxathlete`).
+- **Quotas Threads du catalogue** (fiche agent du compte) : like 20 et commentaire 5 par jour, partagés avec Hermès.
+  Ils bornent le script avant `daily_likes` et `daily_spin_comments` : le 14/11 à 16 h 30, il restait 1 like et
+  0 commentaire.
 - Fiche de Wildy Caro Threads : mêmes 129 recherches et 12 hashtags que sur X (vérifié), plus 3 exclusions demandées
   par Xavier (`#pub`, `shein`, `code promo`) : 81 exclusions contre 78 sur X.
 

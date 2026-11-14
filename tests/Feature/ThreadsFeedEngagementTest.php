@@ -210,6 +210,7 @@ class ThreadsFeedEngagementTest extends TestCase
     {
         $this->assertFalse(FrenchText::looksFrench('Ni antes ni después, todo llega cuando tiene que llegar'));
         $this->assertFalse(FrenchText::looksFrench('Dia de futevôlei…bom dia!'));
+        $this->assertFalse(FrenchText::looksFrench('Um pouco de ousadia nunca sai de moda. ✨🍷'));
         $this->assertTrue(FrenchText::looksFrench('Reprise du sport après 7 semaines sans entraînement'));
         $this->assertTrue(FrenchText::looksFrench('Le deadlift et moi 😬'));
     }

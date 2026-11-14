@@ -20,7 +20,8 @@ final class FrenchText
      * le 14/11/2026, « Ni antes ni después, todo llega cuando tiene que llegar » passait pour du français.
      */
     private const IBERIAN = ['el', 'los', 'las', 'del', 'por', 'para', 'pero', 'muy', 'todo', 'toda', 'cuando', 'tiene', 'ni',
-        'hay', 'esta', 'este', 'esto', 'mucho', 'nao', 'em', 'com', 'uma', 'os', 'dos', 'das', 'voce', 'isso', 'hoje', 'bom', 'dia', 'eu'];
+        'hay', 'esta', 'este', 'esto', 'mucho', 'nao', 'em', 'com', 'um', 'uma', 'os', 'dos', 'das', 'voce', 'isso', 'hoje', 'bom', 'dia',
+        'eu', 'nunca', 'pouco', 'muito', 'meu', 'minha', 'sempre', 'tambem'];
 
     public static function looksFrench(string $text): bool
     {
