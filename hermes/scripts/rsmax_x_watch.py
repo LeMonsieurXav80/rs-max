@@ -112,7 +112,7 @@ def snapshot(client, now=None, lane=None):
             if account.get('driver') != 'api' or not account.get('api_ready') or not account.get('persona'): continue
         elif platform not in ('twitter','tiktok') or account.get('driver') != 'browser' or account.get('session') != 'connected':
             continue
-        if lane == 'x' and platform == 'twitter' and account.get('feed_drafts') and account.get('persona'):
+        if ((lane == 'x' and platform == 'twitter') or (lane == 'threads' and platform == 'threads')) and account.get('feed_drafts') and account.get('persona'):
             # Rédactions du fil réservées par le script : RS-Max seul, sans navigateur ni cadence à attendre.
             x_feed_drafts.append({'account_id': account['id'], 'pending': account['feed_drafts']})
         tiktok = account['platform'] == 'tiktok'

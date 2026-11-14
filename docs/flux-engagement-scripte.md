@@ -135,7 +135,6 @@ exacts, réponses reçues sous les commentaires spintax comparées aux commentai
   `threads.like`/`threads.comment` que la tâche écrit d'elle-même. **Bilan à J+7** : `threads_engagements` où
   `payload->origin = 'feed_script'`.
 - Quand l'interrupteur est allumé, Hermès ne planifie plus de découverte du fil pour ce compte (`priority_threads`).
-  **Tant que l'étape 3 n'est pas livrée, les publications « pour le modèle » ne reçoivent que le like.**
 - Code commun : `FeedEngagementExecutor` ne connaît plus `XEngagement` ; `FeedNetwork` réserve, envoie et lit l'issue.
 - `FrenchText` reconnaît aussi l'espagnol et le portugais courants, sans les mots qu'ils partagent avec le français.
 - **Second relevé à blanc** (14/11/2026, 16 h 30 Lisbonne, tâche 10800) : 25 lues, 6 retenues, 6 likes, 3 spintax,
@@ -156,6 +155,19 @@ exacts, réponses reçues sous les commentaires spintax comparées aux commentai
   0 commentaire.
 - Fiche de Wildy Caro Threads : mêmes 129 recherches et 12 hashtags que sur X (vérifié), plus 3 exclusions demandées
   par Xavier (`#pub`, `shein`, `code promo`) : 81 exclusions contre 78 sur X.
+
+**Étape 3 livrée le 14/11/2026** : lots de commentaires rédigés par Hermès, comme pour X.
+- Le passage réserve les publications « pour le modèle » (`ThreadsEngagement` « comment » préparé, `draft_state=awaiting`),
+  dans le plafond `daily_llm_comments` qui compte aussi les demandes en attente.
+- Le catalogue porte `feed_drafts` pour un compte Threads avec Companion ; la prélecture de la file Threads l'annonce
+  dans `priority_feed_drafts`.
+- Hermès : `feed-drafts --account ID` (persona, jusqu'à 5 publications avec texte, sujet, médias décrits), puis un seul
+  `feed-drafts-submit`. RS-Max valide (500 caractères UTF-16, pas de « merci » en tête, persona inchangé, moins de
+  14 jours, aucun commentaire déjà demandé) ; le passage suivant envoie, avec preuve après rechargement.
+- Skill `rsmax-cycle-threads` : +506 octets (8 696 → 9 202), prompt de cycle inchangé.
+
+**Activé le 14/11/2026 à 15 h 50 (Lisbonne) sur Wildy Caro (Threads, compte 36)**, palier 1, sur feu vert de Xavier.
+Premier passage lancé à la main à 15 h 51 ; premier like confirmé à 15 h 52 (@_elenafit2_).
 
 **Premier relevé à blanc** (Wildy Caro, Threads #36, 14/11/2026 à 14 h 53 UTC, tâche 10755, 25 s) : 22 publications lues
 sur 12 écrans, 3 retenues, 3 likes, 0 spintax, 1 pour le modèle.

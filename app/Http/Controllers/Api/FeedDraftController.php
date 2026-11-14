@@ -15,7 +15,8 @@ class FeedDraftController extends Controller
     {
         abort_unless($request->user()->isManager(), 403);
         $account = $request->user()->connectedSocialAccounts()->with(['platform', 'persona'])->findOrFail($id);
-        abort_unless($account->platform->slug === 'twitter' && $account->usesBrowser(), 422, 'Compte X en mode navigateur requis.');
+        abort_unless(($account->platform->slug === 'twitter' && $account->usesBrowser())
+            || ($account->platform->slug === 'threads' && filled($account->browser_profile)), 422, 'Compte X en mode navigateur ou Threads avec Companion requis.');
 
         return $account;
     }

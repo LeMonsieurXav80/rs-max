@@ -180,14 +180,16 @@ class ThreadsFeedEngagementTest extends TestCase
         $this->assertContains('déjà aimée', $again['items'][0]['reasons']);
     }
 
-    public function test_une_publication_pour_le_modele_ne_recoit_que_le_like_avant_l_etape_3(): void
+    public function test_une_publication_pour_le_modele_recoit_le_like_et_une_redaction_reservee_sans_texte(): void
     {
         $account = $this->enable($this->account(['enabled' => true, 'spin_percent' => 0]));
         $posts = [$this->threadsPost('DfF0001', 'alice', 'Grosse séance de squat ce matin')];
         $run = $this->executor()->run($account, app(FeedEngagementPlanner::class)->plan($account, $posts), collect($posts)->keyBy('id')->all(), 'snap', 'server');
 
-        $this->assertSame(0, $run['requested']);
+        $this->assertSame(1, $run['requested']);
         $this->assertSame(['like'], array_column($run['done'], 'action'));
+        $draft = ThreadsEngagement::where('action', 'comment')->sole();
+        $this->assertSame(['prepared', 'awaiting', null], [$draft->status, $draft->payload['draft_state'], $draft->browser_task_id]);
     }
 
     public function test_le_passage_reel_threads_lit_execute_et_journalise(): void
@@ -203,7 +205,7 @@ class ThreadsFeedEngagementTest extends TestCase
         $log = BotActionLog::where('action_type', 'agent.feed.read')->sole();
         $this->assertFalse($log->metadata['dry_run']);
         $this->assertSame(1, $log->metadata['done']);
-        $this->assertSame('confirmed', ThreadsEngagement::sole()->status);
+        $this->assertSame('confirmed', ThreadsEngagement::where('action', 'like')->sole()->status);
     }
 
     public function test_l_espagnol_et_le_portugais_ne_passent_plus_pour_du_francais(): void
@@ -213,5 +215,39 @@ class ThreadsFeedEngagementTest extends TestCase
         $this->assertFalse(FrenchText::looksFrench('Um pouco de ousadia nunca sai de moda. ✨🍷'));
         $this->assertTrue(FrenchText::looksFrench('Reprise du sport après 7 semaines sans entraînement'));
         $this->assertTrue(FrenchText::looksFrench('Le deadlift et moi 😬'));
+    }
+
+    public function test_les_redactions_threads_sont_reservees_redigees_par_hermes_puis_envoyees_avec_preuve(): void
+    {
+        $persona = \App\Models\Persona::create(['name' => 'Caro', 'system_prompt' => 'Ton chaleureux', 'is_active' => true]);
+        $account = $this->enable($this->account(['enabled' => true, 'spin_percent' => 0]));
+        $account->update(['persona_id' => $persona->id]);
+        $posts = [$this->threadsPost('DfH0001', 'alice', 'Grosse séance de squat ce matin', ['topic' => 'Fitness Threads', 'media' => ['May be an image of a gym']]),
+            $this->threadsPost('DfH0002', 'bob', 'Reprise du squat après une blessure')];
+        $executor = $this->executor();
+        $run = $executor->run($account, app(FeedEngagementPlanner::class)->plan($account, $posts, $executor->usedToday($account)),
+            collect($posts)->keyBy('id')->all(), 'snap', 'server');
+        $this->assertSame(2, $run['requested']);
+        $this->assertSame(['likes' => 2, 'spin' => 0, 'llm' => 2], $executor->usedToday($account), 'une demande compte dans le plafond');
+
+        $manager = \App\Models\User::factory()->create(['role' => 'manager']);
+        $account->users()->attach($manager, ['is_active' => true]);
+        $token = $manager->createToken('CM', ['community-manager'])->plainTextToken;
+        $path = '/api/community-manager/accounts/'.$account->id.'/feed-drafts';
+        $batch = $this->withToken($token)->getJson($path)->assertOk()->assertJsonPath('max_length', 500)->json();
+        $this->assertStringContainsString('« Pour toi » sur Threads', $batch['instruction']);
+        $this->assertSame(['Fitness Threads', ['May be an image of a gym']], [$batch['drafts'][0]['topic'], $batch['drafts'][0]['media']]);
+        [$first, $second] = array_column($batch['drafts'], 'id');
+        $this->withToken($token)->postJson($path, ['drafts' => [['id' => $first, 'text' => str_repeat('Bravo ', 90)], ['id' => $second, 'skip' => 'blessure']]])
+            ->assertOk()->assertJsonPath('results.0.status', 'refused')->assertJsonPath('results.1.status', 'skipped');
+        $this->withToken($token)->postJson($path, ['drafts' => [['id' => $first, 'text' => 'Le squat dès le matin, belle façon de lancer la journée 💪']]])
+            ->assertOk()->assertJsonPath('results.0.status', 'accepted');
+
+        $next = $executor->run($account, ['items' => []], [], 'snap2', 'server');
+        $this->assertSame([['reply', 'llm', 'confirmed']], array_map(fn ($d) => [$d['action'], $d['source'], $d['status']], $next['done']));
+        $sent = ThreadsEngagement::find($first);
+        $this->assertSame(['comment', 'hermes_subscription'], [$sent->browserTask->payload['action'], $sent->payload['draft_source']]);
+        $this->assertSame('Le squat dès le matin, belle façon de lancer la journée 💪', $sent->browserTask->payload['text']);
+        $this->assertSame('cancelled', ThreadsEngagement::find($second)->status);
     }
 }

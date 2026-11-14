@@ -66,6 +66,11 @@ class CommunityManagerController extends Controller
                     }
                 }
 
+                if ($a->platform->slug === 'threads' && filled($a->browser_profile)) {
+                    // Publications du fil Threads réservées par le script, à rédiger par Hermès.
+                    $x['feed_drafts'] = app(\App\Services\Agent\Feed\FeedDraftService::class)->pending($a)->count();
+                }
+
                 return ['id' => $a->id, 'name' => $a->name, 'platform' => $a->platform->slug, ...$x,
                     'strategy' => $a->agent_strategy ?? (object) [], 'reply_language' => ReplyLanguage::code($a), 'cadence' => app(\App\Services\Agent\AccountActionBudget::class)->usage($a),
                     'next_publication_at' => $this->nextPublicationAt($a),

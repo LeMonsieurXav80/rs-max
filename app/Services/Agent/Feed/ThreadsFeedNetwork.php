@@ -30,7 +30,7 @@ final class ThreadsFeedNetwork implements FeedNetwork
 
     private const RECEIPTS_SENT = ['queued', 'running', 'confirmed', 'uncertain'];
 
-    public function __construct(private ThreadsEngagementService $engagements) {}
+    public function __construct(private ThreadsEngagementService $engagements, private FeedDraftService $drafts) {}
 
     public function validId(string $id): bool
     {
@@ -74,7 +74,10 @@ final class ThreadsFeedNetwork implements FeedNetwork
     public function usedToday(SocialAccount $account, Carbon $since): array
     {
         $rows = ThreadsEngagement::where('social_account_id', $account->id)->where('payload->origin', FeedEngagementExecutor::ORIGIN)
-            ->whereIn('status', self::RECEIPTS_SENT)->where('requested_at', '>=', $since)->get(['action', 'payload']);
+            ->where(fn ($q) => $q->where(fn ($sent) => $sent->whereIn('status', self::RECEIPTS_SENT)->where('requested_at', '>=', $since))
+                ->orWhere(fn ($asked) => $asked->where('status', 'prepared')->where('action', 'comment')
+                    ->where('created_at', '>=', $since)->whereIn('payload->draft_state', ['awaiting', 'ready'])))
+            ->get(['action', 'payload']);
         $spin = fn ($r) => ($r->payload['draft_source'] ?? null) === FeedEngagementExecutor::SPIN_SOURCE;
 
         return ['likes' => $rows->where('action', 'like')->count(),
@@ -120,12 +123,12 @@ final class ThreadsFeedNetwork implements FeedNetwork
 
     public function readyDrafts(SocialAccount $account): iterable
     {
-        return [];
+        return $this->drafts->ready($account);
     }
 
     public function requestDraft(SocialAccount $account, array $post, string $snapshot, string $trigger): bool
     {
-        return false; // rédactions par Hermès : étape 3
+        return $this->drafts->request($account, $post, $snapshot, $trigger);
     }
 
     /** Gestes Threads déjà demandés par Hermès ou par le script : un échec franc seul laisse réessayer. */
