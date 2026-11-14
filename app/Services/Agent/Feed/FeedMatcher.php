@@ -17,6 +17,9 @@ final class FeedMatcher
     /** @var list<array{phrase:string, pattern:string}> */
     private array $exclusions = [];
 
+    /** @var list<string> Exclusions sans lettre ni chiffre (emojis), cherchées telles quelles. */
+    private array $symbols = [];
+
     /** @var array<string, true> */
     private array $targets = [];
 
@@ -38,6 +41,8 @@ final class FeedMatcher
                 $this->excludedHandles[$handle] = true;
             } elseif ($entry = self::entry($value)) {
                 $this->exclusions[] = $entry;
+            } elseif (trim($value) !== '') {
+                $this->symbols[] = trim($value);
             }
         }
         foreach ($strategy['target_accounts'] ?? [] as $value) {
@@ -60,9 +65,18 @@ final class FeedMatcher
         if (isset($this->excludedHandles[strtolower(ltrim($author, '@'))])) {
             return '@'.strtolower(ltrim($author, '@'));
         }
+        foreach ($this->symbols as $symbol) {
+            if (mb_strpos($text, $symbol) !== false) {
+                return $symbol;
+            }
+        }
+        // Le pseudo compte aussi : « mrfunkyxxx » contient « xxx ».
         $normalized = self::normalize($text);
+        $handle = self::normalize(preg_replace('/(?<=[a-z])(?=[A-Z0-9])|[_.]/', ' ', ltrim($author, '@')));
+        $glued = str_replace(' ', '', $handle);
         foreach ($this->exclusions as $entry) {
-            if (preg_match($entry['pattern'], $normalized)) {
+            if (preg_match($entry['pattern'], $normalized) || preg_match($entry['pattern'], $handle)
+                || (! str_contains($entry['phrase'], ' ') && str_contains($glued, self::normalize($entry['phrase'])))) {
                 return $entry['phrase'];
             }
         }

@@ -56,6 +56,11 @@ class FeedEngagementTest extends TestCase
         $this->assertSame('onlyfans', $m->excludedBy('lien OnlyFans en bio', 'x'));
         $this->assertSame('@spammeur', $m->excludedBy('Belle séance', '@SPAMMEUR'));
         $this->assertTrue($m->isTarget('coach'));
+        $symbols = new FeedMatcher(['exclusions' => ['💦', 'xxx', 'sexy']]);
+        $this->assertSame('💦', $symbols->excludedBy('Quelle puissance 💦', 'alice'));
+        $this->assertSame('xxx', $symbols->excludedBy('Belle séance', 'mrfunkyxxx'));
+        $this->assertSame('sexy', $symbols->excludedBy('Séance', 'SexyGymGirl'));
+        $this->assertNull($symbols->excludedBy('Séance', 'maxence'));
     }
 
     public function test_le_plan_aime_commente_et_explique_chaque_publication_ecartee(): void
