@@ -142,8 +142,8 @@ Comparer à gestes constants : les jetons par geste sont l'indicateur principal,
 | 12/11 (réf., 12 h → 24 h) | DIX | 121 | 20,8 M | 172 k | — | — | — | avant |
 | 13/11 (24 h glissantes, réf.) | lemonsieurxav | 585 | 85,0 M | 145 k | 692 | 123 k | 43 % (sem.) | avant |
 | 13/11 (24 h glissantes, réf.) | DIX | 166 | 28,8 M | 173 k | 45 | 640 k | 43 % (sem.) | avant |
-| 13/11 | lemonsieurxav | | | | | | | changements 1 à 9 déployés à 11 h 08 UTC (RS-Max `ffc679f`, Hermès) |
-| 13/11 | DIX | | | | | | | changements 1 à 9 déployés à 11 h 12 UTC (image `27c38d8-couts`, Hermès) |
+| 13/11 (mixte, incident) | lemonsieurxav | 603 | 47,3 M | 79 k | 556 | 85 k | — | changements 1 à 9 à 11 h 08 UTC (`ffc679f`) ; réponses API différées 11 h 08 → 18 h 50 UTC |
+| 13/11 (mixte) | DIX | 141 | 12,2 M | 87 k | 79 | 155 k | — | changements 1 à 9 à 11 h 12 UTC (image `27c38d8-couts`) |
 
 Premiers réveils observés après la bascule (13/11, 11 h 08–11 h 12 UTC, lemonsieurxav) : prompt système 10,3 k
 caractères au lieu de 12,7 k, message de cycle 11,7 à 15,8 k au lieu de 41,7 k ; un réveil TikTok à 4 appels
@@ -155,3 +155,33 @@ vérifiable » s'appliquait aussi aux commentaires reçus, dont le contexte ne p
 en `missing_facts` tout ce qui arrivait sur Facebook, Instagram et Threads : aucune réponse pendant 7 h 40, et des
 réveils « silencieux » qui faussent les gestes du 13/11. Corrigé par `2ecb1a6` (`posted_at` dans le contexte, règle
 réservée à la découverte) ; 86 commentaires différés à tort remis en file. Ne pas comparer la journée du 13/11.
+
+### Par file, 12/11 → 13/11 (jetons par réveil, appels par réveil)
+
+| File | 12/11 | 13/11 | Écart |
+|---|---|---|---|
+| X (lemonsieurxav) | 161 k, 6,4 appels | 85 k, 5,2 appels | −47 % |
+| API | 119 k, 5,5 | 76 k, 5,9 | −36 % |
+| Threads | 119 k, 5,5 | 105 k, 5,7 | **−12 %** |
+| TikTok | 166 k, 7,3 | 52 k, 3,7 | −69 % |
+| X (DIX) | 172 k, 6,0 | 87 k, 4,5 | −49 % |
+
+Threads est la file qui a le moins baissé : premier candidat pour la suite.
+
+### Ventilation par commande (24 h glissantes au 14/11, 11 h UTC, après bascule)
+
+Part du contexte relu attribuée à chaque résultat d'outil : taille × nombre d'appels du modèle qui suivent dans
+le même réveil (sessions `source='cron'` de `state.db`, messages `tool` rapprochés de leur `tool_call`).
+
+| Poste | lemonsieurxav | DIX |
+|---|---|---|
+| Socle (SOUL, skill, prélecture) × appels | 52 % | 63 % |
+| `reply-context` + `reply-contexts` | 21 % | 1,5 % |
+| `logs` (30 appels à ~10 k jetons) | 5,7 % | 0,6 % |
+| `x-context` | 4,7 % | 11 % |
+| `x-read search.read` | 3,6 % | 9 % |
+| `threads-context` | 3,0 % | — |
+| `x-read feed.read` (Pour vous) | 2,3 % | 5 % |
+
+Pistes, par gain attendu : moins d'appels par réveil (le socle est payé à chaque appel) ; `logs` compact
+(~10 k → ~1 k jetons) ; prélecture élaguée des comptes sans travail ; file Threads.
