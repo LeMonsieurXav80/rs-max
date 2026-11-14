@@ -228,4 +228,21 @@ class CommunityManagerTest(unittest.TestCase):
             self.assertEqual(run('s2')['instructions'],'Ton chaleureux')
             self.assertEqual(run(None),{'instructions':'Ton chaleureux'})
 
+    def test_lot_du_fil_lu_puis_remis_en_un_appel(self):
+        import json,io,contextlib
+        with tempfile.TemporaryDirectory() as tmp:
+            config=Path(tmp)/'config.json';config.write_text(json.dumps({'state_path':tmp+'/state.sqlite'}))
+            def run(*args,reply=None):
+                out=io.StringIO()
+                with patch.object(cm,'daytime',return_value=True),patch.object(cm.Client,'api',return_value=reply or {'results':[]}) as api,\
+                     contextlib.redirect_stdout(out):
+                    cm.main(['--config',str(config),*args])
+                return api,json.loads(out.getvalue())
+            api,_=run('feed-drafts','--account','7',reply={'persona':{'instructions':'Ton'},'drafts':[{'id':1}]})
+            self.assertEqual(api.call_args.args,('GET','accounts/7/feed-drafts'))
+            api,_=run('feed-drafts-submit','--account','7','--drafts','[{"id":1,"text":"Belle régularité"},{"id":2,"skip":"séduction"}]')
+            self.assertEqual(api.call_args.args,('POST','accounts/7/feed-drafts',{'drafts':[{'id':1,'text':'Belle régularité'},{'id':2,'skip':'séduction'}]}))
+            with self.assertRaises(ValueError):
+                run('feed-drafts-submit','--account','7','--drafts','{"id":1}')
+
 if __name__=='__main__': unittest.main()

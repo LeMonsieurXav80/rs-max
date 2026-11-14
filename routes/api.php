@@ -42,6 +42,8 @@ Route::middleware(['auth:sanctum', \App\Http\Middleware\CommunityManagerTokenSco
         Route::get('inbox/{inboxItem}/context', [\App\Http\Controllers\Api\CommunityManagerInboxController::class, 'context']);
         Route::post('inbox/{inboxItem}/reply', [\App\Http\Controllers\Api\CommunityManagerInboxController::class, 'reply']);
         Route::post('accounts/{id}/x/read', [\App\Http\Controllers\Api\XAgentController::class, 'read']);
+        Route::get('accounts/{id}/feed-drafts', [\App\Http\Controllers\Api\FeedDraftController::class, 'index'])->whereNumber('id');
+        Route::post('accounts/{id}/feed-drafts', [\App\Http\Controllers\Api\FeedDraftController::class, 'store'])->whereNumber('id')->middleware('throttle:20,1,accounts-id-feed-drafts');
         Route::get('accounts/{id}/x/context', [\App\Http\Controllers\Api\XAgentController::class, 'context']);
         Route::post('accounts/{id}/x/prepare', [\App\Http\Controllers\Api\XAgentController::class, 'prepare']);
         Route::get('accounts/{id}/x/contacts', [\App\Http\Controllers\Api\XAgentController::class, 'contacts']);

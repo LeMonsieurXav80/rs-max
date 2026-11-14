@@ -86,11 +86,11 @@ class XFeedEngageCommand extends Command
         $plan = $planner->plan($account, $items, $executor->usedToday($account));
 
         $run = $commit ? $executor->run($account, $plan, collect($items)->keyBy(fn ($i) => (string) ($i['id'] ?? ''))->all(), $snapshot, 'server')
-            : ['done' => [], 'stopped' => null];
+            : ['done' => [], 'requested' => 0, 'stopped' => null];
         BotActionLog::create(['social_account_id' => $account->id, 'action_type' => 'agent.feed.read', 'source' => AgentCatalog::SOURCE,
             'target_uri' => $payload['url'], 'success' => true, 'performed_at' => now(),
             'metadata' => ['origin' => 'script', 'trigger' => 'server', 'dry_run' => ! $commit, 'summary' => $plan['summary'],
-                'done' => count($run['done']), 'stopped' => $run['stopped']]]);
+                'done' => count($run['done']), 'requested' => $run['requested'], 'stopped' => $run['stopped']]]);
 
         if ($this->option('json')) {
             $this->line(json_encode($plan + ['run' => $run], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_PRETTY_PRINT));
@@ -112,7 +112,7 @@ class XFeedEngageCommand extends Command
         if ($commit) {
             $confirmed = collect($run['done'])->where('status', 'confirmed')->count();
             $this->info("{$s['read']} lues, {$s['retained']} retenues : ".count($run['done'])." gestes demandés, $confirmed confirmés"
-                .($run['stopped'] ? ' ; arrêt : '.$run['stopped'] : '').'. Rédactions pour le modèle : étape suivante, non envoyées.');
+                .($run['stopped'] ? ' ; arrêt : '.$run['stopped'] : '').", {$run['requested']} rédactions demandées à Hermès.");
         } else {
             $this->info("Relevé à blanc, rien n'a été envoyé : {$s['read']} lues, {$s['retained']} retenues, {$s['likes']} likes, {$s['spin']} spintax, {$s['llm']} pour le modèle.");
         }

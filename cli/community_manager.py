@@ -24,7 +24,7 @@ def pending_inbox_order(platform):
     return 'oldest' if platform == 'tiktok' else 'newest'
 
 
-PERSONA_COMMANDS = ('reply-context', 'reply-contexts', 'x-context', 'threads-context', 'comment-context')
+PERSONA_COMMANDS = ('reply-context', 'reply-contexts', 'x-context', 'threads-context', 'comment-context', 'feed-drafts')
 
 
 def compact_catalog(value, key=None):
@@ -227,6 +227,10 @@ def main(argv=None):
     p = subs.add_parser('reply-contexts')
     p.add_argument('--account', type=int, required=True)
     p.add_argument('--limit', type=int, choices=range(1, 6), default=5)
+    # Fil « Pour vous » : lots de publications réservées par le script, rédigés en un appel (docs/flux-engagement-scripte.md).
+    p = subs.add_parser('feed-drafts'); p.add_argument('--account', type=int, required=True)
+    p = subs.add_parser('feed-drafts-submit'); p.add_argument('--account', type=int, required=True)
+    p.add_argument('--drafts', required=True, help='JSON : [{"id":1,"text":"…"},{"id":2,"skip":"motif"}]')
     p = subs.add_parser('reply'); p.add_argument('id', type=int); p.add_argument('--context', required=True); text=p.add_mutually_exclusive_group(required=True); text.add_argument('--text-file', type=Path); text.add_argument('--text'); p.add_argument('--commit', action='store_true')
     scan = subs.add_parser('scan'); scan.add_argument('--account', type=int); scan.add_argument('--limit', type=int, choices=range(1, 6), default=3)
     for name in ['like', 'like-comment', 'comment']:
@@ -347,6 +351,13 @@ def main(argv=None):
     elif args.command == 'reconcile-reply': result = client.api('POST', f'inbox/{args.id}/reconcile', {**({'snapshot_id':args.snapshot} if args.snapshot else {'verification_task_id':args.verification_task}),'dry_run':not args.commit})
     elif args.command == 'reply-contexts':
         result = client.api('GET', f'accounts/{args.account}/inbox/contexts?limit={args.limit}')
+    elif args.command == 'feed-drafts':
+        result = client.api('GET', f'accounts/{args.account}/feed-drafts')
+    elif args.command == 'feed-drafts-submit':
+        drafts = json.loads(args.drafts)
+        if not isinstance(drafts, list) or not all(isinstance(d, dict) and 'id' in d for d in drafts):
+            raise ValueError('--drafts attend une liste JSON d’objets {"id":…, "text":…} ou {"id":…, "skip":…}.')
+        result = client.api('POST', f'accounts/{args.account}/feed-drafts', {'drafts': drafts})
     elif args.command == 'reply-context':
         try: result = client.api('GET', f'inbox/{args.id}/context')
         except ApiError as exc:

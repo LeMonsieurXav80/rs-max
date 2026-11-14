@@ -28,6 +28,16 @@ class XWatchTest(unittest.TestCase):
         self.assertEqual(r['accounts'][0]['account_id'],11);self.assertEqual(r['accounts'][0]['items'][0]['id'],99)
         self.assertIn('accounts/11/inbox?',c.api.call_args.args[1])
 
+    def test_un_lot_du_fil_a_rediger_reveille_hermes_meme_sans_geste_disponible(self):
+        a=self.account(remaining=0); a.update(persona=5, feed_drafts=3)
+        a['actions']={'reply':{'left':0},'like':{'left':0}}
+        c=Mock(); c.api.return_value={'daytime':True,'accounts':[a]}
+        r=watch.snapshot(c,dt.datetime.fromisoformat('2026-11-07T12:30:00+00:00'),lane='x')
+        self.assertEqual(r['state'],'work')
+        self.assertEqual(r['priority_feed_drafts'],[{'account_id':11,'pending':3}])
+        a['feed_drafts']=0
+        self.assertEqual(watch.snapshot(c,dt.datetime.fromisoformat('2026-11-07T12:30:00+00:00'),lane='x')['state'],'idle')
+
     def test_le_fil_trie_par_script_n_est_plus_relu_par_le_modele(self):
         a=self.account(); a.update(persona=5, strategy={'feed_engagement':{'enabled':True}})
         a['actions']={'like':{'left':5},'reply':{'left':5},'feed.read':{'left':5},'thread.read':{'left':5}}

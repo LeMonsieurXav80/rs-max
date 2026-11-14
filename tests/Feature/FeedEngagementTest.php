@@ -180,7 +180,7 @@ class FeedEngagementTest extends TestCase
             }
         };
 
-        return new FeedEngagementExecutor($fake, app(AccountActionBudget::class), fn () => null);
+        return new FeedEngagementExecutor($fake, app(AccountActionBudget::class), new \App\Services\Agent\Feed\FeedDraftService($fake), fn () => null);
     }
 
     public function test_l_execution_aime_commente_journalise_et_ne_refait_rien_au_passage_suivant(): void
@@ -228,5 +228,53 @@ class FeedEngagementTest extends TestCase
             ->expectsOutputToContain('Engagement du fil coupé sur la fiche du compte')->assertFailed();
         $this->artisan('x:feed-engage', ['--all' => true, '--commit' => true])->assertSuccessful();
         $this->assertSame(0, XEngagement::count());
+    }
+
+    public function test_les_redactions_sont_reservees_lues_remises_par_l_api_puis_envoyees_au_passage_suivant(): void
+    {
+        $this->travelTo(\Illuminate\Support\Carbon::parse('2026-11-14 12:00', 'Europe/Lisbon'));
+        $persona = \App\Models\Persona::create(['name' => 'Caro', 'system_prompt' => 'Ton chaleureux', 'is_active' => true]);
+        $account = $this->account(['enabled' => true, 'spin_percent' => 0]);
+        $account->update(['persona_id' => $persona->id, 'browser_session_status' => 'connected']);
+        $posts = [$this->feedPost('501', 'alice', 'Squat lourd ce matin'), $this->feedPost('502', 'bob', 'Squat avant le travail')];
+        $executor = $this->executor();
+        $plan = app(FeedEngagementPlanner::class)->plan($account, $posts, $executor->usedToday($account));
+        $run = $executor->run($account, $plan, collect($posts)->keyBy('id')->all(), 'snap', 'server');
+        $this->assertSame(2, $run['requested']);
+        $this->assertSame(['like', 'like'], array_column($run['done'], 'action'));
+        $this->assertSame(['likes' => 2, 'spin' => 0, 'llm' => 2], $executor->usedToday($account), 'une demande compte dans le plafond');
+        $this->assertSame(2, BotActionLog::where('action_type', 'feed.llm')->where('metadata->status', 'requested')->count());
+
+        $manager = User::factory()->create(['role' => 'manager']);
+        $account->users()->attach($manager, ['is_active' => true]);
+        $token = $manager->createToken('CM', ['community-manager'])->plainTextToken;
+        $path = '/api/community-manager/accounts/'.$account->id.'/feed-drafts';
+        $batch = $this->withToken($token)->getJson($path)->assertOk()->assertJsonPath('persona.instructions', 'Ton chaleureux')->json();
+        $this->assertSame(['alice', 'bob'], array_column($batch['drafts'], 'author'));
+        [$first, $second] = array_column($batch['drafts'], 'id');
+        $this->withToken($token)->postJson($path, ['drafts' => [['id' => $first, 'text' => 'Merci pour ce rappel'], ['id' => $second, 'skip' => 'hors sujet']]])
+            ->assertOk()->assertJsonPath('results.0.status', 'refused')->assertJsonPath('results.1.status', 'skipped');
+        $this->withToken($token)->postJson($path, ['drafts' => [['id' => $first, 'text' => 'Le squat lourd le matin, ça réveille 💪']]])
+            ->assertOk()->assertJsonPath('results.0.status', 'accepted');
+        $this->assertSame('cancelled', XEngagement::find($second)->status);
+
+        $next = $executor->run($account, ['items' => []], [], 'snap2', 'server');
+        $this->assertSame([['reply', 'llm', 'confirmed']], array_map(fn ($d) => [$d['action'], $d['source'], $d['status']], $next['done']));
+        $this->assertSame('Le squat lourd le matin, ça réveille 💪', XEngagement::find($first)->payload['text']);
+        $this->assertSame('hermes_subscription', XEngagement::find($first)->payload['draft_source']);
+        $this->assertSame(1, BotActionLog::where('action_type', 'feed.llm')->where('success', true)->count());
+    }
+
+    public function test_une_redaction_non_remise_expire_sans_geste(): void
+    {
+        $this->travelTo(\Illuminate\Support\Carbon::parse('2026-11-14 09:00', 'Europe/Lisbon'));
+        $account = $this->account(['enabled' => true]);
+        $drafts = app(\App\Services\Agent\Feed\FeedDraftService::class);
+        $this->assertTrue($drafts->request($account, $this->feedPost('601', 'alice', 'Squat'), 'snap', 'server'));
+        $this->assertFalse($drafts->request($account, $this->feedPost('601', 'alice', 'Squat'), 'snap', 'server'), 'une seule demande par publication');
+        $this->assertSame(1, $drafts->pending($account)->count());
+        $this->travel(181)->minutes();
+        $this->assertSame(0, $drafts->pending($account)->count());
+        $this->assertSame('cancelled', XEngagement::first()->status);
     }
 }

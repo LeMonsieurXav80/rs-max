@@ -60,6 +60,10 @@ class CommunityManagerController extends Controller
                         && ($actions['follow']['left'] ?? 0) > 0 && ($actions['profile.read']['left'] ?? 0) > 0) {
                         $x['follow_candidate'] = $strategies->xFollowCandidate($a);
                     }
+                    if ($a->usesBrowser()) {
+                        // Publications du fil réservées par le script, à rédiger par Hermès.
+                        $x['feed_drafts'] = app(\App\Services\Agent\Feed\FeedDraftService::class)->pending($a)->count();
+                    }
                 }
 
                 return ['id' => $a->id, 'name' => $a->name, 'platform' => $a->platform->slug, ...$x,

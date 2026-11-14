@@ -98,6 +98,7 @@ def snapshot(client, now=None, lane=None):
     explorations = []
     x_explorations = []
     x_follows = []
+    x_feed_drafts = []
     tiktok_explorations = []
     for account in catalog.get('accounts', []):
         platform = account.get('platform')
@@ -108,6 +109,9 @@ def snapshot(client, now=None, lane=None):
             if account.get('driver') != 'api' or not account.get('api_ready') or not account.get('persona'): continue
         elif platform not in ('twitter','tiktok') or account.get('driver') != 'browser' or account.get('session') != 'connected':
             continue
+        if lane == 'x' and platform == 'twitter' and account.get('feed_drafts') and account.get('persona'):
+            # Rédactions du fil réservées par le script : RS-Max seul, sans navigateur ni cadence à attendre.
+            x_feed_drafts.append({'account_id': account['id'], 'pending': account['feed_drafts']})
         tiktok = account['platform'] == 'tiktok'
         actions, cadence = account.get('actions', {}), account.get('cadence', {})
         facebook_like = platform == 'facebook' and 'comment.like' in actions and actions['comment.like'].get('enabled', True)
@@ -228,7 +232,7 @@ def snapshot(client, now=None, lane=None):
     # L'heure locale évite au modèle un appel `date` ; elle ne change le hachage que dans l'état work,
     # que cycle_key fait déjà changer à chaque créneau.
     local = now.astimezone(ZoneInfo('Europe/Lisbon')).strftime('%Y-%m-%d %H:%M')
-    return {'state':'work','now_lisbon':local,'cycle_key':int(now.timestamp())//cycle_seconds,'accounts':work,'priority_threads':explorations,'priority_x':x_explorations,'priority_x_follow':x_follows,'priority_tiktok':tiktok_explorations} if work or x_explorations or x_follows or tiktok_explorations else {'state':'idle'}
+    return {'state':'work','now_lisbon':local,'cycle_key':int(now.timestamp())//cycle_seconds,'accounts':work,'priority_threads':explorations,'priority_x':x_explorations,'priority_x_follow':x_follows,'priority_feed_drafts':x_feed_drafts,'priority_tiktok':tiktok_explorations} if work or x_explorations or x_follows or x_feed_drafts or tiktok_explorations else {'state':'idle'}
 
 
 PAUSE_UNKNOWN = 'Canonical cron unknown; no automatic re-execution'
