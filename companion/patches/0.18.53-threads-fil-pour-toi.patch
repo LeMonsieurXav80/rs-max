@@ -1,0 +1,106 @@
+diff -ruN a/manifest.json b/manifest.json
+--- a/manifest.json	2026-11-14 14:46:31
++++ b/manifest.json	2026-11-14 14:46:31
+@@ -1,7 +1,7 @@
+ {
+   "manifest_version": 3,
+   "name": "RS-Max Companion",
+-  "version": "0.18.52",
++  "version": "0.18.53",
+   "description": "Actions assistees sur les reseaux sociaux (engagement, publication) avec remontee vers l'API RS-Max.",
+   "permissions": [
+     "storage",
+diff -ruN a/tests/threads-feed-markers.test.cjs b/tests/threads-feed-markers.test.cjs
+--- a/tests/threads-feed-markers.test.cjs	1970-01-01 01:00:00
++++ b/tests/threads-feed-markers.test.cjs	2026-11-14 14:46:31
+@@ -0,0 +1,59 @@
++const {test} = require('node:test');
++const assert = require('node:assert/strict');
++const {readFileSync} = require('node:fs');
++const {join} = require('node:path');
++const {JSDOM} = require('jsdom');
++
++// Structure relevée sur le NAS le 14/11/2026 : un bloc par entrée du fil, une réponse dans le bloc de sa publication.
++const card = (author, id, body, extra = '') => `<div><div data-pressable-container="true">
++  <a href="/@${author}"><img width="36" alt="${author}'s profile picture"></a>
++  <a href="/@${author}"><span dir="auto" translate="no"><span>${author}</span></span></a>${extra}
++  <span dir="auto"><a href="/@${author}/post/${id}"><time datetime="2026-11-14T10:00:00.000Z"><span>1h</span></time></a></span>
++  ${body}
++  <div role="button"><svg aria-label="Like"></svg></div><div role="button"><svg aria-label="Reply"></svg></div>
++</div></div>`;
++const unit = cards => `<div>${cards.join('')}</div>`;
++
++function rows(html) {
++  const dom = new JSDOM(`<main>${html}</main>`, {url: 'https://www.threads.com/', runScripts: 'outside-only'});
++  try {
++    dom.window.Element.prototype.getClientRects = () => [{}];
++    dom.window.chrome = {runtime: {onMessage: {addListener() {}}}};
++    dom.window.eval(readFileSync(join(__dirname, '../threads/agent.js'), 'utf8'));
++    return Object.fromEntries(dom.window.RSThreads.snapshots().map(v => [v.s.author, v.s]));
++  } finally {
++    dom.window.close();
++  }
++}
++
++test('le fil Threads porte la traduction proposée, le sujet, les médias décrits et la langue de l’interface', () => {
++  const {coach} = rows(unit([card('coach', 'DfAAA1', `<span dir="auto"><span>Belle séance de squat</span>&nbsp;<div><div role="button"><span>Translate</span></div></div></span>
++    <a href="/@coach/post/DfAAA1/media"><img width="1000" alt="Photo by Coach. May be an image of one or more people and gym."></a>`,
++  '<a href="/search?q=fitness&serp_type=tags&tag_id=1"><span>Fitness Threads</span></a>')]));
++  assert.equal(coach.text, 'Belle séance de squat');
++  assert.equal(coach.translatable, true);
++  assert.equal(coach.ui_lang, 'en');
++  assert.equal(coach.topic, 'Fitness Threads');
++  assert.deepEqual([...coach.media], ['Photo by Coach. May be an image of one or more people and gym.']);
++  assert.equal(coach.promoted, false);
++  assert.equal(coach.reply_hint, undefined);
++});
++
++test('une réponse affichée sous sa publication est marquée, la publication d’origine ne l’est pas', () => {
++  const posts = rows(unit([card('alice', 'DfBBB1', '<span dir="auto"><span>Leg day</span></span>')])
++    + unit([card('bob', 'DfCCC1', '<span dir="auto"><span>Not going to let this get to me</span></span>'),
++      card('carol', 'DfCCC2', '<span dir="auto"><span>💕</span></span>')]));
++  assert.equal(posts.alice.reply_hint, undefined);
++  assert.equal(posts.alice.translatable, false);
++  assert.equal(posts.bob.reply_hint, undefined);
++  assert.equal(posts.carol.reply_hint, true);
++  assert.equal(posts.carol.reply_to, 'bob');
++});
++
++test('publicité et repost sont reconnus à leur mention', () => {
++  const posts = rows(unit([card('brand', 'DfDDD1', '<span dir="auto"><span>Nouvelle collection</span></span>', '<span>Sponsored</span>')])
++    + unit([card('dana', 'DfEEE1', '<span dir="auto"><span>WOD du jour</span></span>', '<div><span>coach reposted</span></div>')]));
++  assert.equal(posts.brand.promoted, true);
++  assert.equal(posts.dana.reposted_by, 'coach');
++  assert.equal(posts.dana.promoted, false);
++});
+diff -ruN a/threads/agent.js b/threads/agent.js
+--- a/threads/agent.js	2026-11-14 14:46:31
++++ b/threads/agent.js	2026-11-14 14:46:31
+@@ -10,11 +10,25 @@
+ function canonical(value){try{const u=new URL(value,location.origin),m=u.pathname.match(/^\/@([\w.]+)\/post\/([\w-]+)\/?$/);return /^(www\.)?threads\.(com|net)$/.test(u.hostname)&&m?{id:m[2],author:m[1].toLowerCase(),url:'https://www.threads.com/@'+m[1]+'/post/'+m[2]}:null}catch{return null}}
+ const cards=()=>[...document.querySelectorAll('[data-pressable-container="true"]')].filter(e=>visible(e)&&!e.closest('[role="dialog"]'));
+ function control(root,kind){const pattern=kind==='like'?/^(Like|Unlike|J’aime|Je n’aime plus|Ne plus aimer)$/:/^(Reply|Répondre|Réponse envoyée|Replied)$/;const found=controls(root).filter(b=>[...b.querySelectorAll('svg')].some(s=>pattern.test(label(s)))||pattern.test(b.getAttribute('aria-label')||''));return found.length===1?found[0]:null}
+-function snapshot(card){const links=[...card.querySelectorAll('a[href]')].filter(a=>a.closest('[data-pressable-container="true"]')===card).map(a=>({a,p:canonical(a.href)})).filter(v=>v.p);const byTime=links.filter(v=>v.a.querySelector('time'));const unique=[...new Map((byTime.length?byTime:links).map(v=>[v.p.id,v])).values()];if(unique.length!==1)return null;const {a,p}=unique[0];let body=a.querySelector('time')?'':text(a);if(!body){const spans=[...card.querySelectorAll('span[dir="auto"]')].filter(n=>n.closest('[data-pressable-container="true"]')===card&&!n.closest('a,time,button,[role="button"]')&&!n.querySelector('time')&&text(n)!==p.author&&![...n.parentElement.closest('span[dir="auto"]')?.querySelectorAll('span[dir="auto"]')||[]].includes(n));body=spans.map(text).filter(v=>v&&!/^(No replies yet|Aucune réponse(?: pour le moment)?|Pas encore de réponse|Reply to [\w.]+(?:\.{3}|…)|Répondre à [\w.]+(?:\.{3}|…))$/.test(v)).join('\n')}const like=control(card,'like'),icon=like?.querySelector('svg');const l=icon?label(icon):like?.getAttribute('aria-label');const liked=/^(Unlike|Je n’aime plus|Ne plus aimer)$/.test(l||'')?true:/^(Like|J’aime)$/.test(l||'')?false:null;return{...p,text:body,liked,published_at:card.querySelector('time')?.dateTime||null,has_media:!!card.querySelector('video,img:not([width="36"])')};}
++function snapshot(card){const links=[...card.querySelectorAll('a[href]')].filter(a=>a.closest('[data-pressable-container="true"]')===card).map(a=>({a,p:canonical(a.href)})).filter(v=>v.p);const byTime=links.filter(v=>v.a.querySelector('time'));const unique=[...new Map((byTime.length?byTime:links).map(v=>[v.p.id,v])).values()];if(unique.length!==1)return null;const {a,p}=unique[0];let body=a.querySelector('time')?'':text(a);if(!body){const spans=[...card.querySelectorAll('span[dir="auto"]')].filter(n=>n.closest('[data-pressable-container="true"]')===card&&!n.closest('a,time,button,[role="button"]')&&!n.querySelector('time')&&text(n)!==p.author&&![...n.parentElement.closest('span[dir="auto"]')?.querySelectorAll('span[dir="auto"]')||[]].includes(n));body=spans.map(text).filter(v=>v&&!/^(No replies yet|Aucune réponse(?: pour le moment)?|Pas encore de réponse|Reply to [\w.]+(?:\.{3}|…)|Répondre à [\w.]+(?:\.{3}|…))$/.test(v)).join('\n')}const like=control(card,'like'),icon=like?.querySelector('svg');const l=icon?label(icon):like?.getAttribute('aria-label');const liked=/^(Unlike|Je n’aime plus|Ne plus aimer)$/.test(l||'')?true:/^(Like|J’aime)$/.test(l||'')?false:null;return{...p,text:body,liked,published_at:card.querySelector('time')?.dateTime||null,has_media:!!card.querySelector('video,img:not([width="36"])'),...markers(card,l)};}
++// Repères du tri par script (vérifiés sur le NAS le 14/11/2026) : « Translate » sous un texte dans une autre langue que l'interface,
++// une réponse affichée dans le même bloc que sa publication, le sujet en lien serp_type=tags. Publicité et repost : aucun exemple vu.
++const own=(card,sel)=>[...card.querySelectorAll(sel)].filter(e=>e.closest('[data-pressable-container="true"]')===card);
++const topCards=()=>cards().filter(c=>!c.parentElement.closest('[data-pressable-container="true"]'));
++function group(card){let n=card;for(let i=0;i<3&&n.parentElement;i++){n=n.parentElement;const inside=topCards().filter(c=>n.contains(c));if(inside.length>1)return inside.length<=4?inside:null}return null}
++function markers(card,likeLabel){const leaves=own(card,'span,a,div').filter(e=>!e.children.length).map(text).filter(Boolean),g=group(card),first=g&&g[0]!==card?g[0]:null;
++const repost=leaves.map(t=>t.match(/^(.+?) (?:reposted|a reposté|a republié)$/)).find(Boolean);
++return{translatable:controls(card).some(b=>b.closest('[data-pressable-container="true"]')===card&&/^(Translate|See translation|Traduire|Voir la traduction)$/.test(text(b))),
++ui_lang:/^(Like|Unlike)$/.test(likeLabel||'')?'en':/^(J’aime|Je n’aime plus|Ne plus aimer)$/.test(likeLabel||'')?'fr':null,
++promoted:leaves.some(t=>/^(Sponsored|Sponsorisée?|Publicité)$/.test(t)),...(repost?{reposted_by:repost[1]}:{}),
++...(first?{reply_hint:true,reply_to:first.querySelector('a[href^="/@"]')?.pathname.match(/^\/@([\w.]+)/)?.[1]?.toLowerCase()||null}:{}),
++topic:own(card,'a[href*="serp_type=tags"]').map(text).filter(Boolean)[0]||null,has_video:!!own(card,'video').length,
++media:own(card,'img').filter(i=>i.width!==36&&i.alt&&!/profile picture|photo de profil/i.test(i.alt)).map(i=>i.alt.slice(0,300)).slice(0,4)}}
+ const snapshots=()=>cards().map(c=>({card:c,s:snapshot(c)})).filter(v=>v.s);
+ function target(p){const found=snapshots().filter(v=>v.s.id===p.target.id);if(found.length!==1||found[0].s.author!==p.target.author||found[0].s.text!==p.target.text)throw Error('Cible Threads absente, modifiée ou ambiguë.');return found[0]}
+ async function read(p){await wait(identity);guard(p);if(p.action==='profile.read'){const h=location.pathname.match(/^\/@([\w.]+)\/?$/)?.[1];if(h?.toLowerCase()!==p.handle.replace(/^@/,'').toLowerCase())throw Error('Profil cible différent.');return{status:'done',result:{profile:{handle:h,text:document.querySelector('main')?.innerText?.slice(0,3000)||document.body.innerText.slice(-3000)},complete:false}}}
+-await wait(()=>snapshots().length);guard(p);const found=new Map();for(let screen=0;screen<3;screen++){snapshots().forEach(v=>found.set(v.s.id,v.s));if(p.action==='thread.read'||found.size>=(p.limit||10))break;window.scrollBy(0,innerHeight);await sleep(1000);guard(p)}const items=[...found.values()].slice(0,Math.min(20,p.limit||10));if(p.action==='thread.read'){const primary=canonical(location.href),t=items.find(i=>i.id===primary?.id);if(!t)throw Error('Publication Threads ciblée non chargée.');return{status:'done',result:{target:t,conversation:items,context_complete:true,complete:false,observed:items.length}}}return{status:'done',result:{items,complete:false,observed:items.length}}}
++await wait(()=>snapshots().length);guard(p);// Tri du fil par script : ~25 publications, soit une dizaine d'écrans du NAS (2 à 4 nouvelles par écran).
++const limit=Math.min(30,Math.max(1,Number(p.limit)||10)),deep=limit>10,found=new Map();for(let screen=0;screen<Math.min(deep?12:3,Number(p.screens)||(deep?12:3));screen++){snapshots().forEach(v=>found.set(v.s.id,v.s));if(p.action==='thread.read'||found.size>=limit)break;window.scrollBy(0,innerHeight);await sleep(deep?1500:1000);guard(p)}const items=[...found.values()].slice(0,limit);if(p.action==='thread.read'){const primary=canonical(location.href),t=items.find(i=>i.id===primary?.id);if(!t)throw Error('Publication Threads ciblée non chargée.');return{status:'done',result:{target:t,conversation:items,context_complete:true,complete:false,observed:items.length}}}return{status:'done',result:{items,complete:false,observed:items.length}}}
+ async function act(task){const p=task.payload;window.RSTaskTrace?.mark('threads.prepare',{action:p.action,target_id:p.target?.id});let clicked=false;const started_at=Date.now();try{await wait(identity);guard(p);await wait(()=>snapshots().some(v=>v.s.id===p.target.id));let t=target(p);if(p.action==='like'&&t.s.liked===true)return{status:'done',result:{unchanged:true,clicked:false,started_at}};if(!['like','comment'].includes(p.action))throw Error('Action Threads inconnue.');const localKey='rsmaxThreadsIntent:'+p.username+':'+task.id;if((await chrome.storage.local.get(localKey))[localKey])throw Error('Geste déjà demandé : vérifier sans renvoi.');
+ if(p.action==='like'){if(t.s.liked!==false)throw Error('État du like inconnu.');await window.RSPacing.pause({});guard(p);t=target(p);if(t.s.liked===true)return{status:'done',result:{unchanged:true,clicked:false,started_at}};const button=control(t.card,'like');if(!button||t.s.liked!==false)throw Error('Like ambigu.');await window.RSMAX.api.post('/extension/tasks/'+task.id+'/authorize-threads',{});guard(p);await chrome.storage.local.set({[localKey]:{at:Date.now()}});guard(p);window.RSTaskTrace?.mark('threads.before_click',{action:p.action,target_id:p.target.id});clicked=true;button.click();return{status:'done',result:{clicked:true,started_at,username:p.username,target_url:p.target.url}};}
+ if(p.target.author===p.username)throw Error('Pas de réponse au compte lui-même.');if(document.querySelector('[role="dialog"] [contenteditable="true"]'))throw Error('Un éditeur est déjà ouvert.');const reply=control(t.card,'reply');if(!reply)throw Error('Bouton Répondre absent.');guard(p);reply.click();const field=await wait(()=>{const fields=[...document.querySelectorAll('[role="dialog"] [contenteditable="true"]')].filter(visible);return fields.length===1?fields[0]:null});if(!field||text(field))throw Error('Éditeur non vide ou absent.');const dialog=field.closest('[role="dialog"]');if(!text(dialog).replace(/\s+/g,'').includes(p.target.text.replace(/\s+/g,''))||!dialog.querySelector('a[href^="/@'+p.target.author+'"]'))throw Error('Destinataire du commentaire non confirmé.');field.focus();window.RSMAX.pasteInto(field,p.text);if(!await wait(()=>text(field)===p.text,5000))throw Error('Texte du commentaire différent.');await window.RSPacing.pause({});guard(p);const submit=controls(dialog).filter(b=>/^(Post|Publier)$/.test(text(b))&&!b.disabled&&b.getAttribute('aria-disabled')!=='true');if(submit.length!==1||text(field)!==p.text||!text(dialog).replace(/\s+/g,'').includes(p.target.text.replace(/\s+/g,'')))throw Error('Envoi ou destinataire modifié.');const before=new Set(snapshots().map(v=>v.s.id));await window.RSMAX.api.post('/extension/tasks/'+task.id+'/authorize-threads',{});guard(p);await chrome.storage.local.set({[localKey]:{at:Date.now()}});guard(p);window.RSTaskTrace?.mark('threads.before_click',{action:p.action,target_id:p.target.id});clicked=true;submit[0].click();const posted=await wait(()=>snapshots().map(v=>v.s).find(s=>s.author===p.username&&s.text===p.text&&!before.has(s.id)),20000);return posted?{status:'done',result:{clicked:true,started_at,username:p.username,target_url:p.target.url,post_url:posted.url,post_id:posted.id}}:{status:'uncertain',result:{clicked:true,started_at},error:'Commentaire peut-être envoyé, identifiant non trouvé : aucun renvoi.'};

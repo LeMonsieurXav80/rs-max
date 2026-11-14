@@ -24,4 +24,14 @@ final class FrenchText
 
         return $french > $english && ($french >= 2 || ($french >= 1 && $accents));
     }
+
+    /** `fr`, `other`, ou `none` quand il ne reste rien à lire une fois liens, mentions et hashtags retirés. */
+    public static function language(string $text): string
+    {
+        if (FeedMatcher::normalize(preg_replace(['~https?://\S+~', '/[@#][\w.]+/u'], ' ', $text)) === '') {
+            return 'none';
+        }
+
+        return self::looksFrench($text) ? 'fr' : 'other';
+    }
 }

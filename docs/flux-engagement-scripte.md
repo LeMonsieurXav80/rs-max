@@ -99,7 +99,41 @@ ni couper, ni relever un plafond (403). Couper rend aussitôt le tri du fil à H
 des passages, rédactions écartées par Hermès et leurs motifs, jetons par geste comparés au 12/11 et au 13/11, abonnés X
 exacts, réponses reçues sous les commentaires spintax comparées aux commentaires rédigés.
 
-**À savoir pour Threads** (constaté le 14/11/2026, pas encore traité) :
+## Threads
+
+**Étape 1 livrée le 14/11/2026** (Companion 0.18.53) : lecture « Pour toi », repères Companion et relevé à blanc.
+- `php artisan threads:feed-engage <compte> [--json]` lit `https://www.threads.com/` (« Pour toi », pas `/following/`),
+  jusqu'à 25 publications sur 12 écrans au plus, n'envoie rien et journalise la lecture (`agent.feed.read`,
+  `origin=script`, `dry_run=true`). `--commit` reste refusé jusqu'à l'étape 2.
+- **Hermès lit toujours `/following/`** pour son exploration (`ThreadsAgent::read`) : à changer seulement sur décision
+  de Xavier.
+- Code commun à X et Threads : `FeedNetwork` (`XFeedNetwork`, `ThreadsFeedNetwork`) porte ce qui change d'un réseau à
+  l'autre (identifiant, ancienneté, langue, longueur d'un commentaire, gestes déjà faits). Les règles de tri restent
+  dans `FeedEngagementPlanner`, la lecture et l'affichage dans `FeedEngageCommand`.
+- Gestes déjà faits, pour le like, le commentaire et le délai « même auteur » : tâches `threads.agent.act` en attente,
+  en cours, faites ou incertaines (Hermès ou script). Un échec franc laisse réessayer.
+
+**DOM vérifié sur le NAS le 14/11/2026** (CDP du Chromium `rsmax-browser`, file réservée, trois lectures, environ
+120 publications) :
+- **L'interface Threads était en anglais** (session de Planète de Caro installée ce jour-là) et le lien « Translate »
+  figurait sous presque toutes les publications françaises (« Ça y est j'ai 43 ans », « Le deadlift et moi »). Il
+  signale une langue différente de l'interface, pas une langue différente du français, et Threads l'omet parfois
+  (une publication espagnole sans lien). Companion le transmet (`translatable`) avec la langue de l'interface
+  (`ui_lang`, lue sur le bouton « Like »/« J'aime »). **`FrenchText` décide** ; sous une interface française seulement,
+  le lien « Traduire » écarte le français.
+- Le lien est un `div role="button"` dans le bloc de texte : il était déjà exclu du texte lu.
+- **Une réponse apparaît dans le même bloc que sa publication** : 4 blocs de 2 cartes sur 45 entrées (publication
+  d'origine, puis réponse d'un autre compte). Companion marque la seconde `reply_hint`, avec `reply_to`.
+- Le sujet de l'auteur (« Fitness Threads », « Memes ») est un lien `serp_type=tags` : transmis en `topic`, il compte
+  pour les mots-clés et les exclusions comme le texte. Les lieux (`serp_type=location_tag`) ne comptent pas.
+- **Aucune publicité ni aucun repost** sur ces lectures : Companion reconnaît les mentions « Sponsored »,
+  « Sponsorisé(e) », « Publicité » et « … reposted / a reposté / a republié », sans exemple réel pour l'instant.
+- Les suggestions de comptes (« Follow », « 179K followers ») n'ont pas de lien de publication : déjà ignorées.
+- Les médias portent une description dans `alt` (« May be an image of… ») : transmise en `media`, pour les lots
+  d'Hermès (étape 3).
+- Il faut environ 10 écrans pour 25 publications (2 à 4 nouvelles par écran de 960 px).
+
+**Constats avant le code** (14/11/2026) :
 - `ThreadsAgent::read()` ouvre `https://www.threads.com/following/` pour `feed.read` : c'est le fil **des abonnements**,
   pas « Pour toi » (`https://www.threads.com/`). X avait le même défaut, corrigé le 13/11.
 - Les gestes Threads n'ont pas de reçu `XEngagement` : ce sont des `browser_tasks` `threads.agent.act` avec une
