@@ -72,6 +72,43 @@ par jour, 8 gestes par passage, 40 % de spintax. Début de la semaine de test : 
 
 **Prochaine étape** : lancement manuel en local et relevé des versions (étape 4), puis Threads et Cyril.
 
+## Exploitation et suivi
+
+**État au 14/11/2026, 14 h 30 UTC** : allumé sur Wildy Caro (X, compte 7) seulement. Trois passages réels : 11 likes et
+4 commentaires spintax confirmés, 1 like en échec (pas incertain : aucun risque de doublon), 1 rédaction écartée par
+Hermès. Threads (#36) et Cyril (DIX #23) ont leurs listes et leurs modèles, interrupteur coupé.
+
+**Commandes** (conteneur RS-Max de l'instance) :
+- relevé à blanc d'un compte : `php artisan x:feed-engage 7` (`--json` pour le détail) ;
+- passage réel à la main : `php artisan x:feed-engage 7 --commit` (interrupteur requis ; éviter les minutes 0, 20 et
+  40, où tourne le passage planifié) ;
+- lot d'Hermès, côté profil Hermès : `python3 scripts/community_manager.py --config community-manager.json feed-drafts --account 7`.
+
+**Allumer, couper, régler** : `PATCH /api/accounts/{id}/strategy` avec un accès gestionnaire, bloc
+`agent_strategy.feed_engagement` (`enabled`, plafonds, modèles). Le jeton Community Manager d'Hermès ne peut ni allumer,
+ni couper, ni relever un plafond (403). Couper rend aussitôt le tri du fil à Hermès.
+
+**Ce qu'il faut regarder** :
+- reçus durables : `x_engagements` où `payload->origin = 'feed_script'` (action, `draft_source` = `script_spintax` ou
+  `hermes_subscription`, statut) ;
+- journal 7 jours : `bot_action_logs` `feed.like`, `feed.spin`, `feed.llm` (statut, auteur, mots-clés, texte) et un
+  `agent.feed.read` par passage (`summary`, `done`, `requested`, `stopped`) ;
+- coût : `scripts/rsmax_cost_report.py --history` côté Hermès, colonne « Jetons/geste ».
+
+**Bilan à J+7 (21/11/2026)** : gestes confirmés par jour et par origine, taux d'échecs et d'incertains, motifs d'arrêt
+des passages, rédactions écartées par Hermès et leurs motifs, jetons par geste comparés au 12/11 et au 13/11, abonnés X
+exacts, réponses reçues sous les commentaires spintax comparées aux commentaires rédigés.
+
+**À savoir pour Threads** (constaté le 14/11/2026, pas encore traité) :
+- `ThreadsAgent::read()` ouvre `https://www.threads.com/following/` pour `feed.read` : c'est le fil **des abonnements**,
+  pas « Pour toi » (`https://www.threads.com/`). X avait le même défaut, corrigé le 13/11.
+- Les gestes Threads n'ont pas de reçu `XEngagement` : ce sont des `browser_tasks` `threads.agent.act` avec une
+  `idempotency_key`. `threads-action` rend la main sans attendre la preuve (le modèle relance `threads-status`).
+- La lecture Companion (`threads/agent.js`) ne donne ni langue, ni publicité, ni réponse, ni repost ; 3 écrans et
+  20 publications au plus.
+- Companion local n'a, pour Threads, que « Threads — transmettre la session au NAS ». Pour X, la recette locale
+  « X — Traiter les publications récentes » (`x/batch.js`) existe, mais suit sa propre logique, pas ce script.
+
 ## Pourquoi
 
 L'agent trie le fil « Pour vous » avec le modèle. À chaque passage, il lit environ 9 publications, en choisit une et
