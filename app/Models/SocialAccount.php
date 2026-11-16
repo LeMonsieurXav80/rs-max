@@ -144,10 +144,13 @@ class SocialAccount extends Model
         return $this->usesBrowser() && str_starts_with((string) $this->browser_profile, 'android-');
     }
 
-    /** Profil qui exécute `$kind` : le relevé Studio web d'un compte sur téléphone reste au navigateur du NAS. */
+    /**
+     * Profil qui exécute `$kind`. Les relevés de Studio web d'un compte sur téléphone restent au navigateur du NAS :
+     * le téléphone ne lit qu'Activité (une trentaine de commentaires), Studio web les liste tous.
+     */
     public function profileFor(string $kind): ?string
     {
-        return $kind === 'tiktok.studio.read' && $this->usesPhone() && filled($this->browser_read_profile)
+        return in_array($kind, ['tiktok.studio.read', 'tiktok.comments'], true) && $this->usesPhone() && filled($this->browser_read_profile)
             ? $this->browser_read_profile : $this->browser_profile;
     }
 
