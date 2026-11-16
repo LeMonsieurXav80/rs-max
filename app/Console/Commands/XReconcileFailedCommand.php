@@ -30,7 +30,8 @@ class XReconcileFailedCommand extends Command
             $counts = [];
             foreach ($items as $item) {
                 try {
-                    $read = $queue->run($account, 'x.agent.read', ['url' => 'https://x.com/i/web/status/'.$item->external_id,
+                    // Permalien avec l'auteur : Companion compare l'auteur de l'URL à celui de la page (`/i/web/` est refusé).
+                    $read = $queue->run($account, 'x.agent.read', ['url' => 'https://x.com/'.ltrim((string) $item->author_username, '@').'/status/'.$item->external_id,
                         'action' => 'thread.read', 'username' => $account->browser_username, 'target_id' => (string) $item->external_id], 110);
                     $result = $reconciler->reconcileFromThread($item, $read, ! $commit);
                 } catch (BrowserException $e) {
