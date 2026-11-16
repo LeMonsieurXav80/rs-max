@@ -50,7 +50,8 @@ class PhoneInboxReplyTest extends TestCase
         $task = BrowserTask::firstOrFail();
         $this->assertTrue($sent['queued']);
         $this->assertSame(['tiktok.reply', BrowserTask::PENDING, $item->id], [$task->kind, $task->status, $task->payload['inbox_item_id']]);
-        $this->assertSame(['author' => 'ana', 'content' => 'Jolie tenue', 'caption' => 'Légende'], $task->payload['target']);
+        $this->assertSame(['author' => 'ana', 'content' => 'Jolie tenue', 'caption' => 'Légende',
+            'posted_at' => $item->posted_at->toIso8601String()], $task->payload['target']);
         $item->refresh();
         $this->assertSame(1, $item->reply_attempts);
         $this->assertNull($item->reply_scheduled_at);

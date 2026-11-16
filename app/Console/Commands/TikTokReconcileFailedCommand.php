@@ -35,7 +35,8 @@ class TikTokReconcileFailedCommand extends Command
             }
             try {
                 $result = $queue->run($account, 'tiktok.inbox.reconcile', ['username' => $account->browser_username,
-                    'items' => $items->map(fn ($i) => ['id' => $i->id, 'author' => $i->author_username, 'content' => (string) $i->content])->values()->all()], 900);
+                    'items' => $items->map(fn ($i) => ['id' => $i->id, 'author' => $i->author_username, 'content' => (string) $i->content,
+                        'posted_at' => $i->posted_at?->toIso8601String()])->values()->all()], 900);
             } catch (BrowserException $e) {
                 $this->error("{$account->name} : {$e->getMessage()}");
 

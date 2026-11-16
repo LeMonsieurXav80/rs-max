@@ -100,7 +100,9 @@ class TikTokInboxService implements PlatformInboxInterface
         return $payload + [
             'url' => self::COMMENTS_URL,
             'username' => $account->browser_username,
-            'target' => ['author' => $item->author_username, 'content' => $item->content, 'caption' => $item->post_content],
+            // `posted_at` départage, sur le téléphone, les commentaires d'un même auteur sans texte lisible (emojis).
+            'target' => ['author' => $item->author_username, 'content' => $item->content, 'caption' => $item->post_content,
+                'posted_at' => $item->posted_at?->toIso8601String()],
             'confirm_after_reload' => true,
         ];
     }
