@@ -11,7 +11,7 @@ use Illuminate\Support\Facades\Http;
 /** Les activations et tentatives API suivent le même budget que les gestes NAS. */
 class ApiInboxActions
 {
-    public const PLATFORMS = ['facebook', 'instagram', 'threads', 'youtube'];
+    public const PLATFORMS = ['facebook', 'instagram', 'threads', 'youtube', 'bluesky'];
 
     public function assertEnabled(SocialAccount $account, string $action): void
     {

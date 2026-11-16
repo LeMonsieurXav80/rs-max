@@ -12,7 +12,7 @@ LANES = {
     'x': {'twitter'},
     'tiktok': {'tiktok'},
     'threads': {'threads'},
-    'api': {'facebook', 'instagram', 'youtube'},
+    'api': {'facebook', 'instagram', 'youtube', 'bluesky'},
 }
 DISCOVERY_MINUTES = 15
 TIKTOK_MAX_REPLIES = 10
@@ -107,7 +107,7 @@ def snapshot(client, now=None, lane=None):
         platform = account.get('platform')
         if lane and platform not in LANES[lane]:
             continue
-        api = platform in ('facebook','instagram','threads','youtube')
+        api = platform in ('facebook','instagram','threads','youtube','bluesky')
         if api:
             if account.get('driver') != 'api' or not account.get('api_ready') or not account.get('persona'): continue
         elif platform not in ('twitter','tiktok') or account.get('driver') != 'browser' or account.get('session') != 'connected':

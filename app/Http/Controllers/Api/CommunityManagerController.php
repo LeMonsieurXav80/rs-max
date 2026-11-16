@@ -74,7 +74,8 @@ class CommunityManagerController extends Controller
                 return ['id' => $a->id, 'name' => $a->name, 'platform' => $a->platform->slug, ...$x,
                     'strategy' => $a->agent_strategy ?? (object) [], 'reply_language' => ReplyLanguage::code($a), 'cadence' => app(\App\Services\Agent\AccountActionBudget::class)->usage($a),
                     'next_publication_at' => $this->nextPublicationAt($a),
-                    'api_ready' => filled($a->credentials['access_token'] ?? null) || filled($a->credentials['refresh_token'] ?? null),
+                    // Bluesky : mot de passe d'application et jeton de session, pas d'OAuth.
+                    'api_ready' => collect(['access_token', 'refresh_token', 'access_jwt', 'app_password'])->contains(fn ($k) => filled($a->credentials[$k] ?? null)),
                     'session' => $a->browser_session_status, 'driver' => $a->driver,
                     'followers_observation' => $a->browser_followers_observation, 'persona' => $a->persona?->is_active ? $a->persona->id : null,
                     'actions' => $actions];
