@@ -3,6 +3,7 @@
 namespace App\Services\Inbox;
 
 use App\Models\BrowserTask;
+use App\Models\InboxItem;
 use App\Models\SocialAccount;
 use App\Services\Agent\AccountActionBudget;
 use App\Services\Browser\BrowserTaskQueue;
@@ -54,7 +55,10 @@ class PhoneInboxSweep
                     continue;
                 }
                 $items[] = ['task_id' => $task->id, 'kind' => $task->kind, 'target' => $task->payload['target'] ?? [],
-                    'text' => $task->kind === 'tiktok.reply' ? (string) ($task->payload['text'] ?? '') : null];
+                    'text' => $task->kind === 'tiktok.reply' ? (string) ($task->payload['text'] ?? '') : null,
+                    // Like d'un commentaire déjà répondu : cherché dans « Avec réponse » seulement. Sans cela le
+                    // téléphone lisait d'abord tout « Pas de réponse » (143 cartes, 7 min, le 16/11/2026).
+                    'answered' => $task->kind === 'tiktok.like' && InboxItem::whereKey($task->payload['inbox_item_id'] ?? 0)->whereNotNull('replied_at')->exists()];
             }
             if ($items === []) {
                 return null;

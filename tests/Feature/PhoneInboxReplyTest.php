@@ -184,13 +184,25 @@ class PhoneInboxReplyTest extends TestCase
         ], 'done', [$task($interrupted)->id => ['status' => 'sending']]);
 
         $this->assertSame(5, count($sweep->payload['items']));
-        $this->assertSame(12, $sweep->payload['min_gap']);  // délai tenu par le téléphone, pas un motif d'annulation
+        $this->assertSame(12, $sweep->payload['min_gap']);
+        $this->assertSame([false, false], array_column(array_slice($sweep->payload['items'], 0, 2), 'answered'));  // délai tenu par le téléphone, pas un motif d'annulation
         $this->assertSame('replied', $replied->fresh()->status);
         $this->assertNotNull($liked->fresh()->liked_at);
         $this->assertSame([BrowserTask::DONE, BrowserTask::FAILED, BrowserTask::CANCELLED, BrowserTask::UNCERTAIN],
             [$task($liked)->status, $task($missing)->status, $task($unreached)->status, $task($interrupted)->status]);
         $this->assertNull($missing->fresh()->liked_at);
         $this->assertSame(0, BrowserTask::whereIn('status', [BrowserTask::PENDING, BrowserTask::RUNNING])->count());
+    }
+
+    public function test_le_like_dun_commentaire_deja_repondu_est_cherche_dans_avec_reponse(): void
+    {
+        $item = $this->item();
+        $item->update(['status' => 'replied', 'replied_at' => now()]);
+        app(\App\Services\Inbox\TikTokInboxService::class)->enqueueLike($item->socialAccount, $item);
+
+        $sweep = app(PhoneInboxSweep::class)->bundle($item->socialAccount, app(BrowserTaskQueue::class), settle: false);
+
+        $this->assertTrue($sweep->payload['items'][0]['answered']);
     }
 
     public function test_un_passage_interrompu_ne_relance_rien_et_garde_les_gestes_commences_incertains(): void
