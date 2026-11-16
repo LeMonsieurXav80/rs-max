@@ -62,6 +62,8 @@ class BrowserTaskController extends Controller
             app(\App\Services\Browser\TikTokReplyReceipt::class)->checkpoint($task, $v['result']);
         } elseif ($task->kind === 'threads.agent.act') {
             app(\App\Services\Threads\ThreadsAgent::class)->checkpoint($task, $v['result']);
+        } elseif ($task->kind === \App\Services\Inbox\PhoneInboxSweep::KIND) {
+            app(\App\Services\Inbox\PhoneInboxSweep::class)->checkpoint($task, $v['result']);
         } else {
             app(\App\Services\Agent\TikTokPhotoPublisher::class)->checkpoint($task, $v['result']);
         }
@@ -137,6 +139,9 @@ class BrowserTaskController extends Controller
             if (isset($task->result['submission'])) {
                 $v['result']['submission'] = $task->result['submission'];
             }
+        }
+        if ($task->kind === \App\Services\Inbox\PhoneInboxSweep::KIND) {
+            $v['result'] = app(\App\Services\Inbox\PhoneInboxSweep::class)->finalResult($task, $v['result'] ?? []);
         }
         if (in_array($task->kind, ['tiktok.photo.publish', 'threads.agent.act', 'tiktok.reply', 'tiktok.publish'], true)) {
             $v['result'] = array_replace($task->result ?? [], $v['result'] ?? []);

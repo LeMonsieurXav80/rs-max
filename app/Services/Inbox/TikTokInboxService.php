@@ -84,18 +84,20 @@ class TikTokInboxService implements PlatformInboxInterface
         return $this->act($account, $item, 'tiktok.like', []);
     }
 
-    /** Téléphone : la réponse (et son like) part en file, sans attendre ; voir `PhoneInboxReplyResult`. */
+    /** Téléphone : la réponse (et son like) attend le prochain passage groupé (`PhoneInboxSweep`), sans attendre ;
+     * voir `PhoneInboxReplyResult`. */
     public function enqueueReply(SocialAccount $account, InboxItem $item, string $replyText): \App\Models\BrowserTask
     {
         return $this->queue->enqueue($account, 'tiktok.reply', $this->payload($account, $item, ['text' => $replyText,
-            'inbox_item_id' => $item->id, 'like' => true, 'deadline' => now()->addMinutes(30)->toIso8601String()]));
+            'inbox_item_id' => $item->id, 'like' => true, 'deadline' => now()->addMinutes(30)->toIso8601String()]),
+            PhoneInboxSweep::parkedProfile($account));
     }
 
     /** Téléphone : like en file, sans attendre ; `PhoneInboxReplyResult` marque `liked_at` s'il est prouvé. */
     public function enqueueLike(SocialAccount $account, InboxItem $item): \App\Models\BrowserTask
     {
         return $this->queue->enqueue($account, 'tiktok.like', $this->payload($account, $item, ['inbox_item_id' => $item->id,
-            'deadline' => now()->addMinutes(30)->toIso8601String()]));
+            'deadline' => now()->addMinutes(30)->toIso8601String()]), PhoneInboxSweep::parkedProfile($account));
     }
 
     private function payload(SocialAccount $account, InboxItem $item, array $payload): array

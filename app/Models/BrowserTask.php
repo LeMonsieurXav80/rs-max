@@ -14,6 +14,9 @@ class BrowserTask extends Model
             if ($model->wasChanged('status') && isset($model->payload['inbox_item_id'])) {
                 app(\App\Services\Inbox\PhoneInboxReplyResult::class)->apply($model);
             }
+            if ($model->kind === \App\Services\Inbox\PhoneInboxSweep::KIND && ($model->wasChanged('status') || $model->wasChanged('result'))) {
+                app(\App\Services\Inbox\PhoneInboxSweep::class)->apply($model);
+            }
         });
     }
 

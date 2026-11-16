@@ -25,7 +25,8 @@ class BrowserTaskQueue
      * Crée la tâche sans attendre son résultat : un téléphone enchaîne ses tâches pendant que la file de RS-Max
      * reste libre (un seul worker), le résultat est appliqué à la fin de la tâche (`PhoneInboxReplyResult`).
      */
-    public function enqueue(SocialAccount $account, string $kind, array $payload): BrowserTask
+    /** `$profile` : profil imposé (tâches mises de côté pour un passage groupé, `PhoneInboxSweep`). */
+    public function enqueue(SocialAccount $account, string $kind, array $payload, ?string $profile = null): BrowserTask
     {
         if (isset($payload['activity_window'])) {
             app(CommunityManagerWindow::class)->assertOpen($payload['activity_window']);
@@ -34,7 +35,7 @@ class BrowserTaskQueue
             throw new BrowserException('Aucun profil navigateur pour ce compte.');
         }
 
-        return BrowserTask::create(['social_account_id' => $account->id, 'profile' => $account->profileFor($kind),
+        return BrowserTask::create(['social_account_id' => $account->id, 'profile' => $profile ?? $account->profileFor($kind),
             'kind' => $kind, 'payload' => $payload]);
     }
 

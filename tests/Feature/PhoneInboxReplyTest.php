@@ -12,6 +12,7 @@ use App\Models\User;
 use App\Services\Browser\BrowserTaskQueue;
 use App\Services\Inbox\InboxReplyService;
 use App\Services\Inbox\PhoneInboxReplyResult;
+use App\Services\Inbox\PhoneInboxSweep;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Queue;
 use Laravel\Sanctum\Sanctum;
@@ -33,11 +34,24 @@ class PhoneInboxReplyTest extends TestCase
             'posted_at' => now()->subHour()]);
     }
 
+    /** Le téléphone conclut la tâche mise de côté au sein d'un passage groupé. */
     private function finish(BrowserTask $task, string $status, array $result = []): void
     {
+        $this->sweep([$task->id => ['status' => $status, 'result' => $result]]);
+    }
+
+    private function sweep(array $items, string $status = 'done', array $checkpoint = []): BrowserTask
+    {
+        $sweep = app(PhoneInboxSweep::class)->bundle(SocialAccount::firstOrFail(), app(BrowserTaskQueue::class), settle: false);
         Sanctum::actingAs(User::factory()->create(['role' => 'admin']));
-        $this->getJson('/api/extension/tasks/next?profile=android-honor')->assertJsonPath('id', $task->id);
-        $this->postJson("/api/extension/tasks/{$task->id}/finish", ['status' => $status, 'result' => $result])->assertOk();
+        $this->getJson('/api/extension/tasks/next?profile=android-honor')->assertJsonPath('id', $sweep->id)
+            ->assertJsonPath('kind', PhoneInboxSweep::KIND);
+        if ($checkpoint) {
+            $this->postJson("/api/extension/tasks/{$sweep->id}/checkpoint", ['result' => ['items' => $checkpoint]])->assertOk();
+        }
+        $this->postJson("/api/extension/tasks/{$sweep->id}/finish", ['status' => $status, 'result' => ['items' => $items]])->assertOk();
+
+        return $sweep->fresh();
     }
 
     public function test_la_reponse_part_en_file_sans_attendre_et_le_like_prouve_evite_un_second_geste(): void
@@ -50,6 +64,7 @@ class PhoneInboxReplyTest extends TestCase
         $task = BrowserTask::firstOrFail();
         $this->assertTrue($sent['queued']);
         $this->assertSame(['tiktok.reply', BrowserTask::PENDING, $item->id], [$task->kind, $task->status, $task->payload['inbox_item_id']]);
+        $this->assertSame('android-honor:lot', $task->profile);  // jamais prise seule : elle attend le passage groupé
         $this->assertSame(['author' => 'ana', 'content' => 'Jolie tenue', 'caption' => 'Légende',
             'posted_at' => $item->posted_at->toIso8601String()], $task->payload['target']);
         $item->refresh();
@@ -93,7 +108,7 @@ class PhoneInboxReplyTest extends TestCase
         app(InboxReplyService::class)->send($item, $item->reply_content, scheduled: true);
         $this->travel(31)->minutes();
 
-        $this->assertNull(app(BrowserTaskQueue::class)->claim('android-honor'));
+        $this->assertNull(app(PhoneInboxSweep::class)->bundle(SocialAccount::firstOrFail(), app(BrowserTaskQueue::class)));
 
         $this->assertSame(BrowserTask::CANCELLED, BrowserTask::firstOrFail()->status);
         $item->refresh();
@@ -130,7 +145,7 @@ class PhoneInboxReplyTest extends TestCase
     {
         $item = $this->item();
         foreach (range(1, PhoneInboxReplyResult::MAX_IN_FLIGHT) as $i) {
-            BrowserTask::create(['social_account_id' => $item->social_account_id, 'profile' => 'android-honor', 'kind' => 'tiktok.reply',
+            BrowserTask::create(['social_account_id' => $item->social_account_id, 'profile' => 'android-honor:lot', 'kind' => 'tiktok.reply',
                 'payload' => ['inbox_item_id' => 1000 + $i]]);
         }
         $item->update(['reply_scheduled_at' => null, 'reply_content' => null]);
@@ -140,5 +155,54 @@ class PhoneInboxReplyTest extends TestCase
 
         $this->assertFalse($result['success']);
         $this->assertStringContainsString('File du téléphone pleine', $result['error']);
+    }
+
+    public function test_un_seul_passage_conclut_chaque_commentaire_selon_ce_que_le_telephone_a_vu(): void
+    {
+        Queue::fake();
+        $replied = $this->item();
+        $queue = app(\App\Services\Inbox\TikTokInboxService::class);
+        $make = fn (string $key) => InboxItem::create(['social_account_id' => $replied->social_account_id, 'platform_id' => $replied->platform_id,
+            'external_id' => $key, 'type' => 'comment', 'author_username' => $key, 'content' => 'Superbe', 'post_content' => 'Légende',
+            'status' => 'read', 'reply_attempts' => 0, 'posted_at' => now()->subHour()]);
+        [$liked, $missing, $unreached, $interrupted] = [$make('lea'), $make('mia'), $make('zoe'), $make('eva')];
+        app(InboxReplyService::class)->send($replied, $replied->reply_content, scheduled: true);
+        foreach ([$liked, $missing, $unreached, $interrupted] as $item) {
+            $queue->enqueueLike($replied->socialAccount, $item);
+        }
+        $this->assertNull(app(PhoneInboxSweep::class)->bundle($replied->socialAccount, app(BrowserTaskQueue::class)), 'salve en cours');
+        Sanctum::actingAs(User::factory()->create(['role' => 'admin']));
+        $this->getJson('/api/extension/tasks/next?profile=android-honor:lot')->assertStatus(422);  // aucun worker ne la prend
+        $task = fn (InboxItem $item) => BrowserTask::where('payload->inbox_item_id', $item->id)->firstOrFail();
+
+        $sweep = $this->sweep([
+            $task($replied)->id => ['status' => 'done', 'result' => ['confirmed' => true, 'liked' => true]],
+            $task($liked)->id => ['status' => 'done', 'result' => ['confirmed' => true, 'proof' => 'after_reload']],
+            $task($missing)->id => ['status' => 'missing'],
+            $task($interrupted)->id => ['status' => 'failed', 'error' => 'rapport tardif'],
+        ], 'done', [$task($interrupted)->id => ['status' => 'sending']]);
+
+        $this->assertSame(5, count($sweep->payload['items']));
+        $this->assertSame('replied', $replied->fresh()->status);
+        $this->assertNotNull($liked->fresh()->liked_at);
+        $this->assertSame([BrowserTask::DONE, BrowserTask::FAILED, BrowserTask::CANCELLED, BrowserTask::UNCERTAIN],
+            [$task($liked)->status, $task($missing)->status, $task($unreached)->status, $task($interrupted)->status]);
+        $this->assertNull($missing->fresh()->liked_at);
+        $this->assertSame(0, BrowserTask::whereIn('status', [BrowserTask::PENDING, BrowserTask::RUNNING])->count());
+    }
+
+    public function test_un_passage_interrompu_ne_relance_rien_et_garde_les_gestes_commences_incertains(): void
+    {
+        Queue::fake();
+        $item = $this->item();
+        app(InboxReplyService::class)->send($item, $item->reply_content, scheduled: true);
+        $reply = BrowserTask::firstOrFail();
+
+        $sweep = $this->sweep([], 'uncertain', [$reply->id => ['status' => 'sending']]);
+
+        $this->assertSame(BrowserTask::UNCERTAIN, $sweep->status);
+        $this->assertSame(BrowserTask::UNCERTAIN, $reply->fresh()->status);
+        $this->assertSame(['reply_failed', 3], [$item->fresh()->status, $item->fresh()->reply_attempts]);
+        Queue::assertPushed(VerifyTikTokInboxReply::class);
     }
 }
