@@ -20,6 +20,7 @@ class SocialAccount extends Model
         'platform_account_id',
         'driver',
         'browser_profile',
+        'browser_read_profile',
         'browser_session',
         'browser_username',
         'browser_followers_observation',
@@ -141,6 +142,13 @@ class SocialAccount extends Model
     public function usesPhone(): bool
     {
         return $this->usesBrowser() && str_starts_with((string) $this->browser_profile, 'android-');
+    }
+
+    /** Profil qui exécute `$kind` : le relevé Studio web d'un compte sur téléphone reste au navigateur du NAS. */
+    public function profileFor(string $kind): ?string
+    {
+        return $kind === 'tiktok.studio.read' && $this->usesPhone() && filled($this->browser_read_profile)
+            ? $this->browser_read_profile : $this->browser_profile;
     }
 
     public function scopeWithCompanionXPublicMentions(Builder $query): Builder

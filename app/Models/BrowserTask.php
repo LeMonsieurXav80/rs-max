@@ -26,6 +26,14 @@ class BrowserTask extends Model
 
     public const CANCELLED = 'cancelled';
 
+    /** Lectures : sans geste, un délai dépassé est un échec, pas une incertitude qui suspend le compte. */
+    private const READS = ['x.whoami', 'tiktok.whoami', 'tiktok.comments', 'tiktok.target', 'tiktok.verify', 'tiktok.video.comments'];
+
+    public static function readsOnly(string $kind): bool
+    {
+        return str_ends_with($kind, '.read') || in_array($kind, self::READS, true);
+    }
+
     protected $fillable = ['social_account_id', 'idempotency_key', 'profile', 'kind', 'payload', 'status', 'result', 'error', 'claimed_at', 'finished_at'];
 
     protected function casts(): array

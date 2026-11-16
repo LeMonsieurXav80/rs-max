@@ -63,6 +63,28 @@ class BrowserTaskQueueTest extends TestCase
         $this->assertSame(BrowserTask::RUNNING, $next->fresh()->status);
     }
 
+    public function test_le_releve_studio_dun_compte_sur_telephone_reste_au_nas(): void
+    {
+        $this->account->update(['browser_profile' => 'android-honor', 'browser_read_profile' => 'nas-wildycaro']);
+
+        $this->assertSame('nas-wildycaro', $this->account->profileFor('tiktok.studio.read'));
+        $this->assertSame('android-honor', $this->account->profileFor('tiktok.reply'));
+        $this->account->update(['browser_profile' => 'nas-wildycaro']);
+        $this->assertSame('nas-wildycaro', $this->account->profileFor('tiktok.studio.read'));
+    }
+
+    public function test_une_lecture_orpheline_echoue_sans_suspendre_le_compte(): void
+    {
+        $read = BrowserTask::create(['social_account_id' => $this->account->id, 'profile' => 'wildycaro', 'kind' => 'tiktok.feed.read',
+            'payload' => ['url' => 'https://www.tiktok.com/following'], 'status' => BrowserTask::RUNNING, 'claimed_at' => now()->subMinutes(31)]);
+        $this->task();
+
+        $this->getJson('/api/extension/tasks/next?profile=wildycaro')->assertOk();
+        $this->assertSame(BrowserTask::FAILED, $read->fresh()->status);
+        $this->assertTrue(BrowserTask::readsOnly('tiktok.comments'));
+        $this->assertFalse(BrowserTask::readsOnly('tiktok.reply'));
+    }
+
     public function test_un_controle_tiktok_en_cours_ne_retient_pas_la_file_x_distincte(): void
     {
         $tiktok = SocialAccount::create(['platform_id' => Platform::where('slug', 'tiktok')->firstOrFail()->id,

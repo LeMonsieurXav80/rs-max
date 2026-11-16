@@ -66,7 +66,7 @@ class BrowserTaskQueue
 
             return BrowserTask::create([
                 'social_account_id' => $account->id, 'idempotency_key' => $key,
-                'profile' => $account->browser_profile, 'kind' => $kind, 'payload' => $payload,
+                'profile' => $account->profileFor($kind), 'kind' => $kind, 'payload' => $payload,
             ]);
         });
 
@@ -155,7 +155,9 @@ class BrowserTaskQueue
             // Le 12/11/2026, une lecture prise juste avant un rechargement de l’extension a figé vps-dix.
             foreach (BrowserTask::where('profile', $profile)->where('status', BrowserTask::RUNNING)
                 ->where('claimed_at', '<', now()->subSeconds(self::ORPHAN_AFTER))->lockForUpdate()->get() as $orphan) {
-                $orphan->update(['status' => BrowserTask::UNCERTAIN, 'error' => 'Délai dépassé : tâche orpheline, jamais relancée.', 'finished_at' => now()]);
+                $orphan->update(BrowserTask::readsOnly($orphan->kind)
+                    ? ['status' => BrowserTask::FAILED, 'error' => 'Délai dépassé : lecture orpheline, aucun geste.', 'finished_at' => now()]
+                    : ['status' => BrowserTask::UNCERTAIN, 'error' => 'Délai dépassé : tâche orpheline, jamais relancée.', 'finished_at' => now()]);
                 app(\App\Services\Agent\AccountActionBudget::class)->finish($orphan);
             }
             if (BrowserTask::where('profile', $profile)->where('status', BrowserTask::RUNNING)->lockForUpdate()->exists()) {
@@ -243,10 +245,14 @@ class BrowserTaskQueue
             throw new BrowserException('Navigateur du NAS injoignable : tâche annulée, rien n’a été fait.');
         }
 
+        $read = BrowserTask::readsOnly($task->kind);
         BrowserTask::whereKey($task->id)->where('status', BrowserTask::RUNNING)
-            ->update(['status' => BrowserTask::UNCERTAIN, 'error' => 'Délai dépassé', 'finished_at' => now()]);
+            ->update(['status' => $read ? BrowserTask::FAILED : BrowserTask::UNCERTAIN, 'error' => 'Délai dépassé', 'finished_at' => now()]);
 
         app(\App\Services\Agent\AccountActionBudget::class)->finish($task->fresh());
+        if ($read) {
+            throw new BrowserException('Lecture trop longue : abandonnée, aucun geste.');
+        }
 
         throw new BrowserUncertainException('Résultat inconnu : vérifier sur le réseau avant de relancer.');
     }
