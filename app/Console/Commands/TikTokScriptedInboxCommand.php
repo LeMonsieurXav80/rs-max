@@ -15,7 +15,8 @@ use Illuminate\Console\Command;
 /**
  * Commentaires TikTok reçus qui n'appellent aucune rédaction, traités sans modèle de langue (comptes sur téléphone) :
  * emoji, autocollant ou GIF seul ⇒ réponse par un emoji souriant (`InboxFollowup::SMILES`, comme l'impose RS-Max à
- * Hermès) ; simple merci ⇒ like, jamais de réponse. Mêmes chemins qu'Hermès (`submit`, `LikeInboxItem`) : cadence,
+ * Hermès) ; simple merci, ou commentaire écarté par Hermès (« not_relevant » : compliments sur le physique…) ⇒ like,
+ * jamais de réponse (décision de Xavier, 16/11/2026). Mêmes chemins qu'Hermès (`submit`, `LikeInboxItem`) : cadence,
  * plage horaire, file du téléphone et preuve après rechargement inchangées. Le reste attend Hermès.
  */
 class TikTokScriptedInboxCommand extends Command
@@ -47,16 +48,19 @@ class TikTokScriptedInboxCommand extends Command
                 ->orderBy('posted_at')->limit(200)->get()
                 ->filter(fn (InboxItem $i) => CommentFreshness::allows($i->posted_at) && ! $policy->isOwn($i, $account));
             $done = 0;
+            $discarded = InboxItem::where('social_account_id', $account->id)->where('type', '!=', 'dm')
+                ->whereIn('status', ['unread', 'read'])->whereNull('replied_at')->whereNull('liked_at')->where('reply_attempts', 0)
+                ->where('agent_review_reason', 'not_relevant')->orderBy('posted_at')->limit((int) $this->option('limit'))->get()
+                ->filter(fn (InboxItem $i) => CommentFreshness::allows($i->posted_at) && ! $policy->isOwn($i, $account));
+            foreach ($discarded as $item) {
+                $this->like($item, 'écarté par Hermès', $commit, $review);
+            }
             foreach ($items as $item) {
                 if ($done >= (int) $this->option('limit')) {
                     break;
                 }
                 if ($policy->isThanks($item->content)) {
-                    $this->line("#{$item->id} merci de @{$item->author_username} : like".($commit ? ' programmé' : ''));
-                    if ($commit && ! $item->liked_at) {
-                        LikeInboxItem::dispatch($item->id);
-                        $review->defer($item, 'not_relevant');
-                    }
+                    $this->like($item, 'merci', $commit, $review);
                     $done++;
 
                     continue;
@@ -80,5 +84,17 @@ class TikTokScriptedInboxCommand extends Command
         }
 
         return self::SUCCESS;
+    }
+
+    /** Like, une seule fois : `not_relevant_liked` empêche le passage suivant de le redemander. */
+    private function like(InboxItem $item, string $why, bool $commit, InboxAgentReview $review): void
+    {
+        $this->line("#{$item->id} {$why}, @{$item->author_username} : like".($commit ? ' programmé' : ''));
+        if (! $commit) {
+            return;
+        }
+        LikeInboxItem::dispatch($item->id);
+        $review->defer($item, 'not_relevant');
+        $item->update(['agent_review_reason' => 'not_relevant_liked']);
     }
 }

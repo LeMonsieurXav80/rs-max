@@ -261,7 +261,9 @@ class InboxController extends Controller
 
         // Failed replies (status or exhausted attempts)
         $failedItems = InboxItem::whereIn('social_account_id', $accountIds)
-            ->where(fn ($q) => $q->where('status', 'reply_failed')->orWhere('reply_attempts', '>=', 3))
+            // Un commentaire classé (rapprochement, « Supprimer ») ou archivé est traité, même après trois tentatives.
+            ->where(fn ($q) => $q->where('status', 'reply_failed')
+                ->orWhere(fn ($q) => $q->where('reply_attempts', '>=', 3)->whereNotIn('status', ['ignored', 'archived'])))
             ->whereNull('replied_at')
             ->select('id', 'author_name', 'author_username', 'reply_content', 'conversation_key')
             ->get();
@@ -505,7 +507,9 @@ class InboxController extends Controller
             ->get(['id', 'reply_scheduled_at']);
 
         $failed = InboxItem::whereIn('social_account_id', $accountIds)
-            ->where(fn ($q) => $q->where('status', 'reply_failed')->orWhere('reply_attempts', '>=', 3))
+            // Un commentaire classé (rapprochement, « Supprimer ») ou archivé est traité, même après trois tentatives.
+            ->where(fn ($q) => $q->where('status', 'reply_failed')
+                ->orWhere(fn ($q) => $q->where('reply_attempts', '>=', 3)->whereNotIn('status', ['ignored', 'archived'])))
             ->whereNull('replied_at')
             ->count();
 

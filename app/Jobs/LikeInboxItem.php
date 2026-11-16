@@ -42,6 +42,11 @@ class LikeInboxItem implements ShouldQueue
         if ($account->platform->slug === 'twitter' && ! $account->usesBrowser()) {
             return;
         }
+        if ($account->platform->slug === 'tiktok' && $account->usesPhone()) {
+            $tiktok->enqueueLike($account, $item);  // l'unique worker ne reste pas bloqué le temps de la preuve
+
+            return;
+        }
         $service = $account->platform->slug === 'twitter' ? app(\App\Services\Inbox\TwitterBrowserInboxService::class) : $tiktok;
         $result = $service->like($account, $item);
         if ($result['success']) {

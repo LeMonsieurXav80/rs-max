@@ -51,7 +51,7 @@ class TikTokScriptedInboxTest extends TestCase
         $this->assertContains($emoji->fresh()->reply_content, InboxFollowup::SMILES);
         Queue::assertPushed(SendAutonomousInboxReply::class, fn ($job) => $job->itemId === $emoji->id);
         Queue::assertPushed(LikeInboxItem::class, fn ($job) => $job->itemId === $thanks->id);
-        $this->assertSame('not_relevant', $thanks->fresh()->agent_review_reason);
+        $this->assertSame('not_relevant_liked', $thanks->fresh()->agent_review_reason);
         $this->assertNull($thanks->fresh()->reply_content);
         $this->assertNull($text->fresh()->reply_content);
         Queue::assertNotPushed(SendAutonomousInboxReply::class, fn ($job) => $job->itemId === $text->id);
@@ -67,7 +67,22 @@ class TikTokScriptedInboxTest extends TestCase
         $this->artisan('tiktok:scripted-inbox --commit')->assertSuccessful();
 
         $this->assertContains($emoji->fresh()->reply_content, InboxFollowup::SMILES);
-        Queue::assertNotPushed(LikeInboxItem::class);
+        Queue::assertPushed(LikeInboxItem::class, fn ($job) => $job->itemId === $thanks->id); // écarté ⇒ like, jamais de réponse
+        $this->assertNull($thanks->fresh()->reply_content);
+    }
+
+    public function test_un_compliment_ecarte_par_hermes_est_aime_une_seule_fois(): void
+    {
+        Queue::fake();
+        [, , $text] = $this->items();
+        $text->update(['agent_review_reason' => 'not_relevant', 'agent_retry_at' => now()->addDays(7)]);
+
+        $this->artisan('tiktok:scripted-inbox --commit')->assertSuccessful();
+        $this->artisan('tiktok:scripted-inbox --commit')->assertSuccessful();
+
+        Queue::assertPushed(LikeInboxItem::class, fn ($job) => $job->itemId === $text->id);
+        Queue::assertPushed(LikeInboxItem::class, 2); // le merci et le compliment, une fois chacun
+        $this->assertNull($text->fresh()->reply_content);
     }
 
     public function test_hors_de_la_plage_de_journee_rien_ne_part(): void

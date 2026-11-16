@@ -100,6 +100,19 @@ class PhoneInboxReplyTest extends TestCase
         $this->assertSame(['read', 0, null], [$item->status, $item->reply_attempts, $item->reply_content]);
     }
 
+    public function test_le_like_dun_compte_sur_telephone_part_en_file_et_se_conclut_en_fin_de_tache(): void
+    {
+        $item = $this->item();
+
+        (new LikeInboxItem($item->id))->handle(app(\App\Services\Inbox\TikTokInboxService::class));
+
+        $task = BrowserTask::firstOrFail();
+        $this->assertSame(['tiktok.like', BrowserTask::PENDING, $item->id], [$task->kind, $task->status, $task->payload['inbox_item_id']]);
+        $this->assertNull($item->fresh()->liked_at);
+        $this->finish($task, 'done', ['confirmed' => true, 'proof' => 'after_reload']);
+        $this->assertNotNull($item->fresh()->liked_at);
+    }
+
     public function test_un_compte_sur_navigateur_garde_lenvoi_synchrone(): void
     {
         Queue::fake();

@@ -91,6 +91,13 @@ class TikTokInboxService implements PlatformInboxInterface
             'inbox_item_id' => $item->id, 'like' => true, 'deadline' => now()->addMinutes(30)->toIso8601String()]));
     }
 
+    /** Téléphone : like en file, sans attendre ; `PhoneInboxReplyResult` marque `liked_at` s'il est prouvé. */
+    public function enqueueLike(SocialAccount $account, InboxItem $item): \App\Models\BrowserTask
+    {
+        return $this->queue->enqueue($account, 'tiktok.like', $this->payload($account, $item, ['inbox_item_id' => $item->id,
+            'deadline' => now()->addMinutes(30)->toIso8601String()]));
+    }
+
     private function payload(SocialAccount $account, InboxItem $item, array $payload): array
     {
         if ($item->reply_activity_window) {

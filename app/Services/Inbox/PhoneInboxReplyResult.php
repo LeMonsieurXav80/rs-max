@@ -27,8 +27,17 @@ class PhoneInboxReplyResult
     public function apply(BrowserTask $task): void
     {
         $id = $task->payload['inbox_item_id'] ?? null;
+        $terminal = in_array($task->status, [BrowserTask::DONE, BrowserTask::FAILED, BrowserTask::UNCERTAIN, BrowserTask::CANCELLED], true);
+        if ($task->kind === 'tiktok.like' && $id && $terminal) {
+            // Like seul : marqué s'il est prouvé ; sinon rien (jamais relancé, comme le like synchrone).
+            if ($task->status === BrowserTask::DONE && ($task->result['confirmed'] ?? false) === true) {
+                InboxItem::whereKey($id)->whereNull('liked_at')->update(['liked_at' => now()]);
+            }
+
+            return;
+        }
         $item = $id ? InboxItem::whereKey($id)->whereNull('replied_at')->first() : null;
-        if ($task->kind !== 'tiktok.reply' || ! $item || ! in_array($task->status, [BrowserTask::DONE, BrowserTask::FAILED, BrowserTask::UNCERTAIN, BrowserTask::CANCELLED], true)) {
+        if ($task->kind !== 'tiktok.reply' || ! $item || ! $terminal) {
             return;
         }
         $result = $task->result ?? [];
