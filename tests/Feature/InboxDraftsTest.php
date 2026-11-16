@@ -245,7 +245,7 @@ class InboxDraftsTest extends TestCase
     public function test_la_date_relative_de_studio_devient_une_date(): void
     {
         $this->freezeSecond();
-        $account = $this->tiktok([$this->comment('fan', 'Bravo', ['date' => '3h ago']), $this->comment('ami', 'Super', ['date' => 'il y a 2 j']), $this->comment('zoe', 'Top', ['date' => 'inconnu']), $this->comment('sam', 'Merci', ['date' => '2 months ago'])]);
+        $account = $this->tiktok([$this->comment('fan', 'Bravo', ['date' => '3h ago']), $this->comment('ami', 'Super', ['date' => 'il y a 2 j']), $this->comment('zoe', 'Top', ['date' => 'inconnu']), $this->comment('sam', 'Merci', ['date' => '2 weeks ago'])]);
 
         app(InboxSyncService::class)->syncAccount($account->fresh('platform'));
 
@@ -253,7 +253,7 @@ class InboxDraftsTest extends TestCase
         $this->assertTrue($dates['fan']->equalTo(now()->subHours(3)));
         $this->assertTrue($dates['ami']->equalTo(now()->subDays(2)));
         $this->assertNull($dates['zoe']);
-        $this->assertTrue($dates['sam']->equalTo(now()->subMonths(2)));
+        $this->assertTrue($dates['sam']->equalTo(now()->subWeeks(2))); // au-delà d'un mois, l'import l'ignore (inbox:purge-old)
     }
 
     public function test_tiktok_repond_avec_la_legende_comme_contexte(): void

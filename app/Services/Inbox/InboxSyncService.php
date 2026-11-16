@@ -158,6 +158,11 @@ class InboxSyncService
             if (! $externalId) {
                 continue;
             }
+            // Au-delà d'un mois : purgé chaque nuit (`inbox:purge-old`), donc jamais recréé.
+            $postedAt = $itemData['posted_at'] ?? null;
+            if ($postedAt && \Illuminate\Support\Carbon::parse($postedAt)->lt(now()->subDays(\App\Console\Commands\PurgeOldInboxItemsCommand::DAYS))) {
+                continue;
+            }
 
             if ($existing->has($externalId)) {
                 // Actualiser le fil et compléter l’identité fournie par le réseau.
