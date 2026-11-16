@@ -15,6 +15,51 @@ use Illuminate\Support\Facades\DB;
 /** Résout une incertitude par une NOUVELLE lecture, sans jamais renvoyer la réponse. */
 class XReplyReconciler
 {
+    /**
+     * Preuve par la lecture du fil de la mention (`x.agent.read` / `thread.read`, réponses visibles) : une réponse
+     * du compte, au texte exact, datée de la tentative incertaine. Rien trouvé ne prouve rien : `found` faux.
+     */
+    public function reconcileFromThread(InboxItem $item, array $read, bool $dry = true): array
+    {
+        return DB::transaction(function () use ($item, $read, $dry) {
+            $item = InboxItem::whereKey($item->id)->lockForUpdate()->firstOrFail();
+            $account = $item->socialAccount()->with('platform')->firstOrFail();
+            abort_unless($account->usesBrowser() && $account->platform->slug === 'twitter', 422);
+            if ($item->replied_at || $item->reply_external_id) {
+                return ['found' => true, 'already_replied' => true];
+            }
+            $task = BrowserTask::where('social_account_id', $account->id)->where('idempotency_key', 'inbox-reply:'.$item->id)
+                ->where('status', BrowserTask::UNCERTAIN)->lockForUpdate()->first();
+            if (! $task?->claimed_at || ! $task->finished_at || (string) ($read['target']['id'] ?? '') !== (string) $item->external_id) {
+                return ['found' => false, 'reason' => 'Tentative ou fil de la mention introuvable.'];
+            }
+            $reply = collect($read['visible_replies'] ?? [])->first(function ($post) use ($account, $task, $item) {
+                $postedAt = CommentFreshness::xStatusDate((string) ($post['id'] ?? ''));
+
+                return strtolower($post['author'] ?? '') === strtolower($account->browser_username)
+                    && ($post['text'] ?? null) === $item->reply_content && ($task->payload['text'] ?? null) === $item->reply_content
+                    && $postedAt?->betweenIncluded($task->claimed_at->copy()->subSeconds(5), $task->finished_at->copy()->addMinute());
+            });
+            if (! $reply) {
+                return ['found' => false, 'reason' => 'Aucune réponse du compte au texte exact parmi les réponses visibles.'];
+            }
+            $proof = ['id' => (string) $reply['id'], 'confirmed' => true, 'proof' => 'after_reload', 'parent_id' => (string) $item->external_id,
+                'reconciled_from' => 'thread.read', 'original_status' => $task->status, 'original_error' => $task->error, 'observed_at' => now()->toIso8601String()];
+            if ($dry) {
+                return ['found' => true, 'dry_run' => true, 'proof' => $proof];
+            }
+            $task->update(['status' => BrowserTask::DONE, 'result' => $proof, 'error' => null, 'finished_at' => now()]);
+            app(AccountActionBudget::class)->finish($task);
+            $item->update(['status' => 'replied', 'reply_external_id' => $proof['id'], 'replied_at' => now(), 'reply_draft' => null, 'reply_scheduled_at' => null]);
+            BotActionLog::create(['social_account_id' => $account->id, 'action_type' => 'x.reply.reconciled', 'source' => 'browser',
+                'target_uri' => $reply['url'] ?? null, 'success' => true, 'metadata' => ['task_id' => $task->id, 'from' => 'thread.read'], 'performed_at' => now()]);
+            $next = app(AccountActionBudget::class)->usage($account)['next_allowed_at'];
+            LikeInboxItem::dispatch($item->id)->delay($next ? Carbon::parse($next)->addSeconds(2) : now())->afterCommit();
+
+            return ['found' => true, 'dry_run' => false, 'proof' => $proof];
+        });
+    }
+
     public function reconcile(InboxItem $item, string $snapshotId, bool $dry = true): array
     {
         return DB::transaction(function () use ($item, $snapshotId, $dry) {

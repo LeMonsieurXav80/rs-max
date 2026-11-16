@@ -286,7 +286,8 @@ class InboxDraftsTest extends TestCase
 
         $this->assertTrue(app(InboxReplyService::class)->send($item, 'Merci')['success']);
         $this->assertSame('replied', $item->fresh()->status);
-        $this->assertSame(['author' => 'fan', 'content' => 'Bravo', 'caption' => 'Ma vidéo'], $sent['tiktok.reply']['target']);
+        $this->assertSame(['author' => 'fan', 'content' => 'Bravo', 'caption' => 'Ma vidéo', 'posted_at' => $item->posted_at->toIso8601String()],
+            $sent['tiktok.reply']['target']);
         $this->assertSame('Merci', $sent['tiktok.reply']['text']);
         $this->assertTrue($sent['tiktok.reply']['confirm_after_reload']);
     }

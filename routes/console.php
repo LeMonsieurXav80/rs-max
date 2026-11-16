@@ -95,6 +95,8 @@ Schedule::command('x:browser-sync --screens=10')->everySixHours()->withoutOverla
 Schedule::command('x:feed-engage --all --commit')->cron('*/20 * * * *')->withoutOverlapping(30);
 // TikTok sur téléphone, sans modèle, calé sur les passages d'Hermès (8 h, 12 h, 16 h, 18 h, 21 h à Lisbonne) :
 // rapprochement des échecs avec Studio avant le premier, emojis seuls et simples mercis 10 min avant chacun.
+// X : réponses incertaines retrouvées dans le fil de la mention (lecture seule), avant le premier passage d'Hermès.
+Schedule::command('x:reconcile-failed --commit')->dailyAt('07:15')->timezone('Europe/Lisbon')->runInBackground()->withoutOverlapping(60);
 Schedule::command('tiktok:reconcile-failed --commit')->dailyAt('07:30')->timezone('Europe/Lisbon')->runInBackground()->withoutOverlapping(30);
 Schedule::command('tiktok:scripted-inbox --commit')->cron('50 7,11,15,17,20 * * *')->timezone('Europe/Lisbon')->withoutOverlapping(10);
 // Threads décalé de 10 min : le profil du NAS est partagé avec TikTok et Planète de Caro.
