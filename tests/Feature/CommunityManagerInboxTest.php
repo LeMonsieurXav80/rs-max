@@ -45,6 +45,23 @@ class CommunityManagerInboxTest extends TestCase
         $this->assertNull($item->fresh()->reply_scheduled_at);
     }
 
+    public function test_un_compte_sur_telephone_saute_la_relecture_prealable(): void
+    {
+        $user = User::factory()->create(['role' => 'manager']);
+        $persona = Persona::create(['name' => 'Persona', 'system_prompt' => 'Réponse brève', 'is_active' => true]);
+        $account = SocialAccount::create(['name' => 'Compte TikTok', 'platform_id' => Platform::where('slug', 'tiktok')->firstOrFail()->id,
+            'persona_id' => $persona->id, 'driver' => 'browser', 'browser_profile' => 'android-honor', 'browser_username' => 'owner']);
+        $account->users()->attach($user, ['is_active' => true]);
+        Sanctum::actingAs($user);
+        $item = InboxItem::create(['social_account_id' => $account->id, 'platform_id' => $account->platform_id,
+            'type' => 'comment', 'external_id' => 'old-comment', 'author_username' => 'visitor', 'content' => 'Très jolie tenue',
+            'post_content' => 'Légende', 'status' => 'unread', 'posted_at' => now()->subDays(3)]);
+
+        $this->mock(\App\Services\Browser\BrowserTaskQueue::class)->shouldNotReceive('run');
+
+        $this->getJson('/api/community-manager/inbox/'.$item->id.'/context')->assertOk()->assertJsonPath('item_id', $item->id);
+    }
+
     public function test_contexte_persona_scope_aperçu_puis_planification_sans_appel_ia(): void
     {
         \Illuminate\Support\Facades\Queue::fake([\App\Jobs\SendAutonomousInboxReply::class]);

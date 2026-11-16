@@ -179,7 +179,9 @@ class CommunityManagerInboxController extends Controller
             }
             $this->deferContext($inboxItem, 'not_relevant', 'Remerciement seul : '.($liking ? 'like programmé par RS-Max, ' : '').'passer au commentaire suivant.');
         }
-        if ($tiktok && $inboxItem->posted_at?->lt(now()->subDay())) {
+        // Le téléphone retrouve et rouvre toujours le commentaire avant de répondre : la relecture préalable
+        // ferait doublon et dépasse son délai (Activité défile à 4 s l'écran).
+        if ($tiktok && ! $a->usesPhone() && $inboxItem->posted_at?->lt(now()->subDay())) {
             abort_if($inboxItem->reply_attempts > 0 || $inboxItem->replied_at || $inboxItem->reply_scheduled_at, 409, 'Commentaire déjà tenté ou en cours.');
             $r->attributes->set('community_manager', true);
             try {

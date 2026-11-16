@@ -137,6 +137,12 @@ class SocialAccount extends Model
         return $this->driver === 'browser';
     }
 
+    /** Profil tenu par un téléphone Android (worker `android/`) plutôt que par Companion. */
+    public function usesPhone(): bool
+    {
+        return $this->usesBrowser() && str_starts_with((string) $this->browser_profile, 'android-');
+    }
+
     public function scopeWithCompanionXPublicMentions(Builder $query): Builder
     {
         return $query->where('driver', 'browser')->whereRelation('platform', 'slug', 'twitter')
