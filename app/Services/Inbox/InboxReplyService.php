@@ -16,6 +16,10 @@ class InboxReplyService
     {
         if (((request()->attributes->get('community_manager') && in_array($item->platform->slug, \App\Services\Agent\ApiInboxActions::PLATFORMS, true)) || $item->platform->slug === 'tiktok' || ($item->platform->slug === 'twitter' && $item->socialAccount->usesBrowser())) && ! ($item->replied_at || $item->reply_external_id || $item->status === 'replied')) {
             $autonomous = (bool) request()->attributes->get('community_manager');
+            if ($autonomous && $item->platform->slug === 'tiktok' && $item->socialAccount->usesPhone()
+                && PhoneInboxReplyResult::inFlight($item->social_account_id) >= PhoneInboxReplyResult::MAX_IN_FLIGHT) {
+                return $this->conflict('File du téléphone pleine : reprendre ce commentaire au cycle suivant.');
+            }
             $at = now();
             if ($autonomous) {
                 $next = app(\App\Services\Agent\AccountActionBudget::class)->usage($item->socialAccount)['next_allowed_at'];
@@ -120,6 +124,21 @@ class InboxReplyService
                 }
             }
             $service = app(InboxSyncService::class)->getServiceForAccount($account);
+            if ($tiktok && $scheduled && $account->usesPhone() && $service instanceof TikTokInboxService) {
+                // Téléphone : la tâche part en file sans occuper l'unique worker de RS-Max pendant la preuve.
+                // `reply_scheduled_at` vidé : la planification ne la reprend pas ; `PhoneInboxReplyResult` conclut.
+                try {
+                    $task = $service->enqueueReply($account, $item, $text);
+                } catch (\App\Services\Browser\BrowserException $e) {
+                    InboxItem::whereKey($item->id)->whereNull('replied_at')
+                        ->update(['status' => 'reply_failed', 'reply_scheduled_at' => null, 'reply_attempts' => 3]);
+
+                    return $this->conflict($e->getMessage());
+                }
+                $item->update(['reply_scheduled_at' => null]);
+
+                return ['success' => true, 'queued' => true, 'browser_task_id' => $task->id, 'external_id' => null];
+            }
 
             $event = null;
             if (! $account->usesBrowser()) {

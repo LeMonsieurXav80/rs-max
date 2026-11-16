@@ -84,21 +84,33 @@ class TikTokInboxService implements PlatformInboxInterface
         return $this->act($account, $item, 'tiktok.like', []);
     }
 
-    /** Companion garde le profil occupé jusqu'à la vérification après rechargement. */
-    private function act(SocialAccount $account, InboxItem $item, string $kind, array $payload): array
+    /** Téléphone : la réponse (et son like) part en file, sans attendre ; voir `PhoneInboxReplyResult`. */
+    public function enqueueReply(SocialAccount $account, InboxItem $item, string $replyText): \App\Models\BrowserTask
+    {
+        return $this->queue->enqueue($account, 'tiktok.reply', $this->payload($account, $item, ['text' => $replyText,
+            'inbox_item_id' => $item->id, 'like' => true, 'deadline' => now()->addMinutes(30)->toIso8601String()]));
+    }
+
+    private function payload(SocialAccount $account, InboxItem $item, array $payload): array
     {
         if ($item->reply_activity_window) {
             $payload['activity_window'] = $item->reply_activity_window;
         }
-        $target = ['author' => $item->author_username, 'content' => $item->content, 'caption' => $item->post_content];
 
+        return $payload + [
+            'url' => self::COMMENTS_URL,
+            'username' => $account->browser_username,
+            'target' => ['author' => $item->author_username, 'content' => $item->content, 'caption' => $item->post_content],
+            'confirm_after_reload' => true,
+        ];
+    }
+
+    /** Companion garde le profil occupé jusqu'à la vérification après rechargement. */
+    private function act(SocialAccount $account, InboxItem $item, string $kind, array $payload): array
+    {
         try {
-            $result = $this->queue->run($account, $kind, $payload + [
-                'url' => self::COMMENTS_URL,
-                'username' => $account->browser_username,
-                'target' => $target,
-                'confirm_after_reload' => true,
-            ], $kind === 'tiktok.reply' ? self::REPLY_TIMEOUT : self::ACTION_TIMEOUT);
+            $result = $this->queue->run($account, $kind, $this->payload($account, $item, $payload),
+                $kind === 'tiktok.reply' ? self::REPLY_TIMEOUT : self::ACTION_TIMEOUT);
         } catch (BrowserException $e) {
             return ['success' => false, 'external_id' => null, 'error' => $e->getMessage(), 'uncertain' => $e instanceof BrowserUncertainException];
         }

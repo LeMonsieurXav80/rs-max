@@ -11,6 +11,9 @@ class BrowserTask extends Model
     {
         static::saved(function ($model) {
             app(\App\Services\Agent\AutomationJournal::class)->task($model);
+            if ($model->wasChanged('status') && isset($model->payload['inbox_item_id'])) {
+                app(\App\Services\Inbox\PhoneInboxReplyResult::class)->apply($model);
+            }
         });
     }
 

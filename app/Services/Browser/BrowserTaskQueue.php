@@ -21,6 +21,23 @@ class BrowserTaskQueue
 {
     private const POLL_MICROSECONDS = 1000000;
 
+    /**
+     * Crée la tâche sans attendre son résultat : un téléphone enchaîne ses tâches pendant que la file de RS-Max
+     * reste libre (un seul worker), le résultat est appliqué à la fin de la tâche (`PhoneInboxReplyResult`).
+     */
+    public function enqueue(SocialAccount $account, string $kind, array $payload): BrowserTask
+    {
+        if (isset($payload['activity_window'])) {
+            app(CommunityManagerWindow::class)->assertOpen($payload['activity_window']);
+        }
+        if (blank($account->browser_profile)) {
+            throw new BrowserException('Aucun profil navigateur pour ce compte.');
+        }
+
+        return BrowserTask::create(['social_account_id' => $account->id, 'profile' => $account->profileFor($kind),
+            'kind' => $kind, 'payload' => $payload]);
+    }
+
     /** @return array<string, mixed> Résultat de la tâche. */
     public function run(SocialAccount $account, string $kind, array $payload, int $timeout = 120): array
     {
@@ -192,6 +209,13 @@ class BrowserTaskQueue
         if ($window !== null && ! app(CommunityManagerWindow::class)->isOpen($window)) {
             $task->update(['status' => BrowserTask::CANCELLED, 'finished_at' => now(),
                 'error' => 'Plage de journée Community Manager terminée : tâche annulée sans exécution.']);
+
+            return false;
+        }
+        // Tâche mise en file sans attente (`enqueue`) : personne ne l'annule si le téléphone ne la prend pas à temps.
+        if (isset($task->payload['deadline']) && now()->greaterThan($task->payload['deadline'])) {
+            $task->update(['status' => BrowserTask::CANCELLED, 'finished_at' => now(),
+                'error' => 'Échéance dépassée avant exécution : tâche annulée sans geste.']);
 
             return false;
         }
