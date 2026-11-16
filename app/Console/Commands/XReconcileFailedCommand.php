@@ -36,6 +36,11 @@ class XReconcileFailedCommand extends Command
                     $result = $reconciler->reconcileFromThread($item, $read, ! $commit);
                 } catch (BrowserException $e) {
                     $result = ['found' => false, 'reason' => $e->getMessage()];
+                } catch (\Illuminate\Database\QueryException $e) {
+                    // Verrou tenu ailleurs (vu le 16/11/2026) : ce commentaire attendra le prochain passage.
+                    $this->warn("#{$item->id} : base occupée, repris au prochain passage.");
+
+                    continue;
                 }
                 $old = $item->posted_at?->lt(now()->subDays(7)) ?? true;
                 $action = $result['found'] ? 'répondu' : ($old ? 'classé' : 'inchangé');
