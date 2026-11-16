@@ -47,7 +47,9 @@ class PhoneInboxSweep
             }
             $items = [];
             foreach ($parked->take(self::MAX_ITEMS) as $task) {
-                // Échéance, plage de journée, cadence : mêmes contrôles qu'une prise par le worker.
+                // Échéance, plage de journée, plafonds : mêmes contrôles qu'une prise par le worker. Le délai minimal
+                // entre gestes est tenu par le téléphone (`min_gap`) : vérifié ici, il annulait tout sauf le premier.
+                $task->payload = $task->payload + ['sweep_paced' => true];
                 if (! $queue->start($task)) {
                     continue;
                 }
@@ -59,6 +61,7 @@ class PhoneInboxSweep
             }
 
             return $queue->enqueue($account, self::KIND, ['username' => $account->browser_username, 'items' => $items,
+                'min_gap' => max(0, (int) $account->agent_min_interval_seconds),
                 'deadline' => now()->addMinutes(30)->toIso8601String()]);
         });
     }

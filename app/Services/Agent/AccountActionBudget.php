@@ -15,9 +15,10 @@ class AccountActionBudget
 
     public const PLATFORM_PAUSE = 'Limite signalée par le réseau : aucun geste effectué.';
 
-    public function reserve(SocialAccount $account, string $action, string $executor, ?string $target = null, ?int $taskId = null): AccountActionEvent
+    /** `$paced` : le délai minimal entre gestes est tenu par l'exécutant (passage groupé du téléphone, `PhoneInboxSweep`). */
+    public function reserve(SocialAccount $account, string $action, string $executor, ?string $target = null, ?int $taskId = null, bool $paced = false): AccountActionEvent
     {
-        return DB::transaction(function () use ($account, $action, $executor, $target, $taskId) {
+        return DB::transaction(function () use ($account, $action, $executor, $target, $taskId, $paced) {
             $account = SocialAccount::whereKey($account->id)->lockForUpdate()->firstOrFail();
             $events = AccountActionEvent::where('social_account_id', $account->id);
             if ($account->platform->slug === 'twitter' && str_starts_with($action, 'x.')) {
@@ -53,7 +54,7 @@ class AccountActionBudget
             if ($account->agent_hourly_limit !== null && $used >= $account->agent_hourly_limit) {
                 throw new BrowserException('Cadence horaire atteinte : aucun geste effectué.');
             }
-            if ($last && $account->agent_min_interval_seconds > 0 && $last->created_at->copy()->addSeconds($account->agent_min_interval_seconds)->isFuture()) {
+            if (! $paced && $last && $account->agent_min_interval_seconds > 0 && $last->created_at->copy()->addSeconds($account->agent_min_interval_seconds)->isFuture()) {
                 throw new BrowserException('Délai minimal entre actions non écoulé : aucun geste effectué.');
             }
 
@@ -81,7 +82,7 @@ class AccountActionBudget
             return;
         }
         $action = $task->kind === 'x.post' && str_contains($task->payload['url'] ?? '', 'in_reply_to=') ? 'x.reply' : $task->kind;
-        $this->reserve($task->socialAccount, $action, 'browser', $task->payload['url'] ?? null, $task->id);
+        $this->reserve($task->socialAccount, $action, 'browser', $task->payload['url'] ?? null, $task->id, ($task->payload['sweep_paced'] ?? false) === true);
     }
 
     public function finish(BrowserTask $task): void

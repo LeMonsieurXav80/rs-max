@@ -48,3 +48,29 @@ Du 4 au 6 novembre, toutes les réponses partaient du Chrome de l’utilisateur 
 Companion 0.18.45 inscrit le code du reçu d’envoi dans la preuve d’une réponse locale (`extension_tiktok_comments.proof` : « … · code TikTok 7 »). Comparer local et NAS : `proof like '%code TikTok 2%'` côté local, `result->submission->comment_status` côté `browser_tasks`.
 
 **Choix du 12/11/2026.** Hermès garde l’envoi depuis le NAS ; environ un tiers des réponses automatiques sont retenues (code 2) et ne sont jamais renvoyées. En local, Companion saute un commentaire déjà répondu (réponse confirmée ou envoi programmé) sans arrêter le lot, mais laisse l’utilisateur répondre lui-même à un commentaire dont la réponse d’Hermès a été retenue. Ne jamais modifier l’empreinte du navigateur du NAS pour échapper à ce filtre.
+
+## Compte sur téléphone : passage groupé dans TikTok Studio (16/11/2026)
+
+Un compte TikTok dont le `browser_profile` commence par `android-` répond et aime depuis l'application TikTok
+Studio d'un téléphone (worker `android/`, voir `android/README.md`). Chercher chaque commentaire à part coûtait
+4 à 7 min par like, souvent pour finir « introuvable » ; les gestes sont donc regroupés.
+
+- `TikTokInboxService::enqueueReply()` / `enqueueLike()` mettent la tâche de côté sur `<profil>:lot`. Ce profil est
+  refusé par `/api/extension/tasks/next` (motif `[a-z0-9_-]`) : aucun worker ne la prend seule.
+- `tiktok:phone-sweep` (toutes les 2 min ; `--now` sans attendre) appelle `PhoneInboxSweep::bundle()` : quand plus
+  rien n'est arrivé depuis 2 min et qu'aucun passage n'est en cours pour le compte, les tâches de côté (40 au plus)
+  sont prises par `BrowserTaskQueue::start()` (échéance, plage de journée, plafonds horaires et quotidiens, comme
+  une prise par un worker) puis listées dans une tâche `tiktok.inbox.sweep` sur le vrai profil.
+- Le délai minimal entre gestes (`agent_min_interval_seconds`) n'est pas vérifié au regroupement (il annulait tout
+  sauf le premier) : `sweep_paced` dans la charge de chaque tâche, `min_gap` dans celle du passage, et le téléphone
+  attend ce délai entre deux gestes.
+- Le téléphone annonce chaque geste (`POST /tasks/{id}/checkpoint`, `items.{task_id}.status = sending`) avant de
+  le faire, puis son statut final. `PhoneInboxSweep::apply()` (observateur `BrowserTask::saved`) conclut chaque
+  tâche regroupée dès que son statut est connu ; `PhoneInboxReplyResult` applique ensuite les règles habituelles
+  à `inbox_items` (répondu, aimé, `reply_failed` sans renvoi, vérification d'une incertitude).
+- Fin du passage : `missing` (liste lue au-delà de sa date) ⇒ `failed` ; `sending` sans suite ou passage interrompu
+  ⇒ `uncertain` (jamais relancé) ; non atteint ⇒ `cancelled` (aucun geste, le commentaire redevient à traiter).
+  Un statut final n'est jamais remplacé, et un `failed` reçu après `sending` devient `uncertain`.
+- Lecture de Studio : TalkBack allumé quelques secondes rend les textes de la liste lisibles (Lynx ne les publie
+  qu'avec un lecteur d'écran actif), emojis compris ; OCR en repli.
+- Tests : `tests/Feature/PhoneInboxReplyTest.php`, `android/qa/test_android.py` (`SweepTest`, `StudioAccessibilityTest`).

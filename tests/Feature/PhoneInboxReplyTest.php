@@ -27,6 +27,7 @@ class PhoneInboxReplyTest extends TestCase
     {
         $a = SocialAccount::create(['platform_id' => Platform::where('slug', 'tiktok')->firstOrFail()->id, 'name' => 'Compte',
             'driver' => 'browser', 'browser_profile' => $profile, 'browser_username' => 'wildycaro']);
+        $a->forceFill(['agent_min_interval_seconds' => 12])->save();
 
         return InboxItem::create(['social_account_id' => $a->id, 'platform_id' => $a->platform_id, 'external_id' => 'empreinte',
             'type' => 'comment', 'author_username' => 'ana', 'content' => 'Jolie tenue', 'post_content' => 'Légende',
@@ -183,6 +184,7 @@ class PhoneInboxReplyTest extends TestCase
         ], 'done', [$task($interrupted)->id => ['status' => 'sending']]);
 
         $this->assertSame(5, count($sweep->payload['items']));
+        $this->assertSame(12, $sweep->payload['min_gap']);  // délai tenu par le téléphone, pas un motif d'annulation
         $this->assertSame('replied', $replied->fresh()->status);
         $this->assertNotNull($liked->fresh()->liked_at);
         $this->assertSame([BrowserTask::DONE, BrowserTask::FAILED, BrowserTask::CANCELLED, BrowserTask::UNCERTAIN],
