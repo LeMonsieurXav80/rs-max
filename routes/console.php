@@ -93,8 +93,10 @@ Schedule::command('tiktok:session-check')->hourly()->withoutOverlapping(30);
 Schedule::command('x:browser-sync --screens=10')->everySixHours()->withoutOverlapping(60);
 // Fil « Pour vous » par script (docs/flux-engagement-scripte.md) : seuls les comptes allumés sur leur fiche.
 Schedule::command('x:feed-engage --all --commit')->cron('*/20 * * * *')->withoutOverlapping(30);
-// Emojis seuls et simples mercis TikTok (comptes sur téléphone) sans modèle : le reste attend Hermès.
-Schedule::command('tiktok:scripted-inbox --commit')->cron('*/10 * * * *')->withoutOverlapping(10);
+// TikTok sur téléphone, sans modèle, calé sur les passages d'Hermès (8 h, 12 h, 16 h, 18 h, 21 h à Lisbonne) :
+// rapprochement des échecs avec Studio avant le premier, emojis seuls et simples mercis 10 min avant chacun.
+Schedule::command('tiktok:reconcile-failed --commit')->dailyAt('07:30')->timezone('Europe/Lisbon')->runInBackground()->withoutOverlapping(30);
+Schedule::command('tiktok:scripted-inbox --commit')->cron('50 7,11,15,17,20 * * *')->timezone('Europe/Lisbon')->withoutOverlapping(10);
 // Threads décalé de 10 min : le profil du NAS est partagé avec TikTok et Planète de Caro.
 Schedule::command('threads:feed-engage --all --commit')->cron('10-59/20 * * * *')->withoutOverlapping(30);
 // Même source pour les statistiques et le miroir des publications natives TikTok.

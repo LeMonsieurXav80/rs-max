@@ -30,7 +30,7 @@ class BrowserTask extends Model
     public const CANCELLED = 'cancelled';
 
     /** Lectures : sans geste, un délai dépassé est un échec, pas une incertitude qui suspend le compte. */
-    private const READS = ['x.whoami', 'tiktok.whoami', 'tiktok.comments', 'tiktok.target', 'tiktok.verify', 'tiktok.video.comments'];
+    private const READS = ['x.whoami', 'tiktok.whoami', 'tiktok.comments', 'tiktok.target', 'tiktok.verify', 'tiktok.video.comments', 'tiktok.inbox.reconcile'];
 
     public static function readsOnly(string $kind): bool
     {
