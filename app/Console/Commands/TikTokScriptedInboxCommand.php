@@ -39,7 +39,11 @@ class TikTokScriptedInboxCommand extends Command
         foreach ($accounts as $account) {
             $items = InboxItem::where('social_account_id', $account->id)->where('type', '!=', 'dm')
                 ->whereIn('status', ['unread', 'read'])->whereNull('replied_at')->whereNull('reply_scheduled_at')
-                ->where('reply_attempts', 0)->where(fn ($q) => $q->whereNull('agent_retry_at')->orWhere('agent_retry_at', '<=', now()))
+                ->where('reply_attempts', 0)
+                // Un report pour indécision d'Hermès (« agent_no_decision », « retry_later ») ne concerne pas une règle
+                // sans modèle : un emoji seul n'appelle aucune décision. Les autres reports restent respectés.
+                ->where(fn ($q) => $q->whereNull('agent_retry_at')->orWhere('agent_retry_at', '<=', now())
+                    ->orWhereIn('agent_review_reason', [InboxAgentReview::NO_DECISION, 'retry_later']))
                 ->orderBy('posted_at')->limit(200)->get()
                 ->filter(fn (InboxItem $i) => CommentFreshness::allows($i->posted_at) && ! $policy->isOwn($i, $account));
             $done = 0;

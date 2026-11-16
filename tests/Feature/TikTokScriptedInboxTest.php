@@ -57,6 +57,19 @@ class TikTokScriptedInboxTest extends TestCase
         Queue::assertNotPushed(SendAutonomousInboxReply::class, fn ($job) => $job->itemId === $text->id);
     }
 
+    public function test_un_report_pour_indecision_dhermes_nempeche_pas_la_reponse_emoji(): void
+    {
+        Queue::fake();
+        [$emoji, $thanks] = $this->items();
+        $emoji->update(['agent_review_reason' => 'agent_no_decision', 'agent_retry_at' => now()->addHours(6)]);
+        $thanks->update(['agent_review_reason' => 'not_relevant', 'agent_retry_at' => now()->addDays(7)]);
+
+        $this->artisan('tiktok:scripted-inbox --commit')->assertSuccessful();
+
+        $this->assertContains($emoji->fresh()->reply_content, InboxFollowup::SMILES);
+        Queue::assertNotPushed(LikeInboxItem::class);
+    }
+
     public function test_hors_de_la_plage_de_journee_rien_ne_part(): void
     {
         Queue::fake();
