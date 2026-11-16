@@ -193,6 +193,12 @@ class InboxSyncService
                 'platform_id' => $account->platform_id,
                 'external_id' => $externalId,
             ], ['social_account_id' => $account->id, 'platform_id' => $account->platform_id] + $itemData);
+            // Message du compte lui-même (ses réponses dans un fil) : rien à traiter, mais il reste visible dans le fil
+            // (« ignored » l'en retirerait). 384 réponses de wildycaro sur Instagram comptaient comme non lues (16/11/2026).
+            if ($item->wasRecentlyCreated && in_array($item->status, ['unread', 'read'], true)
+                && app(InboxFollowup::class)->isOwn($item, $account)) {
+                $item->update(['status' => 'replied', 'agent_review_reason' => 'own']);
+            }
 
             $existing[$externalId] = true;
             $stored += (int) $item->wasRecentlyCreated;
