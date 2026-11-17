@@ -226,11 +226,13 @@ def main(argv=None):
     p = subs.add_parser('reply-context'); p.add_argument('id', type=int)
     p = subs.add_parser('reply-contexts')
     p.add_argument('--account', type=int, required=True)
-    p.add_argument('--limit', type=int, choices=range(1, 6), default=5)
+    p.add_argument('--limit', type=int, choices=range(1, 31), default=5)
     # Fil « Pour vous » : lots de publications réservées par le script, rédigés en un appel (docs/flux-engagement-scripte.md).
     p = subs.add_parser('feed-drafts'); p.add_argument('--account', type=int, required=True)
     p = subs.add_parser('feed-drafts-submit'); p.add_argument('--account', type=int, required=True)
     p.add_argument('--drafts', required=True, help='JSON : [{"id":1,"text":"…"},{"id":2,"skip":"motif"}]')
+    # Réponses d'un compte remises en un appel : RS-Max les espace selon la cadence du compte (5 vagues par jour).
+    p = subs.add_parser('replies'); p.add_argument('--json', required=True, help='JSON : [{"id":11,"context":"UUID","text":"…"}]'); p.add_argument('--commit', action='store_true')
     p = subs.add_parser('reply'); p.add_argument('id', type=int); p.add_argument('--context', required=True); text=p.add_mutually_exclusive_group(required=True); text.add_argument('--text-file', type=Path); text.add_argument('--text'); p.add_argument('--commit', action='store_true')
     scan = subs.add_parser('scan'); scan.add_argument('--account', type=int); scan.add_argument('--limit', type=int, choices=range(1, 6), default=3)
     for name in ['like', 'like-comment', 'comment']:
@@ -372,6 +374,27 @@ def main(argv=None):
         else:
             if args.commit: client.remember(key, 'execution_requested')
             result = client.api('POST', f'inbox/{args.id}/reply', {'context_id':args.context, 'reply_text':reply_text, 'dry_run':not args.commit})
+    elif args.command == 'replies':
+        batch = json.loads(args.json)
+        if not isinstance(batch, list) or not batch or not all(isinstance(r, dict) and isinstance(r.get('id'), int)
+                                                                 and r.get('context') and str(r.get('text') or '').strip() for r in batch):
+            raise ValueError('--json attend une liste non vide de {"id":11,"context":"UUID","text":"…"}.')
+        results = []
+        for entry in batch:
+            key = -entry['id']  # même registre que `reply` : jamais une seconde demande pour un commentaire
+            if args.commit and client.db.execute('SELECT 1 FROM attempts WHERE id=?', (key,)).fetchone():
+                results.append({'id': entry['id'], 'status': 'check_required', 'reason': 'Réponse déjà demandée : sans renvoi.'})
+                continue
+            if args.commit: client.remember(key, 'execution_requested')
+            try:
+                answer = client.api('POST', f"inbox/{entry['id']}/reply", {'context_id': entry['context'], 'reply_text': str(entry['text']).strip(), 'dry_run': not args.commit})
+                results.append({'id': entry['id'], 'status': 'queued' if answer.get('queued') or answer.get('scheduled_at') else ('dry_run' if answer.get('dry_run') else 'sent'),
+                                **({'scheduled_at': answer['scheduled_at']} if answer.get('scheduled_at') else {})})
+            except ApiError as exc:
+                results.append({'id': entry['id'], 'status': 'refused', 'code': exc.status, 'error': str(exc)[:200]})
+                if exc.status == 423:  # plage de journée terminée : rien d'autre ne passera
+                    break
+        result = {'results': results, 'queued': sum(r['status'] == 'queued' for r in results), 'refused': sum(r['status'] == 'refused' for r in results)}
     elif args.command == 'scan': result = client.scan(args.account, args.limit)
     elif args.command in ('like', 'like-comment', 'comment'):
         action = {'like': 'video.like', 'like-comment': 'comment.like', 'comment': 'video.comment'}[args.command]

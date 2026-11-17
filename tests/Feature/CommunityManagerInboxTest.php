@@ -270,7 +270,8 @@ class CommunityManagerInboxTest extends TestCase
         $data = ['context_id' => $batch->json('items.0.context_id'), 'reply_text' => 'Je te retrouve la référence.'];
         $this->postJson("/api/community-manager/inbox/{$direct->id}/reply", $data)->assertConflict();
         $this->postJson("/api/community-manager/inbox/{$question->id}/reply", $data)->assertOk()->assertJsonPath('dry_run', true);
-        $this->getJson($path.'?limit=6')->assertUnprocessable();
+        $this->getJson($path.'?limit=30')->assertOk();  // 5 vagues par jour : jusqu'à 30 cibles en un appel
+        $this->getJson($path.'?limit=31')->assertUnprocessable();
         $this->assertNull($question->fresh()->reply_scheduled_at);
         Http::assertNothingSent();
     }

@@ -245,4 +245,26 @@ class CommunityManagerTest(unittest.TestCase):
             with self.assertRaises(ValueError):
                 run('feed-drafts-submit','--account','7','--drafts','{"id":1}')
 
+    def test_reponses_dun_compte_remises_en_un_appel_sans_renvoi(self):
+        import json,io,contextlib
+        with tempfile.TemporaryDirectory() as tmp:
+            config=Path(tmp)/'config.json';config.write_text(json.dumps({'state_path':tmp+'/state.sqlite'}))
+            def run(*args,side=None):
+                out=io.StringIO()
+                with patch.object(cm,'daytime',return_value=True),patch.object(cm.Client,'api',side_effect=side) as api,\
+                     contextlib.redirect_stdout(out):
+                    cm.main(['--config',str(config),*args])
+                return api,json.loads(out.getvalue())
+            batch='[{"id":11,"context":"c1","text":"Merci !"},{"id":12,"context":"c2","text":"Bonne idée"}]'
+            answers=[{'queued':True,'scheduled_at':'2026-11-17T10:00:00Z'},cm.ApiError(409,{'message':'déjà répondu'})]
+            api,out=run('replies','--json',batch,'--commit',side=answers)
+            self.assertEqual(api.call_args_list[0].args,('POST','inbox/11/reply',{'context_id':'c1','reply_text':'Merci !','dry_run':False}))
+            self.assertEqual([r['status'] for r in out['results']],['queued','refused'])
+            self.assertEqual((out['queued'],out['refused']),(1,1))
+            api,out=run('replies','--json',batch,'--commit',side=[])
+            self.assertEqual(api.call_count,0)  # déjà demandées : jamais une seconde demande
+            self.assertEqual({r['status'] for r in out['results']},{'check_required'})
+            with self.assertRaises(ValueError):
+                run('replies','--json','[{"id":13,"context":"c3","text":" "}]','--commit',side=[])
+
 if __name__=='__main__': unittest.main()

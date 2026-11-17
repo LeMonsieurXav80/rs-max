@@ -98,7 +98,8 @@ class CommunityManagerInboxController extends Controller
         $account = $this->account($r, $id);
         abort_unless(! $account->usesBrowser() && in_array($account->platform->slug, ApiInboxActions::PLATFORMS, true), 422,
             'Utiliser le contexte individuel pour ce réseau.');
-        $input = $r->validate(['limit' => 'sometimes|integer|min:1|max:5']);
+        // Jusqu'à 30 : 5 vagues par jour, rédigées en un appel par compte et envoyées selon la cadence du compte.
+        $input = $r->validate(['limit' => 'sometimes|integer|min:1|max:30']);
         abort_unless($account->persona?->is_active && filled($account->persona->system_prompt), 422, 'Persona actif requis.');
 
         $contexts = $skipped = [];

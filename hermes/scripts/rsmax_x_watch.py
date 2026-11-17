@@ -16,6 +16,8 @@ LANES = {
 }
 DISCOVERY_MINUTES = 15
 TIKTOK_MAX_REPLIES = 10
+# Réseaux par API : 5 vagues par jour, réponses remises en un appel (`replies`) et espacées par RS-Max.
+API_MAX_REPLIES = 30
 X_SEARCH_QUERY_LIMIT = 263
 
 
@@ -190,7 +192,7 @@ def snapshot(client, now=None, lane=None):
                 source = discovery_source(client, account, now)
                 if source:
                     tiktok_explorations.append({'account_id': account['id'], **source, 'write_actions': tiktok_writes})
-        inbox = client.api('GET', f"accounts/{account['id']}/inbox?" + urlencode({'order':pending_inbox_order(platform),'limit':20 if platform in ('twitter', 'tiktok') else 5,'status':'unanswered','agent_queue':1})) if can_reply else {}
+        inbox = client.api('GET', f"accounts/{account['id']}/inbox?" + urlencode({'order':pending_inbox_order(platform),'limit':20 if platform in ('twitter', 'tiktok') else API_MAX_REPLIES,'status':'unanswered','agent_queue':1})) if can_reply else {}
         items = [{'id':i['id'], 'content':i['content'], 'posted_at':i.get('posted_at'), 'post_url':i.get('post_url'), 'post_content':i.get('post_content')} for i in inbox.get('items', []) if i.get('can_reply')]
         if x_discovery or x_follow:
             reserve = steps if items else 0
@@ -214,7 +216,7 @@ def snapshot(client, now=None, lane=None):
         if items or can_feed:
             reply_limit = min(actions['reply']['left'], actions['like']['left']) if platform == 'twitter' and items else (1 if api or tiktok else 0)
             if api and items and lane:
-                reply_limit = min(5, len(items), actions['reply']['left'])
+                reply_limit = min(API_MAX_REPLIES, len(items), actions['reply']['left'])
                 if facebook_like:
                     reply_limit = min(reply_limit, actions['comment.like']['left'])
             if tiktok and lane:
