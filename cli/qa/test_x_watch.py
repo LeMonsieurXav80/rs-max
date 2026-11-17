@@ -406,6 +406,25 @@ class XWatchTest(unittest.TestCase):
         self.assertEqual(result['accounts'][0]['batch_max'], 5)
         self.assertEqual(result['accounts'][0]['items'], [{'id': i} for i in range(5)])
 
+    def test_un_repost_x_arrive_a_echeance_uniquement_depuis_le_fil(self):
+        now = dt.datetime.fromisoformat('2026-11-08T12:00:00+00:00')
+        account = self.account()
+        account.update(persona=5, repost_due=True, strategy={'search_queries': ['musculation']})
+        account['actions'] = {name: {'left': 1} for name in ('repost', 'feed.read', 'search.read', 'thread.read')}
+        client = Mock()
+        client.api.side_effect = [
+            {'daytime': True, 'accounts': [account]},
+            {'logs': [{'at': '2026-11-08T11:44:00+00:00'}]},
+            {'logs': []},
+        ]
+        plan = watch.snapshot(client, now, lane='x')['priority_x'][0]
+        self.assertEqual(plan['read_action'], 'feed.read')
+        self.assertEqual(plan['write_actions'], ['repost'])
+        account['repost_due'] = False
+        client.api.side_effect = None
+        client.api.return_value = {'daytime': True, 'accounts': [account]}
+        self.assertEqual(watch.snapshot(client, now, lane='x')['state'], 'idle')
+
 
 class ReportScheduleTest(unittest.TestCase):
     def test_les_creneaux_du_matin_et_du_soir_ont_des_cles_distinctes(self):

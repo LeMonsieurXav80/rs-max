@@ -56,6 +56,10 @@ class CommunityManagerController extends Controller
                 $x = [];
                 if ($a->platform->slug === 'twitter') {
                     $x = ['discovery_queries' => $strategies->xDiscoveryQueries($a), 'search_language' => $strategies->xSearchLanguage($a)];
+                    $reposts = app(\App\Services\Agent\RepostCadence::class);
+                    if (isset($actions['repost']) && $reposts->hours($a) > 0) {
+                        $x['repost_due'] = $reposts->nextAllowedAt($a) === null;
+                    }
                     if ($a->usesBrowser() && $a->browser_session_status === 'connected'
                         && ($actions['follow']['left'] ?? 0) > 0 && ($actions['profile.read']['left'] ?? 0) > 0) {
                         $x['follow_candidate'] = $strategies->xFollowCandidate($a);

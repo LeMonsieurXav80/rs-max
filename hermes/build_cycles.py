@@ -14,7 +14,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent
 LANES = {
     'x': ('X', 'File X de RS-Max : mentions, découverte et suivi X par Companion.'),
-    'api': ('API', 'File API de RS-Max : commentaires reçus Facebook, Instagram et YouTube.'),
+    'api': ('API', 'File API de RS-Max : commentaires reçus Facebook, Instagram, YouTube et Bluesky.'),
     'threads': ('Threads', 'File Threads de RS-Max : commentaires reçus et exploration Companion.'),
     'tiktok': ('TikTok', 'File TikTok de RS-Max : commentaires reçus et découverte Companion.'),
 }

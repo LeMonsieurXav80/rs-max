@@ -130,6 +130,11 @@ class XEngagementService
             $state = app(AgentCatalog::class)->forAccount($account)->get($row->action);
             abort_unless($state && $state['status'] === 'ready' && $state['enabled'], 403, 'Action désactivée.');
             abort_if($state['left'] < 1, 429, 'Quota quotidien atteint.');
+            if (in_array($row->action, ['repost', 'quote'], true) && app(RepostCadence::class)->hours($account) > 0) {
+                abort_if(app(RepostCadence::class)->nextAllowedAt($account) || XEngagement::where('social_account_id', $account->id)
+                    ->whereIn('action', ['repost', 'quote'])->whereIn('status', ['queued', 'running'])->exists(), 429,
+                    'Délai minimal entre republications non écoulé ou une republication est déjà en cours.');
+            }
             $cadence = app(AccountActionBudget::class)->usage($account);
             abort_if($cadence['remaining'] === 0, 429, 'Cadence horaire atteinte.');
             abort_if($cadence['next_allowed_at'] && now()->lessThan($cadence['next_allowed_at']), 429, 'Délai minimal non écoulé. Prochaine action : '.$cadence['next_allowed_at']);

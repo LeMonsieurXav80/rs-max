@@ -30,7 +30,7 @@ class AgentCatalog
 
     public function usedToday(SocialAccount $account, string $action): int
     {
-        if (in_array($account->platform->slug, ApiInboxActions::PLATFORMS, true) && in_array($action, ['reply', 'comment.like', 'like', 'comment'], true)) {
+        if (in_array($account->platform->slug, ApiInboxActions::PLATFORMS, true) && in_array($action, ['reply', 'comment.like', 'like', 'comment', 'repost'], true)) {
             return \App\Models\AccountActionEvent::where('social_account_id', $account->id)->whereIn('action', [$account->platform->slug.'.'.$action, ...($action === 'reply' ? ['inbox.reply'] : [])])->where('created_at', '>=', app(AccountActionBudget::class)->dayStart())->count();
         }
         if ($account->platform->slug === 'tiktok' && $action === 'photo.publish') {

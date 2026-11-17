@@ -51,6 +51,10 @@ class BlueskyBotService
             return ['total_likes' => 0, 'terms_processed' => 0, 'likeback_likes' => 0, 'error' => 'Auth failed'];
         }
 
+        if (BlueskyFeedEngagement::enabled($account)) {
+            return app(BlueskyFeedEngagement::class)->run($account, $auth['did'], Http::withToken($auth['accessJwt'])->timeout(15));
+        }
+
         $totalLikes = 0;
         $termsProcessed = 0;
 

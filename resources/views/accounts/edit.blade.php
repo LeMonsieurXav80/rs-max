@@ -238,6 +238,18 @@
                         @enderror
                     </div>
                 @endif
+                @if(in_array($account->platform->slug, ['twitter', 'bluesky'], true))
+                    <div class="mb-5">
+                        <label for="agent_repost_interval_hours" class="block text-sm font-medium mb-1">Délai entre republications automatiques (heures)</label>
+                        <input id="agent_repost_interval_hours" name="agent_strategy[repost_interval_hours]" type="number" min="48" max="720"
+                               value="{{ old('agent_strategy.repost_interval_hours', $account->agent_strategy['repost_interval_hours'] ?? null) }}"
+                               class="w-28 rounded-xl border-gray-300 text-sm">
+                        <p class="mt-1 text-xs text-gray-500">Renseigner le délai et activer l’action Reposter. Un créneau peut rester vide.</p>
+                        @error('agent_strategy.repost_interval_hours')
+                            <p class="mt-1 text-sm text-red-600">{{ $message }}</p>
+                        @enderror
+                    </div>
+                @endif
                 @foreach(['audience' => 'Audience cible', 'objective' => 'Objectif du compte'] as $field => $label)
                     <label for="agent_{{ $field }}" class="block text-sm font-medium mb-1">{{ $label }}</label>
                     <textarea id="agent_{{ $field }}" name="agent_strategy[{{ $field }}]" rows="2" maxlength="{{ $field === 'audience' ? 4000 : 2000 }}" class="w-full rounded-xl border-gray-300 text-sm mb-4">{{ old('agent_strategy.'.$field, $account->agent_strategy[$field] ?? '') }}</textarea>

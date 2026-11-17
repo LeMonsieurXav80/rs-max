@@ -50,6 +50,8 @@ return [
         ]],
         'bluesky' => ['name' => 'Bluesky', 'route' => 'bot.bluesky.index', 'actions' => [
             'reply' => ['label' => 'Répondre aux commentaires', 'kind' => 'write', 'channel' => 'api', 'status' => 'ready', 'limit' => 10],
+            'like' => ['label' => 'Aimer dans le flux et ses commentaires (mode limité)', 'kind' => 'write', 'channel' => 'api', 'status' => 'ready', 'limit' => 2],
+            'repost' => ['label' => 'Reposter depuis le flux (mode limité)', 'kind' => 'write', 'channel' => 'api', 'status' => 'ready', 'limit' => 1],
             'likes' => ['label' => 'Likes', 'kind' => 'write', 'channel' => 'api', 'status' => 'engine'],
             'comments' => ['label' => 'Commentaires', 'kind' => 'write', 'channel' => 'api', 'status' => 'engine'],
             'follows' => ['label' => 'Abonnements', 'kind' => 'write', 'channel' => 'api', 'status' => 'engine'],

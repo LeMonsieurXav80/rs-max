@@ -4,7 +4,9 @@ namespace App\Console\Commands;
 
 use App\Models\Setting;
 use App\Models\SocialAccount;
+use App\Services\Agent\CommunityManagerWindow;
 use App\Services\Bot\BlueskyBotService;
+use App\Services\Bot\BlueskyFeedEngagement;
 use App\Services\Bot\FacebookBotService;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\Cache;
@@ -57,6 +59,9 @@ class RunBotActions extends Command
         $service = new BlueskyBotService;
 
         foreach ($accounts as $account) {
+            if (BlueskyFeedEngagement::enabled($account) && ! app(CommunityManagerWindow::class)->isOpen()) {
+                continue;
+            }
             // When running via scheduler (no --account), check if bot is active
             if (! $accountId && Setting::get("bot_active_bluesky_{$account->id}") !== '1') {
                 $this->line("  Skipping {$account->name} (not active)");
@@ -79,17 +84,20 @@ class RunBotActions extends Command
 
             try {
                 $result = $service->runForAccount($account);
-                $parts = ["Likes: {$result['total_likes']}", 'Terms: ' . ($result['terms_processed'] ?? 0)];
+                $parts = ["Likes: {$result['total_likes']}", 'Terms: '.($result['terms_processed'] ?? 0)];
                 if (($result['comment_likes'] ?? 0) > 0) {
                     $parts[] = "Comment likes: {$result['comment_likes']}";
                 }
                 if (($result['feed_likes'] ?? 0) > 0) {
                     $parts[] = "Feed likes: {$result['feed_likes']}";
                 }
+                if (($result['reposts'] ?? 0) > 0) {
+                    $parts[] = "Reposts: {$result['reposts']}";
+                }
                 if (($result['unfollows'] ?? 0) > 0) {
                     $parts[] = "Unfollows: {$result['unfollows']}";
                 }
-                $this->line('  ' . implode(' | ', $parts));
+                $this->line('  '.implode(' | ', $parts));
 
                 if (isset($result['error'])) {
                     $this->error("  Error: {$result['error']}");

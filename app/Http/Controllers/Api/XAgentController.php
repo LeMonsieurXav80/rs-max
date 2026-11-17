@@ -220,6 +220,17 @@ class XAgentController extends Controller
         }
         $target = $profile ? ($s['result']['profile'] ?? null) : collect($posts)->firstWhere('id', $data['target_id'] ?? '');
         abort_unless($target, 422, 'Cible absente de la lecture.');
+        if ($data['action'] === 'repost' && app(\App\Services\Agent\RepostCadence::class)->hours($a) > 0) {
+            $author = (string) ($target['author'] ?? '');
+            $text = trim((string) ($target['text'] ?? ''));
+            $matcher = new \App\Services\Agent\Feed\FeedMatcher($a->agent_strategy ?? []);
+            abort_unless(($s['source']['action'] ?? null) === 'feed.read' && $text !== '' && $author !== ''
+                && strcasecmp($author, (string) $a->browser_username) !== 0 && empty($target['promoted'])
+                && empty($target['reply_hint']) && empty($target['reposted_by']) && empty($target['reposted'])
+                && app(\App\Services\Agent\Feed\XFeedNetwork::class)->fresh($target)
+                && $matcher->excludedBy($text, $author) === null && $matcher->keywordHits($text) !== [],
+                422, 'La republication exige une publication d’origine, récente et pertinente lue dans le fil.');
+        }
         $key = hash('sha256', $profile ? strtolower($target['handle']) : $target['id']);
 
         return Cache::lock('x-prepare:'.$a->id.':'.$data['action'].':'.$key, 30)->block(2, function () use ($a, $data, $profile, $target, $key) {

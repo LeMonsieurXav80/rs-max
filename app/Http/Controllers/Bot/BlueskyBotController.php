@@ -40,6 +40,7 @@ class BlueskyBotController extends Controller
                 'like_comments' => Setting::get("bot_like_comments_bluesky_{$acc->id}") === '1',
                 'feed_likes' => Setting::get("bot_feed_likes_bluesky_{$acc->id}") === '1',
                 'feed_likes_max' => (int) Setting::get("bot_feed_likes_max_bluesky_{$acc->id}", 5),
+                'feed_only' => \App\Services\Bot\BlueskyFeedEngagement::enabled($acc),
                 'unfollow' => Setting::get("bot_unfollow_bluesky_{$acc->id}") === '1',
                 'unfollow_max' => (int) Setting::get("bot_unfollow_max_bluesky_{$acc->id}", 10),
                 'comments_keyword' => Setting::get("bot_comments_keyword_bluesky_{$acc->id}") === '1',
@@ -132,7 +133,7 @@ class BlueskyBotController extends Controller
     public function updateOption(Request $request): JsonResponse
     {
         $validated = $request->validate([
-            'feature' => 'required|string|in:like_comments,feed_likes,unfollow,comments_keyword,follow_keyword,follow_active',
+            'feature' => 'required|string|in:like_comments,feed_likes,feed_only,unfollow,comments_keyword,follow_keyword,follow_active',
             'account_id' => 'required|integer|exists:social_accounts,id',
             'enabled' => 'required|boolean',
         ]);

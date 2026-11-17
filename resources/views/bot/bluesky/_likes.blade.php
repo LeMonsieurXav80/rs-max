@@ -29,7 +29,7 @@
             <div class="flex-1">
                 <div class="text-sm font-semibold text-gray-900">Liker quelques posts de mon feed</div>
                 <p class="text-xs text-gray-500 mt-0.5">
-                    Le bot pioche aleatoirement quelques posts dans la timeline du compte et les like.
+                    En mode limité, le ciblage du compte s’applique et le plafond inclut les likes sur les commentaires du flux.
                 </p>
                 <div class="mt-2 inline-flex items-center gap-2 text-xs text-gray-600">
                     <span>Nombre max par execution :</span>
@@ -38,6 +38,12 @@
                            class="w-20 text-xs rounded border-gray-300">
                 </div>
             </div>
+        </label>
+        <label class="flex items-start gap-3 mt-3 border-t border-gray-100 pt-3 text-sm">
+            <input type="checkbox" @checked($s['feed_only'])
+                   onchange="toggleBskyOption('feed_only', {{ $account->id }}, this.checked)"
+                   class="mt-1 rounded border-gray-300 text-indigo-600">
+            <span>Mode limité au flux et à ses commentaires. Gère les likes et les republications selon les actions et les quotas du compte.</span>
         </label>
     </div>
 

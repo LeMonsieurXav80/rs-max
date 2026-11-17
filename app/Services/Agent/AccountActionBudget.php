@@ -21,6 +21,13 @@ class AccountActionBudget
         return DB::transaction(function () use ($account, $action, $executor, $target, $taskId, $paced) {
             $account = SocialAccount::whereKey($account->id)->lockForUpdate()->firstOrFail();
             $events = AccountActionEvent::where('social_account_id', $account->id);
+            if (in_array($action, RepostCadence::ACTIONS, true) && app(RepostCadence::class)->nextAllowedAt($account)) {
+                throw new BrowserException('Délai minimal entre republications non écoulé.');
+            }
+            if (in_array($action, ['bluesky.like', 'bluesky.repost'], true) && $target
+                && (clone $events)->where('action', $action)->where('target', $target)->exists()) {
+                throw new BrowserException('Ce geste Bluesky a déjà été réservé pour cette publication.');
+            }
             if ($account->platform->slug === 'twitter' && str_starts_with($action, 'x.')) {
                 $key = substr($action, 2);
                 $setting = $account->agentActions()->where('action', $key)->first();
@@ -82,6 +89,10 @@ class AccountActionBudget
             return;
         }
         $action = $task->kind === 'x.post' && str_contains($task->payload['url'] ?? '', 'in_reply_to=') ? 'x.reply' : $task->kind;
+        if ($action === 'x.post' && str_contains($task->payload['url'] ?? '', 'quote_tweet_id=')
+            && app(RepostCadence::class)->hours($task->socialAccount) > 0) {
+            $action = 'x.quote';
+        }
         $this->reserve($task->socialAccount, $action, 'browser', $task->payload['url'] ?? null, $task->id, ($task->payload['sweep_paced'] ?? false) === true);
     }
 

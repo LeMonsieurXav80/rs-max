@@ -1,6 +1,6 @@
 ---
 name: rsmax-cycle-api
-description: File API de RS-Max : commentaires reçus Facebook, Instagram et YouTube.
+description: File API de RS-Max : commentaires reçus Facebook, Instagram, YouTube et Bluesky.
 ---
 
 ## File API (Facebook, Instagram, YouTube, Bluesky)

@@ -129,6 +129,8 @@ def snapshot(client, now=None, lane=None):
                         and account.get('persona') and action_available(actions, 'thread.read'))
         threads_discovery = can_discover and platform == 'threads' and any(action_available(actions, k) for k in ('like', 'comment'))
         x_writes = [action for action in ('reply', 'like') if action_available(actions, action)]
+        if account.get('repost_due') and action_available(actions, 'repost') and action_available(actions, 'feed.read'):
+            x_writes.append('repost')
         x_discovery = can_discover and platform == 'twitter' and bool(x_writes)
         follow_candidate = account.get('follow_candidate')
         x_follow = lane == 'x' and platform == 'twitter' and follow_candidate and all(
@@ -200,10 +202,17 @@ def snapshot(client, now=None, lane=None):
             reserve = steps if items else 0
             can_feed = False
             if x_discovery:
-                writes = [action for action in x_writes if actions[action]['left'] > int(bool(items))]
+                writes = [action for action in x_writes if actions[action]['left'] > (int(bool(items)) if action != 'repost' else 0)]
                 max_writes = min(len(writes), available - reserve)
                 source = discovery_source(client, account, now) if max_writes > 0 else None
-                if source:
+                if source and 'repost' in writes and source['read_action'] != 'feed.read':
+                    fallback = source.get('fallback', {})
+                    if fallback.get('read_action') == 'feed.read':
+                        source = fallback
+                    else:
+                        writes.remove('repost')
+                if source and writes:
+                    max_writes = min(max_writes, len(writes))
                     x_explorations.append({'account_id': account['id'], **source, 'write_actions': writes,
                                            'max_writes': max_writes, 'reserve_for_inbox': bool(items)})
                     can_feed = True
