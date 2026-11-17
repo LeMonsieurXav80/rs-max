@@ -101,6 +101,8 @@ Schedule::command('inbox:purge-old --commit')->dailyAt('04:10')->timezone('Europ
 Schedule::command('x:reconcile-failed --commit')->dailyAt('07:15')->timezone('Europe/Lisbon')->runInBackground()->withoutOverlapping(60);
 Schedule::command('tiktok:reconcile-failed --commit')->dailyAt('07:30')->timezone('Europe/Lisbon')->runInBackground()->withoutOverlapping(30);
 Schedule::command('tiktok:scripted-inbox --commit')->cron('50 7,11,15,17,20 * * *')->timezone('Europe/Lisbon')->withoutOverlapping(10);
+// Mêmes règles sur Facebook, Instagram, Threads, YouTube et Bluesky : Hermès ne lit plus ces commentaires.
+Schedule::command('inbox:scripted --commit')->cron('50 7,11,15,17,20 * * *')->timezone('Europe/Lisbon')->withoutOverlapping(10);
 // Réponses et likes du téléphone faits en un passage dans Studio, une fois la salve d'Hermès terminée (2 min de calme).
 Schedule::command('tiktok:phone-sweep')->everyTwoMinutes()->withoutOverlapping(5);
 // Threads décalé de 10 min : le profil du NAS est partagé avec TikTok et Planète de Caro.

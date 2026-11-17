@@ -35,9 +35,7 @@ class TikTokScriptedInboxCommand extends Command
         $commit = (bool) $this->option('commit');
         // Chemin autonome d'Hermès : plage horaire, plafond de la file du téléphone, envoi sans validation humaine.
         request()->attributes->set('community_manager', true);
-        $accounts = SocialAccount::with('platform')->where('driver', 'browser')
-            ->whereHas('platform', fn ($q) => $q->where('slug', 'tiktok'))->get()->filter->usesPhone();
-        foreach ($accounts as $account) {
+        foreach ($this->accounts() as $account) {
             $items = InboxItem::where('social_account_id', $account->id)->where('type', '!=', 'dm')
                 ->whereIn('status', ['unread', 'read'])->whereNull('replied_at')->whereNull('reply_scheduled_at')
                 ->where('reply_attempts', 0)
@@ -52,7 +50,7 @@ class TikTokScriptedInboxCommand extends Command
                 ->whereIn('status', ['unread', 'read'])->whereNull('replied_at')->whereNull('liked_at')->where('reply_attempts', 0)
                 ->where('agent_review_reason', 'not_relevant')->orderBy('posted_at')->limit((int) $this->option('limit'))->get()
                 ->filter(fn (InboxItem $i) => CommentFreshness::allows($i->posted_at) && ! $policy->isOwn($i, $account));
-            foreach ($discarded as $item) {
+            foreach ($this->canLike($account) ? $discarded : [] as $item) {
                 $this->like($item, 'écarté par Hermès', $commit, $review);
             }
             foreach ($items as $item) {
@@ -60,7 +58,7 @@ class TikTokScriptedInboxCommand extends Command
                     break;
                 }
                 if ($policy->isThanks($item->content)) {
-                    $this->like($item, 'merci', $commit, $review);
+                    $this->canLike($account) ? $this->like($item, 'merci', $commit, $review) : $this->skip($item, $commit, $review);
                     $done++;
 
                     continue;
@@ -84,6 +82,27 @@ class TikTokScriptedInboxCommand extends Command
         }
 
         return self::SUCCESS;
+    }
+
+    /** Comptes traités : TikTok sur téléphone. */
+    protected function accounts(): iterable
+    {
+        return SocialAccount::with('platform')->where('driver', 'browser')
+            ->whereHas('platform', fn ($q) => $q->where('slug', 'tiktok'))->get()->filter->usesPhone();
+    }
+
+    protected function canLike(SocialAccount $account): bool
+    {
+        return true;
+    }
+
+    /** Simple merci sans like possible : jamais de réponse, retiré de la file d'Hermès (aucun jeton). */
+    private function skip(InboxItem $item, bool $commit, InboxAgentReview $review): void
+    {
+        $this->line("#{$item->id} merci, @{$item->author_username} : sans réponse".($commit ? ', retiré de la file' : ''));
+        if ($commit) {
+            $review->defer($item, 'not_relevant');
+        }
     }
 
     /** Like, une seule fois : `not_relevant_liked` empêche le passage suivant de le redemander. */
