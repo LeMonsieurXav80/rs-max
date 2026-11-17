@@ -146,12 +146,15 @@ class SocialAccount extends Model
 
     /**
      * Profil qui exécute `$kind`. Les relevés de Studio web d'un compte sur téléphone restent au navigateur du NAS :
-     * le téléphone ne lit qu'Activité (une trentaine de commentaires), Studio web les liste tous.
+     * le téléphone ne lit qu'Activité (une trentaine de commentaires), Studio web les liste tous. Une vidéo y est
+     * aussi publiée : l'application refuse souvent plus de 10 min, Studio web accepte 60 min (photos : téléphone).
      */
-    public function profileFor(string $kind): ?string
+    public function profileFor(string $kind, array $payload = []): ?string
     {
-        return in_array($kind, ['tiktok.studio.read', 'tiktok.comments'], true) && $this->usesPhone() && filled($this->browser_read_profile)
-            ? $this->browser_read_profile : $this->browser_profile;
+        $web = in_array($kind, ['tiktok.studio.read', 'tiktok.comments'], true)
+            || ($kind === 'tiktok.publish' && ($payload['media_type'] ?? null) === 'video');
+
+        return $web && $this->usesPhone() && filled($this->browser_read_profile) ? $this->browser_read_profile : $this->browser_profile;
     }
 
     public function scopeWithCompanionXPublicMentions(Builder $query): Builder

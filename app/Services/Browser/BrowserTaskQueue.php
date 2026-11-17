@@ -35,7 +35,7 @@ class BrowserTaskQueue
             throw new BrowserException('Aucun profil navigateur pour ce compte.');
         }
 
-        return BrowserTask::create(['social_account_id' => $account->id, 'profile' => $profile ?? $account->profileFor($kind),
+        return BrowserTask::create(['social_account_id' => $account->id, 'profile' => $profile ?? $account->profileFor($kind, $payload),
             'kind' => $kind, 'payload' => $payload]);
     }
 
@@ -84,7 +84,7 @@ class BrowserTaskQueue
 
             return BrowserTask::create([
                 'social_account_id' => $account->id, 'idempotency_key' => $key,
-                'profile' => $account->profileFor($kind), 'kind' => $kind, 'payload' => $payload,
+                'profile' => $account->profileFor($kind, $payload), 'kind' => $kind, 'payload' => $payload,
             ]);
         });
 

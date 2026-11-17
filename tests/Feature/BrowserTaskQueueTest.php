@@ -70,6 +70,8 @@ class BrowserTaskQueueTest extends TestCase
         $this->assertSame('nas-wildycaro', $this->account->profileFor('tiktok.studio.read'));
         $this->assertSame('nas-wildycaro', $this->account->profileFor('tiktok.comments'));
         $this->assertSame('android-honor', $this->account->profileFor('tiktok.reply'));
+        $this->assertSame('nas-wildycaro', $this->account->profileFor('tiktok.publish', ['media_type' => 'video']));
+        $this->assertSame('android-honor', $this->account->profileFor('tiktok.publish', ['media_type' => 'photo']));
         $this->account->update(['browser_profile' => 'nas-wildycaro']);
         $this->assertSame('nas-wildycaro', $this->account->profileFor('tiktok.studio.read'));
     }
