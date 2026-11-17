@@ -104,7 +104,7 @@ class BrowserTaskController extends Controller
             $delivery = PostPlatform::whereKey($match[1])->lockForUpdate()->first();
             abort_unless($delivery && $delivery->social_account_id === $task->social_account_id
                 && $delivery->status === 'publishing' && $delivery->post?->status === 'publishing'
-                && $delivery->socialAccount?->browser_profile === $task->profile, 409);
+                && $delivery->socialAccount?->profileFor($task->kind, $payload) === $task->profile, 409);
             $rules = app(TikTokPostMedia::class);
             try {
                 $rules->type($payload['media'] ?? []);

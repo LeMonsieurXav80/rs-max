@@ -188,6 +188,25 @@ class TikTokComposerAndStudioTest extends TestCase
         $this->postJson($url)->assertConflict();
     }
 
+    public function test_la_video_dun_compte_sur_telephone_est_autorisee_sur_le_nas(): void
+    {
+        Sanctum::actingAs($this->manager);
+        $this->account->update(['browser_profile' => 'android-honor', 'browser_read_profile' => 'nas-test']);
+        $post = Post::create(['user_id' => $this->manager->id, 'content_fr' => 'Contenu', 'status' => 'publishing']);
+        $delivery = $post->postPlatforms()->create(['platform_id' => $this->account->platform_id,
+            'social_account_id' => $this->account->id, 'status' => 'publishing']);
+        MediaFile::create(['filename' => 'haul.mp4', 'mime_type' => 'video/mp4', 'size' => 4, 'intimacy_level' => 'public']);
+        $task = BrowserTask::create([
+            'social_account_id' => $this->account->id, 'kind' => 'tiktok.publish', 'profile' => 'nas-test',
+            'idempotency_key' => 'post-platform:'.$delivery->id, 'status' => 'running',
+            'payload' => ['deadline' => now()->addMinutes(5)->toIso8601String(), 'media_type' => 'video',
+                'media' => [['name' => 'haul.mp4', 'mimetype' => 'video/mp4', 'size' => 4]]],
+        ]);
+
+        // Le 17/11/2026, ce contrôle comparait au profil du téléphone et refusait le clic (409) : rien n'était publié.
+        $this->postJson('/api/extension/tasks/'.$task->id.'/authorize-tiktok-publication')->assertOk();
+    }
+
     public function test_import_humain_alimente_les_publications_natives_et_les_statistiques(): void
     {
         Storage::fake('local');
