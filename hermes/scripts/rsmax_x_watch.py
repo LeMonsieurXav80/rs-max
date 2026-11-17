@@ -155,7 +155,9 @@ def snapshot(client, now=None, lane=None):
         if available < needed:
             continue
         next_allowed = cadence.get('next_allowed_at')
-        if next_allowed and dt.datetime.fromisoformat(next_allowed).astimezone(dt.timezone.utc) > now.astimezone(dt.timezone.utc):
+        # Réseaux par API : RS-Max programme et espace lui-même les envois (`replies`). Attendre ici sautait tout le
+        # compte pour la vague quand les réponses emoji de :50 étaient encore en cours (Facebook, 17/11/2026 12 h).
+        if (not api or threads_discovery) and next_allowed and dt.datetime.fromisoformat(next_allowed).astimezone(dt.timezone.utc) > now.astimezone(dt.timezone.utc):
             continue
         discovery_plan = None
         if threads_discovery:
