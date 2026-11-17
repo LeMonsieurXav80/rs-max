@@ -205,6 +205,22 @@ class PhoneInboxReplyTest extends TestCase
         $this->assertTrue($sweep->payload['items'][0]['answered']);
     }
 
+    public function test_les_contextes_dun_compte_sur_telephone_se_lisent_en_un_appel(): void
+    {
+        $item = $this->item();
+        $item->update(['reply_content' => null, 'reply_scheduled_at' => null]);
+        $persona = \App\Models\Persona::create(['name' => 'Voix', 'system_prompt' => 'Chaleureuse', 'is_active' => true]);
+        $account = $item->socialAccount;
+        $account->update(['persona_id' => $persona->id]);
+        $user = User::factory()->create(['role' => 'admin']);
+        $account->users()->attach($user, ['is_active' => true]);
+        Sanctum::actingAs($user, ['community-manager']);
+
+        $this->getJson("/api/community-manager/accounts/{$account->id}/inbox/contexts?limit=20")->assertOk()
+            ->assertJsonPath('platform', 'tiktok')->assertJsonPath('items.0.item_id', $item->id)
+            ->assertJsonPath('items.0.publication.text', 'Légende');
+    }
+
     public function test_un_passage_interrompu_ne_relance_rien_et_garde_les_gestes_commences_incertains(): void
     {
         Queue::fake();

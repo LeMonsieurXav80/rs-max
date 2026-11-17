@@ -15,7 +15,7 @@ LANES = {
     'api': {'facebook', 'instagram', 'youtube', 'bluesky'},
 }
 DISCOVERY_MINUTES = 15
-TIKTOK_MAX_REPLIES = 10
+TIKTOK_MAX_REPLIES = 20  # téléphone : un passage groupé (`replies`), file plafonnée à PhoneInboxReplyResult::MAX_IN_FLIGHT
 # Réseaux par API : 5 vagues par jour, réponses remises en un appel (`replies`) et espacées par RS-Max.
 API_MAX_REPLIES = 30
 X_SEARCH_QUERY_LIMIT = 263

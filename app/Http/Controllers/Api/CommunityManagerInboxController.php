@@ -96,7 +96,9 @@ class CommunityManagerInboxController extends Controller
     public function contexts(Request $r, int $id, InboxFollowup $policy)
     {
         $account = $this->account($r, $id);
-        abort_unless(! $account->usesBrowser() && in_array($account->platform->slug, ApiInboxActions::PLATFORMS, true), 422,
+        // TikTok sur téléphone : contexte entièrement en base (légende, échanges), aucune lecture navigateur.
+        $phone = $account->platform->slug === 'tiktok' && $account->usesPhone();
+        abort_unless($phone || (! $account->usesBrowser() && in_array($account->platform->slug, ApiInboxActions::PLATFORMS, true)), 422,
             'Utiliser le contexte individuel pour ce réseau.');
         // Jusqu'à 30 : 5 vagues par jour, rédigées en un appel par compte et envoyées selon la cadence du compte.
         $input = $r->validate(['limit' => 'sometimes|integer|min:1|max:30']);
@@ -126,6 +128,8 @@ class CommunityManagerInboxController extends Controller
                 'target' => ['author' => $target['author'], 'text' => $data['content'], 'has_media' => filled($item->media_type)],
                 'followup' => $data['followup'],
                 ...(isset($data['reply_options']) ? ['reply_options' => $data['reply_options']] : []),
+                ...(isset($data['addressing']) ? ['addressing' => $data['addressing']] : []),
+                ...(isset($data['vault']) ? ['vault' => $data['vault']] : []),
             ];
         }
 
