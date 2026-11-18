@@ -15,7 +15,7 @@ use App\Models\InboxItem;
 class PhoneInboxReplyResult
 {
     /** Réponses en attente par compte sur téléphone : au-delà, la file grossirait plus vite qu'elle ne se vide. */
-    public const MAX_IN_FLIGHT = 20;
+    public const MAX_IN_FLIGHT = 30;
 
     public static function inFlight(int $accountId): int
     {
