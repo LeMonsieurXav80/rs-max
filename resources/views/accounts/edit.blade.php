@@ -238,6 +238,23 @@
                         @enderror
                     </div>
                 @endif
+                @if(in_array($account->platform->slug, ['twitter', 'threads'], true) && auth()->user()->isManager())
+                    @php
+                        $localFeedEnabled = old('agent_strategy.feed_engagement.local_enabled', $account->agent_strategy['feed_engagement']['local_enabled'] ?? null);
+                    @endphp
+                    <div class="mb-5">
+                        <label for="agent_local_feed_enabled" class="block text-sm font-medium mb-1">Engager mon fil depuis Companion</label>
+                        <select id="agent_local_feed_enabled" name="agent_strategy[feed_engagement][local_enabled]" class="rounded-xl border-gray-300 text-sm">
+                            <option value="" @selected(in_array($localFeedEnabled, [null, ''], true))>Comme le réglage du serveur</option>
+                            <option value="1" @selected(in_array($localFeedEnabled, [true, 1, '1'], true))>Activé</option>
+                            <option value="0" @selected(in_array($localFeedEnabled, [false, 0, '0'], true))>Désactivé</option>
+                        </select>
+                        <p class="mt-1 text-xs text-gray-500">Autorise le lancement manuel depuis Chrome avec les quotas du compte.</p>
+                        @error('agent_strategy.feed_engagement.local_enabled')
+                            <p class="mt-1 text-sm text-red-600">{{ $message }}</p>
+                        @enderror
+                    </div>
+                @endif
                 @if(in_array($account->platform->slug, ['twitter', 'bluesky'], true))
                     <div class="mb-5">
                         <label for="agent_repost_interval_hours" class="block text-sm font-medium mb-1">Délai entre republications automatiques (heures)</label>

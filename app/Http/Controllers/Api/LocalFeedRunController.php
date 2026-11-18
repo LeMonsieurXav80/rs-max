@@ -15,7 +15,9 @@ class LocalFeedRunController extends Controller
 {
     private function identity(Request $r): array
     {
-        abort_unless($r->user()->isManager(), 403);
+        $user = $r->user();
+        abort_unless($user->isManager() || ($r->input('platform') === 'x' && LocalFeedRun::xTokenId($user) !== null),
+            403, 'Ce jeton Companion ne peut pas engager le fil de ce réseau.');
 
         return $r->validate(['platform' => 'required|in:x,threads', 'username' => ['required', 'string', 'regex:/^@?[A-Za-z0-9_.]{1,50}$/']]);
     }
@@ -25,7 +27,8 @@ class LocalFeedRunController extends Controller
         $who = $this->identity($r);
         $data = $r->validate(['items' => 'present|array|max:'.LocalFeedRun::MAX_ITEMS, 'items.*' => 'array', 'commit' => 'sometimes|boolean']);
 
-        return response()->json($runs->start($runs->account($r->user(), $who['platform'], $who['username']), $data['items'], $r->boolean('commit')));
+        return response()->json($runs->start($runs->account($r->user(), $who['platform'], $who['username']), $data['items'],
+            $r->boolean('commit'), $r->user()->isManager() ? null : LocalFeedRun::xTokenId($r->user())));
     }
 
     public function next(Request $r, string $run, LocalFeedRun $runs): JsonResponse
@@ -34,13 +37,15 @@ class LocalFeedRunController extends Controller
 
         $r->validate(['stop' => 'sometimes|boolean']);
 
-        return response()->json($runs->next($runs->account($r->user(), $who['platform'], $who['username']), $run, $r->boolean('stop')));
+        return response()->json($runs->next($runs->account($r->user(), $who['platform'], $who['username']), $run, $r->boolean('stop'),
+            $r->user()->isManager() ? null : LocalFeedRun::xTokenId($r->user())));
     }
 
     /** Prend une tâche du passage local par son identifiant, avec les contrôles de prise habituels. */
     public function claim(Request $r, BrowserTask $task, BrowserTaskQueue $queue): JsonResponse
     {
-        abort_unless($r->user()->isAdmin(), 403);
+        abort_unless($r->user()->isAdmin() || LocalFeedRun::canCompleteXTask($r->user(), $task),
+            403, 'Ce jeton Companion ne peut pas prendre cette tâche.');
         abort_unless($task->profile === LocalFeedRun::PROFILE
             && $r->user()->connectedSocialAccounts()->whereKey($task->social_account_id)->exists(), 404);
         $started = DB::transaction(function () use ($task, $queue) {

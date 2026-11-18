@@ -9,6 +9,7 @@ final class FeedEngagementSettings
 {
     public const DEFAULTS = [
         'enabled' => false,
+        'local_enabled' => null,
         'spin_templates' => [],
         'emoji_templates' => [],
         'spin_percent' => 40,
@@ -28,6 +29,13 @@ final class FeedEngagementSettings
     public static function for(SocialAccount $account): array
     {
         return array_replace(self::DEFAULTS, array_intersect_key($account->agent_strategy['feed_engagement'] ?? [], self::DEFAULTS));
+    }
+
+    public static function localEnabled(SocialAccount $account): bool
+    {
+        $settings = self::for($account);
+
+        return (bool) ($settings['local_enabled'] ?? $settings['enabled']);
     }
 
     /** @return array<string, mixed> Réglages, plus un tirage et le nombre de combinaisons de chaque modèle. */

@@ -126,6 +126,47 @@ class LocalFeedRunTest extends TestCase
         $this->assertSame('awaiting', XEngagement::where('action', 'reply')->sole()->payload['draft_state']);
     }
 
+    public function test_le_jeton_chrome_x_ne_peut_executer_que_son_propre_passage_local(): void
+    {
+        $account = $this->account('twitter', ['enabled' => false, 'local_enabled' => true, 'spin_percent' => 0]);
+        $user = User::factory()->create(['role' => 'user']);
+        $account->users()->attach($user, ['is_active' => true]);
+        $who = ['platform' => 'x', 'username' => 'wildycaro'];
+        $body = $who + ['commit' => true, 'items' => [[
+            'id' => '1901', 'author' => 'alice', 'url' => 'https://example.com/', 'text' => 'Grosse séance de squat ce matin',
+            'published_at' => now()->subHour()->toIso8601String(), 'liked' => false, 'lang' => 'fr',
+        ]]];
+        Sanctum::actingAs($user);
+        $user->withAccessToken($user->createToken('Jeton sans permission', ['*'])->accessToken);
+        $this->postJson('/api/extension/feed/runs', $body)->assertForbidden();
+
+        $token = $user->createToken('Chrome local', ['*', LocalFeedRun::X_TOKEN_ABILITY])->accessToken;
+        $user->withAccessToken($token);
+        $this->postJson('/api/extension/feed/runs', ['platform' => 'threads'] + $body)->assertForbidden();
+        $this->postJson('/api/extension/feed/runs', ['username' => 'autre_compte'] + $body)->assertNotFound();
+        $run = $this->postJson('/api/extension/feed/runs', $body)->assertOk()->json('run');
+        $next = '/api/extension/feed/runs/'.$run.'/next';
+        $taskId = $this->postJson($next, $who)->assertOk()->assertJsonPath('action', 'like')->json('task_id');
+        $claim = '/api/extension/feed/tasks/'.$taskId.'/claim';
+        $finish = '/api/extension/tasks/'.$taskId.'/finish';
+        $proof = ['status' => 'done', 'result' => ['confirmed' => true, 'proof' => 'after_reload',
+            'target' => ['id' => '1901', 'author' => 'alice', 'text' => 'Grosse séance de squat ce matin']]];
+
+        $user->withAccessToken($user->createToken('Autre Chrome', [LocalFeedRun::X_TOKEN_ABILITY])->accessToken);
+        $this->postJson($next, $who)->assertForbidden();
+        $this->postJson($claim)->assertForbidden();
+        $user->withAccessToken($token);
+        $this->postJson($claim)->assertOk()->assertJsonPath('payload.url', 'https://x.com/alice/status/1901');
+        $user->withAccessToken($user->createToken('Troisième Chrome', [LocalFeedRun::X_TOKEN_ABILITY])->accessToken);
+        $this->postJson($finish, $proof)->assertForbidden();
+
+        $user->withAccessToken($token);
+        $this->postJson($finish, $proof)->assertOk();
+        $this->postJson($next, $who)->assertOk()->assertJsonPath('state', 'done');
+        $this->assertSame('confirmed', XEngagement::where('action', 'like')->sole()->status);
+        $this->assertSame('local', BotActionLog::where('action_type', 'feed.like')->sole()->metadata['trigger']);
+    }
+
     public function test_stop_enregistre_le_geste_en_cours_et_n_en_cree_pas_d_autre(): void
     {
         $this->account('threads');

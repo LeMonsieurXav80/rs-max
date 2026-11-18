@@ -178,6 +178,7 @@ class AccountStrategy
             'agent_strategy.audience' => 'sometimes|nullable|string|max:4000', 'agent_strategy.objective' => 'sometimes|nullable|string|max:2000'];
         $rules += ['agent_strategy.feed_engagement' => 'sometimes|array:'.implode(',', array_keys(Feed\FeedEngagementSettings::DEFAULTS)),
             'agent_strategy.feed_engagement.enabled' => 'sometimes|boolean',
+            'agent_strategy.feed_engagement.local_enabled' => 'sometimes|nullable|boolean',
             'agent_strategy.feed_engagement.spin_templates' => 'sometimes|array|max:100',
             'agent_strategy.feed_engagement.spin_templates.*' => 'string|distinct',
             'agent_strategy.feed_engagement.emoji_templates' => 'sometimes|array|max:100',
@@ -231,7 +232,7 @@ class AccountStrategy
                     $next = array_replace($account->agent_strategy['feed_engagement'] ?? [], $data['agent_strategy']['feed_engagement']);
                     $merged = array_replace($current, $next);
                     // Ce qui élargit l'action du script (allumer, relever un plafond, aimer hors mots-clés) se règle par un humain.
-                    abort_if($scoped && ($merged['enabled'] !== $current['enabled'] || $merged['like_scope'] !== $current['like_scope']
+                    abort_if($scoped && ($merged['enabled'] !== $current['enabled'] || $merged['local_enabled'] !== $current['local_enabled'] || $merged['like_scope'] !== $current['like_scope']
                         || collect(Feed\FeedEngagementSettings::RAISING)->contains(fn ($key) => $merged[$key] > $current[$key])),
                         403, 'L’engagement du fil se met en route et ses plafonds se relèvent avec un accès gestionnaire complet.');
                     $data['agent_strategy']['feed_engagement'] = $next;

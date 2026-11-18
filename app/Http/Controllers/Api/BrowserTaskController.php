@@ -122,7 +122,8 @@ class BrowserTaskController extends Controller
 
     public function finish(Request $r, BrowserTask $task): JsonResponse
     {
-        abort_unless($r->user()->isAdmin(), 403);
+        abort_unless($r->user()->isAdmin() || \App\Services\Agent\Feed\LocalFeedRun::canCompleteXTask($r->user(), $task),
+            403, 'Ce jeton Companion ne peut pas clôturer cette tâche.');
         $v = $r->validate([
             'status' => 'required|in:done,failed,uncertain',
             'result' => 'nullable|array',

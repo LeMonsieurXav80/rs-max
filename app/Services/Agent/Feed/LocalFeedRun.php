@@ -3,13 +3,16 @@
 namespace App\Services\Agent\Feed;
 
 use App\Models\BotActionLog;
+use App\Models\BrowserTask;
 use App\Models\SocialAccount;
 use App\Models\User;
 use App\Services\Agent\AgentCatalog;
 use App\Services\Agent\CommunityManagerWindow;
 use App\Services\Browser\BrowserException;
 use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
+use Laravel\Sanctum\PersonalAccessToken;
 use Symfony\Component\HttpKernel\Exception\HttpException;
 
 /**
@@ -28,9 +31,29 @@ class LocalFeedRun
 
     public const MAX_ITEMS = 40;
 
+    public const X_TOKEN_ABILITY = 'companion-x-local-feed';
+
     private const TTL_MINUTES = 90;
 
     public function __construct(private FeedEngagementPlanner $planner, private FeedEngagementExecutor $executor) {}
+
+    public static function xTokenId(User $user): ?int
+    {
+        $token = $user->currentAccessToken();
+
+        return $token instanceof PersonalAccessToken && in_array(self::X_TOKEN_ABILITY, (array) $token->abilities, true)
+            ? (int) $token->getKey()
+            : null;
+    }
+
+    public static function canCompleteXTask(User $user, BrowserTask $task): bool
+    {
+        $tokenId = self::xTokenId($user);
+
+        return $tokenId !== null && $task->profile === self::PROFILE && $task->kind === 'x.agent.act'
+            && ($task->payload['local_feed_token_id'] ?? null) === $tokenId
+            && $user->connectedSocialAccounts()->whereKey($task->social_account_id)->exists();
+    }
 
     public function account(User $user, string $platform, string $username): SocialAccount
     {
@@ -46,16 +69,25 @@ class LocalFeedRun
     }
 
     /** Décide sur la lecture du Mac ; avec `$commit`, ouvre un passage dont `next()` livre les gestes un par un. */
-    public function start(SocialAccount $account, array $items, bool $commit): array
+    public function start(SocialAccount $account, array $items, bool $commit, ?int $tokenId = null): array
     {
-        $settings = FeedEngagementSettings::for($account);
-        abort_if($commit && ! $settings['enabled'], 403, 'Engagement du fil coupé sur la fiche du compte : relevé à blanc seulement.');
+        abort_if($commit && ! FeedEngagementSettings::localEnabled($account), 403, 'Active « Engager mon fil depuis Companion » sur la fiche du compte pour envoyer des actions.');
         abort_unless(app(CommunityManagerWindow::class)->isOpen(), 423, 'Community Manager travaille de 06 h à 22 h à Lisbonne.');
         $read = app(AgentCatalog::class)->forAccount($account)->get('feed.read');
         abort_unless($read && $read['status'] === 'ready' && $read['enabled'] && $read['left'] > 0, 403,
             'Lecture du fil désactivée ou quota du jour atteint pour ce compte.');
 
         $items = array_slice(array_values($items), 0, self::MAX_ITEMS);
+        if ($account->platform->slug === 'twitter') {
+            $items = array_values(array_filter($items, fn (array $item) => (is_int($item['id'] ?? null) || is_string($item['id'] ?? null))
+                && ctype_digit((string) $item['id']) && is_string($item['author'] ?? null)
+                && preg_match('/^[A-Za-z0-9_]{1,15}$/D', $item['author'])));
+            foreach ($items as &$item) {
+                $item['id'] = (string) $item['id'];
+                $item['url'] = 'https://x.com/'.$item['author'].'/status/'.$item['id'];
+            }
+            unset($item);
+        }
         $plan = $this->planner->plan($account, $items, $this->executor->usedToday($account));
         $run = (string) Str::uuid();
         $log = BotActionLog::create(['social_account_id' => $account->id, 'action_type' => 'agent.feed.read', 'source' => AgentCatalog::SOURCE,
@@ -74,7 +106,7 @@ class LocalFeedRun
 
             return $step;
         }, $this->executor->steps($account, $plan));
-        $this->save($run, ['account_id' => $account->id, 'log_id' => $log->id, 'snapshot' => $run, 'steps' => $steps, 'cursor' => 0,
+        $this->save($run, ['account_id' => $account->id, 'token_id' => $tokenId, 'log_id' => $log->id, 'snapshot' => $run, 'steps' => $steps, 'cursor' => 0,
             'posts' => collect($items)->keyBy(fn ($i) => (string) ($i['id'] ?? ''))->all(), 'done' => [], 'requested' => 0,
             'skip' => [], 'current' => null]);
 
@@ -86,11 +118,12 @@ class LocalFeedRun
      * une attente de cadence (`wait`), un geste encore en cours (`pending`) ou le bilan (`done`). Avec `$stop`
      * (bouton Stop de Companion), clôt le geste précédent et termine sans en créer d'autre.
      */
-    public function next(SocialAccount $account, string $run, bool $stop = false): array
+    public function next(SocialAccount $account, string $run, bool $stop = false, ?int $tokenId = null): array
     {
-        return Cache::lock('feed-local-run-lock:'.$run, 60)->block(10, function () use ($account, $run, $stop) {
+        return Cache::lock('feed-local-run-lock:'.$run, 60)->block(10, function () use ($account, $run, $stop, $tokenId) {
             $state = Cache::get('feed-local-run:'.$run);
             abort_unless($state && $state['account_id'] === $account->id, 410, 'Passage expiré ou autre compte : relancer la recette.');
+            abort_unless(($state['token_id'] ?? null) === $tokenId, 403, 'Ce passage appartient à un autre profil Companion.');
             $network = FeedNetworks::for($account);
             $max = FeedEngagementSettings::for($account)['pass_max_actions'];
 
@@ -111,6 +144,9 @@ class LocalFeedRun
             }
             if ($stop) {
                 return $this->finish($run, $state, 'arrêt demandé depuis Companion');
+            }
+            if (! FeedEngagementSettings::localEnabled($account)) {
+                return $this->finish($run, $state, 'engagement local désactivé sur la fiche du compte');
             }
 
             while ($state['cursor'] < count($state['steps'])) {
@@ -151,7 +187,15 @@ class LocalFeedRun
 
                         continue; // déjà réservé ou fait par ailleurs : jamais de second geste
                     }
-                    $row = $network->dispatch($row, self::PROFILE);
+                    $row = DB::transaction(function () use ($network, $row, $tokenId) {
+                        $row = $network->dispatch($row, self::PROFILE);
+                        if ($tokenId !== null) {
+                            $task = BrowserTask::findOrFail($row->browser_task_id);
+                            $task->update(['payload' => $task->payload + ['local_feed_token_id' => $tokenId]]);
+                        }
+
+                        return $row;
+                    });
                 } catch (HttpException $e) {
                     if ($e->getStatusCode() === 429 && str_starts_with($e->getMessage(), 'Délai minimal')) {
                         $this->save($run, $state);
