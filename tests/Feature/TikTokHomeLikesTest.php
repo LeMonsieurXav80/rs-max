@@ -43,7 +43,7 @@ class TikTokHomeLikesTest extends TestCase
             && $payload['target'] === $missing && $profile === 'android-honor')
             ->andThrow(new BrowserException('Commentaire exact introuvable : aucun geste.'));
         $queue->shouldReceive('run')->once()->ordered()->withArgs(fn ($a, $kind, $payload, $timeout, $profile) => $kind === 'tiktok.comment.like'
-            && $payload['target'] === $valid && $profile === 'android-honor' && str_starts_with($payload['publication_key'], 'tiktok-home-like:'))
+            && $payload['target'] === $valid && $timeout === 240 && $profile === 'android-honor' && str_starts_with($payload['publication_key'], 'tiktok-home-like:'))
             ->andReturn(['confirmed' => true, 'proof' => 'after_reload']);
         $queue->shouldReceive('run')->times(3)->ordered()->withArgs(fn ($a, $kind, $payload, $timeout, $profile) => $kind === 'tiktok.feed.read'
             && $payload['url'] === $home && $payload['resume'] === true && $profile === 'android-honor')->andReturn(['items' => []]);

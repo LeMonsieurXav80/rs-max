@@ -25,6 +25,8 @@ class TikTokHomeLikesCommand extends Command
 
     private const PER_SLOT = 60;
 
+    private const LIKE_TIMEOUT = 240;
+
     protected $signature = 'tiktok:home-likes {--commit : Exécuter les likes du passage}';
 
     protected $description = 'Aime les commentaires du fil TikTok « Pour toi » depuis les téléphones attribués';
@@ -113,14 +115,14 @@ class TikTokHomeLikesCommand extends Command
                         if (BrowserTask::where('social_account_id', $account->id)->where('idempotency_key', $key)->exists()) {
                             continue;
                         }
-                        if ($attempted >= $limit || ! $this->withinCadence($budget, $account, $end)) {
+                        if ($attempted >= $limit || ! $this->withinCadence($budget, $account, $end->copy()->subSeconds(self::LIKE_TIMEOUT))) {
                             break 3;
                         }
                         $attempted++;
                         try {
                             $result = $queue->run($account, 'tiktok.comment.like', $payload + [
                                 'url' => $url, 'target' => $comment, 'publication_key' => $key,
-                            ], timeout: 150, profile: $phone);
+                            ], timeout: self::LIKE_TIMEOUT, profile: $phone);
                         } catch (BrowserException $error) {
                             if (! in_array($error->getMessage(), [
                                 'Commentaire exact introuvable : aucun geste.',
