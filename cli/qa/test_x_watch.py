@@ -63,7 +63,7 @@ class XWatchTest(unittest.TestCase):
         account['actions']['like']['left'] = 17
         client.api.side_effect = [{'daytime': True, 'accounts': [account]}, {'items': items}]
         result = watch.snapshot(client, dt.datetime.fromisoformat('2026-11-07T12:30:00+00:00'))
-        self.assertIn('limit=20', client.api.call_args.args[1])
+        self.assertIn('limit=40', client.api.call_args.args[1])
         self.assertEqual(result['accounts'][0]['batch_max'], 17)
 
     def test_tiktok_reserve_le_duo_sans_action_like_de_flux_et_garde_la_legende(self):
@@ -261,7 +261,8 @@ class XWatchTest(unittest.TestCase):
         now=dt.datetime.fromisoformat('2026-11-07T12:30:00+00:00')
         self.assertEqual(watch.snapshot(c,now)['state'],'idle')
         a['cadence']['daily']['remaining']=5
-        c.api.side_effect=[{'daytime':True,'accounts':[a]},{'items':[{'id':99,'content':'Merci','can_reply':True}]}]
+        items = [{'id': ident, 'content': 'Merci', 'can_reply': True} for ident in (97, 98, 99)]
+        c.api.side_effect=[{'daytime':True,'accounts':[a]},{'items':items}]
         self.assertEqual(watch.snapshot(c,now)['accounts'][0]['batch_max'],2)
 
     def test_un_stock_identique_reveille_le_cycle_suivant_et_la_file_exclut_les_ecartes(self):
@@ -389,6 +390,26 @@ class XWatchTest(unittest.TestCase):
         plan = watch.snapshot(client, now, lane='x')['priority_x'][0]
         self.assertEqual(plan['read_action'], 'search.read')
         self.assertEqual(plan['fallback']['read_action'], 'feed.read')
+
+    def test_les_profils_sans_plafond_de_cadence_utilisent_le_lot_de_leur_file(self):
+        now = dt.datetime.fromisoformat('2026-11-08T12:00:00+00:00')
+        for platform, lane, target, candidates in (
+            ('facebook', 'api', 60, 60), ('threads', 'threads', 60, 60),
+            ('twitter', 'x', 20, 40), ('tiktok', 'tiktok', 30, 30),
+        ):
+            with self.subTest(platform=platform):
+                account = self.account(None)
+                account.update(platform=platform, persona=5, api_ready=True)
+                if lane in ('api', 'threads'):
+                    account.update(driver='api')
+                account['actions'] = {'reply': {'left': 90}, 'like': {'left': 90}}
+                account['cadence']['next_allowed_at'] = (now + dt.timedelta(seconds=12)).isoformat()
+                items = [{'id': ident, 'content': 'Commentaire', 'can_reply': True} for ident in range(candidates)]
+                client = Mock()
+                client.api.side_effect = [{'daytime': True, 'accounts': [account]}, {'items': items}]
+                result = watch.snapshot(client, now, lane=lane)
+                self.assertEqual(result['accounts'][0]['batch_max'], target)
+                self.assertEqual(len(result['accounts'][0]['items']), candidates)
 
     def test_la_file_api_ne_precharge_ni_x_ni_tiktok(self):
         now = dt.datetime.fromisoformat('2026-11-08T12:00:00+00:00')

@@ -15,9 +15,10 @@ LANES = {
     'api': {'facebook', 'instagram', 'youtube', 'bluesky'},
 }
 DISCOVERY_MINUTES = 15
-TIKTOK_MAX_REPLIES = 20  # téléphone : un passage groupé (`replies`), file plafonnée à PhoneInboxReplyResult::MAX_IN_FLIGHT
-# Réseaux par API : 5 vagues par jour, réponses remises en un appel (`replies`) et espacées par RS-Max.
-API_MAX_REPLIES = 30
+X_MAX_REPLIES = 20
+X_MAX_CANDIDATES = 40  # Certaines lectures sont conclues par un like seul.
+TIKTOK_MAX_REPLIES = 30  # Contexte groupé et PhoneInboxReplyResult::MAX_IN_FLIGHT.
+API_MAX_REPLIES = 60  # Deux lots de contextes de 30 au plus par compte.
 X_SEARCH_QUERY_LIMIT = 263
 
 
@@ -157,10 +158,12 @@ def snapshot(client, now=None, lane=None):
         if available < needed:
             continue
         next_allowed = cadence.get('next_allowed_at')
-        # Réseaux par API : RS-Max programme et espace lui-même les envois (`replies`). Attendre ici sautait tout le
-        # compte pour la vague quand les réponses emoji de :50 étaient encore en cours (Facebook, 17/11/2026 12 h).
-        if (not api or threads_discovery) and next_allowed and dt.datetime.fromisoformat(next_allowed).astimezone(dt.timezone.utc) > now.astimezone(dt.timezone.utc):
-            continue
+        # Les réponses reçues sont mises en file avec le délai calculé par RS-Max. Les gestes de
+        # découverte restent soumis à la disponibilité immédiate du compte.
+        if next_allowed and dt.datetime.fromisoformat(next_allowed) > now:
+            threads_discovery = x_discovery = tiktok_discovery = x_follow = can_feed = False
+            if not can_reply:
+                continue
         discovery_plan = None
         if threads_discovery:
             writes = [k for k in ('like', 'comment') if action_available(actions, k)]
@@ -196,7 +199,10 @@ def snapshot(client, now=None, lane=None):
                 source = discovery_source(client, account, now)
                 if source:
                     tiktok_explorations.append({'account_id': account['id'], **source, 'write_actions': tiktok_writes})
-        inbox = client.api('GET', f"accounts/{account['id']}/inbox?" + urlencode({'order':pending_inbox_order(platform),'limit':20 if platform in ('twitter', 'tiktok') else API_MAX_REPLIES,'status':'unanswered','agent_queue':1})) if can_reply else {}
+        inbox_limit = {'twitter': X_MAX_CANDIDATES, 'tiktok': TIKTOK_MAX_REPLIES}.get(platform, API_MAX_REPLIES)
+        inbox = client.api('GET', f"accounts/{account['id']}/inbox?" + urlencode({
+            'order': pending_inbox_order(platform), 'limit': inbox_limit, 'status': 'unanswered', 'agent_queue': 1,
+        })) if can_reply else {}
         items = [{'id':i['id'], 'content':i['content'], 'posted_at':i.get('posted_at'), 'post_url':i.get('post_url'), 'post_content':i.get('post_content')} for i in inbox.get('items', []) if i.get('can_reply')]
         if x_discovery or x_follow:
             reserve = steps if items else 0
@@ -222,18 +228,20 @@ def snapshot(client, now=None, lane=None):
                 can_feed = True
             if available < steps:
                 items = []
-        if api and lane:
+        if lane:
             items = [{'id': item['id']} for item in items]
         if items or can_feed:
-            reply_limit = min(actions['reply']['left'], actions['like']['left']) if platform == 'twitter' and items else (1 if api or tiktok else 0)
-            if api and items and lane:
+            reply_limit = 0
+            if platform == 'twitter' and items:
+                reply_limit = min(X_MAX_REPLIES, actions['reply']['left'], actions['like']['left'], len(items))
+            if api and items:
                 reply_limit = min(API_MAX_REPLIES, len(items), actions['reply']['left'])
                 if facebook_like:
                     reply_limit = min(reply_limit, actions['comment.like']['left'])
-            if tiktok and lane:
+            if tiktok and items:
                 reply_limit = min(TIKTOK_MAX_REPLIES, len(items), actions.get('reply', {}).get('left', 0))
             work.append({'platform':account['platform'], 'account_id':account['id'], 'strategy':model_strategy(account.get('strategy', {})), 'items':items,
-                         'persona':account.get('persona'),'auto_like':auto_like,'executor':'api' if api else 'browser', 'threads_discovery':threads_discovery, 'discovery_plan':'priority_threads' if discovery_plan else None, 'remaining':cadence.get('remaining'), 'daily_remaining':cadence.get('daily', {}).get('remaining'), 'batch_max':min(reply_limit, max(1, ((cadence.get('remaining') if cadence.get('remaining') is not None else 11) - hourly_reserve)//steps), max(1, ((cadence.get('daily', {}).get('remaining') if cadence.get('daily', {}).get('remaining') is not None else 11) - daily_reserve)//steps)), 'next_publication_at':upcoming})
+                         'persona':account.get('persona'),'auto_like':auto_like,'executor':'api' if api else 'browser', 'threads_discovery':threads_discovery, 'discovery_plan':'priority_threads' if discovery_plan else None, 'remaining':cadence.get('remaining'), 'daily_remaining':cadence.get('daily', {}).get('remaining'), 'batch_max':int(min(reply_limit * steps, available) // steps), 'next_publication_at':upcoming})
             if discovery_plan:
                 explorations.append(discovery_plan)
     discovery_first=[a for a in work if a['threads_discovery']]

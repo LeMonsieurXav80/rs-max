@@ -100,6 +100,28 @@ class Client:
             raise ApiError(int(code), result)
         return result
 
+    def inbox_contexts_by_id(self, ids):
+        items, skipped, errors = [], [], []
+        persona = None
+        for ident in dict.fromkeys(ids):
+            try:
+                context = self.api('GET', f'inbox/{ident}/context', timeout=115)
+            except ApiError as exc:
+                if exc.payload.get('skip_item'):
+                    skipped.append({**exc.payload, 'item_id': ident})
+                    continue
+                errors.append({'item_id': ident, 'code': exc.status, 'error': str(exc)})
+                if exc.status in (401, 403, 423):
+                    break
+                continue
+            except RuntimeError as exc:
+                errors.append({'item_id': ident, 'error': str(exc)})
+                break
+            context_persona = context.pop('persona', None)
+            persona = persona or context_persona
+            items.append(context)
+        return {'persona': persona, 'items': items, 'skipped': skipped, 'errors': errors}
+
     def reply_status(self, ident, wait_seconds=0):
         if not wait_seconds:
             return self.api('GET', f'inbox/{ident}')
@@ -225,14 +247,16 @@ def main(argv=None):
     p = subs.add_parser('inbox-like'); p.add_argument('id', type=int); p.add_argument('--commit', action='store_true')
     p = subs.add_parser('reply-context'); p.add_argument('id', type=int)
     p = subs.add_parser('reply-contexts')
-    p.add_argument('--account', type=int, required=True)
+    scope = p.add_mutually_exclusive_group(required=True)
+    scope.add_argument('--account', type=int)
+    scope.add_argument('--ids', type=int, nargs='+', help='De 1 à 4 commentaires du même compte')
     p.add_argument('--limit', type=int, choices=range(1, 31), default=5)
     # Fil « Pour vous » : lots de publications réservées par le script, rédigés en un appel (docs/flux-engagement-scripte.md).
     p = subs.add_parser('feed-drafts'); p.add_argument('--account', type=int, required=True)
     p = subs.add_parser('feed-drafts-submit'); p.add_argument('--account', type=int, required=True)
     p.add_argument('--drafts', required=True, help='JSON : [{"id":1,"text":"…"},{"id":2,"skip":"motif"}]')
     # Réponses d'un compte remises en un appel : RS-Max les espace selon la cadence du compte (5 vagues par jour).
-    p = subs.add_parser('replies'); p.add_argument('--json', required=True, help='JSON : [{"id":11,"context":"UUID","text":"…"}]'); p.add_argument('--commit', action='store_true')
+    p = subs.add_parser('replies'); p.add_argument('--json', required=True, help='JSON : [{"id":11,"context":"UUID","text":"…"}]'); p.add_argument('--commit', action='store_true'); p.add_argument('--paced', action='store_true', help='Sur X, attendre le résultat de chaque réponse avant la suivante')
     p = subs.add_parser('reply'); p.add_argument('id', type=int); p.add_argument('--context', required=True); text=p.add_mutually_exclusive_group(required=True); text.add_argument('--text-file', type=Path); text.add_argument('--text'); p.add_argument('--commit', action='store_true')
     scan = subs.add_parser('scan'); scan.add_argument('--account', type=int); scan.add_argument('--limit', type=int, choices=range(1, 6), default=3)
     for name in ['like', 'like-comment', 'comment']:
@@ -352,7 +376,12 @@ def main(argv=None):
     elif args.command == 'verify-reply': result = client.api('POST', f'inbox/{args.id}/verify-reply', {})
     elif args.command == 'reconcile-reply': result = client.api('POST', f'inbox/{args.id}/reconcile', {**({'snapshot_id':args.snapshot} if args.snapshot else {'verification_task_id':args.verification_task}),'dry_run':not args.commit})
     elif args.command == 'reply-contexts':
-        result = client.api('GET', f'accounts/{args.account}/inbox/contexts?limit={args.limit}')
+        if args.ids:
+            if len(args.ids) > 4 or any(ident <= 0 for ident in args.ids):
+                raise ValueError('--ids attend 1 à 4 identifiants de commentaires positifs.')
+            result = client.inbox_contexts_by_id(args.ids)
+        else:
+            result = client.api('GET', f'accounts/{args.account}/inbox/contexts?limit={args.limit}')
     elif args.command == 'feed-drafts':
         result = client.api('GET', f'accounts/{args.account}/feed-drafts')
     elif args.command == 'feed-drafts-submit':
@@ -379,6 +408,8 @@ def main(argv=None):
         if not isinstance(batch, list) or not batch or not all(isinstance(r, dict) and isinstance(r.get('id'), int)
                                                                  and r.get('context') and str(r.get('text') or '').strip() for r in batch):
             raise ValueError('--json attend une liste non vide de {"id":11,"context":"UUID","text":"…"}.')
+        if args.paced and len(batch) > 4:
+            raise ValueError('--paced accepte jusqu’à quatre réponses.')
         results = []
         for entry in batch:
             key = -entry['id']  # même registre que `reply` : jamais une seconde demande pour un commentaire
@@ -387,14 +418,40 @@ def main(argv=None):
                 continue
             if args.commit: client.remember(key, 'execution_requested')
             try:
-                answer = client.api('POST', f"inbox/{entry['id']}/reply", {'context_id': entry['context'], 'reply_text': str(entry['text']).strip(), 'dry_run': not args.commit})
-                results.append({'id': entry['id'], 'status': 'queued' if answer.get('queued') or answer.get('scheduled_at') else ('dry_run' if answer.get('dry_run') else 'sent'),
-                                **({'scheduled_at': answer['scheduled_at']} if answer.get('scheduled_at') else {})})
+                answer = client.api('POST', f"inbox/{entry['id']}/reply", {'context_id': entry['context'], 'reply_text': str(entry['text']).strip(), 'dry_run': not args.commit},
+                                    **({'timeout': 15} if args.paced else {}))
+                receipt = {'id': entry['id'], 'status': 'queued' if answer.get('queued') or answer.get('scheduled_at') else ('dry_run' if answer.get('dry_run') else 'sent')}
+                if answer.get('scheduled_at'):
+                    receipt['scheduled_at'] = answer['scheduled_at']
+                results.append(receipt)
+                if args.paced and args.commit and receipt['status'] == 'queued':
+                    try:
+                        observed = client.reply_status(entry['id'], 115)
+                    except RuntimeError as exc:
+                        receipt['check_error'] = str(exc)
+                        break
+                    if observed.get('replied_at'):
+                        receipt.update(status='confirmed', liked=bool(observed.get('liked_at')))
+                    elif observed.get('status') == 'reply_failed':
+                        receipt['status'] = 'failed'
+                    else:
+                        break
             except ApiError as exc:
                 results.append({'id': entry['id'], 'status': 'refused', 'code': exc.status, 'error': str(exc)[:200]})
-                if exc.status == 423:  # plage de journée terminée : rien d'autre ne passera
+                if exc.status in (401, 403, 423) or 'file du téléphone pleine' in str(exc).casefold():
+                    # Ce refus explicite du serveur précède toute réservation.
+                    if args.commit and 'file du téléphone pleine' in str(exc).casefold():
+                        client.db.execute('DELETE FROM attempts WHERE id=?', (key,))
+                        client.db.commit()
                     break
+            except RuntimeError as exc:
+                results.append({'id': entry['id'], 'status': 'check_required', 'reason': str(exc)})
+                break
         result = {'results': results, 'queued': sum(r['status'] == 'queued' for r in results), 'refused': sum(r['status'] == 'refused' for r in results)}
+        if args.paced:
+            result['confirmed'] = sum(r['status'] == 'confirmed' for r in results)
+        if len(results) < len(batch):
+            result['not_requested'] = [entry['id'] for entry in batch[len(results):]]
     elif args.command == 'scan': result = client.scan(args.account, args.limit)
     elif args.command in ('like', 'like-comment', 'comment'):
         action = {'like': 'video.like', 'like-comment': 'comment.like', 'comment': 'video.comment'}[args.command]
