@@ -95,6 +95,7 @@ def discovery_source(client, account, now):
 
 def snapshot(client, now=None, lane=None):
     now = now or dt.datetime.now(dt.timezone.utc)
+    local_moment = now.astimezone(ZoneInfo('Europe/Lisbon'))
     if not daytime(now):
         return {'state': 'sleep'}
     catalog = client.api('GET', 'accounts')
@@ -150,12 +151,21 @@ def snapshot(client, now=None, lane=None):
 
         hourly_reserve = int(bool(scheduled and scheduled <= now + dt.timedelta(hours=1)))
         daily_reserve = int(bool(scheduled))
+        hourly_available = cadence.get('remaining')
+        daily_available = cadence.get('daily', {}).get('remaining')
         available = min((remaining - reserve for remaining, reserve in (
-            (cadence.get('remaining'), hourly_reserve),
-            (cadence.get('daily', {}).get('remaining'), daily_reserve),
+            (hourly_available, hourly_reserve), (daily_available, daily_reserve),
         ) if remaining is not None), default=float('inf'))
+        # Les envois API sont programmés. Avant 20 h, la file peut utiliser une deuxième
+        # heure de cadence sans augmenter le débit horaire ni dépasser la réserve quotidienne.
+        batch_available = available
+        hourly_limit = cadence.get('limit')
+        if api and local_moment.hour < 20 and hourly_available is not None and hourly_limit:
+            batch_available = hourly_available - hourly_reserve + hourly_limit
+            if daily_available is not None:
+                batch_available = min(batch_available, daily_available - daily_reserve)
         needed = steps if can_reply and not (x_discovery or x_follow) else 1
-        if available < needed:
+        if batch_available < needed:
             continue
         next_allowed = cadence.get('next_allowed_at')
         # Les réponses reçues sont mises en file avec le délai calculé par RS-Max. Les gestes de
@@ -203,7 +213,10 @@ def snapshot(client, now=None, lane=None):
         inbox = client.api('GET', f"accounts/{account['id']}/inbox?" + urlencode({
             'order': pending_inbox_order(platform), 'limit': inbox_limit, 'status': 'unanswered', 'agent_queue': 1,
         })) if can_reply else {}
-        items = [{'id':i['id'], 'content':i['content'], 'posted_at':i.get('posted_at'), 'post_url':i.get('post_url'), 'post_content':i.get('post_content')} for i in inbox.get('items', []) if i.get('can_reply')]
+        items = [
+            {'id': item['id']} if lane else {key: item.get(key) for key in ('id', 'content', 'posted_at', 'post_url', 'post_content')}
+            for item in inbox.get('items', []) if item.get('can_reply')
+        ]
         if x_discovery or x_follow:
             reserve = steps if items else 0
             can_feed = False
@@ -228,8 +241,6 @@ def snapshot(client, now=None, lane=None):
                 can_feed = True
             if available < steps:
                 items = []
-        if lane:
-            items = [{'id': item['id']} for item in items]
         if items or can_feed:
             reply_limit = 0
             if platform == 'twitter' and items:
@@ -241,7 +252,7 @@ def snapshot(client, now=None, lane=None):
             if tiktok and items:
                 reply_limit = min(TIKTOK_MAX_REPLIES, len(items), actions.get('reply', {}).get('left', 0))
             work.append({'platform':account['platform'], 'account_id':account['id'], 'strategy':model_strategy(account.get('strategy', {})), 'items':items,
-                         'persona':account.get('persona'),'auto_like':auto_like,'executor':'api' if api else 'browser', 'threads_discovery':threads_discovery, 'discovery_plan':'priority_threads' if discovery_plan else None, 'remaining':cadence.get('remaining'), 'daily_remaining':cadence.get('daily', {}).get('remaining'), 'batch_max':int(min(reply_limit * steps, available) // steps), 'next_publication_at':upcoming})
+                         'persona':account.get('persona'),'auto_like':auto_like,'executor':'api' if api else 'browser', 'threads_discovery':threads_discovery, 'discovery_plan':'priority_threads' if discovery_plan else None, 'remaining':cadence.get('remaining'), 'daily_remaining':cadence.get('daily', {}).get('remaining'), 'batch_max':int(min(reply_limit * steps, batch_available) // steps), 'next_publication_at':upcoming})
             if discovery_plan:
                 explorations.append(discovery_plan)
     discovery_first=[a for a in work if a['threads_discovery']]
@@ -255,7 +266,7 @@ def snapshot(client, now=None, lane=None):
     cycle_seconds = 120 if lane == 'x' else 300
     # L'heure locale évite au modèle un appel `date` ; elle ne change le hachage que dans l'état work,
     # que cycle_key fait déjà changer à chaque créneau.
-    local = now.astimezone(ZoneInfo('Europe/Lisbon')).strftime('%Y-%m-%d %H:%M')
+    local = local_moment.strftime('%Y-%m-%d %H:%M')
     return {'state':'work','now_lisbon':local,'cycle_key':int(now.timestamp())//cycle_seconds,'accounts':work,'priority_threads':explorations,'priority_x':x_explorations,'priority_x_follow':x_follows,'priority_feed_drafts':x_feed_drafts,'priority_tiktok':tiktok_explorations} if work or x_explorations or x_follows or x_feed_drafts or tiktok_explorations else {'state':'idle'}
 
 

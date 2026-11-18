@@ -411,6 +411,20 @@ class XWatchTest(unittest.TestCase):
                 self.assertEqual(result['accounts'][0]['batch_max'], target)
                 self.assertEqual(len(result['accounts'][0]['items']), candidates)
 
+    def test_facebook_peut_etaler_le_lot_sur_deux_heures_de_cadence_avant_vingt_heures(self):
+        account = self.account(60)
+        account.update(platform='facebook', driver='api', persona=5, api_ready=True)
+        account['cadence'].update(limit=60, daily={'remaining': 300})
+        account['actions'] = {'reply': {'left': 100}, 'comment.like': {'left': 100}}
+        items = [{'id': ident, 'can_reply': True} for ident in range(60)]
+        for hour, expected in ((12, 60), (21, 30)):
+            with self.subTest(hour=hour):
+                now = dt.datetime(2026, 11, 8, hour, tzinfo=dt.timezone.utc)
+                client = Mock()
+                client.api.side_effect = [{'daytime': True, 'accounts': [account]}, {'items': items}]
+                result = watch.snapshot(client, now, lane='api')
+                self.assertEqual(result['accounts'][0]['batch_max'], expected)
+
     def test_la_file_api_ne_precharge_ni_x_ni_tiktok(self):
         now = dt.datetime.fromisoformat('2026-11-08T12:00:00+00:00')
         x = self.account()
