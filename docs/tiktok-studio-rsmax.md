@@ -74,3 +74,16 @@ Studio d'un téléphone (worker `android/`, voir `android/README.md`). Chercher 
 - Lecture de Studio : TalkBack allumé quelques secondes rend les textes de la liste lisibles (Lynx ne les publie
   qu'avec un lecteur d'écran actif), emojis compris ; OCR en repli.
 - Tests : `tests/Feature/PhoneInboxReplyTest.php`, `android/qa/test_android.py` (`SweepTest`, `StudioAccessibilityTest`).
+
+## Likes de commentaires dans « Pour toi » sur téléphone
+
+La fiche du compte conserve le profil Companion du NAS pour l'inbox et les publications. Le réglage
+`tiktok_home_like_phone_profiles` associe l'identifiant du compte au profil Android dans un objet JSON.
+Sur ces comptes, la découverte TikTok générique d'Hermès est désactivée via l'action `feed.read`.
+Le script dédié lit « Pour toi » sur Android et n'ouvre que des vidéos trouvées dans son relevé.
+
+`tiktok:home-likes` affiche le plan sans ouvrir TikTok. Le planificateur l'exécute à 8 h 10, 12 h 10, 16 h 10,
+18 h 10 et 21 h 10 à Lisbonne. Chaque passage autorise jusqu'à 60 demandes, dans le quota de 300 par jour
+et la cadence du compte. Dans `browser_tasks`, les gestes portent le profil Android, le type
+`tiktok.comment.like` et une clé préfixée `tiktok-home-like:`. Pour compter un nouveau like, exiger le reçu
+après rechargement et écarter `already_liked` et les gestes incertains.

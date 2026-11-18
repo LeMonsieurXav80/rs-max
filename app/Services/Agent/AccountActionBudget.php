@@ -35,10 +35,17 @@ class AccountActionBudget
                     throw new BrowserException('Quota quotidien atteint : aucun geste effectué.');
                 }
             }
-            if ($account->platform->slug === 'tiktok' && in_array($action, ['tiktok.reply', 'tiktok.photo.publish'], true)) {
+            if ($account->platform->slug === 'tiktok' && in_array($action, ['tiktok.reply', 'tiktok.photo.publish', 'tiktok.comment.like'], true)) {
                 $setting = $account->agentActions()->where('action', substr($action, 7))->first();
+                if ($action === 'tiktok.comment.like' && ! $setting?->enabled) {
+                    throw new BrowserException('Likes de commentaires TikTok désactivés : aucun geste effectué.');
+                }
                 if ($setting && (clone $events)->where('action', $action)->where('created_at', '>=', $this->dayStart())->count() >= $setting->daily_limit) {
-                    throw new BrowserException($action === 'tiktok.reply' ? 'Quota quotidien de réponses TikTok atteint : aucun geste effectué.' : 'Quota quotidien de photos TikTok atteint : aucun geste effectué.');
+                    throw new BrowserException(match ($action) {
+                        'tiktok.reply' => 'Quota quotidien de réponses TikTok atteint : aucun geste effectué.',
+                        'tiktok.photo.publish' => 'Quota quotidien de photos TikTok atteint : aucun geste effectué.',
+                        default => 'Quota quotidien de likes de commentaires TikTok atteint : aucun geste effectué.',
+                    });
                 }
             }
             if (in_array($account->platform->slug, ApiInboxActions::PLATFORMS, true) && str_starts_with($action, $account->platform->slug.'.')) {
@@ -99,7 +106,7 @@ class AccountActionBudget
     public function finish(BrowserTask $task): void
     {
         app(AutomationJournal::class)->task($task);
-        $status = $task->status === 'done' ? (($task->result['confirmed'] ?? null) === true ? (($task->result['unchanged'] ?? false) ? 'unchanged' : 'confirmed') : 'completed') : $task->status;
+        $status = $task->status === 'done' ? (($task->result['confirmed'] ?? null) === true ? (($task->result['unchanged'] ?? $task->result['already_liked'] ?? false) ? 'unchanged' : 'confirmed') : 'completed') : $task->status;
         $updated = AccountActionEvent::where('browser_task_id', $task->id)->where('status', '!=', $status)
             ->update(['status' => $status, 'error' => $task->error, 'updated_at' => now()]);
         if ($updated && ($adjustment = app(AdaptiveAccountLimits::class)->evaluate($task->socialAccount))) {

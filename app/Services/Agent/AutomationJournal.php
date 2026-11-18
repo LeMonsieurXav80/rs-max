@@ -21,7 +21,7 @@ class AutomationJournal
         $p = $task->payload ?? [];
         $result = $task->result ?? [];
         $rawStatus = $task->status ?? 'pending';
-        $status = $rawStatus === 'done' ? (($result['confirmed'] ?? false) ? (($result['unchanged'] ?? false) ? 'unchanged' : 'confirmed') : 'completed') : $rawStatus;
+        $status = $rawStatus === 'done' ? (($result['confirmed'] ?? false) ? (($result['unchanged'] ?? $result['already_liked'] ?? false) ? 'unchanged' : 'confirmed') : 'completed') : $rawStatus;
         $log = BotActionLog::firstOrNew(['browser_task_id' => $task->id]);
         $metadata = array_replace($log->metadata ?? [], ['status' => $status, 'task_kind' => $task->kind,
             'action' => $p['action'] ?? $task->kind, 'profile' => $task->profile,
@@ -236,7 +236,7 @@ class AutomationJournal
 
     public function proof(array $result): array
     {
-        $proof = array_intersect_key($result, array_flip(['confirmed', 'unchanged', 'gesture', 'proof', 'liked', 'send_clicked', 'initial_visible', 'target_found', 'pause_ms', 'input_mode', 'verification_source', 'comment_id', 'id', 'post_id', 'reply_id', 'parent_id', 'quote_id', 'media_count', 'visibility', 'upload_order_verified']));
+        $proof = array_intersect_key($result, array_flip(['confirmed', 'unchanged', 'already_liked', 'gesture', 'proof', 'liked', 'send_clicked', 'initial_visible', 'target_found', 'pause_ms', 'input_mode', 'verification_source', 'comment_id', 'id', 'post_id', 'reply_id', 'parent_id', 'quote_id', 'media_count', 'visibility', 'upload_order_verified']));
         $proof = array_filter($proof, fn ($value) => is_scalar($value));
         $proof = array_map(fn ($value) => is_string($value) ? $this->text($value, 120) : $value, $proof);
         foreach (['post_url', 'reply_url'] as $key) {

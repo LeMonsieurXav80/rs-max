@@ -40,7 +40,7 @@ class BrowserTaskQueue
     }
 
     /** @return array<string, mixed> Résultat de la tâche. */
-    public function run(SocialAccount $account, string $kind, array $payload, int $timeout = 120): array
+    public function run(SocialAccount $account, string $kind, array $payload, int $timeout = 120, ?string $profile = null): array
     {
         $window = app(CommunityManagerWindow::class);
         if (app()->bound('request') && request()->attributes->get('community_manager')) {
@@ -53,8 +53,8 @@ class BrowserTaskQueue
             throw new BrowserException('Aucun profil navigateur pour ce compte.');
         }
 
-        $task = DB::transaction(function () use ($account, $kind, $payload) {
-            $key = in_array($kind, ['x.post', 'x.like', 'x.repost', 'tiktok.publish'], true) ? ($payload['publication_key'] ?? null) : null;
+        $task = DB::transaction(function () use ($account, $kind, $payload, $profile) {
+            $key = in_array($kind, ['x.post', 'x.like', 'x.repost', 'tiktok.publish', 'tiktok.comment.like'], true) ? ($payload['publication_key'] ?? null) : null;
             if ($key !== null) {
                 // Verrou du compte, même quand la ligne de tâche n'existe pas encore.
                 $lockedAccount = SocialAccount::whereKey($account->id)->lockForUpdate()->firstOrFail();
@@ -84,7 +84,7 @@ class BrowserTaskQueue
 
             return BrowserTask::create([
                 'social_account_id' => $account->id, 'idempotency_key' => $key,
-                'profile' => $account->profileFor($kind, $payload), 'kind' => $kind, 'payload' => $payload,
+                'profile' => $profile ?? $account->profileFor($kind, $payload), 'kind' => $kind, 'payload' => $payload,
             ]);
         });
 

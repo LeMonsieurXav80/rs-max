@@ -105,6 +105,7 @@ Schedule::command('tiktok:scripted-inbox --commit')->cron('50 7,11,15,17,20 * * 
 Schedule::command('inbox:scripted --commit')->cron('50 7,11,15,17,20 * * *')->timezone('Europe/Lisbon')->withoutOverlapping(10);
 // Réponses et likes du téléphone faits en un passage dans Studio, une fois la salve d'Hermès terminée (2 min de calme).
 Schedule::command('tiktok:phone-sweep')->everyTwoMinutes()->withoutOverlapping(5);
+Schedule::command('tiktok:home-likes --commit')->cron('10 8,12,16,18,21 * * *')->timezone('Europe/Lisbon')->runInBackground()->withoutOverlapping(90);
 // Threads décalé de 10 min : le profil du NAS est partagé avec TikTok et Planète de Caro.
 Schedule::command('threads:feed-engage --all --commit')->cron('10-59/20 * * * *')->withoutOverlapping(30);
 // Même source pour les statistiques et le miroir des publications natives TikTok.

@@ -37,8 +37,8 @@ class AgentCatalog
             return \App\Models\AccountActionEvent::where('social_account_id', $account->id)->where('action', 'tiktok.photo.publish')->where('created_at', '>=', app(AccountActionBudget::class)->dayStart())->count()
                 + \App\Models\BrowserTask::where('social_account_id', $account->id)->where('kind', 'tiktok.photo.publish')->where('status', 'pending')->where('payload->dry', false)->count();
         }
-        if ($account->platform->slug === 'tiktok' && $action === 'reply') {
-            return \App\Models\AccountActionEvent::where('social_account_id', $account->id)->where('action', 'tiktok.reply')->where('created_at', '>=', app(AccountActionBudget::class)->dayStart())->count();
+        if ($account->platform->slug === 'tiktok' && in_array($action, ['reply', 'comment.like'], true)) {
+            return \App\Models\AccountActionEvent::where('social_account_id', $account->id)->where('action', 'tiktok.'.$action)->where('created_at', '>=', app(AccountActionBudget::class)->dayStart())->count();
         }
 
         if ($account->platform->slug === 'twitter' && in_array($action, \App\Models\XEngagement::ACTIONS, true)) {
