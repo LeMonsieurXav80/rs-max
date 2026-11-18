@@ -94,6 +94,22 @@ class RunBotActions extends Command
                 if (($result['reposts'] ?? 0) > 0) {
                     $parts[] = "Reposts: {$result['reposts']}";
                 }
+                if (isset($result['follows'])) {
+                    $parts[] = "Follows: {$result['follows']}";
+                    $summary = array_intersect_key($result, array_flip(['posts_read', 'profiles_checked', 'feed_likes', 'comment_likes', 'reposts', 'follows']));
+                    $detail = isset($summary['posts_read'])
+                        ? sprintf('%d publications lues, %d profils vérifiés.', $summary['posts_read'], $summary['profiles_checked'])
+                        : 'Aucune lecture du flux.';
+                    \App\Models\BotActionLog::create([
+                        'social_account_id' => $account->id, 'action_type' => 'bluesky.feed.run', 'source' => 'api', 'target_uri' => 'https://bsky.app/',
+                        'success' => ! isset($result['error']), 'error' => $result['error'] ?? null, 'performed_at' => now(),
+                        'metadata' => ['status' => isset($result['error']) ? 'failed' : 'completed', 'summary' => $summary,
+                            'steps' => [['stage' => 'bluesky.feed.summary', 'details' => ['message' => $detail.sprintf(
+                                ' %d likes de publication, %d likes de commentaire, %d republications, %d abonnements.',
+                                $summary['feed_likes'], $summary['comment_likes'], $summary['reposts'], $summary['follows']
+                            )]]]],
+                    ]);
+                }
                 if (($result['unfollows'] ?? 0) > 0) {
                     $parts[] = "Unfollows: {$result['unfollows']}";
                 }

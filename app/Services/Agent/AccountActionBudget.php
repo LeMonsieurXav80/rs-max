@@ -24,9 +24,9 @@ class AccountActionBudget
             if (in_array($action, RepostCadence::ACTIONS, true) && app(RepostCadence::class)->nextAllowedAt($account)) {
                 throw new BrowserException('Délai minimal entre republications non écoulé.');
             }
-            if (in_array($action, ['bluesky.like', 'bluesky.repost'], true) && $target
+            if (in_array($action, ['bluesky.like', 'bluesky.repost', 'bluesky.follow'], true) && $target
                 && (clone $events)->where('action', $action)->where('target', $target)->exists()) {
-                throw new BrowserException('Ce geste Bluesky a déjà été réservé pour cette publication.');
+                throw new BrowserException('Ce geste Bluesky a déjà été réservé pour cette cible.');
             }
             if ($account->platform->slug === 'twitter' && str_starts_with($action, 'x.')) {
                 $key = substr($action, 2);

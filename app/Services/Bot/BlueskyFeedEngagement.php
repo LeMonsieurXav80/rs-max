@@ -3,6 +3,7 @@
 namespace App\Services\Bot;
 
 use App\Models\AccountActionEvent;
+use App\Models\BotActionLog;
 use App\Models\Setting;
 use App\Models\SocialAccount;
 use App\Services\Adapters\BlueskyAdapter;
@@ -35,7 +36,7 @@ final class BlueskyFeedEngagement
     public function run(SocialAccount $account, string $did, PendingRequest $api): array
     {
         $result = ['total_likes' => 0, 'terms_processed' => 0, 'likeback_likes' => 0,
-            'feed_likes' => 0, 'comment_likes' => 0, 'reposts' => 0];
+            'feed_likes' => 0, 'comment_likes' => 0, 'reposts' => 0, 'follows' => 0, 'profiles_checked' => 0];
         if ($did !== $account->platform_account_id) {
             return $result + ['error' => 'Identité Bluesky divergente.'];
         }
@@ -48,7 +49,8 @@ final class BlueskyFeedEngagement
         $likes = $likeEnabled ? min($actions['like']['left'], (int) Setting::get("bot_feed_likes_max_bluesky_{$account->id}", 2)) : 0;
         $repost = $actions['repost']['enabled'] && $actions['repost']['left'] > 0
             && $this->reposts->hours($account) > 0 && $this->reposts->nextAllowedAt($account) === null;
-        if ($likes < 1 && ! $repost) {
+        $follows = $actions['follow']['enabled'] ? $actions['follow']['left'] : 0;
+        if ($likes < 1 && ! $repost && $follows < 1) {
             return $result;
         }
 
@@ -64,6 +66,7 @@ final class BlueskyFeedEngagement
 
         $strategy = $account->agent_strategy ?? [];
         $matcher = new FeedMatcher($strategy);
+        $result['posts_read'] = count($response->json('feed', []));
         // Un commentaire reste dans le thème du fil, mais peut ajouter un détail sans répéter son mot-clé.
         $directComments = [];
         $posts = [];
@@ -76,7 +79,7 @@ final class BlueskyFeedEngagement
             $posts[$post['uri']] = $post;
         }
 
-        if ($likes > 0) {
+        if ($likes > 0 || $follows > 0) {
             foreach (array_slice(array_filter($posts, fn ($post) => ($post['replyCount'] ?? 0) > 0), 0, 3) as $post) {
                 try {
                     $thread = $api->get($root.'app.bsky.feed.getPostThread', ['uri' => $post['uri'], 'depth' => 1, 'parentHeight' => 0]);
@@ -93,6 +96,9 @@ final class BlueskyFeedEngagement
                     }
                 }
             }
+        }
+
+        if ($likes > 0) {
             // Chercher une réaction dans chacun des deux types de contenu, avec un seul compteur.
             $firstPost = array_slice(array_filter($posts, fn ($p) => empty($p['viewer']['like'])), 0, 1, true);
             foreach ($firstPost + $directComments + $posts as $uri => $post) {
@@ -106,6 +112,7 @@ final class BlueskyFeedEngagement
                         $result[isset($directComments[$uri]) ? 'comment_likes' : 'feed_likes']++;
                     } else {
                         $repost = false;
+                        $follows = 0;
                         break;
                     }
                 }
@@ -122,14 +129,79 @@ final class BlueskyFeedEngagement
                 $event = $this->react($account, $api, $root, $did, 'repost', $post);
                 if ($event) {
                     $result['reposts'] = (int) ($event->status === 'confirmed');
+                    if (! $result['reposts']) {
+                        $follows = 0;
+                    }
                     break;
                 }
             }
         }
 
+        if ($follows > 0 && ! $this->stopped($account)) {
+            $result = array_replace($result, $this->followRelevantProfiles($account, $api, $root, $did, $matcher, $posts + $directComments, $follows));
+        }
+
         $result['total_likes'] = $result['feed_likes'] + $result['comment_likes'];
 
         return $result;
+    }
+
+    private function followRelevantProfiles(SocialAccount $account, PendingRequest $api, string $root, string $did, FeedMatcher $matcher, array $posts, int $limit): array
+    {
+        $seen = [];
+        $confirmed = $checked = 0;
+        foreach ($posts as $post) {
+            if ($confirmed >= $limit || $this->stopped($account) || $this->budget->usage($account)['daily']['remaining'] === 0) {
+                break;
+            }
+            $author = $post['author'];
+            $subject = $author['did'];
+            $keywords = $matcher->keywordHits($post['record']['text']);
+            $configured = $matcher->isTarget($author['handle']);
+            if (! preg_match('/^did:[a-z0-9]+:[a-zA-Z0-9._:%-]+$/D', $subject)
+                || isset($seen[$subject]) || (! $configured && $keywords === [])) {
+                continue;
+            }
+            $seen[$subject] = true;
+            $target = 'https://bsky.app/profile/'.$subject;
+            if (AccountActionEvent::where('social_account_id', $account->id)->where('action', 'bluesky.follow')->where('target', $target)->exists()) {
+                continue;
+            }
+            $checked++;
+            try {
+                $profile = $api->get($root.'app.bsky.actor.getProfile', ['actor' => $subject]);
+            } catch (ConnectionException) {
+                break;
+            }
+            $viewer = $profile->json('viewer');
+            $description = (string) $profile->json('description', '');
+            if (! $profile->successful() || $profile->json('did') !== $subject || $profile->json('handle') !== $author['handle']
+                || ! is_array($viewer) || ! empty($viewer['following']) || ! empty($viewer['blocking']) || ! empty($viewer['blockedBy'])
+                || ! empty($viewer['muted']) || ! empty($profile->json('labels')) || $matcher->excludedBy($description, $author['handle']) !== null) {
+                continue;
+            }
+            $event = $this->react($account, $api, $root, $did, 'follow', $post);
+            if (! $event) {
+                break;
+            }
+            $log = BotActionLog::where('account_action_event_id', $event->id)->first();
+            $confirmedFollow = $event->status === 'confirmed';
+            $postUrl = BlueskyAdapter::buildPostUrl($subject, $post['uri']);
+            $log?->update(['target_author' => $author['handle'], 'metadata' => ($log->metadata ?? []) + [
+                'selection' => ['source' => 'home', 'keywords' => $keywords, 'configured_target' => $configured, 'post_url' => $postUrl],
+                'proof' => ['confirmed' => $confirmedFollow, 'proof' => $confirmedFollow ? 'api_readback' : null],
+                'steps' => [['stage' => 'bluesky.follow.selection', 'details' => [
+                    'url' => $postUrl,
+                    'message' => $configured ? 'Compte cible configuré' : 'Ciblage Accueil : '.implode(', ', $keywords),
+                ]]],
+            ]]);
+            if (! $confirmedFollow) {
+                break;
+            }
+            $confirmed++;
+        }
+
+        return ['follows' => $confirmed, 'profiles_checked' => $checked];
     }
 
     private function eligible(array $post, string $did, FeedMatcher $matcher, bool $requireKeyword): bool
@@ -156,14 +228,15 @@ final class BlueskyFeedEngagement
             return null;
         }
         try {
-            $url = BlueskyAdapter::buildPostUrl($post['author']['did'], $post['uri']);
+            $url = $action === 'follow' ? 'https://bsky.app/profile/'.$post['author']['did']
+                : BlueskyAdapter::buildPostUrl($post['author']['did'], $post['uri']);
             $event = $this->budget->reserve($account, 'bluesky.'.$action, 'api', $url);
         } catch (BrowserException) {
             return null;
         }
 
-        $collection = 'app.bsky.feed.'.$action;
-        $subject = ['uri' => $post['uri'], 'cid' => $post['cid']];
+        $collection = $action === 'follow' ? 'app.bsky.graph.follow' : 'app.bsky.feed.'.$action;
+        $subject = $action === 'follow' ? $post['author']['did'] : ['uri' => $post['uri'], 'cid' => $post['cid']];
         try {
             $response = $api->post($root.'com.atproto.repo.createRecord', [
                 'repo' => $did, 'collection' => $collection,
@@ -179,8 +252,9 @@ final class BlueskyFeedEngagement
             $proof = $uri !== '' ? $api->get($root.'com.atproto.repo.getRecord', [
                 'repo' => $did, 'collection' => $collection, 'rkey' => basename($uri),
             ]) : null;
-            $confirmed = $proof?->successful() && $proof->json('value.subject.uri') === $subject['uri']
-                && $proof->json('value.subject.cid') === $subject['cid'];
+            $confirmed = $proof?->successful() && ($action === 'follow'
+                ? $proof->json('value.subject') === $subject
+                : $proof->json('value.subject.uri') === $subject['uri'] && $proof->json('value.subject.cid') === $subject['cid']);
             $event->update(['status' => $confirmed ? 'confirmed' : 'uncertain',
                 'error' => $confirmed ? null : 'Geste Bluesky absent à la relecture.']);
         } catch (ConnectionException) {

@@ -54,6 +54,7 @@ return [
             'repost' => ['label' => 'Reposter depuis le flux (mode limité)', 'kind' => 'write', 'channel' => 'api', 'status' => 'ready', 'limit' => 1],
             'likes' => ['label' => 'Likes', 'kind' => 'write', 'channel' => 'api', 'status' => 'engine'],
             'comments' => ['label' => 'Commentaires', 'kind' => 'write', 'channel' => 'api', 'status' => 'engine'],
+            'follow' => ['label' => 'Suivre un profil pertinent du flux (mode limité)', 'kind' => 'write', 'channel' => 'api', 'status' => 'ready', 'limit' => 10],
             'follows' => ['label' => 'Abonnements', 'kind' => 'write', 'channel' => 'api', 'status' => 'engine'],
             'prospect' => ['label' => 'Prospection', 'kind' => 'write', 'channel' => 'api', 'status' => 'engine'],
         ]],
