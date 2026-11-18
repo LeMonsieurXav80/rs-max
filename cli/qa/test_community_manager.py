@@ -267,4 +267,45 @@ class CommunityManagerTest(unittest.TestCase):
             with self.assertRaises(ValueError):
                 run('replies','--json','[{"id":13,"context":"c3","text":" "}]','--commit',side=[])
 
+    def test_le_lot_de_contextes_poursuit_apres_trois_likes_seuls(self):
+        import contextlib, io, json
+        with tempfile.TemporaryDirectory() as tmp:
+            config = Path(tmp) / 'config.json'
+            config.write_text(json.dumps({'state_path': tmp + '/state.sqlite'}))
+            output = io.StringIO()
+            skip = cm.ApiError(409, {'skip_item': True, 'review_reason': 'not_relevant'})
+            context = {'item_id': 14, 'persona': {'instructions': 'Le persona'}}
+            with patch.object(cm, 'daytime', return_value=True), \
+                 patch.object(cm.Client, 'api', side_effect=[skip, skip, skip, context]) as api, \
+                 contextlib.redirect_stdout(output):
+                cm.main(['--config', str(config), 'reply-contexts', '--ids', '11', '12', '13', '14'])
+            data = json.loads(output.getvalue())
+            self.assertEqual(api.call_count, 4)
+            self.assertEqual([item['item_id'] for item in data['skipped']], [11, 12, 13])
+            self.assertEqual(data['items'], [{'item_id': 14}])
+            self.assertEqual(data['persona']['instructions'], 'Le persona')
+            self.assertEqual(data['errors'], [])
+
+    def test_le_lot_espace_les_envois_et_sarrete_si_la_preuve_manque(self):
+        import contextlib, io, json
+        with tempfile.TemporaryDirectory() as tmp:
+            config = Path(tmp) / 'config.json'
+            config.write_text(json.dumps({'state_path': tmp + '/state.sqlite'}))
+            output = io.StringIO()
+            batch = [{'id': ident, 'context': f'c{ident}', 'text': 'Une réponse'} for ident in (11, 12, 13)]
+            with patch.object(cm, 'daytime', return_value=True), \
+                 patch.object(cm.Client, 'api', return_value={'queued': True}) as api, \
+                 patch.object(cm.Client, 'reply_status', side_effect=[
+                     {'replied_at': '2026-11-18T12:01:00Z', 'liked_at': '2026-11-18T12:02:00Z'},
+                     {'status': 'read'},
+                 ]) as status, contextlib.redirect_stdout(output):
+                cm.main(['--config', str(config), 'replies', '--json', json.dumps(batch), '--paced', '--commit'])
+            data = json.loads(output.getvalue())
+            self.assertEqual(api.call_count, 2)
+            self.assertEqual([call.args[0] for call in status.call_args_list], [11, 12])
+            self.assertEqual(data['confirmed'], 1)
+            self.assertEqual(data['queued'], 1)
+            self.assertEqual(data['not_requested'], [13])
+
+
 if __name__=='__main__': unittest.main()
