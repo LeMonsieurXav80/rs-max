@@ -33,7 +33,7 @@ class AgentActionsTest extends TestCase
         {
             public function __construct(private ?array $result, private bool $fails) {}
 
-            public function run(SocialAccount $account, string $kind, array $payload, int $timeout = 120): array
+            public function run(SocialAccount $account, string $kind, array $payload, int $timeout = 120, ?string $profile = null): array
             {
                 if ($this->fails) {
                     throw new BrowserException('Navigateur du VPS injoignable.');

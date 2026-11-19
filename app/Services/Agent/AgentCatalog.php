@@ -41,9 +41,14 @@ class AgentCatalog
             return \App\Models\AccountActionEvent::where('social_account_id', $account->id)->where('action', 'tiktok.'.$action)->where('created_at', '>=', app(AccountActionBudget::class)->dayStart())->count();
         }
 
-        if ($account->platform->slug === 'twitter' && in_array($action, \App\Models\XEngagement::ACTIONS, true)) {
-            return \App\Models\AccountActionEvent::where('social_account_id', $account->id)->where('action', 'x.'.$action)->where('created_at', '>=', app(AccountActionBudget::class)->dayStart())->count()
-                + \App\Models\XEngagement::where('social_account_id', $account->id)->where('action', $action)->where('status', 'queued')->where('requested_at', '>=', app(AccountActionBudget::class)->dayStart())->count();
+        if ($account->platform->slug === 'twitter' && in_array($action, [...\App\Models\XEngagement::ACTIONS, 'comment.like'], true)) {
+            $queued = \App\Models\XEngagement::where('social_account_id', $account->id)
+                ->where('action', $action === 'comment.like' ? 'like' : $action)->where('status', 'queued')
+                ->where('requested_at', '>=', app(AccountActionBudget::class)->dayStart())->get(['action', 'payload'])
+                ->filter(fn ($row) => XEngagementService::budgetAction($account, ['action' => $row->action] + $row->payload) === $action)->count();
+
+            return \App\Models\AccountActionEvent::where('social_account_id', $account->id)->where('action', 'x.'.$action)
+                ->where('created_at', '>=', app(AccountActionBudget::class)->dayStart())->count() + $queued;
         }
 
         return BotActionLog::where('social_account_id', $account->id)

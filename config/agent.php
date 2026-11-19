@@ -25,6 +25,7 @@ return [
             'mentions.read' => ['label' => 'Lire les mentions', 'kind' => 'read', 'channel' => 'browser', 'status' => 'ready', 'limit' => 1000],
             'reply' => ['label' => 'Répondre aux commentaires', 'kind' => 'write', 'channel' => 'browser', 'status' => 'ready', 'limit' => 10],
             'like' => ['label' => 'Aimer', 'kind' => 'write', 'channel' => 'browser', 'status' => 'ready', 'limit' => 30],
+            'comment.like' => ['label' => 'Aimer les commentaires des publications', 'kind' => 'write', 'channel' => 'browser', 'status' => 'ready', 'limit' => 150],
             'feed.read' => ['label' => 'Lire le flux', 'kind' => 'read', 'channel' => 'browser', 'status' => 'ready', 'limit' => 1000],
             'search.read' => ['label' => 'Rechercher des posts', 'kind' => 'read', 'channel' => 'browser', 'status' => 'ready', 'limit' => 1000],
             'thread.read' => ['label' => 'Lire une conversation', 'kind' => 'read', 'channel' => 'browser', 'status' => 'ready', 'limit' => 1000],

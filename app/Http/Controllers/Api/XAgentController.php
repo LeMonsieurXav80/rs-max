@@ -208,7 +208,6 @@ class XAgentController extends Controller
         abort_unless(app(CommunityManagerWindow::class)->isOpen(), 423, 'Community Manager travaille de 06 h à 22 h à Lisbonne.');
         $data = $r->validate(['action' => ['required', Rule::in(XEngagement::ACTIONS)], 'snapshot_id' => 'required|uuid',
             'target_id' => 'nullable|string|regex:/^[0-9]+$/', 'context_id' => 'nullable|uuid', 'text' => 'nullable|string|max:5000']);
-        $this->enabled($a, $data['action']);
         $s = $this->snapshot($a, $data['snapshot_id']);
         $profile = in_array($data['action'], ['follow', 'unfollow'], true);
         $posts = isset($s['result']['target']) ? [$s['result']['target']] : ($s['result']['items'] ?? []);
@@ -220,6 +219,16 @@ class XAgentController extends Controller
         }
         $target = $profile ? ($s['result']['profile'] ?? null) : collect($posts)->firstWhere('id', $data['target_id'] ?? '');
         abort_unless($target, 422, 'Cible absente de la lecture.');
+        if (! $profile && isset($s['result']['target'])) {
+            $root = $s['result']['conversation'][0]['id'] ?? null;
+            $replyIds = array_column($s['result']['visible_replies'] ?? [], 'id');
+            $conversationIds = array_column(array_slice($s['result']['conversation'] ?? [], 1), 'id');
+            if (in_array($target['id'], [...$replyIds, ...$conversationIds], true)
+                || ($root !== null && $root !== $target['id'] && $target['id'] === $s['result']['target']['id'])) {
+                $target['reply_hint'] = true;
+            }
+        }
+        $this->enabled($a, XEngagementService::budgetAction($a, ['action' => $data['action'], 'target' => $target]));
         if ($data['action'] === 'repost' && app(\App\Services\Agent\RepostCadence::class)->hours($a) > 0) {
             $author = (string) ($target['author'] ?? '');
             $text = trim((string) ($target['text'] ?? ''));

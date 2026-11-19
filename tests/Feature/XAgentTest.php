@@ -126,6 +126,33 @@ class XAgentTest extends TestCase
             ->assertUnprocessable();
     }
 
+    public function test_les_likes_de_commentaires_ont_un_quota_distinct_et_un_recu_durable(): void
+    {
+        app(AgentCatalog::class)->configure($this->a, 'like', true, 0);
+        app(AgentCatalog::class)->configure($this->a, 'comment.like', true, 1);
+        $snapshot = (string) \Illuminate\Support\Str::uuid();
+        $comment = ['id' => '990', 'author' => 'fan', 'text' => 'Un conseil utile', 'published_at' => now()->toIso8601String()];
+        Cache::put('x-agent-snapshot:'.$snapshot, ['account_id' => $this->a->id, 'source' => [],
+            'result' => ['target' => $this->target(), 'conversation' => [$this->target()],
+                'context_complete' => true, 'visible_replies' => [$comment, ['id' => '991', 'author' => 'fan2', 'text' => 'Autre conseil']]]], now()->addHour());
+        $like = $this->prepare($snapshot, 'like', ['target_id' => '990']);
+        $this->assertTrue($like->payload['target']['reply_hint']);
+        $this->execute($like);
+        $catalog = app(AgentCatalog::class)->forAccount($this->a);
+        $this->assertSame(1, $catalog['comment.like']['used']);
+        $this->assertSame(0, $catalog['like']['used']);
+        $task = app(BrowserTaskQueue::class)->claim('nas-test');
+        $this->assertNotNull($task);
+        $this->assertDatabaseHas('account_action_events', ['browser_task_id' => $task->id, 'action' => 'x.comment.like']);
+        $this->finish($task, ['confirmed' => true, 'proof' => 'after_reload', 'target' => $comment]);
+        $this->assertSame('confirmed', $like->fresh()->status);
+        $this->assertSame(1, app(AgentCatalog::class)->forAccount($this->a)['comment.like']['used']);
+        $this->postJson($this->url('prepare'), ['snapshot_id' => $snapshot, 'action' => 'like', 'target_id' => '991'])->assertStatus(429);
+        $this->postJson($this->url('prepare'), ['snapshot_id' => $snapshot, 'action' => 'like', 'target_id' => '987'])->assertStatus(429);
+        app(AgentCatalog::class)->configure($this->a, 'like', true, 1);
+        $this->postJson($this->url('prepare'), ['snapshot_id' => $snapshot, 'action' => 'like', 'target_id' => '987'])->assertCreated();
+    }
+
     public function test_le_catalogue_n_est_journalise_qu_une_fois_par_demi_heure(): void
     {
         $this->getJson('/api/community-manager/accounts')->assertOk();

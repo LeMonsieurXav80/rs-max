@@ -15,6 +15,15 @@ use Illuminate\Support\Facades\DB;
 
 class XEngagementService
 {
+    /** Un compte sans quota distinct garde son compteur historique de likes. */
+    public static function budgetAction(SocialAccount $account, array $payload): string
+    {
+        $action = $payload['action'];
+
+        return $action === 'like' && ($payload['target']['reply_hint'] ?? false) === true
+            && $account->agentActions()->where('action', 'comment.like')->exists() ? 'comment.like' : $action;
+    }
+
     public function reserveCompanionReaction(SocialAccount $account, string $username, array $target, string $action): XEngagement
     {
         $key = hash('sha256', $target['handle'] ?? $target['id']);
@@ -127,7 +136,7 @@ class XEngagementService
             $row = XEngagement::whereKey($row->id)->lockForUpdate()->firstOrFail();
             abort_unless($row->status === 'prepared' && $row->browser_task_id === null, 409, 'Action déjà demandée : consulter son résultat, sans renvoi.');
             $this->assertAccount($row, $account);
-            $state = app(AgentCatalog::class)->forAccount($account)->get($row->action);
+            $state = app(AgentCatalog::class)->forAccount($account)->get(self::budgetAction($account, $row->payload));
             abort_unless($state && $state['status'] === 'ready' && $state['enabled'], 403, 'Action désactivée.');
             abort_if($state['left'] < 1, 429, 'Quota quotidien atteint.');
             if (in_array($row->action, ['repost', 'quote'], true) && app(RepostCadence::class)->hours($account) > 0) {
@@ -278,7 +287,7 @@ class XEngagementService
             abort_unless($row->status === 'queued', 409);
             abort_if(now()->greaterThan($task->payload['deadline']), 409, 'Action périmée.');
             $this->assertAccount($row, $row->socialAccount);
-            $state = app(AgentCatalog::class)->forAccount($row->socialAccount)->get($row->action);
+            $state = app(AgentCatalog::class)->forAccount($row->socialAccount)->get(self::budgetAction($row->socialAccount, $row->payload));
             abort_unless($state && $state['enabled'] && $state['status'] === 'ready', 403, 'Action désactivée.');
             $row->update(['status' => 'running']);
         } catch (\Throwable $e) {

@@ -14,6 +14,26 @@ class XWatchTest(unittest.TestCase):
         return {'id':11, 'platform':'twitter','driver':'browser','session':'connected','actions':{'reply':{'left':10},'like':{'left':40}},
                 'cadence':{'remaining':remaining,'next_allowed_at':None},'next_publication_at':next_post}
 
+    def test_les_commentaires_du_fil_autorisent_un_lot_de_cinq_gestes(self):
+        account = self.account()
+        account.update(persona=5, strategy={'discovery_interval_minutes': 10})
+        account['actions'].update({'feed.read': {'left': 50}, 'thread.read': {'left': 150}, 'comment.like': {'left': 150}})
+        client = Mock()
+        def api(method, path, *args, **kwargs):
+            if path == 'accounts':
+                return {'daytime': True, 'accounts': [account]}
+            if '/inbox?' in path:
+                return {'items': []}
+            return {'logs': []}
+        client.api.side_effect = api
+        result = watch.snapshot(client, dt.datetime.fromisoformat('2026-11-19T12:00:00+00:00'), lane='x')
+        plan = result['priority_x'][0]
+        self.assertIn('comment.like', plan['write_actions'])
+        self.assertEqual(5, plan['max_writes'])
+        account['actions']['comment.like']['left'] = 0
+        result = watch.snapshot(client, dt.datetime.fromisoformat('2026-11-19T12:00:00+00:00'), lane='x')
+        self.assertEqual(2, result['priority_x'][0]['max_writes'])
+
     def test_la_nuit_ne_declenche_aucune_lecture_reseau(self):
         c=Mock(); self.assertEqual(watch.snapshot(c,dt.datetime.fromisoformat('2026-11-07T23:00:00+00:00'))['state'],'sleep'); c.api.assert_not_called()
 

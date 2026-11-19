@@ -122,13 +122,13 @@ def snapshot(client, now=None, lane=None):
         facebook_like = platform == 'facebook' and 'comment.like' in actions and actions['comment.like'].get('enabled', True)
         auto_like = tiktok or platform == 'twitter' or facebook_like
         steps = 2 if auto_like else 1
-        can_reply = actions.get('reply', {}).get('enabled', True) and actions.get('reply', {}).get('left', 0) > 0 and (api or tiktok or (actions.get('like', {}).get('enabled', True) and actions.get('like', {}).get('left', 0) > 0))
+        can_reply = actions.get('reply', {}).get('enabled', True) and actions.get('reply', {}).get('left', 0) > 0 and (api or tiktok or any(action_available(actions, key) for key in ('like', 'comment.like')))
         if facebook_like and not action_available(actions, 'comment.like'):
             can_reply = False  # conserver une place au like demandé après la réponse
         can_discover = (platform in ('twitter', 'threads') and account.get('session') == 'connected'
                         and account.get('persona') and action_available(actions, 'thread.read'))
         threads_discovery = can_discover and platform == 'threads' and any(action_available(actions, k) for k in ('like', 'comment'))
-        x_writes = [action for action in ('reply', 'like') if action_available(actions, action)]
+        x_writes = [action for action in ('reply', 'like', 'comment.like') if action_available(actions, action)]
         if account.get('repost_due') and action_available(actions, 'repost') and action_available(actions, 'feed.read'):
             x_writes.append('repost')
         x_discovery = can_discover and platform == 'twitter' and bool(x_writes)
@@ -203,7 +203,8 @@ def snapshot(client, now=None, lane=None):
             can_feed = False
             if x_discovery:
                 writes = [action for action in x_writes if actions[action]['left'] > (int(bool(items)) if action != 'repost' else 0)]
-                max_writes = min(len(writes), available - reserve)
+                batch_cap = 5 if action_available(actions, 'comment.like') else len(writes)
+                max_writes = min(batch_cap, available - reserve)
                 source = discovery_source(client, account, now) if max_writes > 0 else None
                 if source and 'repost' in writes and source['read_action'] != 'feed.read':
                     fallback = source.get('fallback', {})
@@ -212,7 +213,7 @@ def snapshot(client, now=None, lane=None):
                     else:
                         writes.remove('repost')
                 if source and writes:
-                    max_writes = min(max_writes, len(writes))
+                    max_writes = min(max_writes, batch_cap)
                     x_explorations.append({'account_id': account['id'], **source, 'write_actions': writes,
                                            'max_writes': max_writes, 'reserve_for_inbox': bool(items)})
                     can_feed = True

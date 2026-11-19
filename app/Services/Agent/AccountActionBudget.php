@@ -88,7 +88,7 @@ class AccountActionBudget
             return;
         }
         if ($task->kind === 'x.agent.act') {
-            $this->reserve($task->socialAccount, 'x.'.$task->payload['action'], 'browser', $task->payload['url'], $task->id);
+            $this->reserve($task->socialAccount, 'x.'.XEngagementService::budgetAction($task->socialAccount, $task->payload), 'browser', $task->payload['url'], $task->id);
 
             return;
         }
