@@ -112,6 +112,27 @@ class XAgentTest extends TestCase
         $this->postJson($this->url('read'), $read)->assertConflict()->assertJsonPath('skip_item', true);
     }
 
+    public function test_les_likes_de_commentaires_excluent_lauteur_initial_et_le_compte_lui_meme(): void
+    {
+        app(AgentCatalog::class)->configure($this->a, 'comment.like', true, 150);
+        $snapshot = (string) \Illuminate\Support\Str::uuid();
+        $root = $this->target();
+        Cache::put('x-agent-snapshot:'.$snapshot, ['account_id' => $this->a->id, 'source' => [], 'result' => [
+            'target' => $root, 'conversation' => [$root], 'context_complete' => true, 'visible_replies' => [
+                ['id' => '990', 'author' => 'Visitor', 'text' => 'Réponse de l’auteur'],
+                ['id' => '991', 'author' => 'owner', 'text' => 'Mon commentaire'],
+                ['id' => '992', 'author' => 'fan', 'text' => 'Un détail utile'],
+            ],
+        ]], now()->addHour());
+        foreach (['990', '991'] as $target) {
+            $this->postJson($this->url('prepare'), ['snapshot_id' => $snapshot, 'action' => 'like', 'target_id' => $target])
+                ->assertUnprocessable();
+        }
+        $this->assertSame(0, XEngagement::count());
+        $this->postJson($this->url('prepare'), ['snapshot_id' => $snapshot, 'action' => 'like', 'target_id' => '992'])->assertCreated();
+        $this->postJson($this->url('prepare'), ['snapshot_id' => $snapshot, 'action' => 'like', 'target_id' => '987'])->assertCreated();
+    }
+
     public function test_les_quotas_distincts_ne_sont_pas_recalcules_par_la_cadence_adaptative(): void
     {
         $catalog = app(AgentCatalog::class);

@@ -233,8 +233,10 @@ def snapshot(client, now=None, lane=None):
                         writes.remove('repost')
                 if source and writes:
                     max_writes = min(max_writes, batch_cap)
+                    selection = {'selection': 'most_commented', 'exclude_original_author_comments': True,
+                                 'read_limit': 30, 'read_screens': 5} if 'comment.like' in writes else {}
                     x_explorations.append({'account_id': account['id'], **source, 'write_actions': writes,
-                                           'max_writes': max_writes, 'reserve_for_inbox': bool(items)})
+                                           'max_writes': max_writes, 'reserve_for_inbox': bool(items), **selection})
                     can_feed = True
                     reserve += max_writes
             if x_follow and available - reserve >= 1:

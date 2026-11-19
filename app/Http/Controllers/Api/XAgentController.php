@@ -228,7 +228,17 @@ class XAgentController extends Controller
                 $target['reply_hint'] = true;
             }
         }
-        $this->enabled($a, XEngagementService::budgetAction($a, ['action' => $data['action'], 'target' => $target]));
+        $budgetAction = XEngagementService::budgetAction($a, ['action' => $data['action'], 'target' => $target]);
+        if ($budgetAction === 'comment.like') {
+            $originAuthor = $s['result']['conversation'][0]['author'] ?? null;
+            abort_unless(($s['result']['context_complete'] ?? false) === true && filled($originAuthor),
+                422, 'Lire la publication d’origine et le fil avant d’aimer un commentaire.');
+            abort_if(strcasecmp($target['author'], $originAuthor) === 0,
+                422, 'Les commentaires de l’auteur de la publication sont exclus de ce passage.');
+            abort_if(strcasecmp($target['author'], (string) $a->browser_username) === 0,
+                422, 'Le compte ne peut pas aimer ses propres commentaires.');
+        }
+        $this->enabled($a, $budgetAction);
         if ($data['action'] === 'repost' && app(\App\Services\Agent\RepostCadence::class)->hours($a) > 0) {
             $author = (string) ($target['author'] ?? '');
             $text = trim((string) ($target['text'] ?? ''));

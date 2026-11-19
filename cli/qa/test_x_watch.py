@@ -30,6 +30,8 @@ class XWatchTest(unittest.TestCase):
         plan = result['priority_x'][0]
         self.assertIn('comment.like', plan['write_actions'])
         self.assertEqual(5, plan['max_writes'])
+        self.assertEqual('most_commented', plan['selection'])
+        self.assertTrue(plan['exclude_original_author_comments'])
         account['actions']['comment.like']['left'] = 0
         result = watch.snapshot(client, dt.datetime.fromisoformat('2026-11-19T12:00:00+00:00'), lane='x')
         self.assertEqual(2, result['priority_x'][0]['max_writes'])
