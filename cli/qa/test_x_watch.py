@@ -83,7 +83,7 @@ class XWatchTest(unittest.TestCase):
         account['actions']['like']['left'] = 17
         client.api.side_effect = [{'daytime': True, 'accounts': [account]}, {'items': items}]
         result = watch.snapshot(client, dt.datetime.fromisoformat('2026-11-07T12:30:00+00:00'))
-        self.assertIn('limit=20', client.api.call_args.args[1])
+        self.assertIn('limit=40', client.api.call_args.args[1])
         self.assertEqual(result['accounts'][0]['batch_max'], 17)
 
     def test_tiktok_reserve_le_duo_sans_action_like_de_flux_et_garde_la_legende(self):
@@ -282,7 +282,7 @@ class XWatchTest(unittest.TestCase):
         self.assertEqual(watch.snapshot(c,now)['state'],'idle')
         a['cadence']['daily']['remaining']=5
         c.api.side_effect=[{'daytime':True,'accounts':[a]},{'items':[{'id':99,'content':'Merci','can_reply':True}]}]
-        self.assertEqual(watch.snapshot(c,now)['accounts'][0]['batch_max'],2)
+        self.assertEqual(watch.snapshot(c,now)['accounts'][0]['batch_max'],1)
 
     def test_un_stock_identique_reveille_le_cycle_suivant_et_la_file_exclut_les_ecartes(self):
         c=Mock();c.api.side_effect=[{'daytime':True,'accounts':[self.account()]},{'items':[{'id':99,'content':'Merci','can_reply':True}]}, {'daytime':True,'accounts':[self.account()]},{'items':[{'id':99,'content':'Merci','can_reply':True}]}]

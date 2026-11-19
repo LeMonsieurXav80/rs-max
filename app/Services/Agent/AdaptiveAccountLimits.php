@@ -118,6 +118,11 @@ class AdaptiveAccountLimits
 
     public function scaleActions(SocialAccount $account): void
     {
+        // Avec deux catégories de likes, les quotas saisis restent indépendants de la cadence globale.
+        if ($account->platform->slug === 'twitter' && $account->agentActions()->where('action', 'comment.like')->exists()) {
+            return;
+        }
+
         // Ne change aucune activation, ni les autres catégories d'actions.
         $account->agentActions()->where('enabled', true)->where('action', 'reply')->update(['daily_limit' => (int) floor($account->agent_daily_limit / 2)]);
         $account->agentActions()->where('enabled', true)->where('action', 'like')->update(['daily_limit' => $account->agent_daily_limit]);

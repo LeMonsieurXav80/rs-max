@@ -112,6 +112,18 @@ class XAgentTest extends TestCase
         $this->postJson($this->url('read'), $read)->assertConflict()->assertJsonPath('skip_item', true);
     }
 
+    public function test_les_quotas_distincts_ne_sont_pas_recalcules_par_la_cadence_adaptative(): void
+    {
+        $catalog = app(AgentCatalog::class);
+        foreach (['reply' => 50, 'like' => 50, 'comment.like' => 150] as $action => $limit) {
+            $catalog->configure($this->a, $action, true, $limit);
+        }
+        $this->a->agent_daily_limit = 270;
+        app(\App\Services\Agent\AdaptiveAccountLimits::class)->scaleActions($this->a);
+        $this->assertEquals(['reply' => 50, 'like' => 50, 'comment.like' => 150],
+            $this->a->agentActions()->whereIn('action', ['reply', 'like', 'comment.like'])->pluck('daily_limit', 'action')->all());
+    }
+
     public function test_un_commentaire_lu_sous_le_fil_peut_etre_aime_mais_pas_repondu(): void
     {
         $id = (string) \Illuminate\Support\Str::uuid();
