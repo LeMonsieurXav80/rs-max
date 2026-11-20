@@ -33,6 +33,9 @@ class AutomationJournal
             'target_text' => $this->text($p['text'] ?? $p['caption'] ?? $p['target']['text'] ?? null, 2000),
             'success' => $rawStatus === 'done', 'error' => $this->text($task->error, 1000),
             'metadata' => $metadata, 'performed_at' => $task->finished_at ?? $task->claimed_at ?? $task->created_at]);
+        if (MetaBrowserAgent::handles($task)) {
+            $log->action_type = $task->socialAccount->platform->slug.'.'.($p['action'] ?? 'read');
+        }
         parse_str(parse_url($p['url'] ?? '', PHP_URL_QUERY) ?? '', $query);
         if (str_starts_with($task->kind, 'tiktok.photo.') && isset($result['url'])) {
             $log->target_uri = $this->url($result['url']);
@@ -236,7 +239,7 @@ class AutomationJournal
 
     public function proof(array $result): array
     {
-        $proof = array_intersect_key($result, array_flip(['confirmed', 'unchanged', 'already_liked', 'gesture', 'proof', 'liked', 'send_clicked', 'initial_visible', 'target_found', 'pause_ms', 'input_mode', 'verification_source', 'comment_id', 'id', 'post_id', 'reply_id', 'parent_id', 'quote_id', 'media_count', 'visibility', 'upload_order_verified']));
+        $proof = array_intersect_key($result, array_flip(['confirmed', 'unchanged', 'already_liked', 'gesture', 'proof', 'liked', 'following', 'follow_back', 'preflight_follow_back', 'send_clicked', 'initial_visible', 'target_found', 'pause_ms', 'input_mode', 'verification_source', 'comment_id', 'id', 'post_id', 'reply_id', 'parent_id', 'quote_id', 'media_count', 'visibility', 'upload_order_verified']));
         $proof = array_filter($proof, fn ($value) => is_scalar($value));
         $proof = array_map(fn ($value) => is_string($value) ? $this->text($value, 120) : $value, $proof);
         foreach (['post_url', 'reply_url'] as $key) {

@@ -1,0 +1,405 @@
+--- a/background.js
++++ b/background.js
+@@ -1,3 +1,4 @@
++importScripts('meta/agent-worker.js');
+ /*
+  * RS-Max Companion — service worker
+  *
+@@ -184,6 +185,7 @@
+   api: (msg) => apiFetch(msg),
+   'x.batch': (msg, sender) => handleXBatch(msg, sender),
+   // « Engager mon fil » lancé à la main : RS-Max décide, le Chrome de Xavier n'exécute que les gestes de ce passage.
++  'meta.agent': (msg, sender) => self.RSMetaAgentWorker.local(msg, sender),
+   'feed.local': async (msg) => {
+     const who = {platform: msg.platform, username: msg.username};
+     if (msg.operation === 'start') return apiFetch({method:'POST', path:'/extension/feed/runs', body:{...who, items:msg.items, commit:Boolean(msg.commit)}});
+@@ -834,6 +836,7 @@
+     if (!self.RSActivityWindow) throw Error('Contrôle horaire indisponible.');
+     self.RSActivityWindow.assert(task.payload.activity_window);
+   }
++  if (/^(facebook|instagram)\.agent\.(read|act)$/.test(task.kind)) return self.RSMetaAgentWorker.execute(task);
+   if (/^(facebook|instagram)\.(whoami|session\.apply)$/.test(task.kind)) return self.RSMetaSession.execute(task);
+   if(task.kind.startsWith('threads.'))return executeThreadsTask(task);
+   if(task.kind==='tiktok.photo.check')return checkTikTokPhotoTask(task);
+--- a/manifest.json
++++ b/manifest.json
+@@ -1,7 +1,7 @@
+ {
+   "manifest_version": 3,
+   "name": "RS-Max Companion",
+-  "version": "0.18.59",
++  "version": "0.18.60",
+   "description": "Actions assistees sur les reseaux sociaux (engagement, publication) avec remontee vers l'API RS-Max.",
+   "permissions": [
+     "storage",
+@@ -192,6 +192,19 @@
+         "content/ui.css"
+       ],
+       "run_at": "document_idle"
++    },
++    {
++      "matches": [
++        "https://www.facebook.com/*",
++        "https://web.facebook.com/*",
++        "https://www.instagram.com/*"
++      ],
++      "js": [
++        "shared/activity-window.js",
++        "meta/agent.js",
++        "meta/recipes.js"
++      ],
++      "run_at": "document_idle"
+     }
+   ],
+   "minimum_chrome_version": "116"
+--- /dev/null
++++ b/meta/agent-worker.js
+@@ -0,0 +1,55 @@
++/* Une écriture de page n'est envoyée qu'une fois. Cookies et transport restent au service worker. */
++(() => {
++  'use strict';
++  const platformOf=t=>t.kind.split('.')[0];
++  const check=async(task,tabId)=>{
++    const platform=platformOf(task),cookies=await chrome.cookies.getAll({domain:platform+'.com'});
++    if(self.RSMetaSession.fromCookies(cookies,platform)!==task.account_id)throw Error('Session Meta différente : aucun geste.');
++    const who=await askPage(tabId,{kind:platform+'.whoami',payload:{}});
++    if(who?.status!=='done'||(platform==='facebook'?who.result?.account_id!==task.account_id:who.result?.username!==task.payload.username))throw Error('Identité de page différente : aucun geste.');
++  };
++  async function execute(task){
++    const platform=platformOf(task);let tabId,requested=false,receipt={};
++    try{
++      const session=await self.RSMetaSession.execute({...task,kind:platform+'.whoami'});
++      if(session.status!=='done')return session;
++      tabId=await taskTab(task.payload.url);await check(task,tabId);
++      if(task.kind.endsWith('.read')){
++        const r=await askPage(tabId,task);await check(task,tabId);
++        if(r?.status==='done')r.result={...r.result,account_id:task.account_id};return r;
++      }
++      if(task.payload.action==='unfollow'){
++        await reloadTaskTab(tabId,'https://www.instagram.com/'+task.payload.username+'/');await check(task,tabId);
++        const state=await askPage(tabId,{kind:'instagram.agent.read',payload:{...task.payload,action:'followback.read',handle:task.payload.target.id}});
++        if(state?.result?.follow_back!=='no'||state.result?.proof!=='own_followers_search')throw Error('Retour d’abonnement présent ou inconnu : aucun désabonnement.');
++        receipt.preflight_follow_back='no';await reloadTaskTab(tabId,task.payload.url);await check(task,tabId);
++      }
++      requested=true;
++      const action=await chrome.tabs.sendMessage(tabId,{type:'x.task',task});
++      receipt={...receipt,...(action?.result||{})};
++      if(action?.status!=='done')return{...action,result:receipt,status:action?.status||'uncertain'};
++      await pause(1800);await reloadTaskTab(tabId,task.payload.url);await check(task,tabId);
++      const proof=await askPage(tabId,{kind:platform+'.agent.verify',payload:{...task.payload,...receipt}});
++      return{status:proof?.result?.confirmed===true?'done':'uncertain',result:{...receipt,...proof?.result},error:proof?.result?.confirmed?null:(proof?.error||'Geste absent après rechargement : aucun renvoi.')};
++    }catch(e){return{status:requested?'uncertain':'failed',result:receipt,error:e.message}}
++    finally{if(tabId)await chrome.tabs.remove(tabId).catch(()=>{});}
++  }
++  async function local(msg,sender){
++    if(self.RSMAX_DEFAULTS?.taskProfile)throw Error('Ce lancement est réservé au Chrome local.');
++    const who=await self.RSMetaSession.identity(sender),p='/extension/meta/'+who.platform+'/agent/';
++    const data=msg.data||{};
++    if(msg.operation==='read'||msg.operation==='act')return apiFetch({method:'POST',path:p+msg.operation,body:{...data,platform_account_id:who.account_id}});
++    if(!Number.isSafeInteger(msg.task_id)||msg.task_id<1)throw Error('Tâche Meta invalide.');
++    if(['status','context','draft'].includes(msg.operation))return apiFetch({method:msg.operation==='draft'?'POST':'GET',path:'/meta/tasks/'+msg.task_id+(msg.operation==='status'?'':'/'+msg.operation),timeoutMs:msg.operation==='draft'?100000:30000});
++    if(msg.operation!=='run')throw Error('Opération Meta inconnue.');
++    const task={...await apiFetch({method:'POST',path:'/meta/tasks/'+msg.task_id+'/claim'}),local:true};
++    globalThis.RSTaskJournal?.start(task);let outcome;
++    try{if(task.account_id!==who.account_id||platformOf(task)!==who.platform)throw Error('Compte local différent : rien n’a été fait.');outcome=await boundedTask(task);}
++    catch(e){outcome={status:'failed',error:e.message};}
++    const diagnostics=globalThis.RSTaskJournal?.finish(outcome)||[];
++    try{await apiFetch({method:'POST',path:'/extension/tasks/'+task.id+'/finish',body:{...outcome,diagnostics}});}
++    finally{globalThis.RSTaskJournal?.clear();}
++    return apiFetch({path:'/meta/tasks/'+task.id});
++  }
++  self.RSMetaAgentWorker={execute,local};
++})();
+--- /dev/null
++++ b/meta/agent.js
+@@ -0,0 +1,223 @@
++/* Actions Meta : lecture du DOM public, même exécuteur pour le Mac et le VPS. */
++(() => {
++  'use strict';
++  if (window.RSMetaAgent || !window.RSMetaIdentity) return;
++  const platform = window.RSMetaIdentity.platform;
++  const delay = ms => new Promise(r => setTimeout(r, ms));
++  const visible = e => Boolean(e?.isConnected && e.getClientRects().length && !e.closest('[hidden],[aria-hidden="true"]'));
++  const text = e => (e?.innerText || e?.textContent || '').trim();
++  const label = e => e?.getAttribute('aria-label') || e?.getAttribute('aria-labelledby')?.split(' ').map(id=>document.getElementById(id)?.textContent||'').join(' ') || text(e) || e?.querySelector('svg[aria-label]')?.getAttribute('aria-label');
++  const controls = root => [...root.querySelectorAll('button,[role="button"]')].filter(visible);
++  const single = values => values.length === 1 ? values[0] : null;
++  async function wait(fn, ms=15000) { const end=Date.now()+ms; do { const v=await fn(); if(v)return v; await delay(300); } while(Date.now()<end); throw Error('Élément Meta indisponible ou ambigu.'); }
++  function guard(p) {
++    if (p.deadline && Date.now()>Date.parse(p.deadline)) throw Error('Échéance dépassée : aucun geste.');
++    if(p.activity_window) window.RSActivityWindow.assert(p.activity_window);
++    const who=window.RSMetaIdentity.identity();
++    if(platform==='facebook' ? who.account_id!==p.account_id : who.username!==p.username) throw Error('Le compte actif a changé : aucun geste.');
++  }
++  function post(value) {
++    try { const u=new URL(value,location.href); let m;
++      if(platform==='facebook' && /^(www\.|web\.|m\.)?facebook\.com$/.test(u.hostname) && (m=u.pathname.match(/^\/groups\/([\w.-]+)\/posts\/(\d+)\/?$/))) return {id:m[2],group:m[1].toLowerCase(),url:'https://www.facebook.com/groups/'+m[1].toLowerCase()+'/posts/'+m[2]+'/'};
++      if(platform==='instagram' && /^(www\.)?instagram\.com$/.test(u.hostname) && (m=u.pathname.match(/^\/(?:[\w.]+\/)?(?:p|reel)\/([\w-]+)\/?$/))) return {id:m[1],url:'https://www.instagram.com/p/'+m[1]+'/'};
++    }catch{} return null;
++  }
++  function date(value) {
++    if(!value)return null;
++    if(/^\d{4}-\d\d-\d\dT/.test(value) && Number.isFinite(Date.parse(value)))return new Date(value).toISOString();
++    const s=value.toLowerCase().replace(/\u00a0/g,' ').trim();
++    if(/^(à l’instant|a l'instant|just now)$/.test(s))return new Date().toISOString();
++    const m=s.match(/^(?:il y a\s*)?(\d+)\s*(min(?:ute)?s?|h(?:eure)?s?|hours?|j(?:our)?s?|days?|sem(?:aine)?s?|weeks?|w|d)(?:\s+ago)?$/);
++    if(!m)return null;
++    const unit=/^(h|hour)/.test(m[2])?3600:/^(j|d)/.test(m[2])?86400:/^(sem|week|w)/.test(m[2])?604800:60;
++    return new Date(Date.now()-Number(m[1])*unit*1000).toISOString();
++  }
++  function fbRoot() {
++    const roots=[...document.querySelectorAll('[role="dialog"]')].filter(visible).filter(e=>controls(e).some(b=>/^Actions pour cette publication|^Actions for this post/.test(label(b))));
++    return roots.find(r=>!roots.some(other=>other!==r&&r.contains(other))) || null;
++  }
++  function clean(e){e.querySelectorAll('img[alt]').forEach(img=>img.replaceWith(document.createTextNode(img.alt)));return text(e);}
++  async function allComments(){
++    if(platform!=='facebook')return;const root=await wait(fbRoot);const filter=single(controls(root).filter(b=>/^(Plus pertinents|Most relevant|Les plus récents|Newest)$/.test(label(b))));
++    if(filter){filter.click();const option=await wait(()=>single([...document.querySelectorAll('[role=menuitem]')].filter(e=>visible(e)&&/^(Tous les commentaires|All comments)/.test(text(e)))));option.click();await delay(800);}
++  }
++  function fbComments(root) {
++    const result=[];
++    for(const row of root.querySelectorAll('[role="article"]')) {
++      if(!visible(row))continue;
++      const a=[...row.querySelectorAll('a[href]')].find(a=>new URL(a.href,location.href).searchParams.has('comment_id'));
++      if(!a)continue;
++      const u=new URL(a.href,location.href), parent=post(u.href), id=u.searchParams.get('reply_comment_id')||u.searchParams.get('comment_id');
++      if(!parent||!/^\d+$/.test(id))continue;
++      const author=[...row.querySelectorAll('a[href]')].map(a=>new URL(a.href,location.href).pathname.match(/\/user\/(\d+)\//)?.[1]).find(Boolean);
++      const like=single(controls(row).filter(b=>/^(J’aime|Like|Retirer.*J’aime|Supprimer.*J’aime|Unlike)$/i.test(label(b))));
++      let clone=row.cloneNode(true);if(like){const range=document.createRange();range.setStartAfter(a);range.setEndBefore(like);clone=range.cloneContents();}
++      clone.querySelectorAll('button,[role="button"],[role="article"]').forEach(e=>e.remove());
++      const content=clean(clone).replace(/^\s*[·\s]+/,'').trim();
++      result.push({row,s:{type:'comment',id,author:author||'',text:content.slice(0,4000),url:parent.url,published_at:date(label(a))},like});
++    } return result;
++  }
++  function likeState(button) {
++    if(!button)return null;
++    const l=label(button), pressed=button.getAttribute('aria-pressed');
++    if(pressed==='true'||/^(Je n’aime plus|Unlike|Retirer.*J’aime|Supprimer.*J’aime)$/i.test(l))return true;
++    if(pressed==='false')return false;
++    if(platform==='instagram' && /^(J’aime|Like)$/i.test(l))return false;
++    const style=button.querySelector('svg')?.getAttribute('style')||'';
++    if(platform==='facebook' && /--x-color:\s*var\(--accent\)/.test(style))return true;
++    if(platform==='facebook' && /--x-color:\s*var\(--secondary-icon\)/.test(style))return false;
++    return null;
++  }
++  function igComments(root) {
++    const rows=[];
++    for(const a of root.querySelectorAll('a[href*="/c/"]')) {
++      const m=new URL(a.href,location.href).pathname.match(/^\/p\/([\w-]+)\/c\/(\d+)\/?$/);if(!m)continue;
++      for(let row=a.parentElement;row&&row!==root;row=row.parentElement) {
++        if(row.querySelectorAll('a[href*="/c/"]').length!==1)break;
++        const like=single(controls(row).filter(b=>/^(J’aime|Like|Je n’aime plus|Unlike)$/i.test(label(b))));
++        if(!like)continue;
++        const author=[...row.querySelectorAll('a[href]')].map(a=>new URL(a.href,location.href).pathname.match(/^\/([\w.]+)\/$/)?.[1]).find(Boolean);
++        const clone=row.cloneNode(true);clone.querySelectorAll('a,button,[role="button"]').forEach(e=>e.remove());
++        rows.push({row,like,s:{type:'comment',id:m[1]+':'+m[2],native_id:m[2],author:author||'',text:clean(clone).slice(0,4000),url:'https://www.instagram.com/p/'+m[1]+'/',published_at:a.querySelector('time')?.dateTime||null}});break;
++      }
++    }return rows.filter((v,i,a)=>a.findIndex(x=>x.s.id===v.s.id)===i);
++  }
++  function thread() {
++    const current=post(location.href); if(!current)throw Error('Ouvrez la publication native ciblée.');
++    if(platform==='facebook') {
++      const root=fbRoot();if(!root)return null;
++      const cs=fbComments(root).filter(c=>c.s.url===current.url);
++      const author=[...root.querySelectorAll('a[href]')].filter(a=>!a.closest('[role="article"]')).map(a=>new URL(a.href,location.href).pathname.match(/\/groups\/[^/]+\/user\/(\d+)\//)?.[1]).find(Boolean);
++      const buttons=controls(root).filter(b=>!b.closest('[role="article"]'));
++      const start=buttons.find(b=>/^Actions pour cette publication|^Actions for this post/.test(label(b)));
++      const end=buttons.find(b=>/^Réagir avec |^Like .*post|^React to/.test(label(b)));
++      if(!start||!end||!author)return null;
++      const range=document.createRange();range.setStartAfter(start);range.setEndBefore(end);
++      const content=range.toString().replace(/Publication partagée\s*$/,'').trim();
++      const timestamp=[...root.querySelectorAll('a[aria-labelledby],a[aria-label]')].filter(a=>!a.closest('[role="article"]')).map(a=>date(label(a))).find(Boolean);
++      return {root,comments:cs,target:{...current,type:'post',author,text:content.slice(0,5000),published_at:timestamp||null}};
++    }
++    const root=document.querySelector('main');if(!root)return null;
++    const cs=igComments(root).filter(c=>c.s.url===current.url);
++    const stamp=[...root.querySelectorAll('a[href]')].find(a=>{const u=new URL(a.href,location.href);return new RegExp('^/[\\w.]+/(?:p|reel)/'+current.id+'/$').test(u.pathname)&&a.querySelector('time')});
++    if(!stamp)return null;
++    const author=new URL(stamp.href,location.href).pathname.split('/')[1];
++    const first=cs[0]?.row; let content=text(root);if(first&&text(first))content=content.split(text(first))[0];
++    const like=single(controls(root).filter(b=>/^(J’aime|Like|Je n’aime plus|Unlike)$/i.test(label(b))&&!cs.some(c=>c.row.contains(b))));
++    return {root,comments:cs,like,target:{...current,type:'post',author,text:content.slice(0,5000),published_at:stamp.querySelector('time')?.dateTime||null}};
++  }
++  function profile() {
++    const m=location.pathname.match(/^\/([\w.]+)\/$/);const root=document.querySelector('main');if(!m||!root)return null;
++    const header=root.querySelector('header')||root;
++    const buttons=controls(header).filter(b=>/^(Suivre|Follow|Suivi\(e\)|Abonné\(e\)|Following|Demandé|Requested)$/i.test(label(b)));
++    const button=single(buttons);if(!button)return null;
++    const l=label(button), following=/^(Suivi\(e\)|Abonné\(e\)|Following)$/i.test(l)?true:/^(Suivre|Follow)$/i.test(l)?false:null;
++    return {root,button,following,target:{type:'profile',id:m[1].toLowerCase(),author:m[1].toLowerCase(),url:'https://www.instagram.com/'+m[1].toLowerCase()+'/',text:text(header).slice(0,3000)}};
++  }
++  async function followers(p) {
++    guard(p);if(location.pathname!=='/'+p.username+'/')throw Error('La vérification doit partir de ses propres abonnés.');
++    const root=await wait(()=>document.querySelector('main'));
++    const link=single([...root.querySelectorAll('a')].filter(a=>visible(a)&&/\b(followers?|abonnés)\b/i.test(text(a))));
++    if(!link)throw Error('Liste personnelle des abonnés indisponible.');link.click();
++    const field=await wait(()=>single([...document.querySelectorAll('[role="dialog"] input')].filter(visible)));
++    const handle=p.handle.replace(/^@/,'').toLowerCase();
++    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value').set.call(field,handle);field.dispatchEvent(new Event('input',{bubbles:true}));
++    await delay(1200);guard(p);
++    const dialog=field.closest('[role="dialog"]');
++    const state=()=>{
++      if(field.value!==handle||!visible(dialog)||dialog.querySelector('[role="progressbar"]')||/Suggestions pour vous|Suggested for you/i.test(text(dialog)))return null;
++      const yes=[...dialog.querySelectorAll('a[href]')].some(a=>new URL(a.href,location.href).pathname==='/'+handle+'/'&&text(a)===handle);
++      return yes?'yes':/Aucun résultat\.?|No results found\.?|No results\.?/i.test(text(dialog))?'no':null;
++    };
++    const first=await wait(state);await delay(1000);if(state()!==first)throw Error('Résultat de la recherche instable.');
++    return {handle,follow_back:first,proof:'own_followers_search'};
++  }
++  async function read(p) {
++    guard(p);await wait(()=>{try{guard(p);return true}catch{return false}});
++    if(p.action==='followback.read')return{status:'done',result:await followers(p)};
++    if(p.action==='profile.read'){const v=await wait(profile);return{status:'done',result:{target:v.target,following:v.following}};}
++    if(p.action==='thread.read'){
++      await allComments();const t=await wait(thread);await delay(1000);const fresh=thread();
++      return {status:'done',result:{target:fresh.target,comments:fresh.comments.slice(0,p.limit||30).map(c=>({...c.s,liked:likeState(c.like)})),liked:likeState(fresh.like),context_complete:true,complete:false}};
++    }
++    const found=new Map();
++    for(let n=0;n<6&&found.size<(p.limit||20);n++){
++      guard(p);
++      for(const a of document.querySelectorAll('a[href]')){
++        let target=post(a.href);
++        if(!target&&platform==='facebook'){
++          const u=new URL(a.href,location.href),id=u.searchParams.get('set')?.match(/^pcb\.(\d+)$/)?.[1],g=location.pathname.match(/^\/groups\/([^/]+)/)?.[1];
++          if(id&&g)target=post('https://www.facebook.com/groups/'+g+'/posts/'+id+'/');
++        }
++        if(target)found.set(target.id,target);
++      }
++      window.scrollBy({top:innerHeight*.8,behavior:'instant'});await delay(700);
++    }
++    return {status:'done',result:{items:[...found.values()].slice(0,p.limit||20),complete:false}};
++  }
++  function bound(p) {
++    guard(p);
++    if(['follow','unfollow'].includes(p.action)){const v=profile();if(!v||v.target.id!==p.target.id)throw Error('Profil ciblé différent.');return v;}
++    const v=thread();if(!v||v.target.url!==p.url)throw Error('Publication ciblée différente.');
++    if(p.action==='comment.like'){
++      const c=single(v.comments.filter(c=>c.s.id===p.target.id&&c.s.author===p.target.author&&c.s.text===p.target.text));if(!c)throw Error('Commentaire modifié ou absent.');return c;
++    }
++    if(v.target.author!==p.target.author)throw Error('Auteur de la publication différent.');return v;
++  }
++  async function act(task) {
++    const p=task.payload, localKey='rsmaxMetaIntent:'+p.account_id+':'+task.id; let clicked=false;
++    try {
++      await allComments();await wait(()=>{try{return bound(p)}catch{return null}});let v=bound(p);
++      const prior=await chrome.storage.local.get(localKey);if(prior[localKey])throw Error('Intention déjà exécutée : vérifier sans renvoyer.');
++      if(['like','comment.like'].includes(p.action)&&likeState(v.like)===true)return{status:'done',result:{unchanged:true}};
++      if(p.action==='follow'&&v.following===true)return{status:'done',result:{unchanged:true}};
++      if(p.action==='unfollow'&&v.following===false)return{status:'done',result:{unchanged:true}};
++      let click;
++      if(p.action==='comment'){
++        if(!p.target.published_at||Date.now()-Date.parse(p.target.published_at)>14*86400000)throw Error('Publication trop ancienne ou sans date.');
++        const field=single([...v.root.querySelectorAll('[contenteditable="true"][role="textbox"]')].filter(e=>visible(e)&&!e.closest('[role="article"]')&&/^(Écrivez un commentaire public|Write a public comment)/i.test(e.getAttribute('aria-label')||'')));
++        if(!field||text(field))throw Error('Éditeur de publication absent ou non vide.');
++        field.focus();window.RSMAX.pasteInto(field,p.text);await wait(()=>text(field)===p.text,5000);
++        click=await wait(()=>single(controls(v.root).filter(b=>/^(Publier le commentaire|Post comment)$/i.test(label(b))&&b.getAttribute('aria-disabled')!=='true'&&!b.disabled)));
++      }else if(['follow','unfollow'].includes(p.action)){
++        if(v.following===null)throw Error('État du suivi inconnu ou demande en attente.');
++        click=v.button;
++        if(p.action==='unfollow'){
++          click.click();const dialog=await wait(()=>single([...document.querySelectorAll('[role="dialog"]')].filter(visible)));
++          click=single(controls(dialog).filter(b=>/^(Ne plus suivre|Se désabonner|Unfollow)$/i.test(label(b))));
++          if(!click)throw Error('Confirmation du désabonnement absente.');
++        }
++      }else{
++        if(likeState(v.like)!==false)throw Error('État du like inconnu : aucun clic.');click=v.like;
++      }
++      await window.RSPacing.pause({});
++      if(p.action==='unfollow'){guard(p);if(location.pathname!=='/'+p.target.id+'/'||!click.closest('[role=dialog]')||!text(click.closest('[role=dialog]')).split(/\s+/).includes(p.target.id))throw Error('Profil du désabonnement modifié.');}else bound(p);
++      await window.RSMAX.api.post('/meta/tasks/'+task.id+'/authorize',{});guard(p);
++      await chrome.storage.local.set({[localKey]:{at:Date.now()}});guard(p);
++      if(!visible(click)||click.getAttribute('aria-disabled')==='true'||click.disabled)throw Error('Bouton devenu indisponible.');
++      clicked=true;click.click();
++      let receipt={clicked:true};
++      if(p.action==='comment'){
++        const c=await wait(()=>thread()?.comments.find(c=>c.s.author===p.account_id&&c.s.text===p.text),20000);
++        receipt={...receipt,comment_id:c.s.id,author:c.s.author,text:p.text};
++      }
++      return {status:'done',result:receipt};
++    }catch(e){return{status:clicked?'uncertain':'failed',result:{clicked},error:e.message}};
++  }
++  async function verify(p) {
++    await allComments();const v=await wait(()=>{try{return bound(p)}catch{return null}});let confirmed=false,extra={};
++    if(p.action==='comment'){
++      const c=v.comments.find(c=>c.s.id===p.comment_id&&c.s.author===p.account_id&&c.s.text===p.text);
++      confirmed=Boolean(c);extra={comment_id:c?.s.id,author:c?.s.author,text:p.text};
++    }else if(['follow','unfollow'].includes(p.action)){confirmed=v.following===(p.action==='follow');extra={following:v.following};}
++    else{confirmed=likeState(v.like)===true;extra={liked:likeState(v.like)};}
++    return {status:confirmed?'done':'uncertain',result:{...extra,confirmed,proof:'after_reload',account_id:p.account_id,action:p.action,target_id:p.target.id,target_url:p.url}};
++  }
++  chrome.runtime.onMessage.addListener((m,s,reply)=>{
++    if(s.id!==chrome.runtime.id||m.type!=='x.task')return;
++    const t=m.task,handlers={[platform+'.agent.read']:()=>read(t.payload),[platform+'.agent.act']:()=>act(t),[platform+'.agent.verify']:()=>verify(t.payload)};
++    if(!handlers[t?.kind])return;
++    handlers[t.kind]().then(reply,e=>reply({status:'failed',error:e.message}));return true;
++  });
++  window.RSMetaAgent={post,date,thread,profile,likeState,read,act,verify,followers};
++})();
+--- /dev/null
++++ b/meta/recipes.js
+@@ -0,0 +1,41 @@
++/* Lancements manuels : les tâches restent sur mac-local, jamais de relève de la file du VPS. */
++(() => {
++  const R=window.RSMAX,A=window.RSMetaAgent;if(!R||!A||window.RSMetaRecipes)return;window.RSMetaRecipes=true;
++  const platform=window.RSMetaIdentity.platform,call=async(operation,data={},task_id)=>{
++    const r=await chrome.runtime.sendMessage({type:'meta.agent',operation,data,task_id});if(!r?.ok)throw Error(r?.error||'Companion indisponible.');return r.data;
++  };
++  const commit={key:'commit',type:'checkbox',label:'Exécuter les gestes (sinon aperçu)',default:false};
++  async function read(ctx,data){const queued=await call('read',data);const done=await call('run',{},queued.task_id);if(done.status!=='done')throw Error(done.error||'Lecture non confirmée.');return done;}
++  async function act(ctx,snapshot,data){
++    if(ctx.stopped)throw Error('Arrêt demandé : aucun nouveau geste.');
++    const usage=(await call('status',{},snapshot.task_id)).cadence;
++    if(usage?.next_allowed_at){const ms=Date.parse(usage.next_allowed_at)-Date.now();if(ms>0){ctx.log('Attente de la cadence du compte.');await ctx.pause(ms+300);}}
++    if(ctx.stopped)throw Error('Arrêt demandé : aucun nouveau geste.');
++    const prepared=await call('act',{...data,read_task_id:snapshot.task_id,dry_run:ctx.params.commit!==true,request_key:crypto.randomUUID()});
++    if(prepared.dry_run){ctx.log('Aperçu : '+data.action+' · '+(data.target_id||snapshot.result.target.id));return;}
++    if(prepared.duplicate){ctx.log('Déjà réservé : '+prepared.status+' · aucun renvoi.');return;}
++    const done=await call('run',{},prepared.task_id);ctx.log(data.action+' : '+done.status+(done.error?' · '+done.error:''));
++    if(done.status!=='done')throw Error(done.error||'Résultat à vérifier : aucun renvoi.');
++  }
++  const thread=()=>Boolean(A.post(location.href)),current=()=>({action:'thread.read',url:A.post(location.href)?.url,limit:30});
++  const recipes=[{id:platform+'.read',localOnly:true,label:platform==='facebook'?'Facebook — lire ce groupe / cette publication':'Instagram — lire ce hashtag / cette publication',params:[],available:()=>true,async run(ctx){
++    let d=current();if(!thread()){if(platform==='facebook'){const m=location.pathname.match(/^\/groups\/([^/]+)\/?$/);if(!m)throw Error('Ouvrez un groupe choisi ou une publication de groupe.');d={action:'group.read',url:'https://www.facebook.com/groups/'+m[1]+'/'};}
++      else {const m=location.pathname.match(/^\/explore\/tags\/([^/]+)\/?$/);if(!m)throw Error('Ouvrez un hashtag ou une publication Instagram.');d={action:'search.read',hashtag:decodeURIComponent(m[1])};}}
++    const s=await read(ctx,d);for(const item of s.result.items||[])ctx.log(item.url);for(const c of s.result.comments||[])ctx.log(c.id+' · @'+c.author+' · '+c.text);return{reason:'Lecture terminée · '+(s.result.items||s.result.comments||[]).length+' cible(s).'};
++  }},{id:platform+'.comments.like',localOnly:true,label:(platform==='facebook'?'Facebook':'Instagram')+' — liker les commentaires de cette publication',quantity:{key:'limit',unit:'likes'},params:[{key:'limit',type:'number',label:'Commentaires à aimer au maximum',default:5,min:1,max:30},commit],available:thread,async run(ctx){
++    const s=await read(ctx,current());const who=window.RSMetaIdentity.identity();let n=0;
++    for(const c of s.result.comments||[]){if(ctx.stopped||n>=ctx.params.limit)break;if(c.liked===true||c.author===(who.username||who.account_id))continue;await act(ctx,s,{action:'comment.like',target_id:c.id});n++;}
++    return{reason:(ctx.params.commit?'Passage terminé':'Aperçu sans geste')+' · '+n+' commentaire(s).'};
++  }}];
++  if(platform==='facebook')recipes.push({id:'facebook.group.comment',localOnly:true,label:'Facebook — commenter cette publication de groupe',params:[{key:'text',type:'text',label:'Commentaire (vide : proposer avec le persona)',default:''},commit],available:thread,async run(ctx){
++    const s=await read(ctx,current()),context=await call('context',{},s.task_id);let value=ctx.params.text?.trim();
++    if(!value){const draft=await call('draft',{},s.task_id);value=draft.text;}ctx.log('Commentaire : '+value);
++    await act(ctx,s,{action:'comment',text:value,persona_hash:context.persona_hash});return{reason:ctx.params.commit?'Commentaire vérifié après rechargement.':'Aperçu : aucun commentaire envoyé.'};
++  }});
++  else{
++    recipes.push({id:'instagram.post.like',localOnly:true,label:'Instagram — liker cette publication',params:[commit],available:thread,async run(ctx){const s=await read(ctx,current());await act(ctx,s,{action:'like'});return{reason:ctx.params.commit?'Like vérifié après rechargement.':'Aperçu sans geste.'}}});
++    for(const action of ['follow','unfollow'])recipes.push({id:'instagram.'+action,localOnly:true,label:action==='follow'?'Instagram — suivre ce profil':'Instagram — désuivre ce profil sans retour',params:[commit],available:u=>/^\/([\w.]+)\/$/.test(u.pathname),async run(ctx){const handle=location.pathname.split('/')[1];const s=await read(ctx,{action:'profile.read',handle});await act(ctx,s,{action});return{reason:ctx.params.commit?'Suivi vérifié après rechargement.':'Aperçu sans geste.'}}});
++    recipes.push({id:'instagram.followback',localOnly:true,label:'Instagram — vérifier son retour d’abonnement',params:[{key:'handle',type:'text',label:'Compte à vérifier (sans @)',default:''}],available:()=>true,async run(ctx){const s=await read(ctx,{action:'followback.read',handle:ctx.params.handle.replace(/^@/,'')});return{reason:'@'+s.result.handle+' · retour : '+s.result.follow_back}}});
++  }
++  R.register({platform,match:u=>platform==='facebook'?/^(web\.|www\.)?facebook\.com$/.test(u.hostname):u.hostname==='www.instagram.com',recipes});
++})();
+--- /dev/null
++++ b/tests/meta-agent.test.cjs
+@@ -0,0 +1,20 @@
++const {test}=require('node:test');const assert=require('node:assert/strict');const fs=require('node:fs');const vm=require('node:vm');
++function worker({cookie='123',sent,proof=true,back='no'}={}){
++ let sends=0,reloads=0;
++ const ctx={self:null,globalThis:null,console,Date,Number,Error,URL,chrome:{cookies:{getAll:async()=>[{value:cookie}]},tabs:{remove:async()=>{},sendMessage:async()=>{sends++;if(sent==='lost')throw Error('port closed');return{status:'done',result:{clicked:true}}}}},
++ RSMetaSession:{fromCookies:c=>c[0].value,execute:async()=>({status:'done'})},taskTab:async()=>11,reloadTaskTab:async()=>{reloads++},pause:async()=>{},
++ askPage:async(_tab,t)=>t.kind.endsWith('whoami')?{status:'done',result:{account_id:'123',username:'nina'}}:t.kind.endsWith('verify')?{status:proof?'done':'uncertain',result:{confirmed:proof,proof:'after_reload'}}:{status:'done',result:{handle:'friend',follow_back:back,proof:'own_followers_search'}}};
++ ctx.self=ctx;ctx.globalThis=ctx;vm.createContext(ctx);vm.runInContext(fs.readFileSync('meta/agent-worker.js','utf8'),ctx);
++ return{run:ctx.RSMetaAgentWorker.execute,counts:()=>({sends,reloads})};
++}
++const task=(platform='facebook',action='comment.like')=>({id:1,kind:platform+'.agent.act',account_id:'123',payload:{username:'nina',action,url:platform==='facebook'?'https://www.facebook.com/groups/456/posts/789/':'https://www.instagram.com/friend/',target:{id:'friend'}}});
++test('a lost write response is uncertain and never sent again',async()=>{const w=worker({sent:'lost'}),r=await w.run(task());assert.equal(r.status,'uncertain');assert.equal(w.counts().sends,1);assert.equal(w.counts().reloads,0)});
++test('foreign cookie account refuses before the page write',async()=>{const w=worker({cookie:'999'}),r=await w.run(task());assert.equal(r.status,'failed');assert.equal(w.counts().sends,0)});
++test('a click without after-reload proof is uncertain',async()=>{const w=worker({proof:false}),r=await w.run(task());assert.equal(r.status,'uncertain');assert.equal(w.counts().sends,1);assert.equal(w.counts().reloads,1)});
++test('a successful reload proof is returned with the original receipt',async()=>{const w=worker(),r=await w.run(task());assert.equal(r.status,'done');assert.equal(r.result.clicked,true);assert.equal(r.result.confirmed,true)});
++test('unfollow refuses a positive followback immediately before the gesture',async()=>{const w=worker({back:'yes'}),r=await w.run(task('instagram','unfollow'));assert.equal(r.status,'failed');assert.equal(w.counts().sends,0)});
++test('unfollow rechecks followers then verifies the final profile',async()=>{const w=worker(),r=await w.run(task('instagram','unfollow'));assert.equal(r.status,'done');assert.equal(r.result.preflight_follow_back,'no');assert.equal(w.counts().reloads,3)});
++function page(platform){const ctx={window:{RSMetaIdentity:{platform}},document:{},location:{href:'https://www.'+platform+'.com/'},URL,Date,Error,Number,Set,Map,Promise,setTimeout,chrome:{runtime:{onMessage:{addListener:()=>{}}}}};vm.createContext(ctx);vm.runInContext(fs.readFileSync('meta/agent.js','utf8'),ctx);return ctx.window.RSMetaAgent;}
++test('native post links reject foreign lookalike domains',()=>{const p=page('facebook');assert.equal(p.post('https://facebook.com.evil.test/groups/456/posts/789/'),null);assert.equal(p.post('https://web.facebook.com/groups/456/posts/789/?ref=share').id,'789');const i=page('instagram');assert.equal(i.post('https://www.instagram.com/owner/reel/ABC123/').url,'https://www.instagram.com/p/ABC123/');});
++test('unknown like state remains unknown rather than toggling',()=>{const p=page('facebook');const button={getAttribute:()=>null,querySelector:()=>null,innerText:'J’aime'};assert.equal(p.likeState(button),null);});
++test('visible relative dates support French and English without guessing unknown dates',()=>{const p=page('facebook');assert.ok(p.date('il y a 2 heures'));assert.ok(p.date('3 days ago'));assert.equal(p.date('hier peut-être'),null)});

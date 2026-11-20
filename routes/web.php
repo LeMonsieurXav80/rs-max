@@ -300,6 +300,11 @@ Route::middleware(['auth', 'verified', 'throttle:600,1,web'])->group(function ()
         Route::delete('bot/logs', [BotHubController::class, 'clearLogs'])->name('bot.clearLogs');
 
         // Agent — une page par réseau, une action réglable par compte
+        Route::post('agent/meta/accounts/{id}/read', [\App\Http\Controllers\Api\MetaAgentController::class, 'read'])->whereNumber('id');
+        Route::post('agent/meta/accounts/{id}/act', [\App\Http\Controllers\Api\MetaAgentController::class, 'submit'])->whereNumber('id');
+        Route::get('agent/meta/tasks/{task}', [\App\Http\Controllers\Api\MetaAgentController::class, 'status']);
+        Route::get('agent/meta/tasks/{task}/context', [\App\Http\Controllers\Api\MetaAgentController::class, 'context']);
+        Route::post('agent/meta/tasks/{task}/draft', [\App\Http\Controllers\Api\MetaAgentController::class, 'draft'])->middleware('throttle:20,1,meta-web-draft');
         Route::post('agent/twitter/engagements/{engagement}/send', [AgentController::class, 'sendXEngagement'])->name('agent.twitter.send');
         Route::post('agent/tiktok/engagements/{engagement}/send', [AgentController::class, 'sendEngagement'])->name('agent.tiktok.send');
         Route::post('agent/{account}/prepare', [AgentController::class, 'prepare'])->name('agent.prepare');

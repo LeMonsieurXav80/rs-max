@@ -87,16 +87,17 @@ class FacebookGroupStrategyTest extends TestCase
         $this->assertSame(0, BrowserTask::count());
     }
 
-    public function test_group_comments_and_comment_likes_are_separate_and_cannot_be_enabled_before_implementation(): void
+    public function test_group_comments_and_comment_likes_are_separate_and_can_be_enabled_independently(): void
     {
         [$account] = $this->setupAccount();
         $catalog = app(AgentCatalog::class);
         $this->assertNotSame($catalog->action($account, 'comment')['label'], $catalog->action($account, 'comment.like')['label']);
-        foreach (['comment', 'comment.like', 'reply'] as $action) {
-            $this->assertSame('planned', $catalog->action($account, $action)['status']);
+        foreach (['comment', 'comment.like'] as $action) {
+            $this->assertSame('ready', $catalog->action($account, $action)['status']);
             $this->assertFalse($catalog->forAccount($account)[$action]['enabled']);
-            $this->putJson('/api/agent/accounts/'.$account->id.'/actions/'.$action, ['enabled' => true, 'daily_limit' => 2])->assertNotFound();
+            $this->putJson('/api/agent/accounts/'.$account->id.'/actions/'.$action, ['enabled' => true, 'daily_limit' => 2])->assertOk();
         }
+        $this->assertSame('planned', $catalog->action($account, 'reply')['status']);
         $api = SocialAccount::create(['name' => 'Page API', 'platform_id' => $account->platform_id, 'driver' => 'api']);
         $this->assertSame('ready', $catalog->action($api, 'comment.like')['status']);
         $this->assertNull($catalog->action($api, 'comment'));

@@ -87,7 +87,7 @@ class AgentController extends Controller
     public function updateActions(Request $request, SocialAccount $account): RedirectResponse
     {
         $definition = $this->catalog->platforms()[$account->platform->slug] ?? abort(404);
-        $ready = collect($definition['actions'])->where('status', 'ready')->keys()->all();
+        $ready = $this->catalog->forAccount($account)->where('status', 'ready')->keys()->all();
         abort_if($ready === [], 404);
         $data = $request->validate([
             'actions' => 'required|array|min:1',

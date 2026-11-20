@@ -205,6 +205,19 @@ Route::middleware(['auth:sanctum', \App\Http\Middleware\CommunityManagerTokenSco
     Route::get('/stock-photos/search', [MediaApiController::class, 'stockPhotosSearch']);
 
     // ── Agent : réponses compactes, voir docs/API.md ──
+    foreach (['agent', 'community-manager'] as $prefix) {
+        Route::post('/'.$prefix.'/accounts/{id}/meta/read', [\App\Http\Controllers\Api\MetaAgentController::class, 'read'])->whereNumber('id');
+        Route::post('/'.$prefix.'/accounts/{id}/meta/act', [\App\Http\Controllers\Api\MetaAgentController::class, 'submit'])->whereNumber('id');
+    }
+    Route::get('/meta/tasks/{task}', [\App\Http\Controllers\Api\MetaAgentController::class, 'status']);
+    Route::get('/meta/tasks/{task}/context', [\App\Http\Controllers\Api\MetaAgentController::class, 'context']);
+    Route::get('/community-manager/meta/tasks/{task}', [\App\Http\Controllers\Api\MetaAgentController::class, 'status']);
+    Route::get('/community-manager/meta/tasks/{task}/context', [\App\Http\Controllers\Api\MetaAgentController::class, 'context']);
+    Route::post('/meta/tasks/{task}/draft', [\App\Http\Controllers\Api\MetaAgentController::class, 'draft'])->middleware('throttle:20,1,meta-draft');
+    Route::post('/meta/tasks/{task}/claim', [\App\Http\Controllers\Api\MetaAgentController::class, 'claim']);
+    Route::post('/meta/tasks/{task}/authorize', [\App\Http\Controllers\Api\MetaAgentController::class, 'authorize']);
+    Route::post('/extension/meta/{platform}/agent/read', [\App\Http\Controllers\Api\MetaAgentController::class, 'localRead'])->whereIn('platform', ['facebook', 'instagram']);
+    Route::post('/extension/meta/{platform}/agent/act', [\App\Http\Controllers\Api\MetaAgentController::class, 'localSubmit'])->whereIn('platform', ['facebook', 'instagram']);
     Route::match(['get', 'post'], '/agent/report', [\App\Http\Controllers\Api\CommunityManagerReportController::class, 'report']);
     Route::get('/agent/accounts', [\App\Http\Controllers\Api\AgentApiController::class, 'accounts']);
     Route::post('/agent/accounts/{id}/tiktok/read', [\App\Http\Controllers\Api\TikTokFeedController::class, 'read'])->whereNumber('id')->middleware('throttle:20,1,agent-accounts-id-tiktok-read');

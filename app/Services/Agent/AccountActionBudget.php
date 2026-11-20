@@ -87,6 +87,11 @@ class AccountActionBudget
 
             return;
         }
+        if (MetaBrowserAgent::handles($task) && str_ends_with($task->kind, '.act')) {
+            $this->reserve($task->socialAccount, $task->socialAccount->platform->slug.'.'.$task->payload['action'], 'browser', $task->payload['url'], $task->id);
+
+            return;
+        }
         if ($task->kind === 'x.agent.act') {
             $this->reserve($task->socialAccount, 'x.'.XEngagementService::budgetAction($task->socialAccount, $task->payload), 'browser', $task->payload['url'], $task->id);
 
@@ -105,6 +110,7 @@ class AccountActionBudget
 
     public function finish(BrowserTask $task): void
     {
+        app(MetaBrowserAgent::class)->finish($task);
         app(AutomationJournal::class)->task($task);
         if ($task->kind === TikTokFeedEngagement::KIND) {
             app(TikTokFeedEngagement::class)->finish($task);  // un événement par like, pas par tâche

@@ -88,6 +88,9 @@
                         </div>
                     @endif
                 </form>
+                @if(in_array($platform, ['facebook', 'instagram'], true) && $row['account']->usesBrowser())
+                    @include('agent._meta-actions', ['metaAccount' => $row['account']])
+                @endif
             </div>
         @empty
             <div class="bg-white rounded-2xl shadow-sm border border-gray-100 px-6 py-8 text-center">

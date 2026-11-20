@@ -42,6 +42,7 @@ class AgentCatalog
                 $actions['comment'] = ['label' => 'Commenter une publication de groupe', 'kind' => 'write',
                     'channel' => 'browser', 'status' => 'planned', 'limit' => 10];
             }
+            $actions = array_replace($actions, app(MetaBrowserAgent::class)->definitions($account->platform->slug));
         }
 
         return $actions;
@@ -49,7 +50,11 @@ class AgentCatalog
 
     public function usedToday(SocialAccount $account, string $action): int
     {
-        if (in_array($account->platform->slug, ApiInboxActions::PLATFORMS, true) && in_array($action, ['reply', 'comment.like', 'like', 'comment', 'repost', 'follow'], true)) {
+        if ($account->usesBrowser() && isset(MetaBrowserAgent::WRITES[$account->platform->slug]) && str_ends_with($action, '.read')) {
+            return \App\Models\BrowserTask::where('social_account_id', $account->id)->where('kind', $account->platform->slug.'.agent.read')
+                ->where('payload->action', $action)->where('created_at', '>=', app(AccountActionBudget::class)->dayStart())->count();
+        }
+        if (in_array($account->platform->slug, ApiInboxActions::PLATFORMS, true) && in_array($action, ['reply', 'comment.like', 'like', 'comment', 'repost', 'follow', 'unfollow'], true)) {
             return \App\Models\AccountActionEvent::where('social_account_id', $account->id)->whereIn('action', [$account->platform->slug.'.'.$action, ...($action === 'reply' ? ['inbox.reply'] : [])])->where('created_at', '>=', app(AccountActionBudget::class)->dayStart())->count();
         }
         if ($account->platform->slug === 'tiktok' && $action === 'photo.publish') {

@@ -303,7 +303,7 @@
                             <label for="agent_{{ $field }}" class="block text-sm font-medium mb-1">{{ $label }}</label>
                             <textarea id="agent_{{ $field }}" name="agent_strategy[{{ $field }}]" rows="4" class="w-full rounded-xl border-gray-300 text-sm" placeholder="Une entrée par ligne">{{ is_array($entries) ? implode("\n", $entries) : $entries }}</textarea>
                             @if($field === 'facebook_groups')
-                                <p class="mt-1 text-xs text-gray-500">Un lien direct de groupe par ligne. Cette sélection concerne les publications de ces groupes et leurs commentaires, pour le lancement local comme sur le VPS. Le parcours d’interaction est en préparation ; enregistrer cette liste ne lance aucune action.</p>
+                                <p class="mt-1 text-xs text-gray-500">Un lien direct de groupe par ligne. Cette sélection concerne les publications de ces groupes et leurs commentaires, pour le lancement local comme sur le VPS. Activer séparément les commentaires et les likes de commentaires dans Automatisation. Enregistrer cette liste ne lance aucune action.</p>
                             @endif
                         </div>
                     @endforeach
@@ -329,7 +329,7 @@
                 @unless($account->platform->slug === 'facebook' && $account->usesBrowser())
                 <label for="agent_unfollow_after_days" class="block text-sm font-medium mt-4 mb-1">Délai avant un désabonnement (jours)</label>
                 <input id="agent_unfollow_after_days" name="agent_strategy[unfollow_after_days]" type="number" min="1" max="365" value="{{ old('agent_strategy.unfollow_after_days', $account->agent_strategy['unfollow_after_days'] ?? 7) }}" class="w-24 rounded-xl border-gray-300 text-sm">
-                <p class="text-xs text-gray-500 mt-1">X : uniquement après un abonnement confirmé de l’agent et deux constats récents espacés d’au moins 15 min sans retour d’abonnement. Aucune suppression de suivi n’est lancée en enregistrant cette fiche.</p>
+                <p class="text-xs text-gray-500 mt-1">X et Instagram : uniquement après un abonnement confirmé de l’agent et deux constats récents espacés d’au moins 15 min sans retour d’abonnement. Aucune suppression de suivi n’est lancée en enregistrant cette fiche.</p>
                 <p class="text-xs text-gray-500 mt-3">La liste des comptes sert au ciblage. Elle ne lance pas de follow/unfollow.</p>
                 @endunless
                 <h3 class="text-sm font-semibold mt-6 mb-2">Technique par action</h3>

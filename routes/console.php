@@ -157,3 +157,6 @@ Artisan::command('threads:session-check', function () {
     }
 })->purpose('Contrôler la session Threads NAS et signaler son expiration');
 Schedule::command('threads:session-check')->hourly()->between('06:00', '21:59')->timezone('Europe/Lisbon')->withoutOverlapping();
+
+// Échéances des suivis Instagram RS-Max uniquement ; aucun geste tant que l'action reste désactivée.
+Schedule::command('instagram:unfollow-due --commit')->everyFiveMinutes()->withoutOverlapping(5);

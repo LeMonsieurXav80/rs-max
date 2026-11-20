@@ -1548,3 +1548,8 @@ Facebook, Instagram, Threads et YouTube utilisent le même parcours Community Ma
 Hermès peut utiliser le jeton Community Manager sur `GET /api/community-manager/accounts/{id}/editorial-calendar`, avec un compte attribué découvert via `GET /api/community-manager/accounts`. Mêmes filtres de période, thème et recherche.
 
 La réponse contient `from`, `to`, `account_id`, le dictionnaire `topics` et `events`. Chaque événement donne `title`, `starts_on`, `ends_on` (date de fin incluse, ou `null` pour un jour), `topics` et `source_url`. Les thèmes sont attribués par RS-Max. La date de publication se choisit séparément dans le planning RS-Max, en réservant le créneau à une seule marque.
+
+
+### Actions Facebook personnel et Instagram avec Companion
+
+Voir [le parcours commun local/VPS](meta-profils-companion.md#exécution-des-actions-companion-01860) : groupes Facebook choisis, `comment` et `comment.like` indépendants ; Instagram `like`, `comment.like`, `follow`, `unfollow`. Les gestes sont désactivés par défaut, avec lecture liée au compte, quotas partagés, reçu permanent et preuve après rechargement. Le bloc Automatisation de chaque réseau permet aussi le lancement sur le VPS. Les réponses inbox et publications personnelles restent hors de ce lot.

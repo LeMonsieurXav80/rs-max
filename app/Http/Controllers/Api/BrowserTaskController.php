@@ -124,7 +124,7 @@ class BrowserTaskController extends Controller
 
     public function finish(Request $r, BrowserTask $task): JsonResponse
     {
-        abort_unless($r->user()->isAdmin() || \App\Services\Agent\Feed\LocalFeedRun::canCompleteXTask($r->user(), $task),
+        abort_unless($r->user()->isAdmin() || \App\Services\Agent\Feed\LocalFeedRun::canCompleteXTask($r->user(), $task) || MetaAgentController::ownsLocal($r, $task),
             403, 'Ce jeton Companion ne peut pas clôturer cette tâche.');
         $v = $r->validate([
             'status' => 'required|in:done,failed,uncertain',
@@ -148,6 +148,11 @@ class BrowserTaskController extends Controller
         }
         if ($task->kind === \App\Services\Agent\TikTokFeedEngagement::KIND) {
             $v['result'] = app(\App\Services\Agent\TikTokFeedEngagement::class)->finalResult($task, $v['result'] ?? []);
+        }
+        abort_if(strlen(json_encode($v['result'] ?? [])) > 250000, 422, 'Résultat trop volumineux.');
+        if (\App\Services\Agent\MetaBrowserAgent::handles($task)) {
+            // La page ne peut ni effacer ni inventer le reçu d’autorisation conservé côté serveur.
+            $v['result']['commit_authorized'] = ($task->result['commit_authorized'] ?? false) === true;
         }
         if (in_array($task->kind, ['tiktok.photo.publish', 'threads.agent.act', 'tiktok.reply', 'tiktok.publish'], true)) {
             $v['result'] = array_replace($task->result ?? [], $v['result'] ?? []);
