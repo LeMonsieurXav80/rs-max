@@ -106,6 +106,11 @@ class AccountActionBudget
     public function finish(BrowserTask $task): void
     {
         app(AutomationJournal::class)->task($task);
+        if ($task->kind === TikTokFeedEngagement::KIND) {
+            app(TikTokFeedEngagement::class)->finish($task);  // un événement par like, pas par tâche
+
+            return;
+        }
         $status = $task->status === 'done' ? (($task->result['confirmed'] ?? null) === true ? (($task->result['unchanged'] ?? $task->result['already_liked'] ?? false) ? 'unchanged' : 'confirmed') : 'completed') : $task->status;
         $updated = AccountActionEvent::where('browser_task_id', $task->id)->where('status', '!=', $status)
             ->update(['status' => $status, 'error' => $task->error, 'updated_at' => now()]);

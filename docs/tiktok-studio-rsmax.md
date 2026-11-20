@@ -80,10 +80,16 @@ Studio d'un téléphone (worker `android/`, voir `android/README.md`). Chercher 
 La fiche du compte conserve le profil Companion du NAS pour l'inbox et les publications. Le réglage
 `tiktok_home_like_phone_profiles` associe l'identifiant du compte au profil Android dans un objet JSON.
 Sur ces comptes, la découverte TikTok générique d'Hermès est désactivée via l'action `feed.read`.
-Le script dédié lit « Pour toi » sur Android et n'ouvre que des vidéos trouvées dans son relevé.
+Le script dédié fait les likes dans « Pour toi » sur Android, sur la vidéo affichée, sans jamais la rouvrir.
 
 `tiktok:home-likes` affiche le plan sans ouvrir TikTok. Le planificateur l'exécute à 8 h 10, 12 h 10, 16 h 10,
-18 h 10 et 21 h 10 à Lisbonne. Chaque passage autorise jusqu'à 60 demandes, dans le quota de 300 par jour
-et la cadence du compte. Dans `browser_tasks`, les gestes portent le profil Android, le type
-`tiktok.comment.like` et une clé préfixée `tiktok-home-like:`. Pour compter un nouveau like, exiger le reçu
-après rechargement et écarter `already_liked` et les gestes incertains.
+18 h 10 et 21 h 10 à Lisbonne. Chaque passage autorise jusqu'à 60 likes, dans le quota de 300 par jour, en
+sessions `tiktok.feed.engage` de 20 min au plus (`TikTokFeedEngagement`). Sur chaque vidéo : commentaires
+ouverts, 5 likes au plus choisis par règles (peu aimés, jamais les plus aimés, ni le créateur ni le compte),
+2 à 4 s entre deux, puis vidéo suivante. Vidéos du compte et vidéos commerciales sautées.
+
+Chaque like envoie un reçu AVANT le geste (`checkpoint`) : RS-Max le réserve comme événement
+`tiktok.comment.like` (`paced`, sans lien `browser_task_id`, unique par tâche) ; un refus (quota, pause)
+arrête la session. Statut final par like : `confirmed` (relu après rechargement, première vidéo aimée de la
+session), `completed` (cœur rouge relu après le geste), `uncertain` (cœur absent ou reçu sans suite, jamais
+relancé). Avant le 20/11/2026, chaque like rouvrait la vidéo par son lien : 1 à 2 min par like, un échec sur deux.

@@ -3,11 +3,11 @@
 namespace App\Console\Commands;
 
 use App\Models\AccountActionEvent;
-use App\Models\BrowserTask;
 use App\Models\Setting;
 use App\Models\SocialAccount;
 use App\Services\Agent\AccountActionBudget;
 use App\Services\Agent\CommunityManagerWindow;
+use App\Services\Agent\TikTokFeedEngagement;
 use App\Services\Browser\BrowserException;
 use App\Services\Browser\BrowserTaskQueue;
 use Carbon\CarbonInterface;
@@ -25,7 +25,9 @@ class TikTokHomeLikesCommand extends Command
 
     private const PER_SLOT = 60;
 
-    private const LIKE_TIMEOUT = 240;
+    private const SESSION_MINUTES = 20;
+
+    private const PER_VIDEO = 5;
 
     protected $signature = 'tiktok:home-likes {--commit : Exécuter les likes du passage}';
 
@@ -80,71 +82,37 @@ class TikTokHomeLikesCommand extends Command
         return self::SUCCESS;
     }
 
+    /**
+     * Sessions « Pour toi » sur le téléphone (`TikTokFeedEngagement`) : les likes se font sur la vidéo affichée.
+     * Avant le 20/11/2026, chaque like rouvrait la vidéo par son lien : 1 à 2 min par like, un échec sur deux.
+     */
     private function runPass(BrowserTaskQueue $queue, AccountActionBudget $budget, SocialAccount $account, string $phone, array $window, CarbonInterface $end, int $limit): void
     {
-        $attempted = $confirmed = $emptyReads = 0;
-        $visited = [];
+        $liked = $confirmed = $sessions = $empty = 0;
         $payload = ['username' => $account->browser_username, 'activity_window' => $window, 'deadline' => $end->toIso8601String()];
-        try {
-            while ($attempted < $limit && $emptyReads < 3 && $end->isFuture()) {
-                $before = count($visited);
-                $feed = $queue->run($account, 'tiktok.feed.read', $payload + [
-                    'url' => self::HOME, 'limit' => 8, 'resume' => $visited !== [],
-                ], timeout: 100, profile: $phone);
-                foreach ($feed['items'] ?? [] as $video) {
-                    $url = $video['url'] ?? '';
-                    if (! preg_match('~^https://www\.tiktok\.com/@([a-zA-Z0-9_.]+)/(?:video|photo)/[0-9]+$~D', $url, $parts)
-                        || strcasecmp($parts[1], $account->browser_username) === 0 || ! empty($video['sponsored']) || isset($visited[$url])) {
-                        continue;
-                    }
-                    $visited[$url] = true;
-                    if (! $end->isFuture()) {
-                        break 2;
-                    }
-                    $discussion = $queue->run($account, 'tiktok.video.comments', $payload + ['url' => $url], timeout: 100, profile: $phone);
-                    if (($discussion['video']['url'] ?? null) !== $url) {
-                        continue;
-                    }
-                    foreach ($discussion['comments'] ?? [] as $comment) {
-                        if (($comment['liked'] ?? null) !== false || ! empty($comment['ambiguous'])
-                            || blank($comment['author'] ?? '') || strcasecmp($comment['author'], $account->browser_username) === 0
-                            || ! preg_match('/^[a-f0-9]{64}$/D', $comment['key'] ?? '')) {
-                            continue;
-                        }
-                        $key = 'tiktok-home-like:'.hash('sha256', $url.'|'.$comment['key']);
-                        if (BrowserTask::where('social_account_id', $account->id)->where('idempotency_key', $key)->exists()) {
-                            continue;
-                        }
-                        if ($attempted >= $limit || ! $this->withinCadence($budget, $account, $end->copy()->subSeconds(self::LIKE_TIMEOUT))) {
-                            break 3;
-                        }
-                        $attempted++;
-                        try {
-                            $result = $queue->run($account, 'tiktok.comment.like', $payload + [
-                                'url' => $url, 'target' => $comment, 'publication_key' => $key,
-                            ], timeout: self::LIKE_TIMEOUT, profile: $phone);
-                        } catch (BrowserException $error) {
-                            if (! in_array($error->getMessage(), [
-                                'Commentaire exact introuvable : aucun geste.',
-                                'État du like du commentaire inconnu : aucun geste.',
-                            ], true)) {
-                                throw $error;
-                            }
-
-                            continue;
-                        }
-                        if (($result['confirmed'] ?? false) === true && ($result['proof'] ?? null) === 'after_reload'
-                            && empty($result['already_liked'])) {
-                            $confirmed++;
-                        }
-                    }
-                }
-                $emptyReads = count($visited) === $before ? $emptyReads + 1 : 0;
+        while ($liked < $limit && $empty < 2 && $sessions < 8) {
+            $minutes = min(self::SESSION_MINUTES, (int) floor(now()->diffInMinutes($end, false)) - 2);
+            if ($minutes < 5 || ! $this->withinCadence($budget, $account, $end->copy()->subMinutes(5))) {
+                break;
             }
-        } catch (BrowserException $error) {
-            $this->warn($error->getMessage());
+            $sessions++;
+            try {
+                $result = $queue->run($account, TikTokFeedEngagement::KIND, $payload + [
+                    'url' => self::HOME, 'minutes' => $minutes, 'per_video' => self::PER_VIDEO, 'max_likes' => $limit - $liked,
+                ], timeout: ($minutes + 8) * 60, profile: $phone);
+            } catch (BrowserException $error) {
+                $this->warn($error->getMessage());
+                break;
+            }
+            $items = collect($result['items'] ?? []);
+            $liked += $items->count();
+            $confirmed += $items->whereIn('status', ['confirmed', 'shown'])->count();
+            $empty = $items->isEmpty() ? $empty + 1 : 0;
+            if (! empty($result['refused'])) {
+                break;
+            }
         }
-        $this->info("{$confirmed} likes ajoutés et confirmés sur {$attempted} demandes, {$limit} maximum.");
+        $this->info("{$confirmed} likes affichés ou confirmés sur {$liked} gestes, {$limit} maximum, {$sessions} session(s).");
     }
 
     private function withinCadence(AccountActionBudget $budget, SocialAccount $account, CarbonInterface $end): bool
