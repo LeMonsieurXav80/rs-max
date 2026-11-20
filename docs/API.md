@@ -1404,6 +1404,8 @@ reste `unprepared` dans ces compteurs jusqu'à son envoi ou sa programmation.
 
 Les lectures journalisées (flux, recherches, profils, mentions et discussions) ont un plafond séparé de 1 000 par type de lecture, compte et jour de Lisbonne. Elles ne consomment aucun geste et ne déclenchent pas d’ajustement de cadence. Le plafond de lectures est réglable depuis Automatisation ou l’API ; le nombre de résultats par requête reste défini par chaque parcours.
 `GET /api/accounts/{id}/strategy` et `PATCH` au même endroit ; mêmes routes sous `/api/community-manager/accounts/{id}/strategy` pour le jeton dédié. Manager et compte attribué actif requis. PATCH partiel :
+
+Pour Facebook, `agent_strategy.facebook_groups` accepte au plus 200 liens HTTPS directs `https://www.facebook.com/groups/ID-ou-slug/` (tableau JSON, ou une ligne par groupe dans la fiche). Les variantes `web.facebook.com` et `m.facebook.com` sont normalisées, les doublons regroupés et les paramètres retirés. Un lien de publication, de partage court ou un domaine externe est refusé. PATCH partiel conserve la sélection ; `[]` la vide. Champ réservé aux comptes Facebook. C’est une sélection de cibles pour les parcours local et VPS à développer ; son enregistrement n’exécute aucune action sociale.
 ```json
 {"agent_hourly_limit":2,"agent_min_interval_seconds":60,"agent_strategy":{"audience":"Public francophone","objective":"Échanges utiles","hashtags":["#mode"],"target_accounts":["@exemple"],"search_queries":["idées de tenue"],"exclusions":[]}}
 ```

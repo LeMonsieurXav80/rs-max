@@ -20,3 +20,13 @@ API authentifiée, compte actif attribué à l’utilisateur :
 - `POST /api/extension/meta/{facebook|instagram}/session` avec `platform_account_id` et cookies de ce seul réseau.
 
 La transmission demande une extension actualisée et rechargée. Conserver `config.local.js` propre à chaque installation. Réserver les files libres avant les deux redémarrages distants et vérifier la version active. Le Mac reste sous le contrôle de Xavier pour le rechargement de l’extension.
+
+## Ciblage choisi le 20 novembre 2026
+
+Facebook personnel : partir de groupes choisis par compte, puis de leurs publications et commentaires. Deux gestes indépendants, avec activation, quota et déduplication distincts : `comment` pour commenter une publication de groupe avec le persona du compte ; `comment.like` pour aimer un commentaire de cette publication sans publier de texte. Le like des commentaires ne doit pas déclencher un commentaire de publication, ni l’inverse. La cible et son groupe doivent être confirmés dans les deux parcours. Les réponses inbox restent un troisième parcours (`reply`). Les deux gestes de groupe apparaissent « À développer », sans interrupteur actif avant un exécuteur réel vérifié.
+
+Instagram : partir des hashtags, aimer des publications et commentaires, suivre des comptes et vérifier le retour d’abonnement avant un éventuel désabonnement après le délai réglé. Ne pas appliquer la méthode Instagram aux profils Facebook.
+
+La fiche d’un compte Facebook Companion propose `agent_strategy.facebook_groups` : une liste de liens HTTPS directs de groupes. Le même champ est lisible et modifiable avec l’API stratégie habituelle. Les variantes `web`, `m` et les paramètres de partage sont normalisés ; les liens de publications, raccourcis `/share/`, liens externes et domaines ressemblants sont refusés. La liste appartient au compte et un PATCH partiel la conserve ; `[]` la vide. Cette configuration est commune aux futurs exécutants local et distant.
+
+Ce réglage n’active ni lecture, like, commentaire, adhésion à un groupe, ni demande d’ami. Les actions restent à développer, avec les mêmes contrôles et preuves sur les deux exécutants. Pour la recette réelle, obtenir les liens des groupes choisis par Xavier et vérifier leur accessibilité avec le profil connecté, sans adhésion automatique.

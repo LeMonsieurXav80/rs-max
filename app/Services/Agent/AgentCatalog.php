@@ -25,7 +25,26 @@ class AgentCatalog
     /** @return array<string, array<string, mixed>>|null */
     public function action(SocialAccount $account, string $action): ?array
     {
-        return config("agent.platforms.{$account->platform->slug}.actions")[$action] ?? null;
+        return $this->definitionsFor($account)[$action] ?? null;
+    }
+
+    private function definitionsFor(SocialAccount $account): array
+    {
+        $actions = config("agent.platforms.{$account->platform->slug}.actions", []);
+        if ($account->usesBrowser() && in_array($account->platform->slug, ['facebook', 'instagram'], true)) {
+            foreach ($actions as &$action) {
+                $action['status'] = 'planned';
+                $action['channel'] = 'browser';
+            }
+            unset($action);
+            if ($account->platform->slug === 'facebook') {
+                $actions['comment.like']['label'] = 'Aimer les commentaires d’une publication de groupe';
+                $actions['comment'] = ['label' => 'Commenter une publication de groupe', 'kind' => 'write',
+                    'channel' => 'browser', 'status' => 'planned', 'limit' => 10];
+            }
+        }
+
+        return $actions;
     }
 
     public function usedToday(SocialAccount $account, string $action): int
@@ -62,15 +81,7 @@ class AgentCatalog
     public function forAccount(SocialAccount $account): Collection
     {
         $saved = $account->agentActions()->get()->keyBy('action');
-        $actions = config("agent.platforms.{$account->platform->slug}.actions", []);
-
-        if ($account->usesBrowser() && in_array($account->platform->slug, ['facebook', 'instagram'], true)) {
-            foreach ($actions as &$action) {
-                $action['status'] = 'planned';
-                $action['channel'] = 'browser';
-            }
-            unset($action);
-        }
+        $actions = $this->definitionsFor($account);
 
         return collect($actions)->map(function (array $action, string $key) use ($account, $saved) {
             $setting = $saved->get($key);

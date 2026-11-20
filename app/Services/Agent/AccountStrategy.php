@@ -13,7 +13,14 @@ use Illuminate\Validation\Rule;
 
 class AccountStrategy
 {
-    public const LISTS = ['hashtags' => 'Hashtags à rechercher', 'target_accounts' => 'Comptes à suivre / explorer', 'search_queries' => 'Recherches spécifiques', 'exclusions' => 'Mots et comptes à exclure'];
+    public const LISTS = ['hashtags' => 'Hashtags à rechercher', 'target_accounts' => 'Comptes à suivre / explorer', 'search_queries' => 'Recherches spécifiques', 'exclusions' => 'Mots et comptes à exclure', 'facebook_groups' => 'Groupes Facebook à explorer'];
+
+    public static function listsFor(SocialAccount $account): array
+    {
+        return $account->platform->slug === 'facebook' && $account->usesBrowser()
+            ? ['facebook_groups' => self::LISTS['facebook_groups'], 'exclusions' => self::LISTS['exclusions']]
+            : array_diff_key(self::LISTS, ['facebook_groups' => true]);
+    }
 
     public const X_SEARCH_QUERY_LIMIT = 263;
 
@@ -168,7 +175,7 @@ class AccountStrategy
             'agent_adaptation.max_hourly' => 'sometimes|integer|min:1|max:1000',
             'agent_adaptation.max_daily' => 'sometimes|integer|min:2|max:100000',
             'agent_min_interval_seconds' => 'sometimes|integer|min:0|max:86400',
-            'agent_strategy' => 'sometimes|array:audience,objective,hashtags,target_accounts,search_queries,exclusions,unfollow_after_days,editorial_topics,reply_language,discovery_interval_minutes,feed_engagement,repost_interval_hours',
+            'agent_strategy' => 'sometimes|array:audience,objective,hashtags,target_accounts,search_queries,exclusions,facebook_groups,unfollow_after_days,editorial_topics,reply_language,discovery_interval_minutes,feed_engagement,repost_interval_hours',
             'agent_strategy.discovery_interval_minutes' => 'sometimes|nullable|integer|min:1|max:1440',
             'agent_strategy.repost_interval_hours' => 'sometimes|nullable|integer|min:48|max:720',
             'agent_strategy.reply_language' => ['sometimes', 'nullable', Rule::in(array_keys(ReplyLanguage::LABELS))],
@@ -194,8 +201,18 @@ class AccountStrategy
             $rules['agent_strategy.'.$key] = 'sometimes|array|max:200';
             $rules['agent_strategy.'.$key.'.*'] = 'string|max:255|distinct';
         }
+        $rules['agent_strategy.facebook_groups.*'] = ['string', 'max:255', function ($attribute, $value, $fail) {
+            if (! is_string($value) || FacebookGroupTargets::canonical($value) === null) {
+                $fail('Indiquer le lien HTTPS direct du groupe : https://www.facebook.com/groups/identifiant/.');
+            }
+        }];
 
         $data = $request->validate($rules);
+        if (isset($data['agent_strategy']['facebook_groups'])) {
+            $data['agent_strategy']['facebook_groups'] = array_values(array_unique(array_map(
+                FacebookGroupTargets::canonical(...), $data['agent_strategy']['facebook_groups']
+            )));
+        }
         foreach (Feed\FeedEngagementSettings::TEMPLATE_LISTS as $key) {
             foreach ($data['agent_strategy']['feed_engagement'][$key] ?? [] as $i => $template) {
                 if ($error = Feed\Spintax::error($template)) {
@@ -216,6 +233,9 @@ class AccountStrategy
     public function save(Request $request, SocialAccount $account): void
     {
         $data = $this->validate($request);
+        if (array_key_exists('facebook_groups', $data['agent_strategy'] ?? []) && $account->platform->slug !== 'facebook') {
+            throw \Illuminate\Validation\ValidationException::withMessages(['agent_strategy.facebook_groups' => 'Les groupes Facebook se règlent sur un compte Facebook.']);
+        }
         $token = $request->user()?->currentAccessToken();
         $scoped = $token instanceof \Laravel\Sanctum\PersonalAccessToken && in_array('community-manager', (array) $token->abilities, true);
         abort_if($scoped && $request->exists('agent_strategy.repost_interval_hours'), 403, 'Le délai de republication se règle avec un accès gestionnaire complet.');
