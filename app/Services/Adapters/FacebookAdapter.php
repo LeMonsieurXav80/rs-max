@@ -20,6 +20,10 @@ class FacebookAdapter implements PlatformAdapterInterface
      */
     public function publish(SocialAccount $account, string $content, ?array $media = null, ?array $options = null): array
     {
+        if ($account->usesBrowser()) {
+            return ['success' => false, 'external_id' => null, 'error' => 'La connexion Companion est disponible. La publication sur ce profil par navigateur n’est pas encore disponible.'];
+        }
+
         try {
             $credentials = $account->credentials;
             $pageId = $credentials['page_id'];

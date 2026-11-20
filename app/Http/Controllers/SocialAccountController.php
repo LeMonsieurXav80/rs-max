@@ -68,6 +68,10 @@ class SocialAccountController extends Controller
             'name' => 'required|string|max:255',
             'languages' => 'required|array|min:1',
             'languages.*' => 'in:fr,en,pt,es,de,it',
+            'driver' => 'nullable|in:api,browser_vps,browser_nas',
+            'browser_profile' => ['nullable', 'string', 'regex:/^[a-z0-9_-]{1,40}$/'],
+            'platform_account_id' => ['nullable', 'string', 'regex:/^\d{1,30}$/'],
+            'browser_username' => ['nullable', 'string', 'regex:/^[A-Za-z0-9_.]{1,50}$/'],
             'credentials' => 'nullable|array',
             'credentials.*' => 'nullable|string|max:2000',
         ]);
@@ -76,7 +80,14 @@ class SocialAccountController extends Controller
 
         // Fetch the platform to validate credential fields
         $platform = Platform::findOrFail($validated['platform_id']);
-        $expectedFields = $platform->config['credential_fields'] ?? [];
+        $browser = in_array($validated['driver'] ?? 'api', ['browser_vps', 'browser_nas'], true);
+        if ($browser && (! in_array($platform->slug, ['facebook', 'instagram'], true) || blank($validated['browser_profile'] ?? null) || blank($validated['platform_account_id'] ?? null) || SocialAccount::companionMode($validated['browser_profile']) !== $validated['driver'])) {
+            throw ValidationException::withMessages(['browser_profile' => 'Choisissez le profil Companion et l’identifiant numérique du compte Facebook ou Instagram.']);
+        }
+        if ($browser && $platform->slug === 'instagram' && blank($validated['browser_username'] ?? null)) {
+            throw ValidationException::withMessages(['browser_username' => 'Le nom Instagram est obligatoire pour vérifier la session.']);
+        }
+        $expectedFields = $browser ? [] : ($platform->config['credential_fields'] ?? []);
 
         // Build the credentials array using only expected fields
         $credentials = [];
@@ -90,7 +101,7 @@ class SocialAccountController extends Controller
         // Extract platform_account_id based on platform
         $idFieldMap = ['facebook' => 'page_id', 'instagram' => 'account_id', 'telegram' => 'chat_id', 'bluesky' => 'did'];
         $idField = $idFieldMap[$platform->slug] ?? null;
-        $platformAccountId = ($idField && isset($credentials[$idField])) ? $credentials[$idField] : null;
+        $platformAccountId = $browser ? $validated['platform_account_id'] : (($idField && isset($credentials[$idField])) ? $credentials[$idField] : null);
 
         // Check for existing account with same platform + platform_account_id
         $account = null;
@@ -100,6 +111,9 @@ class SocialAccountController extends Controller
                 ->first();
         }
 
+        if ($account && $browser) {
+            throw ValidationException::withMessages(['platform_account_id' => 'Ce compte existe déjà. Modifiez sa fiche pour choisir son mode de connexion.']);
+        }
         if ($account) {
             $account->update([
                 'name' => $validated['name'],
@@ -113,8 +127,9 @@ class SocialAccountController extends Controller
                 'name' => $validated['name'],
                 'credentials' => $credentials,
                 'languages' => $validated['languages'],
-                'driver' => ($platform->config['browser_only'] ?? false) ? 'browser' : 'api',
-                'browser_profile' => $platform->config['browser_profile'] ?? null,
+                'browser_username' => $browser ? ($validated['browser_username'] ?? null) : null,
+                'driver' => ($browser || ($platform->config['browser_only'] ?? false)) ? 'browser' : 'api',
+                'browser_profile' => $browser ? $validated['browser_profile'] : ($platform->config['browser_profile'] ?? null),
             ]);
         }
 
@@ -176,7 +191,7 @@ class SocialAccountController extends Controller
         $driver = $validated['driver'] ?? $account->driver;
         $browserProfile = $validated['browser_profile'] ?? $account->browser_profile;
         if (in_array($driver, ['browser_vps', 'browser_nas'], true)) {
-            if ($account->platform->slug !== 'twitter' || blank($browserProfile) || SocialAccount::companionMode($browserProfile) !== $driver) {
+            if (! in_array($account->platform->slug, ['twitter', 'facebook', 'instagram'], true) || blank($browserProfile) || SocialAccount::companionMode($browserProfile) !== $driver) {
                 throw ValidationException::withMessages([
                     'browser_profile' => $driver === 'browser_vps'
                         ? 'Indiquez le profil Companion du VPS. Son nom commence par vps-.'

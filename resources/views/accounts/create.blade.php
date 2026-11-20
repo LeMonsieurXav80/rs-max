@@ -6,8 +6,10 @@
     <div class="max-w-2xl" x-data="{
         platformId: '{{ old('platform_id', request('platform_id', '')) }}',
         platforms: @js($platforms->keyBy('id')),
+        driver: '{{ old('driver', 'api') }}',
+        get supportsBrowser() { return ['facebook', 'instagram'].includes(this.platforms[this.platformId]?.slug); },
         get credentialFields() {
-            if (!this.platformId || !this.platforms[this.platformId]) return [];
+            if (!this.platformId || !this.platforms[this.platformId] || (this.supportsBrowser && this.driver !== 'api')) return [];
             return this.platforms[this.platformId].config?.credential_fields || [];
         }
     }">
@@ -98,6 +100,30 @@
                     @enderror
                 </div>
 
+            </div>
+
+            <div class="bg-white rounded-2xl shadow-sm border border-gray-100 p-6 mb-6" x-show="supportsBrowser" x-cloak>
+                <h2 class="text-base font-semibold text-gray-900 mb-4">Connexion Facebook / Instagram</h2>
+                <select name="driver" x-model="driver" :disabled="!supportsBrowser" class="w-full rounded-xl border-gray-300 text-sm">
+                    <option value="api">API Meta — Page Facebook ou compte Instagram professionnel</option>
+                    <option value="browser_vps">Companion sur le VPS — profil personnel ou professionnel</option>
+                    <option value="browser_nas">Companion sur le NAS — profil personnel ou professionnel</option>
+                </select>
+                <div x-show="driver !== 'api'" class="space-y-3 mt-4">
+                    <p class="text-sm text-gray-600">Ouvrez le compte dans Chrome, puis utilisez « Identifier mon compte » dans Companion pour relever son identifiant. Les actions locales utilisent ce même compte ; le navigateur distant reçoit sa session depuis Companion.</p>
+                    <label class="block text-sm">Identifiant numérique du compte
+                        <input name="platform_account_id" value="{{ old('platform_account_id') }}" :disabled="!supportsBrowser || driver === 'api'" class="block w-full rounded-xl border-gray-300" inputmode="numeric">
+                    </label>
+                    <label class="block text-sm">Nom Instagram (sans @, pour Instagram)
+                        <input name="browser_username" value="{{ old('browser_username') }}" :disabled="!supportsBrowser || driver === 'api'" class="block w-full rounded-xl border-gray-300">
+                    </label>
+                    <label class="block text-sm">Profil du navigateur distant
+                        <input name="browser_profile" value="{{ old('browser_profile') }}" :disabled="!supportsBrowser || driver === 'api'" placeholder="vps-dix" class="block w-full rounded-xl border-gray-300">
+                    </label>
+                </div>
+                @foreach(['platform_account_id', 'browser_username', 'browser_profile', 'driver'] as $field)
+                    @error($field)<p class="mt-2 text-sm text-red-600">{{ $message }}</p>@enderror
+                @endforeach
             </div>
 
             {{-- Section : Identifiants de connexion --}}

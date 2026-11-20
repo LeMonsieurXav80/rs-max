@@ -109,6 +109,10 @@ class InboxSyncService
 
     public function getServiceForAccount(SocialAccount $account): ?PlatformInboxInterface
     {
+        if ($account->usesBrowser() && in_array($account->platform->slug, ['facebook', 'instagram'], true)) {
+            return null;
+        }
+
         return $account->platform->slug === 'twitter' && $account->usesBrowser()
             ? app(TwitterBrowserInboxService::class)
             : $this->getServiceForPlatform($account->platform->slug);

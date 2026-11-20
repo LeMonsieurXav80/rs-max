@@ -28,7 +28,7 @@ class BrowserTaskController extends Controller
         }
 
         // Plusieurs comptes X partagent le Chromium : Companion vérifie celui qui est connecté avant d'agir.
-        $accountId = str_starts_with($task->kind, 'x.') ? (string) $task->socialAccount->platform_account_id : null;
+        $accountId = preg_match('/^(x|facebook|instagram)\./', $task->kind) ? (string) $task->socialAccount->platform_account_id : null;
 
         return response()->json(['id' => $task->id, 'kind' => $task->kind, 'payload' => $task->payload, 'account_id' => $accountId]);
     }

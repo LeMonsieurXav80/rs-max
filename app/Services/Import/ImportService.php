@@ -18,6 +18,9 @@ class ImportService
     public function import(SocialAccount $account, int $limit = 50): array
     {
         $platformSlug = $account->platform->slug;
+        if ($account->usesBrowser() && in_array($platformSlug, ['facebook', 'instagram'], true)) {
+            return ['success' => false, 'imported' => 0, 'error' => 'Ce compte utilise Companion ; l’import de son historique par navigateur n’est pas encore disponible.'];
+        }
         if ($platformSlug === 'twitter' && $account->usesBrowser()) {
             try {
                 $result = app(XBrowserStatsService::class)->sync($account, screens: 10, limit: $limit);

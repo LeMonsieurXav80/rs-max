@@ -1,0 +1,225 @@
+--- a/background.js
++++ b/background.js
+@@ -18,7 +18,7 @@
+ 
+ // Pre-remplissage local optionnel (config.local.js, hors versionnement).
+ // Absent en usage normal : l'utilisateur configure via la page de reglages.
+-importScripts('shared/run-journal.js', 'shared/activity-window.js', 'shared/task-journal.js', 'x/batch-plan.js', 'x/batch-worker.js');
++importScripts('meta/session-worker.js', 'shared/run-journal.js', 'shared/activity-window.js', 'shared/task-journal.js', 'x/batch-plan.js', 'x/batch-worker.js');
+ try { importScripts('config.local.js'); } catch { /* pas de config locale */ }
+ 
+ // ─────────── Config ───────────
+@@ -46,7 +46,7 @@
+ 
+ // ─────────── Appel API ───────────
+ 
+-async function apiFetch({ method = 'GET', path, body, query }) {
++async function apiFetch({ method = 'GET', path, body, query, timeoutMs = API_TIMEOUT_MS }) {
+   const cfg = await getConfig();
+   if (!cfg.baseUrl) throw new Error("URL de l'instance RS-Max non configuree.");
+   if (!cfg.token) throw new Error('Token API non configure.');
+@@ -57,7 +57,7 @@
+   }
+ 
+   const res = await fetch(url, {
+-    signal: AbortSignal.timeout(API_TIMEOUT_MS),
++    signal: AbortSignal.timeout(Math.min(timeoutMs, 100000)),
+     method,
+     headers: {
+       Authorization: 'Bearer ' + cfg.token,
+@@ -145,6 +145,8 @@
+ }
+ 
+ const handlers = {
++  'meta.identity': (msg,sender) => self.RSMetaSession.identity(sender),
++  'meta.session.send': (msg,sender) => self.RSMetaSession.send(msg,sender),
+   'error.report': (msg, sender) => {
+     if (sender.id !== chrome.runtime.id) throw new Error('Rapport refusé.');
+     const url = sender.tab?.url ? new URL(sender.tab.url) : null;
+@@ -832,6 +834,7 @@
+     if (!self.RSActivityWindow) throw Error('Contrôle horaire indisponible.');
+     self.RSActivityWindow.assert(task.payload.activity_window);
+   }
++  if (/^(facebook|instagram)\.(whoami|session\.apply)$/.test(task.kind)) return self.RSMetaSession.execute(task);
+   if(task.kind.startsWith('threads.'))return executeThreadsTask(task);
+   if(task.kind==='tiktok.photo.check')return checkTikTokPhotoTask(task);
+   if(task.kind==='tiktok.photo.publish')return executeTikTokPhotoTask(task);
+@@ -918,7 +921,7 @@
+ // `askPage` attendait la page sans fin, RS-Max abandonnait la tâche, Companion ne prenait plus rien jusqu'au redémarrage.
+ const TASK_MAX_MS = 10 * 60 * 1000;
+ // Lectures sans geste : bornées, elles échouent ; un geste borné reste incertain et n'est jamais relancé (comme RS-Max).
+-const READ_TASK = kind => kind.endsWith('.read') || ['x.whoami', 'tiktok.whoami', 'tiktok.comments', 'tiktok.target', 'tiktok.verify', 'tiktok.video.comments', 'x.tweets'].includes(kind);
++const READ_TASK = kind => kind.endsWith('.read') || ['facebook.whoami', 'instagram.whoami', 'x.whoami', 'tiktok.whoami', 'tiktok.comments', 'tiktok.target', 'tiktok.verify', 'tiktok.video.comments', 'x.tweets'].includes(kind);
+ 
+ function boundedTask(task) {
+   const deadline = Date.parse(task.payload?.deadline || '');
+--- a/manifest.json
++++ b/manifest.json
+@@ -1,7 +1,7 @@
+ {
+   "manifest_version": 3,
+   "name": "RS-Max Companion",
+-  "version": "0.18.58",
++  "version": "0.18.59",
+   "description": "Actions assistees sur les reseaux sociaux (engagement, publication) avec remontee vers l'API RS-Max.",
+   "permissions": [
+     "storage",
+@@ -51,7 +51,8 @@
+         "shared/list-progress.js",
+         "content/engine.js",
+         "modules/facebook.js",
+-        "modules/pinterest.js"
++        "modules/pinterest.js",
++        "meta/session.js"
+       ],
+       "css": [
+         "content/ui.css"
+@@ -146,7 +147,8 @@
+         "x/vault-preview.js",
+         "x/assisted.js",
+         "x/batch-plan.js",
+-        "x/batch.js", "shared/feed-engage.js",
++        "x/batch.js",
++        "shared/feed-engage.js",
+         "x/publisher.js",
+         "x/tasks.js"
+       ],
+@@ -183,7 +185,8 @@
+         "shared/task-trace.js",
+         "content/engine.js",
+         "threads/agent.js",
+-        "threads/session.js", "shared/feed-engage.js"
++        "threads/session.js",
++        "shared/feed-engage.js"
+       ],
+       "css": [
+         "content/ui.css"
+--- /dev/null
++++ b/meta/session-worker.js
+@@ -0,0 +1,66 @@
++/* Cookies confinés au service worker. Aucun identifiant secret n'est envoyé aux pages. */
++(() => {
++  'use strict';
++  const supported = p => ['facebook', 'instagram'].includes(p);
++  function fromCookies(cookies, platform) {
++    if (!supported(platform)) throw Error('Réseau Meta inconnu.');
++    const values = new Map(), domain = new RegExp('^\\.?([a-z0-9-]+\\.)*'+platform+'\\.com$','i');
++    for (const c of cookies) {
++      if (!domain.test(c.domain)) throw Error('Domaine de session Meta refusé.');
++      if (values.has(c.name) && values.get(c.name) !== c.value) throw Error('Cookies Meta contradictoires : vérifier la session.');
++      values.set(c.name,c.value);
++    }
++    const id = platform === 'facebook' ? (values.get('i_user') || values.get('c_user')) : values.get('ds_user_id');
++    const auth = platform === 'facebook' ? values.get('xs') && values.get('c_user') : values.get('sessionid');
++    return auth && /^\d{1,30}$/.test(id || '') ? id : null;
++  }
++  function senderPlatform(sender) {
++    if (sender.id !== chrome.runtime.id || (sender.frameId ?? 0) !== 0) throw Error('Origine de session Meta refusée.');
++    const url = new URL(sender.tab?.url || 'about:blank');
++    if (url.protocol !== 'https:') throw Error('Session Meta en HTTPS obligatoire.');
++    if (/^(www\.|web\.)?facebook\.com$/.test(url.hostname)) return 'facebook';
++    if (/^(www\.)?instagram\.com$/.test(url.hostname)) return 'instagram';
++    throw Error('Origine de session Meta refusée.');
++  }
++  async function identity(sender) {
++    const platform = senderPlatform(sender);
++    const cookies = await chrome.cookies.getAll({domain:platform+'.com'});
++    const accountId = fromCookies(cookies, platform);
++    if (!accountId) throw Error('Connectez ce compte '+platform+' dans Chrome.');
++    const page = await chrome.tabs.sendMessage(sender.tab.id,{type:'x.task',task:{kind:platform+'.whoami',payload:{}}});
++    if (page?.status !== 'done') throw Error(page?.error || 'Identité de la page indisponible.');
++    if (platform === 'facebook' && page.result?.account_id !== accountId) throw Error('Le profil Facebook actif diffère de la session.');
++    if (platform === 'instagram' && !page.result?.username) throw Error('Nom Instagram connecté indisponible.');
++    const after = fromCookies(await chrome.cookies.getAll({domain:platform+'.com'}),platform);
++    if (after !== accountId) throw Error('Compte changé pendant la vérification.');
++    return {platform,account_id:accountId,username:page.result?.username || null,name:page.result?.name || null};
++  }
++  async function send(msg,sender) {
++    if (self.RSMAX_DEFAULTS?.taskProfile) throw Error('Transmettez la session depuis votre Chrome local.');
++    const who = await identity(sender);
++    const cookies = await chrome.cookies.getAll({domain:who.platform+'.com'});
++    if (fromCookies(cookies,who.platform) !== who.account_id) throw Error('Compte changé avant transmission.');
++    return apiFetch({method:'POST',path:'/extension/meta/'+who.platform+'/session',timeoutMs:100000,body:{platform_account_id:who.account_id,
++      cookies:cookies.map(({name,value,domain,path,expirationDate,httpOnly,secure,sameSite,hostOnly})=>({name,value,domain,path,expirationDate,httpOnly,secure,sameSite,hostOnly}))}});
++  }
++  async function execute(task) {
++    const platform = task.kind.split('.')[0];
++    if (!supported(platform) || !task.account_id) throw Error('Identité de tâche Meta absente.');
++    let id = fromCookies(await chrome.cookies.getAll({domain:platform+'.com'}),platform);
++    if (task.kind.endsWith('.session.apply') || id !== task.account_id) {
++      if (task.local) throw Error('Le compte ouvert dans Chrome ne correspond pas : aucun changement de session locale.');
++      const data = await apiFetch({path:'/extension/tasks/'+task.id+'/session'});
++      if (fromCookies(data.cookies || [],platform) !== task.account_id) throw Error('Session enregistrée pour un autre compte.');
++      for (const c of await chrome.cookies.getAll({domain:platform+'.com'})) await chrome.cookies.remove({url:'https://'+c.domain.replace(/^\./,'')+(c.path||'/'),name:c.name});
++      await applySession(data.cookies);
++    }
++    const tabId = await taskTab('https://www.'+platform+'.com/');
++    try {
++      const page = await askPage(tabId,{kind:platform+'.whoami',payload:{}});
++      id = fromCookies(await chrome.cookies.getAll({domain:platform+'.com'}),platform);
++      if (page?.status !== 'done' || id !== task.account_id || (platform === 'facebook' && page.result?.account_id !== id)) throw Error('Identité Meta non confirmée dans la page : aucun geste.');
++      return {status:'done',result:{...page.result,account_id:id}};
++    } finally { await chrome.tabs.remove(tabId).catch(()=>{}); }
++  }
++  self.RSMetaSession = {fromCookies,senderPlatform,identity,send,execute};
++})();
+--- /dev/null
++++ b/meta/session.js
+@@ -0,0 +1,44 @@
++/* Même identification sur le Mac et le VPS ; seuls les cookies restent au service worker. */
++(() => {
++  'use strict';
++  if (window.RSMetaIdentity) return;
++  const platform = /(^|\.)facebook\.com$/.test(location.hostname) ? 'facebook' : /(^|\.)instagram\.com$/.test(location.hostname) ? 'instagram' : null;
++  if (!platform) return;
++  function identity() {
++    if (platform === 'facebook') {
++      const values = [];
++      for (const script of document.querySelectorAll('script')) {
++        const text = script.textContent;
++        if (!text?.includes('USER_ID')) continue;
++        for (const m of text.matchAll(/"USER_ID"\s*:\s*"(\d+)"/g)) if (m[1] !== '0') values.push(m[1]);
++      }
++      const ids = [...new Set(values)];
++      if (ids.length !== 1) throw Error('Identité Facebook active absente ou ambiguë.');
++      return {account_id:ids[0]};
++    }
++    const handles = [];
++    for (const a of document.querySelectorAll('a[href]')) {
++      if (!/^(profil|profile)$/i.test(a.textContent.trim())) continue;
++      const path = new URL(a.href,location.href).pathname;
++      const m = path.match(/^\/([a-zA-Z0-9_.]{1,30})\/$/);
++      if (m && a.querySelector('img[alt]')) handles.push(m[1].toLowerCase());
++    }
++    const names = [...new Set(handles)];
++    if (names.length !== 1) throw Error('Profil Instagram connecté indisponible : ouvrez Instagram avec ce compte.');
++    return {username:names[0]};
++  }
++  chrome.runtime.onMessage.addListener((msg,sender,respond)=>{
++    if(sender.id!==chrome.runtime.id || msg.type!=='x.task' || msg.task?.kind!==platform+'.whoami') return;
++    (async()=>{for(let n=0;n<30;n++){try{return{status:'done',result:identity()}}catch(e){if(n===29)throw e;await new Promise(r=>setTimeout(r,500))}}})()
++      .then(respond,e=>respond({status:'failed',error:e.message}));
++    return true;
++  });
++  window.RSMetaIdentity={platform,identity};
++  if (!window.RSMAX) return;
++  const label=platform==='facebook'?'Facebook':'Instagram';
++  const call=async(type)=>{const r=await chrome.runtime.sendMessage({type});if(!r?.ok)throw Error(r?.error||'Companion indisponible.');return r.data;};
++  window.RSMAX.register({platform,match:u=>new RegExp('(^|\\.)'+platform+'\\.com$').test(u.hostname),recipes:[
++    {id:platform+'.identity',localOnly:true,label:label+' — identifier mon compte',params:[],available:()=>true,async run(ctx){const w=await call('meta.identity');ctx.log('Identifiant '+label+' : '+w.account_id+(w.username?' · @'+w.username:''));return{reason:'Identité relevée.'}}},
++    {id:platform+'.session',localOnly:true,label:label+' — transmettre la session à RS-Max',params:[],available:()=>true,async run(ctx){const r=await call('meta.session.send');ctx.log(r.status==='connected'?'Session vérifiée sur le navigateur distant.':'Session reçue, vérification à terminer.');return{reason:'Transmission terminée.'}}}
++  ]});
++})();
+--- /dev/null
++++ b/tests/meta-session.test.cjs
+@@ -0,0 +1,10 @@
++const test=require('node:test'),assert=require('node:assert/strict'),vm=require('node:vm'),fs=require('node:fs'),path=require('node:path');
++const source=fs.readFileSync(path.join(__dirname,'../meta/session-worker.js'),'utf8');
++function fixture(){const calls=[];const cookies=[{name:'ds_user_id',value:'123',domain:'.instagram.com'},{name:'sessionid',value:'fixture-secret',domain:'.instagram.com'}];const ctx={URL,Map,Set,RegExp,self:{},chrome:{runtime:{id:'own'},cookies:{getAll:async()=>cookies,remove:async()=>calls.push('remove')},tabs:{sendMessage:async()=>({status:'done',result:{username:'nina.bellori'}}),remove:async()=>{}}},apiFetch:async()=>{calls.push('api');return{cookies}},applySession:async()=>calls.push('apply'),taskTab:async()=>1,askPage:async()=>({status:'done',result:{username:'nina.bellori'}})};vm.runInNewContext(source,ctx);return{api:ctx.self.RSMetaSession,calls,cookies,ctx,sender:{id:'own',frameId:0,tab:{id:8,url:'https://www.instagram.com/nina.bellori/'}}};}
++test('refuse origine étrangère et iframe avant toute lecture de session',async()=>{const f=fixture();await assert.rejects(f.api.identity({...f.sender,tab:{url:'https://instagram.com.evil.test'}}),/refusée/);await assert.rejects(f.api.identity({...f.sender,frameId:1}),/refusée/);assert.deepEqual(f.calls,[])});
++test('identité publique locale sans exposition de cookie',async()=>{const f=fixture();const r=await f.api.identity(f.sender);assert.equal(r.account_id,'123');assert.equal(r.username,'nina.bellori');assert.ok(!JSON.stringify(r).includes('fixture-secret'))});
++test('le Mac ne restaure jamais la session d’un autre compte',async()=>{const f=fixture();await assert.rejects(f.api.execute({id:8,kind:'instagram.whoami',account_id:'999',local:true,payload:{}}),/aucun changement/);assert.deepEqual(f.calls,[])});
++test('un worker ne retransmet jamais automatiquement sa session au serveur',async()=>{const f=fixture();f.ctx.self.RSMAX_DEFAULTS={taskProfile:'vps-dix'};await assert.rejects(f.api.send({},f.sender),/Chrome local/);assert.deepEqual(f.calls,[])});
++test('un domaine externe et des identités contradictoires sont refusés',()=>{const f=fixture();assert.throws(()=>f.api.fromCookies([...f.cookies,{name:'x',value:'x',domain:'.evil.test'}],'instagram'),/Domaine/);assert.throws(()=>f.api.fromCookies([...f.cookies,{name:'ds_user_id',value:'999',domain:'www.instagram.com'}],'instagram'),/contradictoires/)});
++test('la restauration distante refuse les cookies du mauvais compte avant suppression',async()=>{const f=fixture();await assert.rejects(f.api.execute({id:8,kind:'instagram.session.apply',account_id:'999',payload:{}}),/autre compte/);assert.deepEqual(f.calls,['api'])});
++test('le compte de connexion Facebook et son profil actif sont distingués',()=>{const f=fixture();assert.equal(f.api.fromCookies([{name:'c_user',value:'123',domain:'.facebook.com'},{name:'xs',value:'fixture-secret',domain:'.facebook.com'},{name:'i_user',value:'456',domain:'.facebook.com'}],'facebook'),'456')});

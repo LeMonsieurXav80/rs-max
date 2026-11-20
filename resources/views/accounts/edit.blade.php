@@ -150,6 +150,29 @@
                     </div>
                 @endif
 
+                @if(in_array($account->platform->slug, ['facebook', 'instagram'], true))
+                <div class="mt-5">
+                    <label for="driver" class="block text-sm font-medium text-gray-700">Mode de connexion</label>
+                    @php
+                        $metaMode = old('driver', $account->usesBrowser() ? $account::companionMode($account->browser_profile) : 'api');
+                        $metaLabel = $account->platform->slug === 'facebook' ? 'Facebook' : 'Instagram';
+                    @endphp
+                    <select name="driver" id="driver" class="w-full rounded-xl border-gray-300 text-sm">
+                        <option value="api" @selected($metaMode === 'api')>API Meta</option>
+                        <option value="browser_vps" @selected($metaMode === 'browser_vps')>Companion sur le VPS</option>
+                        <option value="browser_nas" @selected($metaMode === 'browser_nas')>Companion sur le NAS</option>
+                    </select>
+                    <label for="browser_profile" class="block text-sm mt-3">Profil du navigateur distant</label>
+                    <input name="browser_profile" id="browser_profile" value="{{ old('browser_profile', $account->browser_profile) }}" placeholder="vps-dix" class="w-full rounded-xl border-gray-300 text-sm">
+                    <p class="mt-2 text-xs text-gray-500">La connexion de session est disponible. Les parcours de publication et de messagerie par navigateur sont en préparation.</p>
+                    <p class="mt-2 text-xs text-gray-500">Identifiant : {{ $account->platform_account_id }}. Dans Chrome connecté à ce compte, lancer « {{ $metaLabel }} — transmettre la session à RS-Max » dans Companion. Les actions locales utilisent toujours le compte ouvert dans Chrome.</p>
+                    <p class="mt-2 text-sm {{ $account->browser_session_status === 'connected' ? 'text-green-600' : 'text-amber-600' }}">
+                        Session distante : {{ $account->browser_session_status === 'connected' ? 'connectée' : 'à vérifier' }}{{ $account->browser_session_checked_at ? ' · '.$account->browser_session_checked_at->diffForHumans() : '' }}.
+                    </p>
+                    @error('browser_profile')<p class="text-sm text-red-600">{{ $message }}</p>@enderror
+                </div>
+                @endif
+
                 @if($account->platform->slug === 'threads')
                 <div class="mt-5">
                     <label for="browser_profile" class="block text-sm font-medium text-gray-700">Profil NAS pour les interactions Threads</label>

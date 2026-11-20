@@ -64,6 +64,14 @@ class AgentCatalog
         $saved = $account->agentActions()->get()->keyBy('action');
         $actions = config("agent.platforms.{$account->platform->slug}.actions", []);
 
+        if ($account->usesBrowser() && in_array($account->platform->slug, ['facebook', 'instagram'], true)) {
+            foreach ($actions as &$action) {
+                $action['status'] = 'planned';
+                $action['channel'] = 'browser';
+            }
+            unset($action);
+        }
+
         return collect($actions)->map(function (array $action, string $key) use ($account, $saved) {
             $setting = $saved->get($key);
             $limit = $setting?->daily_limit ?? ($action['limit'] ?? 0);
