@@ -27,7 +27,8 @@ class TikTokHomeLikesCommand extends Command
 
     private const SESSION_MINUTES = 20;
 
-    private const PER_VIDEO = 5;
+    /** Bornes du nombre de likes par vidéo, tiré par le téléphone (demande de Xavier, 20/11/2026). */
+    private const PER_VIDEO = [10, 15];
 
     protected $signature = 'tiktok:home-likes {--commit : Exécuter les likes du passage}';
 
@@ -98,7 +99,7 @@ class TikTokHomeLikesCommand extends Command
             $sessions++;
             try {
                 $result = $queue->run($account, TikTokFeedEngagement::KIND, $payload + [
-                    'url' => self::HOME, 'minutes' => $minutes, 'per_video' => self::PER_VIDEO, 'max_likes' => $limit - $liked,
+                    'url' => self::HOME, 'minutes' => $minutes, 'per_video' => self::PER_VIDEO[0], 'per_video_max' => self::PER_VIDEO[1], 'max_likes' => $limit - $liked,
                 ], timeout: ($minutes + 8) * 60, profile: $phone);
             } catch (BrowserException $error) {
                 $this->warn($error->getMessage());

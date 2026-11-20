@@ -45,7 +45,7 @@ class TikTokHomeLikesTest extends TestCase
         $queue = $this->mock(BrowserTaskQueue::class);
         $queue->shouldReceive('run')->once()->ordered()->withArgs(fn ($a, $kind, $payload, $timeout, $profile) => $a->is($account)
             && $kind === TikTokFeedEngagement::KIND && $payload['url'] === 'https://www.tiktok.com/' && $payload['minutes'] === 20
-            && $payload['per_video'] === 5 && $payload['max_likes'] === 60 && $timeout === 28 * 60 && $profile === 'android-honor')
+            && $payload['per_video'] === 10 && $payload['per_video_max'] === 15 && $payload['max_likes'] === 60 && $timeout === 28 * 60 && $profile === 'android-honor')
             ->andReturn(['items' => [$this->like('Ana', 'a', 'confirmed'), $this->like('Ana', 'b', 'shown'), $this->like('Léa', 'c', 'uncertain')]]);
         $queue->shouldReceive('run')->twice()->ordered()->withArgs(fn ($a, $kind, $payload) => $kind === TikTokFeedEngagement::KIND
             && $payload['max_likes'] === 57)->andReturn(['items' => []]);

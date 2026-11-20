@@ -85,7 +85,7 @@ Le script dédié fait les likes dans « Pour toi » sur Android, sur la vidéo 
 `tiktok:home-likes` affiche le plan sans ouvrir TikTok. Le planificateur l'exécute à 8 h 10, 12 h 10, 16 h 10,
 18 h 10 et 21 h 10 à Lisbonne. Chaque passage autorise jusqu'à 60 likes, dans le quota de 300 par jour, en
 sessions `tiktok.feed.engage` de 20 min au plus (`TikTokFeedEngagement`). Sur chaque vidéo : commentaires
-ouverts, 5 likes au plus choisis par règles (peu aimés, jamais les plus aimés, ni le créateur ni le compte),
+ouverts, 10 à 15 likes (tirés par vidéo, bornés par `comment_like_quota`) choisis par règles (peu aimés, jamais les plus aimés, ni le créateur ni le compte),
 2 à 4 s entre deux, puis vidéo suivante. Vidéos du compte et vidéos commerciales sautées.
 
 Chaque like envoie un reçu AVANT le geste (`checkpoint`) : RS-Max le réserve comme événement
