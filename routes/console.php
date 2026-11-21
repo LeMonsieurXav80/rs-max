@@ -161,4 +161,4 @@ Schedule::command('threads:session-check')->hourly()->between('06:00', '21:59')-
 // Échéances des suivis Instagram RS-Max uniquement ; aucun geste tant que l'action reste désactivée.
 Schedule::command('instagram:unfollow-due --commit')->everyFiveMinutes()->withoutOverlapping(5);
 
-Schedule::command('instagram:like-comments --commit')->everyFiveMinutes()->withoutOverlapping(5);
+Schedule::command('instagram:like-comments --commit')->everyMinute()->between('06:00', '21:59')->timezone('Europe/Lisbon')->withoutOverlapping(5);
