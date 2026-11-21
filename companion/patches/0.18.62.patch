@@ -1,0 +1,139 @@
+--- a/background.js
++++ b/background.js
+@@ -1,4 +1,4 @@
+-/* Companion 0.18.61 : recettes Meta ordonnées. */
++/* Companion 0.18.62 : recettes Meta ordonnées. */
+ importScripts('meta/agent-worker.js');
+ /*
+  * RS-Max Companion — service worker
+--- a/manifest.json
++++ b/manifest.json
+@@ -1,7 +1,7 @@
+ {
+   "manifest_version": 3,
+   "name": "RS-Max Companion",
+-  "version": "0.18.61",
++  "version": "0.18.62",
+   "description": "Actions assistees sur les reseaux sociaux (engagement, publication) avec remontee vers l'API RS-Max.",
+   "permissions": [
+     "storage",
+--- a/meta/agent-worker.js
++++ b/meta/agent-worker.js
+@@ -1,7 +1,7 @@
+ /* Une écriture de page n'est envoyée qu'une fois. Cookies et transport restent au service worker. */
+ (() => {
+   'use strict';
+-  self.RSMetaActionsBuild='0.18.61';
++  self.RSMetaActionsBuild='0.18.62';
+   const platformOf=t=>t.kind.split('.')[0];
+   const check=async(task,tabId)=>{
+     const platform=platformOf(task),cookies=await chrome.cookies.getAll({domain:platform+'.com'});
+@@ -9,12 +9,19 @@
+     const who=await askPage(tabId,{kind:platform+'.whoami',payload:{}});
+     if(who?.status!=='done'||(platform==='facebook'?who.result?.account_id!==task.account_id:who.result?.username!==task.payload.username))throw Error('Identité de page différente : aucun geste.');
+   };
++  function commentUrl(task, receipt={}){
++    const p=task.payload;if(platformOf(task)!=='facebook')return p.url;
++    const id=p.action==='comment'?receipt.comment_id:p.action==='comment.like'?p.target.id:null;
++    if(!/^\d+$/.test(id||''))return p.url;
++    const parent=p.action==='comment.like'&&/^\d+$/.test(p.target.parent_comment_id||'')?p.target.parent_comment_id:null;
++    return p.url+'?comment_id='+(parent||id)+(parent?'&reply_comment_id='+id:'');
++  }
+   async function execute(task){
+     const platform=platformOf(task);let tabId,requested=false,receipt={};
+     try{
+       const session=await self.RSMetaSession.execute({...task,kind:platform+'.whoami'});
+       if(session.status!=='done')return session;
+-      tabId=await taskTab(task.payload.url);await check(task,tabId);
++      tabId=await taskTab(commentUrl(task));await check(task,tabId);
+       if(task.kind.endsWith('.read')){
+         const r=await askPage(tabId,task);await check(task,tabId);
+         if(r?.status==='done')r.result={...r.result,account_id:task.account_id};return r;
+@@ -29,9 +36,9 @@
+       const action=await chrome.tabs.sendMessage(tabId,{type:'x.task',task});
+       receipt={...receipt,...(action?.result||{})};
+       if(action?.status!=='done')return{...action,result:receipt,status:action?.status||'uncertain'};
+-      await pause(1800);await reloadTaskTab(tabId,task.payload.url);await check(task,tabId);
++      await pause(1800);await reloadTaskTab(tabId,commentUrl(task,receipt));await check(task,tabId);
+       let proof=await askPage(tabId,{kind:platform+'.agent.verify',payload:{...task.payload,...receipt}});
+-      if(proof?.result?.confirmed!==true&&!task.execution?.expired){await pause(1200);await reloadTaskTab(tabId,task.payload.url);await check(task,tabId);proof=await askPage(tabId,{kind:platform+'.agent.verify',payload:{...task.payload,...receipt}});}
++      if(proof?.result?.confirmed!==true&&!task.execution?.expired){await pause(1200);await reloadTaskTab(tabId,commentUrl(task,receipt));await check(task,tabId);proof=await askPage(tabId,{kind:platform+'.agent.verify',payload:{...task.payload,...receipt}});}
+       return{status:proof?.result?.confirmed===true?'done':'uncertain',result:{...receipt,...proof?.result},error:proof?.result?.confirmed?null:(proof?.error||'Geste absent après rechargement : aucun renvoi.')};
+     }catch(e){return{status:requested?'uncertain':'failed',result:receipt,error:e.message}}
+     finally{if(tabId)await chrome.tabs.remove(tabId).catch(()=>{});}
+--- a/meta/agent.js
++++ b/meta/agent.js
+@@ -37,9 +37,8 @@
+     return roots.find(r=>!roots.some(other=>other!==r&&r.contains(other))) || null;
+   }
+   function clean(e){e.querySelectorAll('img[alt]').forEach(img=>img.replaceWith(document.createTextNode(img.alt)));return text(e);}
+-  async function allComments(){
+-    if(platform!=='facebook')return;const root=await wait(fbRoot,15000,'Publication de groupe');const filter=single(controls(root).filter(b=>/^(Plus pertinents|Most relevant|Les plus récents|Newest)$/.test(label(b))));
+-    if(filter){await delay(500);filter.click();await delay(500);if(![...document.querySelectorAll('[role=menuitem]')].some(visible))filter.click();const option=await wait(()=>single([...document.querySelectorAll('[role=menuitem]')].filter(e=>visible(e)&&/^(Tous les commentaires|All comments)/.test(text(e)))),10000,'Filtre Tous les commentaires');option.click();await delay(800);}
++  async function readyPost(){
++    if(platform==='facebook')await wait(fbRoot,15000,'Publication de groupe');
+   }
+   function fbComments(root) {
+     const result=[];
+@@ -54,7 +53,7 @@
+       let clone=row.cloneNode(true);if(like){const range=document.createRange();range.setStartAfter(a);range.setEndBefore(like);clone=range.cloneContents();}
+       clone.querySelectorAll('button,[role="button"],[role="article"]').forEach(e=>e.remove());
+       const content=clean(clone).replace(/^\s*[·\s]+/,'').trim();
+-      result.push({row,s:{type:'comment',id,author:author||'',text:content.slice(0,4000),url:parent.url,published_at:date(label(a))},like});
++      result.push({row,s:{type:'comment',id,parent_comment_id:u.searchParams.get('reply_comment_id')?u.searchParams.get('comment_id'):null,author:author||'',text:content.slice(0,4000),url:parent.url,published_at:date(label(a))},like});
+     } return result;
+   }
+   function likeState(button) {
+@@ -139,7 +138,7 @@
+     if(p.action==='followback.read')return{status:'done',result:await followers(p)};
+     if(p.action==='profile.read'){const v=await wait(profile);return{status:'done',result:{target:v.target,following:v.following}};}
+     if(p.action==='thread.read'){
+-      await allComments();const t=await wait(thread);
++      await readyPost();const t=await wait(thread);
+       if(platform==='facebook'){const expand=single(controls(t.root).filter(b=>!b.closest('[role=article]')&&/^(Voir plus|En voir plus|See more)$/i.test(label(b))));if(expand){expand.click();await delay(500);}}
+       await delay(1000);const fresh=thread();
+       return {status:'done',result:{target:fresh.target,comments:fresh.comments.slice(0,p.limit||30).map(c=>({...c.s,liked:likeState(c.like)})),liked:likeState(fresh.like),context_complete:fresh.target.text.length<5000&&!controls(fresh.root).some(b=>!b.closest('[role=article]')&&/^(Voir plus|En voir plus|See more)$/i.test(label(b))),complete:false}};
+@@ -171,7 +170,7 @@
+   async function act(task) {
+     const p=task.payload, localKey='rsmaxMetaIntent:'+p.account_id+':'+task.id; let clicked=false;
+     try {
+-      await allComments();await wait(()=>{try{return bound(p)}catch{return null}});let v=bound(p);
++      await readyPost();await wait(()=>{try{return bound(p)}catch{return null}});let v=bound(p);
+       const prior=await chrome.storage.local.get(localKey);if(prior[localKey])throw Error('Intention déjà exécutée : vérifier sans renvoyer.');
+       if(['like','comment.like'].includes(p.action)&&likeState(v.like)===true)return{status:'done',result:{unchanged:true}};
+       if(p.action==='follow'&&v.following===true)return{status:'done',result:{unchanged:true}};
+@@ -209,7 +208,7 @@
+     }catch(e){return{status:clicked?'uncertain':'failed',result:{clicked},error:e.message}};
+   }
+   async function verify(p) {
+-    await allComments();const v=await wait(()=>{try{return bound(p)}catch{return null}});let confirmed=false,extra={};
++    await readyPost();const v=await wait(()=>{try{return bound(p)}catch{return null}});let confirmed=false,extra={};
+     if(p.action==='comment'){
+       const c=v.comments.find(c=>c.s.id===p.comment_id&&c.s.author===p.account_id&&c.s.text===p.text);
+       confirmed=Boolean(c);extra={comment_id:c?.s.id,author:c?.s.author,text:p.text};
+--- a/tests/meta-agent.test.cjs
++++ b/tests/meta-agent.test.cjs
+@@ -1,11 +1,11 @@
+ const {test}=require('node:test');const assert=require('node:assert/strict');const fs=require('node:fs');const vm=require('node:vm');
+-function worker({cookie='123',sent,proof=true,back='no'}={}){
+- let sends=0,reloads=0;
+- const ctx={self:null,globalThis:null,console,Date,Number,Error,URL,chrome:{cookies:{getAll:async()=>[{value:cookie}]},tabs:{remove:async()=>{},sendMessage:async()=>{sends++;if(sent==='lost')throw Error('port closed');return{status:'done',result:{clicked:true}}}}},
+- RSMetaSession:{fromCookies:c=>c[0].value,execute:async()=>({status:'done'})},taskTab:async()=>11,reloadTaskTab:async()=>{reloads++},pause:async()=>{},
++function worker({cookie='123',sent,proof=true,back='no',receipt={}}={}){
++ let sends=0,reloads=0,urls=[];
++ const ctx={self:null,globalThis:null,console,Date,Number,Error,URL,chrome:{cookies:{getAll:async()=>[{value:cookie}]},tabs:{remove:async()=>{},sendMessage:async()=>{sends++;if(sent==='lost')throw Error('port closed');return{status:'done',result:{clicked:true,...receipt}}}}},
++ RSMetaSession:{fromCookies:c=>c[0].value,execute:async()=>({status:'done'})},taskTab:async url=>{urls.push(url);return 11},reloadTaskTab:async(_id,url)=>{reloads++;urls.push(url)},pause:async()=>{},
+  askPage:async(_tab,t)=>t.kind.endsWith('whoami')?{status:'done',result:{account_id:'123',username:'nina'}}:t.kind.endsWith('verify')?{status:proof?'done':'uncertain',result:{confirmed:proof,proof:'after_reload'}}:{status:'done',result:{handle:'friend',follow_back:back,proof:'own_followers_search'}}};
+  ctx.self=ctx;ctx.globalThis=ctx;vm.createContext(ctx);vm.runInContext(fs.readFileSync('meta/agent-worker.js','utf8'),ctx);
+- return{run:ctx.RSMetaAgentWorker.execute,counts:()=>({sends,reloads})};
++ return{run:ctx.RSMetaAgentWorker.execute,counts:()=>({sends,reloads,urls})};
+ }
+ const task=(platform='facebook',action='comment.like')=>({id:1,kind:platform+'.agent.act',account_id:'123',payload:{username:'nina',action,url:platform==='facebook'?'https://www.facebook.com/groups/456/posts/789/':'https://www.instagram.com/friend/',target:{id:'friend'}}});
+ test('a lost write response is uncertain and never sent again',async()=>{const w=worker({sent:'lost'}),r=await w.run(task());assert.equal(r.status,'uncertain');assert.equal(w.counts().sends,1);assert.equal(w.counts().reloads,0)});
+@@ -20,3 +20,6 @@
+ test('visible relative dates support French and English without guessing unknown dates',()=>{const p=page('facebook');assert.ok(p.date('il y a 2 heures'));assert.ok(p.date('3 days ago'));assert.equal(p.date('hier peut-être'),null)});
+ 
+ test('identity, agent and recipes load in order in one manifest registration',()=>{const m=JSON.parse(fs.readFileSync('manifest.json','utf8'));const b=m.content_scripts.find(s=>s.js.includes('meta/session.js'));assert.ok(b.js.indexOf('meta/session.js')<b.js.indexOf('meta/agent.js'));assert.ok(b.js.indexOf('meta/agent.js')<b.js.indexOf('meta/recipes.js'));});
++
++test('Facebook likes open the exact native comment or reply for execution and proof',async()=>{const w=worker(),t=task();t.payload.target={id:'888',parent_comment_id:'777'};await w.run(t);assert.equal(w.counts().sends,1);assert.ok(w.counts().urls.every(u=>u===t.payload.url+'?comment_id=777&reply_comment_id=888'));});
++test('Facebook publication comments are verified through their returned native id',async()=>{const w=worker({receipt:{comment_id:'999'}}),t=task('facebook','comment');await w.run(t);assert.equal(w.counts().urls[0],t.payload.url);assert.equal(w.counts().urls[1],t.payload.url+'?comment_id=999');assert.equal(w.counts().sends,1);});
