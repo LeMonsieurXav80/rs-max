@@ -128,6 +128,13 @@ class MetaAgentController extends Controller
             SocialAccount::whereKey($task->social_account_id)->lockForUpdate()->firstOrFail();
             $task = BrowserTask::whereKey($task->id)->lockForUpdate()->firstOrFail();
             abort_unless($task->status === 'pending', 409, 'Tâche déjà prise : aucun renvoi.');
+            foreach (BrowserTask::where('social_account_id', $task->social_account_id)->where('profile', MetaBrowserAgent::LOCAL)
+                ->where('status', BrowserTask::RUNNING)->where('claimed_at', '<', now()->subSeconds(\App\Services\Browser\BrowserTaskQueue::ORPHAN_AFTER))
+                ->lockForUpdate()->get() as $orphan) {
+                $orphan->update(['status' => BrowserTask::readsOnly($orphan->kind) ? BrowserTask::FAILED : BrowserTask::UNCERTAIN,
+                    'finished_at' => now(), 'error' => 'Lancement local interrompu depuis plus de 30 minutes : aucun renvoi.']);
+                app(\App\Services\Agent\AccountActionBudget::class)->finish($orphan);
+            }
             abort_if(BrowserTask::where('social_account_id', $task->social_account_id)->where('profile', MetaBrowserAgent::LOCAL)->where('status', 'running')->exists(), 409, 'Une tâche locale est déjà en cours.');
             if (! app(\App\Services\Browser\BrowserTaskQueue::class)->start($task)) {
                 return response()->json(['message' => $task->error ?? 'Prise refusée.'], 409);

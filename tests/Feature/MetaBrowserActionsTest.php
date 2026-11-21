@@ -293,4 +293,21 @@ class MetaBrowserActionsTest extends TestCase
         $this->assertSame('confirmed', AccountActionEvent::first()->status);
         $this->assertSame('done', MetaEngagement::first()->status);
     }
+
+    public function test_an_interrupted_local_launch_expires_without_blocking_the_next_read_or_replaying_a_write(): void
+    {
+        $user = User::factory()->create(['role' => 'user']);
+        $this->a->users()->attach($user, ['is_active' => true]);
+        $token = $user->createToken('Companion');
+        $old = BrowserTask::create(['social_account_id' => $this->a->id, 'profile' => MetaBrowserAgent::LOCAL,
+            'kind' => 'facebook.agent.act', 'status' => 'running', 'claimed_at' => now()->subMinutes(31), 'payload' => ['action' => 'comment.like']]);
+        $this->app['auth']->forgetGuards();
+        $this->withToken($token->plainTextToken);
+        $id = $this->postJson('/api/extension/meta/facebook/agent/read', ['platform_account_id' => '123', 'action' => 'group.read',
+            'url' => 'https://www.facebook.com/groups/456/'])->assertAccepted()->json('task_id');
+        $this->postJson('/api/meta/tasks/'.$id.'/claim')->assertOk();
+        $this->assertSame('uncertain', $old->fresh()->status);
+        $this->assertSame('running', BrowserTask::findOrFail($id)->status);
+        $this->assertSame(2, BrowserTask::count());
+    }
 }
