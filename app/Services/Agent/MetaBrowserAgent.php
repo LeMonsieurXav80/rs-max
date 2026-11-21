@@ -42,6 +42,28 @@ class MetaBrowserAgent
         abort_unless(isset(self::WRITES[$account->platform->slug]) && $account->usesBrowser() && $account->browser_profile
             && $account->browser_session_status === 'connected', 409, 'Session Companion connectée requise.');
         app(CommunityManagerWindow::class)->assertOpen();
+        abort_if($this->platformPauseUntil($account), 429, 'Limitation Instagram signalée : pause du profil navigateur, aucun geste.');
+    }
+
+    public function platformPauseUntil(SocialAccount $account): ?string
+    {
+        if ($account->platform->slug !== 'instagram') {
+            return null;
+        }
+        $until = null;
+        $tasks = BrowserTask::where('kind', 'like', 'instagram.%')->where(function ($q) use ($account) {
+            $q->where('profile', $account->browser_profile)->orWhere('social_account_id', $account->id);
+        })->where('result->platform_limit->source', 'platform_ui')->where('finished_at', '>', now()->subDay())->get();
+        foreach ($tasks as $task) {
+            $scope = $task->result['platform_limit']['scope'] ?? '';
+            $end = $scope === 'daily' ? $task->finished_at->copy()->timezone('Europe/Lisbon')->addDay()->startOfDay()
+                : ($scope === 'temporary' ? $task->finished_at->copy()->addHour() : null);
+            if ($end?->isFuture() && (! $until || $end->gt($until))) {
+                $until = $end;
+            }
+        }
+
+        return $until?->toIso8601String();
     }
 
     public function postUrl(SocialAccount $account, string $value): string

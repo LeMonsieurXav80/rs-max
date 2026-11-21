@@ -175,7 +175,8 @@ class AccountStrategy
             'agent_adaptation.max_hourly' => 'sometimes|integer|min:1|max:1000',
             'agent_adaptation.max_daily' => 'sometimes|integer|min:2|max:100000',
             'agent_min_interval_seconds' => 'sometimes|integer|min:0|max:86400',
-            'agent_strategy' => 'sometimes|array:audience,objective,hashtags,target_accounts,search_queries,exclusions,facebook_groups,unfollow_after_days,editorial_topics,reply_language,discovery_interval_minutes,feed_engagement,repost_interval_hours',
+            'agent_strategy' => 'sometimes|array:audience,objective,hashtags,target_accounts,search_queries,exclusions,facebook_groups,unfollow_after_days,editorial_topics,reply_language,discovery_interval_minutes,feed_engagement,repost_interval_hours,instagram_comment_likes_enabled',
+            'agent_strategy.instagram_comment_likes_enabled' => 'sometimes|boolean',
             'agent_strategy.discovery_interval_minutes' => 'sometimes|nullable|integer|min:1|max:1440',
             'agent_strategy.repost_interval_hours' => 'sometimes|nullable|integer|min:48|max:720',
             'agent_strategy.reply_language' => ['sometimes', 'nullable', Rule::in(array_keys(ReplyLanguage::LABELS))],
@@ -239,6 +240,10 @@ class AccountStrategy
         $token = $request->user()?->currentAccessToken();
         $scoped = $token instanceof \Laravel\Sanctum\PersonalAccessToken && in_array('community-manager', (array) $token->abilities, true);
         abort_if($scoped && $request->exists('agent_strategy.repost_interval_hours'), 403, 'Le délai de republication se règle avec un accès gestionnaire complet.');
+        abort_if($scoped && $request->exists('agent_strategy.instagram_comment_likes_enabled'), 403, 'Le passage automatique Instagram se règle avec un accès gestionnaire complet.');
+        if ($request->exists('agent_strategy.instagram_comment_likes_enabled') && ($account->platform->slug !== 'instagram' || ! $account->usesBrowser())) {
+            throw \Illuminate\Validation\ValidationException::withMessages(['agent_strategy.instagram_comment_likes_enabled' => 'Une connexion Instagram Companion est requise.']);
+        }
         if ($scoped && (array_key_exists('agent_adaptation', $data) || (($account->agent_adaptation['enabled'] ?? false)
             && array_intersect(array_keys($data), ['agent_hourly_limit', 'agent_daily_limit', 'agent_min_interval_seconds'])))) {
             abort(403, 'La politique adaptative se règle avec un accès gestionnaire complet.');

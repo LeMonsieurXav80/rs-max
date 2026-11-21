@@ -38,6 +38,9 @@ class MetaSessionService
         abort_unless($account->usesBrowser() && filled($account->browser_profile), 422, 'Choisissez Companion et son profil distant dans la fiche du compte.');
         abort_unless(self::identity($cookies, $platform) === (string) $account->platform_account_id, 409, 'La session ne correspond pas au profil demandé.');
         $account->update(['browser_session' => $cookies, 'browser_session_status' => 'pending', 'browser_session_received_at' => now()]);
+        if (app(\App\Services\Agent\MetaBrowserAgent::class)->platformPauseUntil($account)) {
+            return false;
+        }
         $result = app(BrowserTaskQueue::class)->run($account, $platform.'.session.apply', ['url' => self::home($platform)], 90);
 
         return $this->record($account, $result);

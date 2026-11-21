@@ -44,6 +44,7 @@ class MetaExtensionController extends Controller
         BotActionLog::create(['social_account_id' => $account->id, 'action_type' => $platform.'.session', 'source' => 'extension',
             'target_uri' => MetaSessionService::home($platform), 'success' => $connected, 'performed_at' => now()]);
 
-        return response()->json(['status' => $account->browser_session_status, 'username' => $account->browser_username], $connected ? 200 : 409);
+        return response()->json(['status' => $account->browser_session_status, 'username' => $account->browser_username],
+            $connected ? 200 : ($account->browser_session_status === 'pending' ? 202 : 409));
     }
 }

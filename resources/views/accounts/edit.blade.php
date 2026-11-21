@@ -290,6 +290,13 @@
                         @enderror
                     </div>
                 @endif
+                @if($account->platform->slug === 'instagram' && $account->usesBrowser() && auth()->user()->isManager())
+                    <div class="mb-5">
+                        <input type="hidden" name="agent_strategy[instagram_comment_likes_enabled]" value="0">
+                        <label class="flex items-center gap-2 text-sm"><input type="checkbox" name="agent_strategy[instagram_comment_likes_enabled]" value="1" @checked(old('agent_strategy.instagram_comment_likes_enabled', $account->agent_strategy['instagram_comment_likes_enabled'] ?? false)) class="rounded border-gray-300"> Aimer automatiquement les commentaires des publications Instagram sur le VPS</label>
+                        <p class="mt-1 text-xs text-gray-500">Explore les hashtags ci-dessous entre 06 h et 22 h (Lisbonne), lit les publications puis aime jusqu’à cinq commentaires par publication. Le quota « Aimer un commentaire » dans Automatisation est commun avec Companion local. Les commentaires de l’auteur et du compte sont ignorés.</p>
+                    </div>
+                @endif
                 @foreach(['audience' => 'Audience cible', 'objective' => 'Objectif du compte'] as $field => $label)
                     <label for="agent_{{ $field }}" class="block text-sm font-medium mb-1">{{ $label }}</label>
                     <textarea id="agent_{{ $field }}" name="agent_strategy[{{ $field }}]" rows="2" maxlength="{{ $field === 'audience' ? 4000 : 2000 }}" class="w-full rounded-xl border-gray-300 text-sm mb-4">{{ old('agent_strategy.'.$field, $account->agent_strategy[$field] ?? '') }}</textarea>

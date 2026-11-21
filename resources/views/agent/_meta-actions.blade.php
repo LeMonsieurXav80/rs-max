@@ -1,6 +1,14 @@
 <div class="px-6 py-5 border-t space-y-3" x-data="rsMetaConsole({{ $metaAccount->id }}, @js($platform), @js($metaAccount->agent_strategy['facebook_groups'] ?? []), @js($metaAccount->agent_strategy['hashtags'] ?? []))">
     <h3 class="text-sm font-semibold">Agir depuis le {{ str_starts_with($metaAccount->browser_profile ?? '', 'vps-') ? 'VPS' : 'navigateur distant' }}</h3>
     <p class="text-xs text-gray-500">Activer les lectures et les gestes voulus ci-dessus, puis enregistrer. Les mêmes règles s’appliquent aux recettes lancées dans Companion sur votre ordinateur.</p>
+    @if($platform === 'instagram')
+        <p class="text-sm">Likes automatiques des commentaires : <strong>{{ ($metaAccount->agent_strategy['instagram_comment_likes_enabled'] ?? false) ? 'activés' : 'désactivés' }}</strong>.
+            <a href="{{ route('accounts.edit', $metaAccount) }}" class="text-indigo-600 underline">Régler le passage et les hashtags</a>
+        </p>
+        @if($metaPause = app(\App\Services\Agent\MetaBrowserAgent::class)->platformPauseUntil($metaAccount))
+            <p class="text-sm text-amber-700">Instagram limite temporairement les accès. Passage en pause jusqu’au {{ \Illuminate\Support\Carbon::parse($metaPause)->timezone('Europe/Lisbon')->format('d/m à H:i') }} (Lisbonne).</p>
+        @endif
+    @endif
     <select x-model="mode" class="rounded-lg border-gray-300 text-sm" :disabled="busy">
         @if($platform === 'facebook')
             <option value="group.read">Explorer un groupe choisi</option>
