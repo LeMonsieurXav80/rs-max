@@ -12,7 +12,7 @@ Une tâche à la fois par worker. Les sessions X, Facebook et Instagram concerne
 
 ## Parité locale et distante
 
-Chaque nouveau parcours doit être utilisable depuis Companion sur le Mac et depuis le worker distant, avec les mêmes identités, réservations, quotas et preuves. Les premières actions ajoutées sont l’identification locale et la transmission de session, avec vérification distante. Companion 0.18.60 ajoute les deux gestes Facebook de groupe et les gestes Instagram décrits ci-dessous. Les réponses inbox et publications Meta personnelles restent hors de ce parcours. Un compte Meta en mode navigateur ne retombe pas sur les API Pages/Instagram.
+Chaque nouveau parcours doit être utilisable depuis Companion sur le Mac et depuis le worker distant, avec les mêmes identités, réservations, quotas et preuves. Les premières actions ajoutées sont l’identification locale et la transmission de session, avec vérification distante. Companion 0.18.61 ajoute les deux gestes Facebook de groupe et les gestes Instagram décrits ci-dessous. Les réponses inbox et publications Meta personnelles restent hors de ce parcours. Un compte Meta en mode navigateur ne retombe pas sur les API Pages/Instagram.
 
 API authentifiée, compte actif attribué à l’utilisateur :
 
@@ -32,7 +32,7 @@ La fiche d’un compte Facebook Companion propose `agent_strategy.facebook_group
 Enregistrer les groupes n’active aucun geste. Les lectures et actions se règlent séparément dans Automatisation. Aucune adhésion à un groupe ni demande d’ami n’est automatisée.
 
 
-## Exécution des actions (Companion 0.18.60)
+## Exécution des actions (Companion 0.18.61)
 
 Dans Automatisation → Facebook / Instagram, activer les lectures et les gestes voulus pour le compte, régler leurs quotas et enregistrer. Le bloc « Agir depuis le VPS » lit un groupe choisi / hashtag / profil / publication puis propose les gestes sur les seules cibles lues. Le commentaire Facebook se prépare avec le persona ou un texte fourni, avec aperçu à blanc possible avant envoi. Les autres réseaux et comptes API conservent leur chemin.
 
@@ -45,3 +45,5 @@ API gestionnaire, compte attribué actif : `POST /api/agent/accounts/{id}/meta/r
 Local : `/api/extension/meta/{platform}/agent/{read,act}`, avec l’identité tirée des cookies par le service worker. Les tâches sont prises par leur ID (`POST /api/meta/tasks/{task}/claim`) avec le même jeton et profil `mac-local`, jamais via la relève administrative. Autorisation finale : `POST /api/meta/tasks/{task}/authorize`. Le résultat passe par la route de fin standard ; aucun cookie ni jeton ne traverse les messages de page.
 
 Instagram : `instagram:unfollow-due [--account=ID] [--commit]` (aperçu par défaut), planifié toutes les cinq minutes de 06 h à 22 h Lisbonne. Il ne fonctionne que si le désabonnement et ses lectures sont activés. Seuls les suivis nouveaux confirmés par RS-Max sont enregistrés avec `follow_source=agent` ; un compte déjà suivi reste un suivi manuel. Après `unfollow_after_days` (7 par défaut), deux recherches dans la liste personnelle des abonnés, espacées d’au moins 15 minutes dans les dernières 24 h, doivent conclure explicitement à l’absence de retour. Une lecture de profil fraîche précède la préparation, puis le worker vérifie une dernière fois la liste personnelle juste avant le clic. Absence de badge, erreur de lecture, demande privée en attente, suivi manuel ou retour positif : aucun désabonnement. Le parcours local applique les mêmes conditions.
+
+Companion 0.18.61 charge identité, moteur et recettes Meta dans une seule déclaration de scripts, dans cet ordre. Les likes incertains peuvent être rapprochés d’une nouvelle lecture avec `POST /api/meta/tasks/{task}/reconcile` (`read_task_id`) : vérification seule, sans second clic ni nouvelle réservation.

@@ -216,6 +216,8 @@ Route::middleware(['auth:sanctum', \App\Http\Middleware\CommunityManagerTokenSco
     Route::post('/meta/tasks/{task}/draft', [\App\Http\Controllers\Api\MetaAgentController::class, 'draft'])->middleware('throttle:20,1,meta-draft');
     Route::post('/meta/tasks/{task}/claim', [\App\Http\Controllers\Api\MetaAgentController::class, 'claim']);
     Route::post('/meta/tasks/{task}/authorize', [\App\Http\Controllers\Api\MetaAgentController::class, 'authorize']);
+    Route::post('/meta/tasks/{task}/reconcile', [\App\Http\Controllers\Api\MetaAgentController::class, 'reconcile']);
+    Route::post('/community-manager/meta/tasks/{task}/reconcile', [\App\Http\Controllers\Api\MetaAgentController::class, 'reconcile']);
     Route::post('/extension/meta/{platform}/agent/read', [\App\Http\Controllers\Api\MetaAgentController::class, 'localRead'])->whereIn('platform', ['facebook', 'instagram']);
     Route::post('/extension/meta/{platform}/agent/act', [\App\Http\Controllers\Api\MetaAgentController::class, 'localSubmit'])->whereIn('platform', ['facebook', 'instagram']);
     Route::match(['get', 'post'], '/agent/report', [\App\Http\Controllers\Api\CommunityManagerReportController::class, 'report']);

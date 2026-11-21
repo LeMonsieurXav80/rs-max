@@ -59,7 +59,7 @@ class MetaBrowserActionsTest extends TestCase
             : ['type' => 'post', 'id' => $ig ? 'ABC123' : '789', 'author' => $ig ? 'friend' : '555', 'url' => $ig ? 'https://www.instagram.com/p/ABC123/' : 'https://www.facebook.com/groups/456/posts/789/', 'text' => 'Une promenade à Lyon', 'published_at' => now()->subHour()->toIso8601String()];
         $task = BrowserTask::create(['social_account_id' => $this->a->id, 'profile' => 'vps-test', 'kind' => $this->a->platform->slug.'.agent.read', 'status' => 'done',
             'payload' => ['action' => $type, 'persona_hash' => TikTokEngagement::personaHash($this->a)], 'finished_at' => now(),
-            'result' => ['account_id' => '123', 'target' => $target, 'comments' => [['type' => 'comment', 'id' => $ig ? 'ABC123:888' : '888', 'author' => $ig ? 'visitor' : '999', 'text' => 'Bravo !', 'url' => $target['url']]]]]);
+            'result' => ['account_id' => '123', 'context_complete' => true, 'target' => $target, 'comments' => [['type' => 'comment', 'id' => $ig ? 'ABC123:888' : '888', 'author' => $ig ? 'visitor' : '999', 'text' => 'Bravo !', 'url' => $target['url']]]]]);
 
         return $task;
     }
@@ -275,5 +275,22 @@ class MetaBrowserActionsTest extends TestCase
         $this->assertSame('unfollow', MetaEngagement::sole()->action);
         $this->assertSame(0, AccountActionEvent::count());
         $this->assertNull(SocialContact::where('handle', 'manual')->first()->follow_back_checked_at);
+    }
+
+    public function test_a_later_read_reconciles_an_uncertain_like_without_a_second_attempt(): void
+    {
+        $this->submit($this->read(), 'comment.like');
+        $t = app(BrowserTaskQueue::class)->claim('vps-test');
+        $this->postJson('/api/meta/tasks/'.$t->id.'/authorize')->assertOk();
+        $this->postJson('/api/extension/tasks/'.$t->id.'/finish', ['status' => 'uncertain', 'result' => ['clicked' => true]])->assertOk();
+        $this->travel(1)->seconds();
+        $read = $this->read();
+        $r = $read->result;
+        $r['comments'][0]['liked'] = true;
+        $read->update(['result' => $r]);
+        $this->postJson('/api/meta/tasks/'.$t->id.'/reconcile', ['read_task_id' => $read->id])->assertOk()->assertJsonPath('sent', false)->assertJsonPath('confirmed', true);
+        $this->assertSame(1, AccountActionEvent::count());
+        $this->assertSame('confirmed', AccountActionEvent::first()->status);
+        $this->assertSame('done', MetaEngagement::first()->status);
     }
 }

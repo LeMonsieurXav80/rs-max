@@ -1552,4 +1552,4 @@ La réponse contient `from`, `to`, `account_id`, le dictionnaire `topics` et `ev
 
 ### Actions Facebook personnel et Instagram avec Companion
 
-Voir [le parcours commun local/VPS](meta-profils-companion.md#exécution-des-actions-companion-01860) : groupes Facebook choisis, `comment` et `comment.like` indépendants ; Instagram `like`, `comment.like`, `follow`, `unfollow`. Les gestes sont désactivés par défaut, avec lecture liée au compte, quotas partagés, reçu permanent et preuve après rechargement. Le bloc Automatisation de chaque réseau permet aussi le lancement sur le VPS. Les réponses inbox et publications personnelles restent hors de ce lot.
+Voir [le parcours commun local/VPS](meta-profils-companion.md#exécution-des-actions-companion-01861) : groupes Facebook choisis, `comment` et `comment.like` indépendants ; Instagram `like`, `comment.like`, `follow`, `unfollow`. Les gestes sont désactivés par défaut, avec lecture liée au compte, quotas partagés, reçu permanent et preuve après rechargement. Le bloc Automatisation de chaque réseau permet aussi le lancement sur le VPS. Les réponses inbox et publications personnelles restent hors de ce lot.

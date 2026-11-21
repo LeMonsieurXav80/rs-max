@@ -100,7 +100,7 @@ class MetaBrowserAgent
     public function context(SocialAccount $account, BrowserTask $read): array
     {
         $this->snapshot($account, $read);
-        abort_unless($read->payload['action'] === 'thread.read' && ($read->result['target']['text'] ?? '') && $account->persona?->is_active, 422, 'Publication et persona actif requis.');
+        abort_unless($read->payload['action'] === 'thread.read' && ($read->result['context_complete'] ?? false) === true && ($read->result['target']['text'] ?? '') && $account->persona?->is_active, 422, 'Publication complète et persona actif requis.');
 
         return ['read_task_id' => $read->id, 'target' => $read->result['target'], 'comments' => $read->result['comments'] ?? [],
             'persona_hash' => TikTokEngagement::personaHash($account), 'persona' => $account->persona->system_prompt,
@@ -136,6 +136,7 @@ class MetaBrowserAgent
         abort_if(in_array(strtolower($target['author'] ?? ''), array_filter([strtolower($account->browser_username ?? ''), (string) $account->platform_account_id]), true), 422, 'Aucune interaction avec soi-même.');
         $payload = $this->base($account, $token) + ['action' => $action, 'target' => $target, 'url' => $target['url'], 'text' => $data['text'] ?? null];
         if ($action === 'comment') {
+            abort_unless(($read->result['context_complete'] ?? false) === true, 422, 'Lire la publication complète avant de commenter.');
             abort_unless(($data['persona_hash'] ?? null) === ($read->payload['persona_hash'] ?? '')
                 && $data['persona_hash'] === $payload['persona_hash'], 409, 'Relire le contexte avec le persona actuel.');
         }
@@ -215,6 +216,8 @@ class MetaBrowserAgent
             $this->intent($account, $task->payload);
         } elseif ($task->payload['action'] === 'group.read') {
             $this->assertGroup($account, $task->payload['url']);
+        } elseif ($account->platform->slug === 'facebook' && $task->payload['action'] === 'thread.read') {
+            $this->postUrl($account, $task->payload['url']);
         }
     }
 
@@ -304,5 +307,29 @@ class MetaBrowserAgent
         }
         $meta['instagram_followback_task_id'] = $task->id;
         $c->fill(['follow_back' => $state, 'follow_back_checked_at' => $at, 'metadata' => $meta])->save();
+    }
+
+    /** Rapprocher un like incertain d’une nouvelle lecture, sans envoyer le moindre clic. */
+    public function reconcile(BrowserTask $task, BrowserTask $read): array
+    {
+        abort_unless(self::handles($task) && str_ends_with($task->kind, '.act') && $task->status === 'uncertain'
+            && in_array($task->payload['action'], ['like', 'comment.like'], true)
+            && ($task->result['commit_authorized'] ?? false) === true && ($task->result['clicked'] ?? false) === true, 409, 'Aucun like incertain à relire.');
+        $this->snapshot($task->socialAccount, $read);
+        abort_unless($read->payload['action'] === 'thread.read' && $read->finished_at->gt($task->finished_at)
+            && ($read->result['target']['url'] ?? '') === $task->payload['url'], 409, 'Nouvelle lecture de la même publication requise.');
+        $p = $task->payload;
+        $target = $p['action'] === 'like' ? ($read->result['target'] ?? []) : collect($read->result['comments'] ?? [])->firstWhere('id', $p['target']['id']);
+        $liked = $p['action'] === 'like' ? ($read->result['liked'] ?? null) : ($target['liked'] ?? null);
+        if (! $target || $target['author'] !== $p['target']['author'] || $liked !== true) {
+            return ['confirmed' => false, 'sent' => false];
+        }
+        $result = array_replace($task->result, ['confirmed' => true, 'proof' => 'after_reload', 'liked' => true,
+            'account_id' => $p['account_id'], 'action' => $p['action'], 'target_id' => $p['target']['id'],
+            'target_url' => $p['url'], 'verification_read_task_id' => $read->id]);
+        $task->update(['status' => 'done', 'result' => $result, 'error' => null, 'finished_at' => now()]);
+        app(AccountActionBudget::class)->finish($task);
+
+        return ['confirmed' => $task->status === 'done', 'sent' => false, 'task_id' => $task->id];
     }
 }

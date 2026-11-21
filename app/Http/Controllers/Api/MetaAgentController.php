@@ -144,4 +144,14 @@ class MetaAgentController extends Controller
 
         return response()->json(['ok' => true]);
     }
+
+    public function reconcile(Request $r, BrowserTask $task, MetaBrowserAgent $agent)
+    {
+        $this->access($r, $task);
+        $r->validate(['read_task_id' => 'required|integer']);
+        $read = BrowserTask::findOrFail($r->input('read_task_id'));
+        $this->access($r, $read);
+
+        return response()->json($agent->reconcile($task, $read));
+    }
 }
